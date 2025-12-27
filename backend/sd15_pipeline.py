@@ -1,0 +1,120 @@
+import torch
+import logging
+from diffusers import StableDiffusionPipeline
+from diffusers import (EulerDiscreteScheduler,
+    EulerAncestralDiscreteScheduler,
+    DPMSolverMultistepScheduler,
+    DDIMScheduler,)
+from pathlib import Path
+
+MODEL_ID = "runwayml/stable-diffusion-v1-5"
+
+MODEL_PATH = Path(r"D:\diffusion\diffusers\mistoonruby3")
+OUTPUT_DIR = Path("outputs")
+OUTPUT_DIR.mkdir(exist_ok=True)
+
+pipe = None
+
+logger = logging.getLogger(__name__)
+if not logger.handlers:
+    logging.basicConfig(level=logging.INFO)
+
+
+def load_pipeline():
+    global pipe
+
+    if pipe is not None:
+        return pipe
+
+    pipe = StableDiffusionPipeline.from_pretrained(
+        MODEL_PATH,
+        torch_dtype=torch.float16,
+        safety_checker=None,  # keep simple; can re-enable later
+    )
+
+    pipe.to("cuda")
+
+    return pipe
+
+def create_scheduler(name: str, pipe):
+    name = name.lower()
+
+    if name == "euler":
+        return EulerDiscreteScheduler.from_config(pipe.scheduler.config)
+
+    if name == "euler_a":
+        return EulerAncestralDiscreteScheduler.from_config(pipe.scheduler.config)
+
+    if name == "dpmpp_2m":
+        return DPMSolverMultistepScheduler.from_config(
+            pipe.scheduler.config,
+            algorithm_type="dpmsolver++",
+        )
+
+    if name == "dpmpp_2m_karras":
+        return DPMSolverMultistepScheduler.from_config(
+            pipe.scheduler.config,
+            algorithm_type="dpmsolver++",
+            use_karras_sigmas=True,
+        )
+
+    if name == "ddim":
+        return DDIMScheduler.from_config(pipe.scheduler.config)
+
+    raise ValueError(f"Unknown scheduler: {name}")
+
+
+@torch.inference_mode()
+def generate_images(
+    prompt: str,
+    negative_prompt: str,
+    steps: int,
+    cfg: float,
+    width: int,
+    height: int,
+    seed: int,
+    scheduler: str,
+    num_images:int,
+):
+    logger.info("seed=%s", seed)
+    if seed is None or seed == 0:
+        base_seed = torch.randint(0, 2**31, (1,)).item()
+    else:
+        base_seed = seed
+    
+    pipe = load_pipeline()
+    pipe.scheduler = create_scheduler(scheduler, pipe)
+    logger.info(
+        "Generate: seed=%s scheduler=%s steps=%s cfg=%s size=%sx%s num_images=%s",
+        base_seed,
+        scheduler,
+        steps,
+        cfg,
+        width,
+        height,
+        num_images,
+    )
+        
+    filenames = []
+
+    for i in range(num_images):
+        current_seed = base_seed + i
+        generator = torch.Generator(device="cuda").manual_seed(current_seed)
+        
+        image = pipe(
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            num_inference_steps=steps,
+            guidance_scale=cfg,
+            width=width,
+            height=height,
+            generator=generator,
+        ).images[0]
+        
+        filename = OUTPUT_DIR / f"gen_{current_seed}.png"
+        image.save(filename)
+        logger.info("Image %s saved to %s", i, filename.name)
+        
+        filenames.append(filename.name)
+
+    return filenames
