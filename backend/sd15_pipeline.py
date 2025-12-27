@@ -1,5 +1,7 @@
 import torch
 import logging
+import random
+import time
 from diffusers import StableDiffusionPipeline
 from diffusers import (EulerDiscreteScheduler,
     EulerAncestralDiscreteScheduler,
@@ -81,19 +83,13 @@ def generate_images(
         base_seed = torch.randint(0, 2**31, (1,)).item()
     else:
         base_seed = seed
+    batch_id = f"b{int(time.time())}_{random.randint(1000, 9999)}"
     
     pipe = load_pipeline()
     pipe.scheduler = create_scheduler(scheduler, pipe)
     logger.info(
         "Generate: seed=%s scheduler=%s steps=%s cfg=%s size=%sx%s num_images=%s",
-        base_seed,
-        scheduler,
-        steps,
-        cfg,
-        width,
-        height,
-        num_images,
-    )
+        base_seed, scheduler, steps, cfg, width, height, num_images,)
         
     filenames = []
 
@@ -111,7 +107,7 @@ def generate_images(
             generator=generator,
         ).images[0]
         
-        filename = OUTPUT_DIR / f"gen_{current_seed}.png"
+        filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
         image.save(filename)
         logger.info("Image %s saved to %s", i, filename.name)
         
