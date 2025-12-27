@@ -7,8 +7,9 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from pydantic import BaseModel
 
-from backend.sd15_pipeline import generate_images, generate_images_img2img
 from backend.config import DEFAULTS
+from backend.model_registry import MODEL_REGISTRY, ModelRegistryEntry
+from backend.sd15_pipeline import generate_images, generate_images_img2img
 
 app = FastAPI(title="SD 1.5 API")
 logger = logging.getLogger(__name__)
@@ -35,6 +36,12 @@ class GenerateRequest(BaseModel):
     seed: int | None = None
     scheduler: str = "euler"
     num_images: int = 1
+    model: str | None = None
+
+
+@app.get("/models", response_model=list[ModelRegistryEntry])
+async def list_models():
+    return MODEL_REGISTRY
 
 
 @app.post("/generate")
@@ -50,6 +57,7 @@ async def generate(req: GenerateRequest, request: Request):
         height=req.height,
         seed=req.seed,
         scheduler=req.scheduler,
+        model=req.model,
         num_images = req.num_images,
     )
 
@@ -71,6 +79,7 @@ async def generate_img2img(
     seed: int | None = Form(None),
     scheduler: str = Form("euler"),
     num_images: int = Form(1),
+    model: str | None = Form(None),
 ):
     if not 0 <= strength <= 1:
         raise HTTPException(status_code=400, detail="Strength must be between 0 and 1.")
@@ -94,6 +103,7 @@ async def generate_img2img(
         height=height,
         seed=seed,
         scheduler=scheduler,
+        model=model,
         num_images=num_images,
     )
 
