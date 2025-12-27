@@ -2,7 +2,7 @@ import torch
 import logging
 import random
 import time
-from diffusers import StableDiffusionPipeline
+from diffusers import StableDiffusionPipeline, StableDiffusionImg2ImgPipeline
 from diffusers import (EulerDiscreteScheduler,
     EulerAncestralDiscreteScheduler,
     DPMSolverMultistepScheduler,
@@ -16,6 +16,7 @@ OUTPUT_DIR = Path("outputs")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 pipe = None
+img2img_pipe = None
 
 logger = logging.getLogger(__name__)
 if not logger.handlers:
@@ -37,6 +38,23 @@ def load_pipeline():
     pipe.to("cuda")
 
     return pipe
+
+
+def load_img2img_pipeline():
+    global img2img_pipe
+
+    if img2img_pipe is not None:
+        return img2img_pipe
+
+    img2img_pipe = StableDiffusionImg2ImgPipeline.from_pretrained(
+        MODEL_PATH,
+        torch_dtype=torch.float16,
+        safety_checker=None,
+    )
+
+    img2img_pipe.to("cuda")
+
+    return img2img_pipe
 
 def create_scheduler(name: str, pipe):
     name = name.lower()
@@ -111,6 +129,66 @@ def generate_images(
         image.save(filename)
         logger.info("Image %s saved to %s", i, filename.name)
         
+        filenames.append(filename.name)
+
+    return filenames
+
+
+@torch.inference_mode()
+def generate_images_img2img(
+    initial_image,
+    strength: float,
+    prompt: str,
+    negative_prompt: str,
+    steps: int,
+    cfg: float,
+    width: int,
+    height: int,
+    seed: int,
+    scheduler: str,
+    num_images: int,
+):
+    logger.info("seed=%s", seed)
+    if seed is None or seed == 0:
+        base_seed = torch.randint(0, 2**31, (1,)).item()
+    else:
+        base_seed = seed
+    batch_id = f"b{int(time.time())}_{random.randint(1000, 9999)}"
+
+    pipe = load_img2img_pipeline()
+    pipe.scheduler = create_scheduler(scheduler, pipe)
+    logger.info(
+        "Img2Img: seed=%s scheduler=%s steps=%s cfg=%s size=%sx%s strength=%s num_images=%s",
+        base_seed,
+        scheduler,
+        steps,
+        cfg,
+        width,
+        height,
+        strength,
+        num_images,
+    )
+
+    filenames = []
+
+    for i in range(num_images):
+        current_seed = base_seed + i
+        generator = torch.Generator(device="cuda").manual_seed(current_seed)
+
+        image = pipe(
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            image=initial_image,
+            strength=strength,
+            num_inference_steps=steps,
+            guidance_scale=cfg,
+            generator=generator,
+        ).images[0]
+
+        filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
+        image.save(filename)
+        logger.info("Image %s saved to %s", i, filename.name)
+
         filenames.append(filename.name)
 
     return filenames
