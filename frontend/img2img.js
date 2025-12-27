@@ -41,7 +41,7 @@ async function generateImg2Img() {
     formData.append("strength", strength.toString());
     formData.append("num_images", num_images.toString());
 
-    const res = await fetch("http://127.0.0.1:8000/img2img", {
+    const res = await fetch("http://127.0.0.1:8000/generate-img2img", {
         method: "POST",
         body: formData,
     });
