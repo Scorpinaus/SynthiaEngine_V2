@@ -1,2 +1,3 @@
 .venv/
 outputs/
+backend/model_registry.json
