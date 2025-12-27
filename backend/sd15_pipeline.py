@@ -9,50 +9,77 @@ from diffusers import (EulerDiscreteScheduler,
     DDIMScheduler,)
 from pathlib import Path
 
-MODEL_ID = "runwayml/stable-diffusion-v1-5"
-
-MODEL_PATH = Path(r"D:\diffusion\diffusers\mistoonruby3")
+from backend.model_registry import ModelRegistryEntry, get_model_entry
 OUTPUT_DIR = Path("outputs")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
-pipe = None
-img2img_pipe = None
+PIPELINE_CACHE: dict[str, StableDiffusionPipeline] = {}
+IMG2IMG_PIPELINE_CACHE: dict[str, StableDiffusionImg2ImgPipeline] = {}
 
 logger = logging.getLogger(__name__)
 if not logger.handlers:
     logging.basicConfig(level=logging.INFO)
 
 
-def load_pipeline():
-    global pipe
+def _resolve_model_source(entry: ModelRegistryEntry) -> str:
+    if entry.location_type == "hub":
+        return entry.link
 
-    if pipe is not None:
-        return pipe
+    return str(Path(entry.link).expanduser())
 
-    pipe = StableDiffusionPipeline.from_pretrained(
-        MODEL_PATH,
-        torch_dtype=torch.float16,
-        safety_checker=None,  # keep simple; can re-enable later
-    )
+
+def load_pipeline(model_name: str | None):
+    entry = get_model_entry(model_name)
+
+    if entry.name in PIPELINE_CACHE:
+        return PIPELINE_CACHE[entry.name]
+
+    source = _resolve_model_source(entry)
+    if entry.model_type == "diffusers":
+        pipe = StableDiffusionPipeline.from_pretrained(
+            source,
+            torch_dtype=torch.float16,
+            safety_checker=None,  # keep simple; can re-enable later
+        )
+    elif entry.model_type == "single-file":
+        pipe = StableDiffusionPipeline.from_single_file(
+            source,
+            torch_dtype=torch.float16,
+            safety_checker=None,
+        )
+    else:
+        raise ValueError(f"Unsupported model type: {entry.model_type}")
 
     pipe.to("cuda")
+    PIPELINE_CACHE[entry.name] = pipe
 
     return pipe
 
 
-def load_img2img_pipeline():
-    global img2img_pipe
+def load_img2img_pipeline(model_name: str | None):
+    entry = get_model_entry(model_name)
 
-    if img2img_pipe is not None:
-        return img2img_pipe
+    if entry.name in IMG2IMG_PIPELINE_CACHE:
+        return IMG2IMG_PIPELINE_CACHE[entry.name]
 
-    img2img_pipe = StableDiffusionImg2ImgPipeline.from_pretrained(
-        MODEL_PATH,
-        torch_dtype=torch.float16,
-        safety_checker=None,
-    )
+    source = _resolve_model_source(entry)
+    if entry.model_type == "diffusers":
+        img2img_pipe = StableDiffusionImg2ImgPipeline.from_pretrained(
+            source,
+            torch_dtype=torch.float16,
+            safety_checker=None,
+        )
+    elif entry.model_type == "single-file":
+        img2img_pipe = StableDiffusionImg2ImgPipeline.from_single_file(
+            source,
+            torch_dtype=torch.float16,
+            safety_checker=None,
+        )
+    else:
+        raise ValueError(f"Unsupported model type: {entry.model_type}")
 
     img2img_pipe.to("cuda")
+    IMG2IMG_PIPELINE_CACHE[entry.name] = img2img_pipe
 
     return img2img_pipe
 
@@ -94,6 +121,7 @@ def generate_images(
     height: int,
     seed: int,
     scheduler: str,
+    model: str | None,
     num_images:int,
 ):
     logger.info("seed=%s", seed)
@@ -103,11 +131,19 @@ def generate_images(
         base_seed = seed
     batch_id = f"b{int(time.time())}_{random.randint(1000, 9999)}"
     
-    pipe = load_pipeline()
+    pipe = load_pipeline(model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
     logger.info(
-        "Generate: seed=%s scheduler=%s steps=%s cfg=%s size=%sx%s num_images=%s",
-        base_seed, scheduler, steps, cfg, width, height, num_images,)
+        "Generate: model=%s seed=%s scheduler=%s steps=%s cfg=%s size=%sx%s num_images=%s",
+        model,
+        base_seed,
+        scheduler,
+        steps,
+        cfg,
+        width,
+        height,
+        num_images,
+    )
         
     filenames = []
 
@@ -146,6 +182,7 @@ def generate_images_img2img(
     height: int,
     seed: int,
     scheduler: str,
+    model: str | None,
     num_images: int,
 ):
     logger.info("seed=%s", seed)
@@ -155,10 +192,11 @@ def generate_images_img2img(
         base_seed = seed
     batch_id = f"b{int(time.time())}_{random.randint(1000, 9999)}"
 
-    pipe = load_img2img_pipeline()
+    pipe = load_img2img_pipeline(model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
     logger.info(
-        "Img2Img: seed=%s scheduler=%s steps=%s cfg=%s size=%sx%s strength=%s num_images=%s",
+        "Img2Img: model=%s seed=%s scheduler=%s steps=%s cfg=%s size=%sx%s strength=%s num_images=%s",
+        model,
         base_seed,
         scheduler,
         steps,
