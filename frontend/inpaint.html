@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8" />
-    <title>SD 1.5 Image-to-Image</title>
+    <title>SD 1.5 Inpainting</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -16,7 +16,7 @@
             <h1>Synthia Engine</h1>
             <nav class="header-nav">
                 <a class="secondary nav-link" href="index.html">Text2Img</a>
-                <a class="secondary nav-link" href="inpaint.html">Inpaint</a>
+                <a class="secondary nav-link" href="img2img.html">Img2Img</a>
             </nav>
         </header>
 
@@ -33,9 +33,27 @@
                 </label>
 
                 <label class="field">
-                    <span>Initial Image</span>
-                    <input id="initial_image" type="file" accept="image/*" />
+                    <span>Image</span>
+                    <input id="image" type="file" accept="image/*" />
                 </label>
+
+                <div class="field">
+                    <span>Mask</span>
+                    <div class="canvas-wrap">
+                        <canvas id="mask-canvas" width="512" height="512"></canvas>
+                    </div>
+                    <small class="hint">Paint white over areas to inpaint.</small>
+                </div>
+
+                <div class="field-row">
+                    <label class="field">
+                        <span>Brush Size</span>
+                        <input id="brush_size" type="number" value="32" min="4" max="128" step="1" />
+                    </label>
+                    <button class="secondary" type="button" onclick="clearMask()">Clear Mask</button>
+                </div>
+
+                <button id="export_mask" class="secondary" type="button" onclick="downloadMask()" disabled>Export Mask PNG</button>
 
                 <label class="field">
                     <span>Strength</span>
@@ -86,7 +104,7 @@
                     <input id="num_images" type="number" value="1" min="1" max="8" />
                 </label>
 
-                <button class="primary" onclick="generateImg2Img()">Generate</button>
+                <button class="primary" onclick="generateInpaint()">Generate</button>
             </section>
 
             <section class="gallery-panel">
@@ -111,7 +129,7 @@
     </div>
 
     <script src="gallery.js?v=1"></script>
-    <script src="img2img.js?v=1"></script>
+    <script src="inpaint.js?v=1"></script>
 </body>
 
 </html>

@@ -7,7 +7,11 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from pydantic import BaseModel
 
-from backend.sd15_pipeline import generate_images, generate_images_img2img
+from backend.sd15_pipeline import (
+    generate_images,
+    generate_images_img2img,
+    generate_images_inpaint,
+)
 from backend.config import DEFAULTS
 
 app = FastAPI(title="SD 1.5 API")
@@ -85,6 +89,55 @@ async def generate_img2img(
 
     filenames = generate_images_img2img(
         initial_image=init_image,
+        strength=strength,
+        prompt=prompt,
+        negative_prompt=negative_prompt,
+        steps=steps,
+        cfg=cfg,
+        width=width,
+        height=height,
+        seed=seed,
+        scheduler=scheduler,
+        num_images=num_images,
+    )
+
+    return {
+        "images": [f"/outputs/{name}" for name in filenames]
+    }
+
+
+@app.post("/generate-inpaint")
+async def generate_inpaint(
+    image: UploadFile = File(...),
+    mask_image: UploadFile = File(...),
+    strength: float = Form(0.75),
+    prompt: str = Form(...),
+    negative_prompt: str = Form(DEFAULTS["negative_prompt"]),
+    steps: int = Form(DEFAULTS["steps"]),
+    cfg: float = Form(DEFAULTS["cfg"]),
+    width: int = Form(DEFAULTS["width"]),
+    height: int = Form(DEFAULTS["height"]),
+    seed: int | None = Form(None),
+    scheduler: str = Form("euler"),
+    num_images: int = Form(1),
+):
+    if not 0 <= strength <= 1:
+        raise HTTPException(status_code=400, detail="Strength must be between 0 and 1.")
+
+    image_bytes = await image.read()
+    mask_bytes = await mask_image.read()
+    try:
+        init_image = Image.open(BytesIO(image_bytes)).convert("RGB")
+        mask = Image.open(BytesIO(mask_bytes)).convert("L")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid image file.") from exc
+
+    init_image = init_image.resize((width, height))
+    mask = mask.resize((width, height), resample=Image.NEAREST)
+
+    filenames = generate_images_inpaint(
+        initial_image=init_image,
+        mask_image=mask,
         strength=strength,
         prompt=prompt,
         negative_prompt=negative_prompt,
