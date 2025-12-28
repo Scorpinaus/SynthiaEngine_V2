@@ -5,3 +5,6 @@ DEFAULTS = {
     "height": 512,
     "negative_prompt": "low quality, blurry, extra fingers",
 }
+
+RESOURCE_LOGGING_ENABLED = True
+RESOURCE_LOGGING_INTERVAL_S = 0.5

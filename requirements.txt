@@ -8,6 +8,8 @@ pydantic>=2.10.3
 
 Pillow>=10.4.0
 
+psutil>=6.1.0
+
 diffusers>=0.36.0
 transformers>=4.47.0
 accelerate>=1.2.1
