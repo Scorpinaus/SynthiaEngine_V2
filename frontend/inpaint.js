@@ -95,7 +95,8 @@ function resizeCanvasDisplay(image) {
     maskCanvas.width = image.width;
     maskCanvas.height = image.height;
 
-    const availableWidth = canvasStack.clientWidth || image.width;
+    const availableWidth =
+        canvasStack.parentElement?.clientWidth || canvasStack.clientWidth || image.width;
     const maxHeight = Math.round(window.innerHeight * 0.7);
     const maxWidth = Math.round(availableWidth);
     const fitScale = Math.min(1, maxWidth / image.width, maxHeight / image.height);
@@ -109,13 +110,13 @@ function resizeCanvasDisplay(image) {
     canvasStack.style.width = `${containerWidth}px`;
     canvasStack.style.height = `${containerHeight}px`;
     canvasStack.style.maxWidth = "100%";
-    canvasScroll.style.width = `${image.width}px`;
-    canvasScroll.style.height = `${image.height}px`;
-    canvasScroll.style.transform = `scale(${displayScale})`;    
-    baseCanvas.style.width = `${image.width}px`;
-    baseCanvas.style.height = `${image.height}px`;
-    maskCanvas.style.width = `${image.width}px`;
-    maskCanvas.style.height = `${image.height}px`;
+    canvasScroll.style.width = `${containerWidth}px`;
+    canvasScroll.style.height = `${containerHeight}px`;
+    canvasScroll.style.transform = "none";    
+    baseCanvas.style.width = `${displayWidth}px`;
+    baseCanvas.style.height = `${displayHeight}px`;
+    maskCanvas.style.width = `${displayWidth}px`;
+    maskCanvas.style.height = `${displayHeight}px`;
 
     baseContext.clearRect(0, 0, baseCanvas.width, baseCanvas.height);
     baseContext.drawImage(image, 0, 0);

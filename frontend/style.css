@@ -174,10 +174,12 @@ body {
     display: grid;
     place-items: center;
     border: 1px solid #e3ddd4;
+    overflow-x:auto;
 }
 
 .viewer-frame img {
-    width: 100%;
+    width: auto;
+    max-width: none;
     max-height: 60vh;
     object-fit: contain;
     display: block;
@@ -332,8 +334,8 @@ body {
     position: absolute;
     top: 0;
     left: 0;
-    max-width: 100%;
-    height: auto;
+    max-width: none;
+    height: none;
     image-rendering: pixelated;
     touch-action: none;
 }
