@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8" />
-    <title>SD 1.5 Image-to-Image</title>
+    <title>SD 1.5 Inpaint</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -16,7 +16,7 @@
             <h1>Synthia Engine</h1>
             <nav class="header-nav">
                 <a class="secondary nav-link" href="index.html">Text2Img</a>
-                <a class="secondary nav-link" href="inpaint.html">Inpaint</a>
+                <a class="secondary nav-link" href="img2img.html">Img2Img</a>
             </nav>
         </header>
 
@@ -44,10 +44,21 @@
                     <input id="initial_image" type="file" accept="image/*" />
                 </label>
 
-                <label class="field">
-                    <span>Strength</span>
-                    <input id="strength" type="number" value="0.7" step="0.05" min="0" max="1" />
-                </label>
+                <div class="mask-preview-tab">
+                    <button class="secondary" type="button" onclick="toggleMaskPreview()">Mask preview</button>
+                    <div id="mask_preview_panel" class="mask-preview-panel hidden">
+                        <div class="mask-preview-header">
+                            <span>Mask details</span>
+                            <button class="secondary" type="button" onclick="toggleMaskPreview()">Hide</button>
+                        </div>
+                        <img id="mask_preview" class="mask-preview" alt="Mask preview" />
+                        <div class="field-hint">White = repaint, Black = keep</div>
+                        <div class="field-row">
+                            <button class="secondary" type="button" onclick="openMaskEditor()">Edit mask</button>
+                            <button class="secondary" type="button" onclick="clearMask()">Clear mask</button>
+                        </div>
+                    </div>
+                </div>
 
                 <div class="field-row">
                     <label class="field">
@@ -77,23 +88,12 @@
                     </label>
                 </div>
 
-                <div class="field-row">
-                    <label class="field">
-                        <span>Width</span>
-                        <input id="width" type="number" value="512" step="8" min="64" />
-                    </label>
-                    <label class="field">
-                        <span>Height</span>
-                        <input id="height" type="number" value="512" step="8" min="64" />
-                    </label>
-                </div>
-
                 <label class="field">
                     <span>Images</span>
                     <input id="num_images" type="number" value="1" min="1" max="8" />
                 </label>
 
-                <button class="primary" onclick="generateImg2Img()">Generate</button>
+                <button class="primary" onclick="generateInpaint()">Generate</button>
             </section>
 
             <section class="gallery-panel">
@@ -117,8 +117,38 @@
         </div>
     </div>
 
+    <div id="mask_modal" class="modal hidden" role="dialog" aria-modal="true">
+        <div class="modal-content">
+            <header class="modal-header">
+                <h2>Mask Editor</h2>
+                <button class="secondary" type="button" onclick="closeMaskEditor()">Close</button>
+            </header>
+            <p class="modal-subtitle">Paint white to inpaint. Black keeps the original image.</p>
+            <div class="modal-toolbar">
+                <label class="field">
+                    <span>Brush Size</span>
+                    <input id="brush_size" type="range" min="5" max="120" value="35" />
+                    <div class="field-hint">Size: <span id="brush_value">35</span>px</div>
+                </label>
+                <label class="field inline-field">
+                    <input id="erase_toggle" type="checkbox" />
+                    <span>Erase mode (paint black)</span>
+                </label>
+                <button class="secondary" type="button" onclick="clearMask()">Clear mask</button>
+                <button class="primary" type="button" onclick="saveMask()">Save mask</button>
+            </div>
+            <div class="mask-editor">
+                <div class="canvas-stack">
+                    <canvas id="base_canvas" class="mask-canvas"></canvas>
+                    <canvas id="mask_canvas" class="mask-canvas"></canvas>
+                </div>
+                <div class="field-hint" id="image_info">Upload an image to start masking.</div>
+            </div>
+        </div>
+    </div>
+
     <script src="gallery.js?v=1"></script>
-    <script src="img2img.js?v=1"></script>
+    <script src="inpaint.js?v=1"></script>
 </body>
 
 </html>
