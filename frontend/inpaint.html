@@ -151,6 +151,11 @@
                     <input id="brush_size" type="range" min="5" max="120" value="35" />
                     <div class="field-hint">Size: <span id="brush_value">35</span>px</div>
                 </label>
+                <label class="field">
+                    <span>Zoom</span>
+                    <input id="zoom_level" type="range" min="25" max="200" value="100" />
+                    <div class="field-hint">Zoom: <span id="zoom_value">100</span>%</div>
+                </label>
                 <label class="field inline-field">
                     <input id="erase_toggle" type="checkbox" />
                     <span>Erase mode (paint black)</span>
@@ -160,8 +165,10 @@
             </div>
             <div class="mask-editor">
                 <div class="canvas-stack">
-                    <canvas id="base_canvas" class="mask-canvas"></canvas>
-                    <canvas id="mask_canvas" class="mask-canvas"></canvas>
+                    <div class="canvas-scroll">
+                        <canvas id="base_canvas" class="mask-canvas"></canvas>
+                        <canvas id="mask_canvas" class="mask-canvas"></canvas>
+                    </div>
                 </div>
                 <div class="field-hint" id="image_info">Upload an image to start masking.</div>
             </div>

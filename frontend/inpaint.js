@@ -9,9 +9,12 @@ gallery.render();
 const baseCanvas = document.getElementById("base_canvas");
 const maskCanvas = document.getElementById("mask_canvas");
 const canvasStack = document.querySelector(".canvas-stack");
+const canvasScroll = document.querySelector(".canvas-scroll");
 const imageInfo = document.getElementById("image_info");
 const brushSizeInput = document.getElementById("brush_size");
 const brushValue = document.getElementById("brush_value");
+const zoomInput = document.getElementById("zoom_level");
+const zoomValue = document.getElementById("zoom_value");
 const eraseToggle = document.getElementById("erase_toggle");
 const initialImageInput = document.getElementById("initial_image");
 const maskModal = document.getElementById("mask_modal");
@@ -22,11 +25,13 @@ const blurFactorInput = document.getElementById("blur_factor");
 const blurToggle = document.getElementById("blur_toggle");
 
 let baseImageFile = null;
+let baseImage = null;
 let isDrawing = false;
 let maskBlob = null;
 let maskDataUrl = null;
 let blurMaskBlob = null;
 let blurMaskDataUrl = null;
+let displayScale = 1;
 
 const baseContext = baseCanvas.getContext("2d");
 const maskContext = maskCanvas.getContext("2d");
@@ -37,6 +42,18 @@ function updateBrushLabel() {
 
 updateBrushLabel();
 brushSizeInput.addEventListener("input", updateBrushLabel);
+
+function updateZoomLabel() {
+    zoomValue.textContent = zoomInput.value;
+}
+
+updateZoomLabel();
+zoomInput.addEventListener("input", () => {
+    updateZoomLabel();
+    if (baseImage) {
+        resizeCanvasDisplay(baseImage);
+    }
+});
 
 async function loadModels() {
     const select = document.getElementById("model_select");
@@ -79,19 +96,31 @@ function resizeCanvasDisplay(image) {
     maskCanvas.height = image.height;
 
     const availableWidth = canvasStack.clientWidth || image.width;
-    const displayWidth = Math.min(availableWidth, image.width);
-    const displayHeight = Math.round(displayWidth * (image.height / image.width));
+    const maxHeight = Math.round(window.innerHeight * 0.7);
+    const maxWidth = Math.round(availableWidth);
+    const fitScale = Math.min(1, maxWidth / image.width, maxHeight / image.height);
+    const zoomScale = Number(zoomInput.value) / 100;
+    displayScale = fitScale * zoomScale;
+    const displayWidth = Math.round(image.width * displayScale);
+    const displayHeight = Math.round(image.height * displayScale);
+    const containerWidth = Math.min(maxWidth, displayWidth);
+    const containerHeight = Math.min(maxHeight, displayHeight);
 
-    canvasStack.style.height = `${displayHeight}px`;
-    baseCanvas.style.width = "100%";
-    baseCanvas.style.height = "100%";
-    maskCanvas.style.width = "100%";
-    maskCanvas.style.height = "100%";
+    canvasStack.style.width = `${containerWidth}px`;
+    canvasStack.style.height = `${containerHeight}px`;
+    canvasStack.style.maxWidth = "100%";
+    canvasScroll.style.width = `${image.width}px`;
+    canvasScroll.style.height = `${image.height}px`;
+    canvasScroll.style.transform = `scale(${displayScale})`;    
+    baseCanvas.style.width = `${image.width}px`;
+    baseCanvas.style.height = `${image.height}px`;
+    maskCanvas.style.width = `${image.width}px`;
+    maskCanvas.style.height = `${image.height}px`;
 
     baseContext.clearRect(0, 0, baseCanvas.width, baseCanvas.height);
     baseContext.drawImage(image, 0, 0);
     clearMask();
-    imageInfo.textContent = `Image size: ${image.width} × ${image.height}`;
+    imageInfo.textContent = `Image size: ${image.width} × ${image.height} (${Math.round(displayScale * 100)}% view)`;
 }
 
 initialImageInput.addEventListener("change", () => {
@@ -113,6 +142,7 @@ initialImageInput.addEventListener("change", () => {
     reader.onload = (event) => {
         const img = new Image();
         img.onload = () => {
+            baseImage = img;
             resizeCanvasDisplay(img);
             openMaskEditor();
         };
