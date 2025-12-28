@@ -57,6 +57,18 @@
                             <button class="secondary" type="button" onclick="openMaskEditor()">Edit mask</button>
                             <button class="secondary" type="button" onclick="clearMask()">Clear mask</button>
                         </div>
+                        <div class="field-row">
+                            <button id="mask_blur" class="secondary" type="button" onclick="generateBlurMask()" disabled>Blur mask edges</button>
+                            <label class="field inline-field">
+                                <span>Blur strength</span>
+                                <input id="blur_factor" type="number" min="0" max="128" step="1" value="8" />
+                            </label>
+                        </div>
+                        <div class="field-hint">Higher values soften mask edges (0 - 128).</div>
+                        <label class="field inline-field">
+                            <input id="blur_toggle" type="checkbox" disabled />
+                            <span>Preview blurred mask</span>
+                        </label>
                     </div>
                 </div>
 

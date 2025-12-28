@@ -17,11 +17,16 @@ const initialImageInput = document.getElementById("initial_image");
 const maskModal = document.getElementById("mask_modal");
 const maskPreview = document.getElementById("mask_preview");
 const maskPreviewPanel = document.getElementById("mask_preview_panel");
+const maskBlurButton = document.getElementById("mask_blur");
+const blurFactorInput = document.getElementById("blur_factor");
+const blurToggle = document.getElementById("blur_toggle");
 
 let baseImageFile = null;
 let isDrawing = false;
 let maskBlob = null;
 let maskDataUrl = null;
+let blurMaskBlob = null;
+let blurMaskDataUrl = null;
 
 const baseContext = baseCanvas.getContext("2d");
 const maskContext = maskCanvas.getContext("2d");
@@ -98,8 +103,12 @@ initialImageInput.addEventListener("change", () => {
     baseImageFile = file;
     maskBlob = null;
     maskDataUrl = null;
+    blurMaskBlob = null;
+    blurMaskDataUrl = null;
+    blurToggle.checked = false;
     maskPreview.removeAttribute("src");
     maskPreviewPanel.classList.add("hidden");
+    updateBlurControls();
     const reader = new FileReader();
     reader.onload = (event) => {
         const img = new Image();
@@ -163,7 +172,11 @@ function clearMask() {
     maskContext.fillRect(0, 0, maskCanvas.width, maskCanvas.height);
     maskBlob = null;
     maskDataUrl = null;
+    blurMaskBlob = null;
+    blurMaskDataUrl = null;
+    blurToggle.checked = false;
     maskPreview.removeAttribute("src");
+    updateBlurControls();
 }
 
 function openMaskEditor() {
@@ -193,8 +206,12 @@ async function saveMask() {
         return;
     }
     maskDataUrl = maskCanvas.toDataURL("image/png");
-    maskPreview.src = maskDataUrl;
+    blurMaskBlob = null;
+    blurMaskDataUrl = null;
+    blurToggle.checked = false;
     maskPreviewPanel.classList.remove("hidden");
+    updateMaskPreview();
+    updateBlurControls();
     closeMaskEditor();
 }
 
@@ -212,12 +229,82 @@ function getMaskBlob() {
     });
 }
 
+function updateMaskPreview() {
+    if (blurToggle.checked && blurMaskDataUrl) {
+        maskPreview.src = blurMaskDataUrl;
+        return;
+    }
+    if (maskDataUrl) {
+        maskPreview.src = maskDataUrl;
+        return;
+    }
+    maskPreview.removeAttribute("src");
+}
+
+function updateBlurControls() {
+    const hasMask = Boolean(maskBlob);
+    maskBlurButton.disabled = !hasMask;
+    if (!hasMask) {
+        blurToggle.checked = false;
+        blurToggle.disabled = true;
+        blurMaskBlob = null;
+        blurMaskDataUrl = null;
+    } else {
+        blurToggle.disabled = !blurMaskDataUrl;
+    }
+    updateMaskPreview();
+}
+
+async function generateBlurMask() {
+    if (!maskBlob) {
+        alert("Please create and save a mask before blurring.");
+        return;
+    }
+    const blurFactor = Number(blurFactorInput.value);
+    if (!Number.isFinite(blurFactor) || blurFactor < 0 || blurFactor > 128) {
+        alert("Blur strength must be a number between 0 and 128.");
+        return;
+    }
+
+    maskBlurButton.disabled = true;
+    maskBlurButton.textContent = "Blurring...";
+    try {
+        const formData = new FormData();
+        formData.append("mask_image", maskBlob, "mask.png");
+        formData.append("blur_factor", blurFactor.toString());
+        const res = await fetch("http://127.0.0.1:8000/create-blur-mask", {
+            method: "POST",
+            body: formData,
+        });
+
+        if (!res.ok) {
+            throw new Error("Failed to blur mask.");
+        }
+
+        const blob = await res.blob();
+        blurMaskBlob = blob;
+        blurMaskDataUrl = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.readAsDataURL(blob);
+        });
+        blurToggle.checked = true;
+    } catch (error) {
+        console.error(error);
+        alert("Unable to blur mask. Please try again.");
+    } finally {
+        maskBlurButton.textContent = "Blur mask edges";
+        updateBlurControls();
+    }
+}
+
 async function generateInpaint() {
     if (!baseImageFile) {
         alert("Please upload an initial image.");
         return;
     }
-    if (!maskBlob) {
+    const activeMaskBlob = blurToggle.checked && blurMaskBlob ? blurMaskBlob : maskBlob;
+    if (!activeMaskBlob) {
         alert("Please create and save a mask before generating.");
         return;
     }
@@ -237,7 +324,7 @@ async function generateInpaint() {
 
     const formData = new FormData();
     formData.append("initial_image", baseImageFile);
-    formData.append("mask_image", maskBlob, "mask.png");
+    formData.append("mask_image", activeMaskBlob, "mask.png");
     formData.append("prompt", prompt);
     formData.append("negative_prompt", negative_prompt);
     formData.append("steps", steps.toString());
@@ -259,3 +346,6 @@ async function generateInpaint() {
 }
 
 window.generateInpaint = generateInpaint;
+window.generateBlurMask = generateBlurMask;
+blurToggle.addEventListener("change", updateMaskPreview);
+updateBlurControls();

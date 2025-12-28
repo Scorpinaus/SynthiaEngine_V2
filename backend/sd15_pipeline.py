@@ -2,6 +2,7 @@ import torch
 import logging
 import random
 import time
+from PIL import ImageFilter
 from diffusers import (
     StableDiffusionPipeline,
     StableDiffusionImg2ImgPipeline,
@@ -145,6 +146,13 @@ def create_scheduler(name: str, pipe):
         return DDIMScheduler.from_config(pipe.scheduler.config)
 
     raise ValueError(f"Unknown scheduler: {name}")
+
+
+def create_blur_mask(mask_image, blur_factor: int):
+    blur_factor = max(0, min(blur_factor, 128))
+    if blur_factor == 0:
+        return mask_image
+    return mask_image.filter(ImageFilter.GaussianBlur(radius=blur_factor))
 
 
 @torch.inference_mode()
