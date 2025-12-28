@@ -42,6 +42,7 @@ class GenerateRequest(BaseModel):
     scheduler: str = "euler"
     num_images: int = 1
     model: str | None = None
+    clip_skip: int = 1
 
 
 @app.get("/models", response_model=list[ModelRegistryEntry])
@@ -64,6 +65,7 @@ async def generate(req: GenerateRequest, request: Request):
         scheduler=req.scheduler,
         model=req.model,
         num_images = req.num_images,
+        clip_skip = req.clip_skip,
     )
 
     return {
@@ -85,6 +87,7 @@ async def generate_img2img(
     scheduler: str = Form("euler"),
     num_images: int = Form(1),
     model: str | None = Form(None),
+    clip_skip: int = Form(1)
 ):
     if not 0 <= strength <= 1:
         raise HTTPException(status_code=400, detail="Strength must be between 0 and 1.")
@@ -110,6 +113,7 @@ async def generate_img2img(
         scheduler=scheduler,
         model=model,
         num_images=num_images,
+        clip_skip=clip_skip
     )
 
     return {
@@ -130,7 +134,8 @@ async def generate_inpaint(
     num_images: int = Form(1),
     model: str | None = Form(None),
     strength: float = Form(0.5),
-    padding_mask_crop: int = Form(32)
+    padding_mask_crop: int = Form(32),
+    clip_skip: int = Form(1)    
 ):
     image_bytes = await initial_image.read()
     mask_bytes = await mask_image.read()
@@ -159,7 +164,8 @@ async def generate_inpaint(
         model=model,
         num_images=num_images,
         strength=strength,
-        padding_mask_crop = padding_mask_crop
+        padding_mask_crop = padding_mask_crop,
+        clip_skip=clip_skip
     )
 
     return {

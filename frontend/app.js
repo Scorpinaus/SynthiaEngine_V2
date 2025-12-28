@@ -52,7 +52,7 @@ async function generate() {
     const width = Number(document.getElementById("width").value);
     const height = Number(document.getElementById("height").value);
     const model = document.getElementById("model_select").value;
-
+    const clip_skip = document.getElementById("clip_skip").value;
     const num_images = Number(document.getElementById("num_images").value);
 
     const payload = {
@@ -66,6 +66,7 @@ async function generate() {
         height,
         model,
         num_images,
+        clip_skip
     };
     console.log("Generate payload", payload);
 

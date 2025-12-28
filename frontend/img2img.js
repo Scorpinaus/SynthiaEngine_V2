@@ -62,6 +62,7 @@ async function generateImg2Img() {
     const strength = Number(document.getElementById("strength").value);
     const num_images = Number(document.getElementById("num_images").value);
     const model = document.getElementById("model_select").value;
+    const clip_skip = Number(document.getElementById("clip_skip").value);
 
     const formData = new FormData();
     formData.append("initial_image", initialFile);
@@ -76,6 +77,7 @@ async function generateImg2Img() {
     formData.append("strength", strength.toString());
     formData.append("num_images", num_images.toString());
     formData.append("model", model);
+    formData.append("clip_skip", clip_skip);
 
     const res = await fetch("http://127.0.0.1:8000/generate-img2img", {
         method: "POST",

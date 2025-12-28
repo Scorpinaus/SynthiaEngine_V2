@@ -167,6 +167,7 @@ def generate_images(
     scheduler: str,
     model: str | None,
     num_images:int,
+    clip_skip: int,
 ):
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
@@ -203,6 +204,7 @@ def generate_images(
             width=width,
             height=height,
             generator=generator,
+            clip_skip = clip_skip,
         ).images[0]
         
         filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
@@ -228,6 +230,7 @@ def generate_images_img2img(
     scheduler: str,
     model: str | None,
     num_images: int,
+    clip_skip: int,
 ):
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
@@ -265,6 +268,7 @@ def generate_images_img2img(
             num_inference_steps=steps,
             guidance_scale=cfg,
             generator=generator,
+            clip_skip=clip_skip
         ).images[0]
 
         filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
@@ -289,7 +293,8 @@ def generate_images_inpaint(
     model: str | None,
     num_images: int,
     strength: float,
-    padding_mask_crop: int
+    padding_mask_crop: int,
+    clip_skip: int
 ):
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
@@ -330,7 +335,8 @@ def generate_images_inpaint(
             guidance_scale=cfg,
             generator=generator,
             strength=strength,
-            padding_mask_crop = padding_mask_crop
+            padding_mask_crop = padding_mask_crop,
+            clip_skip= clip_skip
         ).images[0]
 
         filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
