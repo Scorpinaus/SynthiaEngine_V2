@@ -1,7 +1,7 @@
 import logging
 from io import BytesIO
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from backend.config import DEFAULTS
 from backend.model_registry import MODEL_REGISTRY, ModelRegistryEntry
 from backend.sd15_pipeline import (
+    create_blur_mask,
     generate_images,
     generate_images_img2img,
     generate_images_inpaint,
@@ -164,3 +165,20 @@ async def generate_inpaint(
     return {
         "images": [f"/outputs/{name}" for name in filenames]
     }
+
+
+@app.post("/create-blur-mask")
+async def create_blur_mask_endpoint(
+    mask_image: UploadFile = File(...),
+    blur_factor: int = Form(8),
+):
+    mask_bytes = await mask_image.read()
+    try:
+        mask = Image.open(BytesIO(mask_bytes)).convert("L")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid mask image file.") from exc
+
+    blurred_mask = create_blur_mask(mask, blur_factor)
+    output = BytesIO()
+    blurred_mask.save(output, format="PNG")
+    return Response(content=output.getvalue(), media_type="image/png")
