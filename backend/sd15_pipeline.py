@@ -3,6 +3,7 @@ import logging
 import random
 import time
 from PIL import ImageFilter
+from PIL.PngImagePlugin import PngInfo
 from diffusers import (
     StableDiffusionPipeline,
     StableDiffusionImg2ImgPipeline,
@@ -168,6 +169,15 @@ def _resource_metadata(bound_args):
     }
 
 
+def _build_png_metadata(metadata: dict[str, object]) -> PngInfo:
+    info = PngInfo()
+    for key, value in metadata.items():
+        if value is None:
+            continue
+        info.add_text(key, str(value))
+    return info
+
+
 @resource_logger.annotate(
     "generate",
     metadata_builder=_resource_metadata,
@@ -228,7 +238,21 @@ def generate_images(
         ).images[0]
         
         filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
-        image.save(filename)
+        pnginfo = _build_png_metadata({
+            "mode": "txt2img",
+            "prompt": prompt,
+            "negative_prompt": negative_prompt,
+            "steps": steps,
+            "cfg": cfg,
+            "width": width,
+            "height": height,
+            "seed": current_seed,
+            "scheduler": scheduler,
+            "model": model,
+            "clip_skip": clip_skip,
+            "batch_id": batch_id,
+        })
+        image.save(filename, pnginfo=pnginfo)
         logger.info("Image %s saved to %s", i, filename.name)
         
         filenames.append(filename.name)
@@ -299,7 +323,23 @@ def generate_images_img2img(
         ).images[0]
 
         filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
-        image.save(filename)
+        image_width, image_height = initial_image.size
+        pnginfo = _build_png_metadata({
+            "mode": "img2img",
+            "prompt": prompt,
+            "negative_prompt": negative_prompt,
+            "steps": steps,
+            "cfg": cfg,
+            "width": image_width,
+            "height": image_height,
+            "seed": current_seed,
+            "scheduler": scheduler,
+            "model": model,
+            "strength": strength,
+            "clip_skip": clip_skip,
+            "batch_id": batch_id,
+        })
+        image.save(filename, pnginfo=pnginfo)
         logger.info("Image %s saved to %s", i, filename.name)
 
         filenames.append(filename.name)
@@ -374,7 +414,23 @@ def generate_images_inpaint(
         ).images[0]
 
         filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
-        image.save(filename)
+        pnginfo = _build_png_metadata({
+            "mode": "inpaint",
+            "prompt": prompt,
+            "negative_prompt": negative_prompt,
+            "steps": steps,
+            "cfg": cfg,
+            "width": width,
+            "height": height,
+            "seed": current_seed,
+            "scheduler": scheduler,
+            "model": model,
+            "strength": strength,
+            "padding_mask_crop": padding_mask_crop,
+            "clip_skip": clip_skip,
+            "batch_id": batch_id,
+        })
+        image.save(filename, pnginfo=pnginfo)
         logger.info("Image %s saved to %s", i, filename.name)
 
         filenames.append(filename.name)
