@@ -9,7 +9,11 @@ from pydantic import BaseModel
 
 from backend.config import DEFAULTS
 from backend.model_registry import MODEL_REGISTRY, ModelRegistryEntry
-from backend.sd15_pipeline import generate_images, generate_images_img2img
+from backend.sd15_pipeline import (
+    generate_images,
+    generate_images_img2img,
+    generate_images_inpaint,
+)
 
 app = FastAPI(title="SD 1.5 API")
 logger = logging.getLogger(__name__)
@@ -101,6 +105,52 @@ async def generate_img2img(
         cfg=cfg,
         width=width,
         height=height,
+        seed=seed,
+        scheduler=scheduler,
+        model=model,
+        num_images=num_images,
+    )
+
+    return {
+        "images": [f"/outputs/{name}" for name in filenames]
+    }
+
+
+@app.post("/generate-inpaint")
+async def generate_inpaint(
+    initial_image: UploadFile = File(...),
+    mask_image: UploadFile = File(...),
+    prompt: str = Form(...),
+    negative_prompt: str = Form(DEFAULTS["negative_prompt"]),
+    steps: int = Form(DEFAULTS["steps"]),
+    cfg: float = Form(DEFAULTS["cfg"]),
+    seed: int | None = Form(None),
+    scheduler: str = Form("euler"),
+    num_images: int = Form(1),
+    model: str | None = Form(None),
+):
+    image_bytes = await initial_image.read()
+    mask_bytes = await mask_image.read()
+    try:
+        init_image = Image.open(BytesIO(image_bytes)).convert("RGB")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid initial image file.") from exc
+
+    try:
+        mask = Image.open(BytesIO(mask_bytes)).convert("L")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid mask image file.") from exc
+
+    if mask.size != init_image.size:
+        mask = mask.resize(init_image.size, resample=Image.NEAREST)
+
+    filenames = generate_images_inpaint(
+        initial_image=init_image,
+        mask_image=mask,
+        prompt=prompt,
+        negative_prompt=negative_prompt,
+        steps=steps,
+        cfg=cfg,
         seed=seed,
         scheduler=scheduler,
         model=model,
