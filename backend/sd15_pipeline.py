@@ -15,6 +15,7 @@ from diffusers import (EulerDiscreteScheduler,
 from pathlib import Path
 
 from backend.model_registry import ModelRegistryEntry, get_model_entry
+from backend.resource_logging import resource_logger
 OUTPUT_DIR = Path("outputs")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
@@ -155,6 +156,23 @@ def create_blur_mask(mask_image, blur_factor: int):
     return mask_image.filter(ImageFilter.GaussianBlur(radius=blur_factor))
 
 
+def _make_batch_id() -> str:
+    return f"b{int(time.time())}_{random.randint(1000, 9999)}"
+
+
+def _resource_metadata(bound_args):
+    return {
+        "batch_id": bound_args.arguments.get("batch_id"),
+        "model": bound_args.arguments.get("model"),
+        "num_images": bound_args.arguments.get("num_images"),
+    }
+
+
+@resource_logger.annotate(
+    "generate",
+    metadata_builder=_resource_metadata,
+    batch_id_factory=_make_batch_id,
+)
 @torch.inference_mode()
 def generate_images(
     prompt: str,
@@ -168,13 +186,15 @@ def generate_images(
     model: str | None,
     num_images:int,
     clip_skip: int,
+    batch_id: str | None = None,
 ):
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
         base_seed = torch.randint(0, 2**31, (1,)).item()
     else:
         base_seed = seed
-    batch_id = f"b{int(time.time())}_{random.randint(1000, 9999)}"
+    if batch_id is None:
+        batch_id = _make_batch_id()
     
     pipe = load_pipeline(model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
@@ -216,6 +236,11 @@ def generate_images(
     return filenames
 
 
+@resource_logger.annotate(
+    "generate_img2img",
+    metadata_builder=_resource_metadata,
+    batch_id_factory=_make_batch_id,
+)
 @torch.inference_mode()
 def generate_images_img2img(
     initial_image,
@@ -231,13 +256,15 @@ def generate_images_img2img(
     model: str | None,
     num_images: int,
     clip_skip: int,
+    batch_id: str | None = None,
 ):
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
         base_seed = torch.randint(0, 2**31, (1,)).item()
     else:
         base_seed = seed
-    batch_id = f"b{int(time.time())}_{random.randint(1000, 9999)}"
+    if batch_id is None:
+        batch_id = _make_batch_id()
 
     pipe = load_img2img_pipeline(model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
@@ -280,6 +307,11 @@ def generate_images_img2img(
     return filenames
 
 
+@resource_logger.annotate(
+    "generate_inpaint",
+    metadata_builder=_resource_metadata,
+    batch_id_factory=_make_batch_id,
+)
 @torch.inference_mode()
 def generate_images_inpaint(
     initial_image,
@@ -294,14 +326,16 @@ def generate_images_inpaint(
     num_images: int,
     strength: float,
     padding_mask_crop: int,
-    clip_skip: int
+    clip_skip: int,
+    batch_id: str | None = None,
 ):
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
         base_seed = torch.randint(0, 2**31, (1,)).item()
     else:
         base_seed = seed
-    batch_id = f"b{int(time.time())}_{random.randint(1000, 9999)}"
+    if batch_id is None:
+        batch_id = _make_batch_id()
 
     pipe = load_inpaint_pipeline(model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
