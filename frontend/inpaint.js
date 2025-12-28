@@ -232,6 +232,8 @@ async function generateInpaint() {
     const negative_prompt = document.getElementById("negative_prompt").value;
     const num_images = Number(document.getElementById("num_images").value);
     const model = document.getElementById("model_select").value;
+    const strength = Number(document.getElementById("strength").value);
+    const paddingMaskCrop = Number(document.getElementById("padding_mask_crop").value);
 
     const formData = new FormData();
     formData.append("initial_image", baseImageFile);
@@ -244,6 +246,8 @@ async function generateInpaint() {
     formData.append("seed", seed === null ? "" : seed.toString());
     formData.append("num_images", num_images.toString());
     formData.append("model", model);
+    formData.append("strength", strength);
+    formData.append("padding_mask_crop", paddingMaskCrop);
 
     const res = await fetch("http://127.0.0.1:8000/generate-inpaint", {
         method: "POST",

@@ -331,6 +331,10 @@ body {
     touch-action: none;
 }
 
+#mask_canvas {
+    opacity: 0.4;
+}
+
 .viewer-controls span {
     font-size: 14px;
     color: #6b645c;

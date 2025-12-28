@@ -128,6 +128,8 @@ async def generate_inpaint(
     scheduler: str = Form("euler"),
     num_images: int = Form(1),
     model: str | None = Form(None),
+    strength: float = Form(0.5),
+    padding_mask_crop: int = Form(32)
 ):
     image_bytes = await initial_image.read()
     mask_bytes = await mask_image.read()
@@ -155,6 +157,8 @@ async def generate_inpaint(
         scheduler=scheduler,
         model=model,
         num_images=num_images,
+        strength=strength,
+        padding_mask_crop = padding_mask_crop
     )
 
     return {

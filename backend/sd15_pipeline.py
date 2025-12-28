@@ -40,6 +40,7 @@ def load_pipeline(model_name: str | None):
         return PIPELINE_CACHE[entry.name]
 
     source = _resolve_model_source(entry)
+    logger.info("URL: %s", source)
     if entry.model_type == "diffusers":
         pipe = StableDiffusionPipeline.from_pretrained(
             source,
@@ -68,6 +69,7 @@ def load_img2img_pipeline(model_name: str | None):
         return IMG2IMG_PIPELINE_CACHE[entry.name]
 
     source = _resolve_model_source(entry)
+    logger.info("URL: %s", source)
     if entry.model_type == "diffusers":
         img2img_pipe = StableDiffusionImg2ImgPipeline.from_pretrained(
             source,
@@ -96,6 +98,7 @@ def load_inpaint_pipeline(model_name: str | None):
         return INPAINT_PIPELINE_CACHE[entry.name]
 
     source = _resolve_model_source(entry)
+    logger.info("URL: %s", source)
     if entry.model_type == "diffusers":
         inpaint_pipe = StableDiffusionInpaintPipeline.from_pretrained(
             source,
@@ -277,6 +280,8 @@ def generate_images_inpaint(
     scheduler: str,
     model: str | None,
     num_images: int,
+    strength: float,
+    padding_mask_crop: int
 ):
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
@@ -289,7 +294,7 @@ def generate_images_inpaint(
     pipe.scheduler = create_scheduler(scheduler, pipe)
     width, height = initial_image.size
     logger.info(
-        "Inpaint: model=%s seed=%s scheduler=%s steps=%s cfg=%s size=%sx%s num_images=%s",
+        "Inpaint: model=%s seed=%s scheduler=%s steps=%s cfg=%s size=%sx%s num_images=%s strength=%s, padding_mask_crop=%s",
         model,
         base_seed,
         scheduler,
@@ -298,6 +303,8 @@ def generate_images_inpaint(
         width,
         height,
         num_images,
+        strength,
+        padding_mask_crop
     )
 
     filenames = []
@@ -314,6 +321,8 @@ def generate_images_inpaint(
             num_inference_steps=steps,
             guidance_scale=cfg,
             generator=generator,
+            strength=strength,
+            padding_mask_crop = padding_mask_crop
         ).images[0]
 
         filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
