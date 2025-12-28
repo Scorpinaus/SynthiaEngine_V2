@@ -44,6 +44,9 @@ class GenerateRequest(BaseModel):
     model: str | None = None
     clip_skip: int = 1
 
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
 
 @app.get("/models", response_model=list[ModelRegistryEntry])
 async def list_models():

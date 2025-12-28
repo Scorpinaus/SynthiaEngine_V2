@@ -1,0 +1,21 @@
+Next Steps:
+- Low-hanging fruit
+ 1. Schedulers
+ 2. Introduce a delay period for run_app.bat for backend to properly initialize
+ 3. Add resource logging
+ 4. Upscalers
+
+- Model Architectures:
+ 1. SDXL
+ 2. SD3
+ 3. SDXL Turbo
+ 4. Flux
+ 5. Z-Image
+ 6. AuraFlow
+ 7. 
+
+- Features
+ 1. Embeddings
+ 2. LoRAs and their variants
+ 3. ControlNet, ControlNetXS, ControlNetUnion
+
