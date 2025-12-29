@@ -1,9 +1,9 @@
 Next Steps:
 - Low-hanging fruit
  1. Schedulers
- 2. Introduce a delay period for run_app.bat for backend to properly initialize
- 3. Add resource logging
- 4. Upscalers
+ 2. Add resource logging
+ 3. Upscalers
+ 4. Add image metadata & gallery
 
 - Model Architectures:
  1. SDXL

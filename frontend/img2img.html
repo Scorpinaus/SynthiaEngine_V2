@@ -65,14 +65,28 @@
                         <span>CFG</span>
                         <input id="cfg" type="number" step="0.5" value="7.5" />
                     </label>
+
                     <label class="field">
                         <span>Scheduler</span>
                         <select id="scheduler">
+                            <option value="ddim">DDIM</option>
+                            <option value="dpm++2m">DPM++ 2M</option>
+                            <option value="dpm++2m_karras">DPM++ 2M Karras</option>
+                            <option value="dpm++2m_sde">DPM++ 2M SDE</option>
+                            <option value="dpm++2m_sde_karras">DPM++ 2M SDE Karras</option>
+                            <option value="dpm++_sde">DPM++ SDE</option>
+                            <option value="dpm++_sde_karras">DPM++ SDE Karras</option>
+                            <option value="dpm2">DPM2</option>
+                            <option value="dpm2_karras">DPM2 Karras</option>
+                            <option value="dpm2_a">DPM2 a</option>
+                            <option value="dpm2_a_karras">DPM2 a Karras</option>
                             <option value="euler">Euler</option>
                             <option value="euler_a">Euler a</option>
-                            <option value="dpmpp_2m">DPM++ 2M</option>
-                            <option value="dpmpp_2m_karras">DPM++ 2M Karras</option>
-                            <option value="ddim">DDIM</option>
+                            <option value="heun">Heun</option>
+                            <option value="lms">LMS</option>
+                            <option value="lms_karras">LMS Karras</option>
+                            <option value="deis">DEIS</option>
+                            <option value="unipc">UniPC</option>
                         </select>
                     </label>
                 </div>
