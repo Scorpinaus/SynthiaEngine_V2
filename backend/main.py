@@ -1,5 +1,7 @@
 import logging
+from datetime import datetime, timezone
 from io import BytesIO
+from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,6 +22,8 @@ app = FastAPI(title="SD 1.5 API")
 logger = logging.getLogger(__name__)
 if not logger.handlers:
     logging.basicConfig(level=logging.INFO)
+
+OUTPUT_DIR = Path("outputs")
 
 app.add_middleware(
     CORSMiddleware,
@@ -44,6 +48,22 @@ class GenerateRequest(BaseModel):
     model: str | None = None
     clip_skip: int = 1
 
+
+def _extract_png_metadata(path: Path) -> dict[str, str]:
+    try:
+        with Image.open(path) as image:
+            metadata: dict[str, str] = {}
+            if hasattr(image, "text"):
+                metadata.update(image.text)
+            for key, value in (image.info or {}).items():
+                if isinstance(value, str) and key not in metadata:
+                    metadata[key] = value
+            return metadata
+    except Exception as exc:
+        logger.warning("Failed to read metadata for %s: %s", path.name, exc)
+        return {}
+
+
 @app.get("/health")
 async def health_check():
     return {"status": "ok"}
@@ -51,6 +71,31 @@ async def health_check():
 @app.get("/models", response_model=list[ModelRegistryEntry])
 async def list_models():
     return MODEL_REGISTRY
+
+
+@app.get("/history")
+async def list_history():
+    if not OUTPUT_DIR.exists():
+        return []
+
+    records: list[dict[str, object]] = []
+    for image_path in OUTPUT_DIR.glob("*.png"):
+        stat = image_path.stat()
+        timestamp = stat.st_mtime
+        created_at = datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat()
+        metadata = _extract_png_metadata(image_path)
+        records.append(
+            {
+                "filename": image_path.name,
+                "url": f"/outputs/{image_path.name}",
+                "timestamp": timestamp,
+                "created_at": created_at,
+                "metadata": metadata,
+            }
+        )
+
+    records.sort(key=lambda item: item.get("timestamp", 0), reverse=True)
+    return records
 
 
 @app.post("/generate")
