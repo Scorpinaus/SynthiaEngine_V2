@@ -124,6 +124,12 @@ button {
     font-weight: 600;
 }
 
+.nav-link.is-active {
+    background: #3a5a40;
+    color: #f7f4ee;
+    border-color: #3a5a40;
+}
+
 .secondary:disabled {
     opacity: 0.5;
     cursor: not-allowed;
@@ -137,6 +143,131 @@ button {
     min-height: 420px;
     display: grid;
     gap: 16px;
+}
+
+.history-panel {
+    background: #fdfbf7;
+    border: 1px solid #e1dbd2;
+    border-radius: 18px;
+    padding: 20px;
+    display: grid;
+    gap: 18px;
+}
+
+.history-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.history-header h2 {
+    margin: 0 0 6px 0;
+    font-size: 22px;
+}
+
+.history-header p {
+    margin: 0;
+    color: #6b645c;
+    font-size: 14px;
+}
+
+.history-state {
+    font-size: 14px;
+    color: #6b645c;
+}
+
+.history-grid {
+    display: grid;
+    gap: 18px;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.history-card {
+    background: #ffffff;
+    border-radius: 16px;
+    border: 1px solid #e3ddd4;
+    box-shadow: 0 12px 24px rgba(40, 36, 32, 0.08);
+    display: grid;
+    gap: 12px;
+    padding: 12px;
+}
+
+.history-image {
+    background: #f4efe7;
+    border-radius: 14px;
+    border: 1px solid #e3ddd4;
+    padding: 8px;
+    display: grid;
+    place-items: center;
+    min-height: 180px;
+}
+
+.history-image img {
+    width: 100%;
+    height: auto;
+    border-radius: 10px;
+    object-fit: contain;
+}
+
+.history-meta {
+    display: grid;
+    gap: 10px;
+}
+
+.history-meta-title {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.history-meta-time {
+    font-weight: 400;
+    color: #6b645c;
+    font-size: 12px;
+}
+
+.history-details {
+    background: #f7f3ed;
+    border-radius: 12px;
+    border: 1px solid #e3ddd4;
+    padding: 8px 10px;
+}
+
+.history-details summary {
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.history-meta-list {
+    margin: 10px 0 0 0;
+    display: grid;
+    gap: 8px;
+    font-size: 13px;
+}
+
+.history-meta-row {
+    display: grid;
+    gap: 4px;
+}
+
+.history-meta-row dt {
+    font-weight: 600;
+    color: #6b645c;
+}
+
+.history-meta-row dd {
+    margin: 0;
+    word-break: break-word;
+}
+
+.history-empty-meta {
+    margin: 10px 0 0 0;
+    color: #6b645c;
+    font-size: 13px;
 }
 
 .gallery-header h2 {

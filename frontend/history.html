@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Synthia Engine History</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+    <div class="app">
+        <header class="header">
+            <h1>Synthia Engine</h1>
+            <nav class="header-nav">
+                <a class="secondary nav-link" href="index.html">Text2Img</a>
+                <a class="secondary nav-link" href="img2img.html">Img2Img</a>
+                <a class="secondary nav-link" href="inpaint.html">Inpaint</a>
+                <a class="secondary nav-link is-active" href="history.html">History</a>
+            </nav>
+        </header>
+
+        <section class="history-panel">
+            <div class="history-header">
+                <div>
+                    <h2>History &amp; Gallery</h2>
+                    <p>Browse the most recent renders and inspect their prompt metadata.</p>
+                </div>
+                <button id="history-refresh" class="secondary" type="button">Refresh</button>
+            </div>
+            <div id="history-state" class="history-state">Loading render history…</div>
+            <div id="history-grid" class="history-grid"></div>
+        </section>
+    </div>
+
+    <script src="history.js?v=1"></script>
+</body>
+
+</html>
