@@ -59,7 +59,7 @@ async function loadModels() {
     const select = document.getElementById("model_select");
     select.innerHTML = "";
     try {
-        const res = await fetch("http://127.0.0.1:8000/models?family=sd15");
+        const res = await fetch("http://127.0.0.1:8000/models?family=sdxl");
         const models = await res.json();
 
         if (!Array.isArray(models) || models.length === 0) {
@@ -79,8 +79,8 @@ async function loadModels() {
         });
     } catch (error) {
         const fallback = document.createElement("option");
-        fallback.value = "stable-diffusion-v1-5";
-        fallback.textContent = "stable-diffusion-v1-5 (sd15, diffusers)";
+        fallback.value = "stable-diffusion-xl-base-1.0";
+        fallback.textContent = "stable-diffusion-xl-base-1.0 (sdxl, diffusers)";
         fallback.selected = true;
         select.appendChild(fallback);
         console.warn("Failed to load models:", error);
@@ -112,7 +112,7 @@ function resizeCanvasDisplay(image) {
     canvasStack.style.maxWidth = "100%";
     canvasScroll.style.width = `${containerWidth}px`;
     canvasScroll.style.height = `${containerHeight}px`;
-    canvasScroll.style.transform = "none";    
+    canvasScroll.style.transform = "none";
     baseCanvas.style.width = `${displayWidth}px`;
     baseCanvas.style.height = `${displayHeight}px`;
     maskCanvas.style.width = `${displayWidth}px`;
@@ -329,7 +329,7 @@ async function generateBlurMask() {
     }
 }
 
-async function generateInpaint() {
+async function generateSdxlInpaint() {
     if (!baseImageFile) {
         alert("Please upload an initial image.");
         return;
@@ -342,8 +342,7 @@ async function generateInpaint() {
 
     const prompt = document.getElementById("prompt").value;
     const steps = Number(document.getElementById("steps").value);
-    const cfg = Number(document.getElementById("cfg").value);
-    const scheduler = document.getElementById("scheduler").value;
+    const guidanceScale = Number(document.getElementById("guidance_scale").value);
     const seedValue = document.getElementById("seed").value;
     const seedNumber = seedValue === "" ? null : Number(seedValue);
     const seed = Number.isFinite(seedNumber) ? seedNumber : null;
@@ -360,8 +359,7 @@ async function generateInpaint() {
     formData.append("prompt", prompt);
     formData.append("negative_prompt", negative_prompt);
     formData.append("steps", steps.toString());
-    formData.append("cfg", cfg.toString());
-    formData.append("scheduler", scheduler);
+    formData.append("guidance_scale", guidanceScale.toString());
     formData.append("seed", seed === null ? "" : seed.toString());
     formData.append("num_images", num_images.toString());
     formData.append("model", model);
@@ -369,7 +367,7 @@ async function generateInpaint() {
     formData.append("padding_mask_crop", paddingMaskCrop);
     formData.append("clip_skip", clip_skip);
 
-    const res = await fetch("http://127.0.0.1:8000/generate-inpaint", {
+    const res = await fetch("http://127.0.0.1:8000/api/sdxl/inpaint", {
         method: "POST",
         body: formData,
     });
@@ -378,7 +376,7 @@ async function generateInpaint() {
     gallery.setImages(Array.isArray(data.images) ? data.images : []);
 }
 
-window.generateInpaint = generateInpaint;
+window.generateSdxlInpaint = generateSdxlInpaint;
 window.generateBlurMask = generateBlurMask;
 blurToggle.addEventListener("change", updateMaskPreview);
 updateBlurControls();

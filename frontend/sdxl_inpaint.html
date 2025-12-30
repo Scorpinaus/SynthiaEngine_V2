@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8" />
-    <title>SD 1.5 Inpaint</title>
+    <title>SDXL Inpaint</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -73,6 +73,7 @@
                     <span>Padding Mask Crop</span>
                     <input id="padding_mask_crop" type="number" value="32" min="0" max="500" step="1" />
                 </label>
+
                 <div class="field-row">
                     <label class="field">
                         <span>Seed</span>
@@ -80,40 +81,14 @@
                     </label>
                     <label class="field">
                         <span>Steps</span>
-                        <input id="steps" type="number" value="20" step="1" />
+                        <input id="steps" type="number" value="30" step="1" />
                     </label>
                 </div>
 
-                <div class="field-row">
-                    <label class="field">
-                        <span>CFG</span>
-                        <input id="cfg" type="number" step="0.5" value="7.5" />
-                    </label>
-
-                    <label class="field">
-                        <span>Scheduler</span>
-                        <select id="scheduler">
-                            <option value="ddim">DDIM</option>
-                            <option value="dpm++2m">DPM++ 2M</option>
-                            <option value="dpm++2m_karras">DPM++ 2M Karras</option>
-                            <option value="dpm++2m_sde">DPM++ 2M SDE</option>
-                            <option value="dpm++2m_sde_karras">DPM++ 2M SDE Karras</option>
-                            <option value="dpm++_sde">DPM++ SDE</option>
-                            <option value="dpm++_sde_karras">DPM++ SDE Karras</option>
-                            <option value="dpm2">DPM2</option>
-                            <option value="dpm2_karras">DPM2 Karras</option>
-                            <option value="dpm2_a">DPM2 a</option>
-                            <option value="dpm2_a_karras">DPM2 a Karras</option>
-                            <option value="euler">Euler</option>
-                            <option value="euler_a">Euler a</option>
-                            <option value="heun">Heun</option>
-                            <option value="lms">LMS</option>
-                            <option value="lms_karras">LMS Karras</option>
-                            <option value="deis">DEIS</option>
-                            <option value="unipc">UniPC</option>
-                        </select>
-                    </label>
-                </div>
+                <label class="field">
+                    <span>Guidance Scale</span>
+                    <input id="guidance_scale" type="number" step="0.5" value="7.5" />
+                </label>
 
                 <label class="field">
                     <span>Strength</span>
@@ -130,12 +105,12 @@
                     <input id="num_images" type="number" value="1" min="1" max="8" />
                 </label>
 
-                <button class="primary" onclick="generateInpaint()">Generate</button>
+                <button class="primary" onclick="generateSdxlInpaint()">Generate</button>
             </section>
 
             <section class="gallery-panel">
                 <div class="gallery-header">
-                    <h2>Gallery</h2>
+                    <h2>SDXL Inpaint Gallery</h2>
                     <p>Outputs appear here as they render.</p>
                 </div>
                 <div class="viewer">
@@ -193,7 +168,7 @@
 
     <script src="nav_bar.js?v=1"></script>
     <script src="gallery.js?v=1"></script>
-    <script src="inpaint.js?v=1"></script>
+    <script src="sdxl_inpaint.js?v=1"></script>
 </body>
 
 </html>

@@ -10,7 +10,7 @@ async function loadModels() {
     const select = document.getElementById("model_select");
     select.innerHTML = "";
     try {
-        const res = await fetch("http://127.0.0.1:8000/models?family=sd15");
+        const res = await fetch("http://127.0.0.1:8000/models?family=sdxl");
         const models = await res.json();
 
         if (!Array.isArray(models) || models.length === 0) {
@@ -30,8 +30,8 @@ async function loadModels() {
         });
     } catch (error) {
         const fallback = document.createElement("option");
-        fallback.value = "stable-diffusion-v1-5";
-        fallback.textContent = "stable-diffusion-v1-5 (sd15, diffusers)";
+        fallback.value = "stable-diffusion-xl-base-1.0";
+        fallback.textContent = "stable-diffusion-xl-base-1.0 (sdxl, diffusers)";
         fallback.selected = true;
         select.appendChild(fallback);
         console.warn("Failed to load models:", error);
@@ -43,8 +43,7 @@ loadModels();
 async function generate() {
     const prompt = document.getElementById("prompt").value;
     const steps = Number(document.getElementById("steps").value);
-    const cfg = Number(document.getElementById("cfg").value);
-    const scheduler = document.getElementById("scheduler").value;
+    const guidance_scale = Number(document.getElementById("cfg").value);
     const seedValue = document.getElementById("seed").value;
     const seedNumber = seedValue === "" ? null : Number(seedValue);
     const seed = Number.isFinite(seedNumber) ? seedNumber : null;
@@ -52,25 +51,24 @@ async function generate() {
     const width = Number(document.getElementById("width").value);
     const height = Number(document.getElementById("height").value);
     const model = document.getElementById("model_select").value;
-    const clip_skip = document.getElementById("clip_skip").value;
     const num_images = Number(document.getElementById("num_images").value);
+    const clip_skip = Number(document.getElementById("clip_skip").value);
 
     const payload = {
         prompt,
         negative_prompt,
         steps,
-        cfg,
-        scheduler,
+        guidance_scale,
         seed,
         width,
         height,
         model,
         num_images,
-        clip_skip
+        clip_skip,
     };
     console.log("Generate payload", payload);
 
-    const res = await fetch("http://127.0.0.1:8000/generate", {
+    const res = await fetch("http://127.0.0.1:8000/api/sdxl/text2img", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),

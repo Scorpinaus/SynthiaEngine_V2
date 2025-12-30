@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
@@ -17,6 +18,12 @@ from backend.sd15_pipeline import (
     generate_images_img2img,
     generate_images_inpaint,
 )
+from backend.sdxl_pipeline import (
+    run_sdxl_img2img,
+    run_sdxl_inpaint,
+    run_sdxl_text2img,
+)
+from backend.z_image_pipeline import run_z_image_text2img
 
 app = FastAPI(title="SD 1.5 API")
 logger = logging.getLogger(__name__)
@@ -49,6 +56,31 @@ class GenerateRequest(BaseModel):
     clip_skip: int = 1
 
 
+class SdxlGenerateRequest(BaseModel):
+    prompt: str
+    negative_prompt: str | None = DEFAULTS["negative_prompt"]
+    steps: int = DEFAULTS["steps"]
+    guidance_scale: float = DEFAULTS["cfg"]
+    width: int = DEFAULTS["width"]
+    height: int = DEFAULTS["height"]
+    seed: int | None = None
+    num_images: int = 1
+    model: str | None = None
+    clip_skip: int = 1
+
+
+class ZImageGenerateRequest(BaseModel):
+    prompt: str
+    negative_prompt: str | None = DEFAULTS["negative_prompt"]
+    steps: int = DEFAULTS["steps"]
+    guidance_scale: float = DEFAULTS["cfg"]
+    width: int = 1024
+    height: int = 1024
+    seed: int | None = None
+    num_images: int = 1
+    model: str | None = None
+
+
 def _extract_png_metadata(path: Path) -> dict[str, str]:
     try:
         with Image.open(path) as image:
@@ -69,8 +101,22 @@ async def health_check():
     return {"status": "ok"}
 
 @app.get("/models", response_model=list[ModelRegistryEntry])
-async def list_models():
-    return MODEL_REGISTRY
+async def list_models(family: str | None = None):
+    if not family:
+        return MODEL_REGISTRY
+
+    family_value = family.strip().lower()
+    if not family_value:
+        return MODEL_REGISTRY
+
+    if family_value in {"sd15", "sd1.5", "sd 1.5", "sd_1.5"}:
+        pattern = re.compile(r"sd[\s_-]*1\.?5|sd15", re.IGNORECASE)
+    elif family_value == "sdxl":
+        pattern = re.compile(r"sdxl", re.IGNORECASE)
+    else:
+        pattern = re.compile(re.escape(family_value), re.IGNORECASE)
+
+    return [entry for entry in MODEL_REGISTRY if pattern.search(entry.family)]
 
 
 @app.get("/history")
@@ -119,6 +165,113 @@ async def generate(req: GenerateRequest, request: Request):
     return {
         "images": [f"/outputs/{name}" for name in filenames]
     }
+
+
+@app.post("/api/sdxl/text2img")
+async def generate_sdxl_text2img(req: SdxlGenerateRequest, request: Request):
+    logger.info("SDXL request JSON: %s", await request.json())
+    logger.info("Parsed SDXL seed: %s", req.seed)
+
+    return run_sdxl_text2img(req.model_dump())
+
+
+@app.post("/api/z-image/text2img")
+async def generate_z_image_text2img(req: ZImageGenerateRequest, request: Request):
+    logger.info("Z-Image request JSON: %s", await request.json())
+    logger.info("Parsed Z-Image seed: %s", req.seed)
+
+    return run_z_image_text2img(req.model_dump())
+
+
+@app.post("/api/sdxl/img2img")
+async def generate_sdxl_img2img(
+    initial_image: UploadFile = File(...),
+    strength: float = Form(0.75),
+    prompt: str = Form(...),
+    negative_prompt: str = Form(DEFAULTS["negative_prompt"]),
+    steps: int = Form(DEFAULTS["steps"]),
+    guidance_scale: float = Form(DEFAULTS["cfg"]),
+    width: int = Form(1024),
+    height: int = Form(1024),
+    seed: int | None = Form(None),
+    num_images: int = Form(1),
+    model: str | None = Form(None),
+    clip_skip: int = Form(1),
+):
+    if not 0 <= strength <= 1:
+        raise HTTPException(status_code=400, detail="Strength must be between 0 and 1.")
+
+    image_bytes = await initial_image.read()
+    try:
+        init_image = Image.open(BytesIO(image_bytes)).convert("RGB")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid image file.") from exc
+
+    init_image = init_image.resize((width, height))
+
+    return run_sdxl_img2img(
+        initial_image=init_image,
+        strength=strength,
+        prompt=prompt,
+        negative_prompt=negative_prompt,
+        steps=steps,
+        guidance_scale=guidance_scale,
+        width=width,
+        height=height,
+        seed=seed,
+        model=model,
+        num_images=num_images,
+        clip_skip=clip_skip,
+    )
+
+
+@app.post("/api/sdxl/inpaint")
+async def generate_sdxl_inpaint(
+    initial_image: UploadFile = File(...),
+    mask_image: UploadFile = File(...),
+    strength: float = Form(0.5),
+    prompt: str = Form(...),
+    negative_prompt: str = Form(DEFAULTS["negative_prompt"]),
+    steps: int = Form(DEFAULTS["steps"]),
+    guidance_scale: float = Form(DEFAULTS["cfg"]),
+    seed: int | None = Form(None),
+    num_images: int = Form(1),
+    model: str | None = Form(None),
+    padding_mask_crop: int = Form(32),
+    clip_skip: int = Form(1),
+):
+    if not 0 <= strength <= 1:
+        raise HTTPException(status_code=400, detail="Strength must be between 0 and 1.")
+
+    image_bytes = await initial_image.read()
+    mask_bytes = await mask_image.read()
+    try:
+        init_image = Image.open(BytesIO(image_bytes)).convert("RGB")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid initial image file.") from exc
+
+    try:
+        mask = Image.open(BytesIO(mask_bytes)).convert("L")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid mask image file.") from exc
+
+    if mask.size != init_image.size:
+        mask = mask.resize(init_image.size, resample=Image.NEAREST)
+
+    return run_sdxl_inpaint(
+        initial_image=init_image,
+        mask_image=mask,
+        strength=strength,
+        prompt=prompt,
+        negative_prompt=negative_prompt,
+        steps=steps,
+        guidance_scale=guidance_scale,
+        seed=seed,
+        model=model,
+        num_images=num_images,
+        padding_mask_crop=padding_mask_crop,
+        clip_skip=clip_skip,
+    )
 
 
 @app.post("/generate-img2img")
