@@ -17,6 +17,7 @@ from backend.sd15_pipeline import (
     generate_images_img2img,
     generate_images_inpaint,
 )
+from backend.sdxl_pipeline import run_sdxl_text2img
 
 app = FastAPI(title="SD 1.5 API")
 logger = logging.getLogger(__name__)
@@ -44,6 +45,19 @@ class GenerateRequest(BaseModel):
     height: int = DEFAULTS["height"]
     seed: int | None = None
     scheduler: str = "euler"
+    num_images: int = 1
+    model: str | None = None
+    clip_skip: int = 1
+
+
+class SdxlGenerateRequest(BaseModel):
+    prompt: str
+    negative_prompt: str | None = DEFAULTS["negative_prompt"]
+    steps: int = DEFAULTS["steps"]
+    guidance_scale: float = DEFAULTS["cfg"]
+    width: int = DEFAULTS["width"]
+    height: int = DEFAULTS["height"]
+    seed: int | None = None
     num_images: int = 1
     model: str | None = None
     clip_skip: int = 1
@@ -119,6 +133,14 @@ async def generate(req: GenerateRequest, request: Request):
     return {
         "images": [f"/outputs/{name}" for name in filenames]
     }
+
+
+@app.post("/api/sdxl/text2img")
+async def generate_sdxl_text2img(req: SdxlGenerateRequest, request: Request):
+    logger.info("SDXL request JSON: %s", await request.json())
+    logger.info("Parsed SDXL seed: %s", req.seed)
+
+    return run_sdxl_text2img(req.model_dump())
 
 
 @app.post("/generate-img2img")
