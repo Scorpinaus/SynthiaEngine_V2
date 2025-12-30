@@ -23,6 +23,7 @@ from backend.sdxl_pipeline import (
     run_sdxl_inpaint,
     run_sdxl_text2img,
 )
+from backend.z_image_pipeline import run_z_image_text2img
 
 app = FastAPI(title="SD 1.5 API")
 logger = logging.getLogger(__name__)
@@ -66,6 +67,18 @@ class SdxlGenerateRequest(BaseModel):
     num_images: int = 1
     model: str | None = None
     clip_skip: int = 1
+
+
+class ZImageGenerateRequest(BaseModel):
+    prompt: str
+    negative_prompt: str | None = DEFAULTS["negative_prompt"]
+    steps: int = DEFAULTS["steps"]
+    guidance_scale: float = DEFAULTS["cfg"]
+    width: int = 1024
+    height: int = 1024
+    seed: int | None = None
+    num_images: int = 1
+    model: str | None = None
 
 
 def _extract_png_metadata(path: Path) -> dict[str, str]:
@@ -160,6 +173,14 @@ async def generate_sdxl_text2img(req: SdxlGenerateRequest, request: Request):
     logger.info("Parsed SDXL seed: %s", req.seed)
 
     return run_sdxl_text2img(req.model_dump())
+
+
+@app.post("/api/z-image/text2img")
+async def generate_z_image_text2img(req: ZImageGenerateRequest, request: Request):
+    logger.info("Z-Image request JSON: %s", await request.json())
+    logger.info("Parsed Z-Image seed: %s", req.seed)
+
+    return run_z_image_text2img(req.model_dump())
 
 
 @app.post("/api/sdxl/img2img")
