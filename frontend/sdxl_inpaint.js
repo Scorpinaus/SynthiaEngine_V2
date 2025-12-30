@@ -59,7 +59,7 @@ async function loadModels() {
     const select = document.getElementById("model_select");
     select.innerHTML = "";
     try {
-        const res = await fetch("http://127.0.0.1:8000/models");
+        const res = await fetch("http://127.0.0.1:8000/models?family=sdxl");
         const models = await res.json();
 
         if (!Array.isArray(models) || models.length === 0) {

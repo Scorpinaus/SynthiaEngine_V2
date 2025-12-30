@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
@@ -87,8 +88,22 @@ async def health_check():
     return {"status": "ok"}
 
 @app.get("/models", response_model=list[ModelRegistryEntry])
-async def list_models():
-    return MODEL_REGISTRY
+async def list_models(family: str | None = None):
+    if not family:
+        return MODEL_REGISTRY
+
+    family_value = family.strip().lower()
+    if not family_value:
+        return MODEL_REGISTRY
+
+    if family_value in {"sd15", "sd1.5", "sd 1.5", "sd_1.5"}:
+        pattern = re.compile(r"sd[\s_-]*1\.?5|sd15", re.IGNORECASE)
+    elif family_value == "sdxl":
+        pattern = re.compile(r"sdxl", re.IGNORECASE)
+    else:
+        pattern = re.compile(re.escape(family_value), re.IGNORECASE)
+
+    return [entry for entry in MODEL_REGISTRY if pattern.search(entry.family)]
 
 
 @app.get("/history")
