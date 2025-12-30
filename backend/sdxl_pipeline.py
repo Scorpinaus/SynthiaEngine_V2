@@ -159,13 +159,7 @@ def run_sdxl_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
     pipe = load_sdxl_pipeline(model)
     logger.info(
         "SDXL Generate: model=%s seed=%s steps=%s guidance_scale=%s size=%sx%s num_images=%s",
-        model,
-        base_seed,
-        steps,
-        guidance_scale,
-        width,
-        height,
-        num_images,
+        model, base_seed, steps, guidance_scale, width, height, num_images,
     )
 
     filenames: list[str] = []
@@ -233,14 +227,7 @@ def run_sdxl_img2img(
     pipe = load_sdxl_img2img_pipeline(model)
     logger.info(
         "SDXL Img2Img: model=%s seed=%s steps=%s guidance_scale=%s size=%sx%s strength=%s num_images=%s",
-        model,
-        base_seed,
-        steps,
-        guidance_scale,
-        width,
-        height,
-        strength,
-        num_images,
+        model, base_seed, steps, guidance_scale, width, height, strength, num_images,
     )
 
     filenames: list[str] = []
@@ -311,15 +298,7 @@ def run_sdxl_inpaint(
     width, height = initial_image.size
     logger.info(
         "SDXL Inpaint: model=%s seed=%s steps=%s guidance_scale=%s size=%sx%s strength=%s num_images=%s padding_mask_crop=%s",
-        model,
-        base_seed,
-        steps,
-        guidance_scale,
-        width,
-        height,
-        strength,
-        num_images,
-        padding_mask_crop,
+        model, base_seed, steps, guidance_scale, width, height, strength, num_images, padding_mask_crop,
     )
 
     filenames: list[str] = []

@@ -6,6 +6,9 @@ cd /d "%ROOT%"
 
 set VENV_PY=%ROOT%\.venv\Scripts\python.exe
 set PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+REM --- Hugging Face cache + disable symlinks (fixes WinError 1314) ---
+set HF_HUB_DISABLE_SYMLINKS=1
+
 start "Synthia Backend" cmd /k ""%VENV_PY%" -m uvicorn backend.main:app --workers 1 --host 0.0.0.0 --port 8000"
 
 rem Wait 20 seconds
