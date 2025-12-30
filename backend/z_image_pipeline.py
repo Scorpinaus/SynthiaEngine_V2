@@ -3,12 +3,15 @@ import random
 import time
 from pathlib import Path
 
-import torch
+import torch, gc
 from PIL.PngImagePlugin import PngInfo
 from diffusers import ZImagePipeline
 
+import threading
+
 from backend.model_registry import ModelRegistryEntry, get_model_entry
 
+GEN_LOCK = threading.Lock()
 OUTPUT_DIR = Path("outputs")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
@@ -42,8 +45,9 @@ def _build_png_metadata(metadata: dict[str, object]) -> PngInfo:
 def load_z_image_pipeline(model_name: str | None) -> ZImagePipeline:
     entry = get_model_entry(model_name)
 
-    if entry.name in PIPELINE_CACHE:
-        return PIPELINE_CACHE[entry.name]
+    pipe = PIPELINE_CACHE.get(entry.name)
+    if pipe is not None:
+        return pipe
 
     source = _resolve_model_source(entry)
     logger.info("Z-Image model source: %s", source)
@@ -51,30 +55,43 @@ def load_z_image_pipeline(model_name: str | None) -> ZImagePipeline:
     if entry.model_type == "diffusers":
         pipe = ZImagePipeline.from_pretrained(
             source,
-            torch_dtype=torch.float16,
-            safety_checker=None,
+            dtype=torch.bfloat16,
+            low_cpu_mem_usage=True,
         )
     elif entry.model_type == "single-file":
         pipe = ZImagePipeline.from_single_file(
             source,
-            torch_dtype=torch.float16,
-            safety_checker=None,
+            dtype=torch.bfloat16,
+            low_cpu_mem_usage=True,
         )
     else:
         raise ValueError(f"Unsupported model type: {entry.model_type}")
+    
+    dtypes = set(p.dtype for p in pipe.transformer.parameters())
+    logger.info("Transformer dtypes:", dtypes)
+    
+    logger.info("Allocated GB:", torch.cuda.memory_allocated()/1024**3)
+    logger.info("Reserved GB:", torch.cuda.memory_reserved()/1024**3)
+    
+    pipe.enable_sequential_cpu_offload()
 
-    pipe.to("cuda")
+    # Cleanup any transient allocations after load
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    
     PIPELINE_CACHE[entry.name] = pipe
-
     return pipe
 
 
 @torch.inference_mode()
 def run_z_image_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
     prompt = str(payload.get("prompt") or "")
-    negative_prompt = str(payload.get("negative_prompt") or "")
-    steps = int(payload.get("steps", 20))
-    guidance_scale = float(payload.get("guidance_scale", 7.5))
+    
+    negative_prompt = str(payload.get("negative_prompt") or "").strip()
+    
+    steps = int(payload.get("steps", 8))
+    guidance_scale = float(payload.get("guidance_scale", 0.0))
     width = int(payload.get("width", 1024))
     height = int(payload.get("height", 1024))
     seed = payload.get("seed")
@@ -103,37 +120,53 @@ def run_z_image_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
 
     filenames: list[str] = []
 
-    for i in range(num_images):
-        current_seed = base_seed + i
-        generator = torch.Generator(device="cuda").manual_seed(current_seed)
+    with GEN_LOCK:
+        for i in range(num_images):
+            current_seed = base_seed + i
+            
+            generator = torch.Generator(device="cpu").manual_seed(current_seed)
+            
+            print("Allocated GB:", torch.cuda.memory_allocated()/1024**3)
+            print("Reserved GB:", torch.cuda.memory_reserved()/1024**3)
+            
+            # ✅ autocast reduces activation memory
+            with torch.autocast("cuda", dtype=torch.bfloat16):
+                call_kwargs = dict(
+                    prompt=prompt,
+                    num_inference_steps=steps,
+                    guidance_scale=guidance_scale,
+                    width=width,
+                    height=height,
+                    generator=generator,
+                )
+                # Only include negative_prompt if user actually provided one
+                if negative_prompt:
+                    call_kwargs["negative_prompt"] = negative_prompt
 
-        image = pipe(
-            prompt=prompt,
-            negative_prompt=negative_prompt,
-            num_inference_steps=steps,
-            guidance_scale=guidance_scale,
-            width=width,
-            height=height,
-            generator=generator,
-        ).images[0]
+                image = pipe(**call_kwargs).images[0]
 
-        filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
-        pnginfo = _build_png_metadata({
-            "mode": "txt2img",
-            "pipeline": "z-image",
-            "prompt": prompt,
-            "negative_prompt": negative_prompt,
-            "steps": steps,
-            "guidance_scale": guidance_scale,
-            "width": width,
-            "height": height,
-            "seed": current_seed,
-            "model": model,
-            "batch_id": batch_id,
-        })
-        image.save(filename, pnginfo=pnginfo)
-        logger.info("Image %s saved to %s", i, filename.name)
+            filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
+            pnginfo = _build_png_metadata({
+                "mode": "txt2img",
+                "pipeline": "z-image",
+                "prompt": prompt,
+                "negative_prompt": negative_prompt,
+                "steps": steps,
+                "guidance_scale": guidance_scale,
+                "width": width,
+                "height": height,
+                "seed": current_seed,
+                "model": model,
+                "batch_id": batch_id,
+            })
+            image.save(filename, pnginfo=pnginfo)
+            logger.info("Image %s saved to %s", i, filename.name)
 
-        filenames.append(filename.name)
+            filenames.append(filename.name)
+            
+            # ✅ release per-image intermediates
+            del image
+            gc.collect()
+            torch.cuda.empty_cache()
 
     return {"images": [f"/outputs/{name}" for name in filenames]}

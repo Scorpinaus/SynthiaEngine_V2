@@ -113,6 +113,8 @@ async def list_models(family: str | None = None):
         pattern = re.compile(r"sd[\s_-]*1\.?5|sd15", re.IGNORECASE)
     elif family_value == "sdxl":
         pattern = re.compile(r"sdxl", re.IGNORECASE)
+    elif family_value == "z-image-turbo":
+        pattern = re.compile(r"z-image-turbo", re.IGNORECASE)
     else:
         pattern = re.compile(re.escape(family_value), re.IGNORECASE)
 
