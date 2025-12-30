@@ -17,7 +17,7 @@ from backend.sd15_pipeline import (
     generate_images_img2img,
     generate_images_inpaint,
 )
-from backend.sdxl_pipeline import run_sdxl_text2img
+from backend.sdxl_pipeline import run_sdxl_img2img, run_sdxl_text2img
 
 app = FastAPI(title="SD 1.5 API")
 logger = logging.getLogger(__name__)
@@ -141,6 +141,48 @@ async def generate_sdxl_text2img(req: SdxlGenerateRequest, request: Request):
     logger.info("Parsed SDXL seed: %s", req.seed)
 
     return run_sdxl_text2img(req.model_dump())
+
+
+@app.post("/api/sdxl/img2img")
+async def generate_sdxl_img2img(
+    initial_image: UploadFile = File(...),
+    strength: float = Form(0.75),
+    prompt: str = Form(...),
+    negative_prompt: str = Form(DEFAULTS["negative_prompt"]),
+    steps: int = Form(DEFAULTS["steps"]),
+    guidance_scale: float = Form(DEFAULTS["cfg"]),
+    width: int = Form(1024),
+    height: int = Form(1024),
+    seed: int | None = Form(None),
+    num_images: int = Form(1),
+    model: str | None = Form(None),
+    clip_skip: int = Form(1),
+):
+    if not 0 <= strength <= 1:
+        raise HTTPException(status_code=400, detail="Strength must be between 0 and 1.")
+
+    image_bytes = await initial_image.read()
+    try:
+        init_image = Image.open(BytesIO(image_bytes)).convert("RGB")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid image file.") from exc
+
+    init_image = init_image.resize((width, height))
+
+    return run_sdxl_img2img(
+        initial_image=init_image,
+        strength=strength,
+        prompt=prompt,
+        negative_prompt=negative_prompt,
+        steps=steps,
+        guidance_scale=guidance_scale,
+        width=width,
+        height=height,
+        seed=seed,
+        model=model,
+        num_images=num_images,
+        clip_skip=clip_skip,
+    )
 
 
 @app.post("/generate-img2img")

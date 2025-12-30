@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8" />
-    <title>SDXL Text-to-Image</title>
+    <title>SDXL Image-to-Image</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -15,10 +15,9 @@
         <header class="header">
             <h1>Synthia Engine</h1>
             <nav class="header-nav">
-                <a class="secondary nav-link" href="index.html">SD 1.5</a>
-                <a class="secondary nav-link" href="img2img.html">Img2Img</a>
-                <a class="secondary nav-link" href="inpaint.html">Inpaint</a>
+                <a class="secondary nav-link" href="sdxl.html">SDXL Text2Img</a>
                 <a class="secondary nav-link" href="sdxl_img2img.html">SDXL Img2Img</a>
+                <a class="secondary nav-link" href="index.html">SD 1.5</a>
                 <a class="secondary nav-link" href="history.html">History</a>
             </nav>
         </header>
@@ -40,6 +39,16 @@
                 <label class="field">
                     <span>Negative Prompt</span>
                     <textarea id="negative_prompt" class="textarea-small" placeholder="Optional negative prompt..."></textarea>
+                </label>
+
+                <label class="field">
+                    <span>Initial Image</span>
+                    <input id="initial_image" type="file" accept="image/*" />
+                </label>
+
+                <label class="field">
+                    <span>Strength</span>
+                    <input id="strength" type="number" value="0.7" step="0.05" min="0" max="1" />
                 </label>
 
                 <div class="field-row">
@@ -70,21 +79,21 @@
                 </div>
 
                 <label class="field">
-                    <span>Images</span>
-                    <input id="num_images" type="number" value="1" min="1" max="8" />
-                </label>
-
-                <label class="field">
                     <span>Clip Skip</span>
                     <input id="clip_skip" type="number" value="1" min="0" max="8" />
                 </label>
 
-                <button class="primary" onclick="generate()">Generate</button>
+                <label class="field">
+                    <span>Images</span>
+                    <input id="num_images" type="number" value="1" min="1" max="8" />
+                </label>
+
+                <button class="primary" onclick="generateSdxlImg2Img()">Generate</button>
             </section>
 
             <section class="gallery-panel">
                 <div class="gallery-header">
-                    <h2>SDXL Gallery</h2>
+                    <h2>SDXL Img2Img Gallery</h2>
                     <p>Outputs appear here as they render.</p>
                 </div>
                 <div class="viewer">
@@ -104,7 +113,7 @@
     </div>
 
     <script src="gallery.js?v=1"></script>
-    <script src="sdxl.js?v=1"></script>
+    <script src="sdxl_img2img.js?v=1"></script>
 </body>
 
 </html>
