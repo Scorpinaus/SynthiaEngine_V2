@@ -5,7 +5,7 @@ import time
 from PIL import ImageFilter
 from PIL.PngImagePlugin import PngInfo
 from diffusers import (
-    StableDiffusionPipeline,
+    # StableDiffusionPipeline,
     StableDiffusionImg2ImgPipeline,
     StableDiffusionInpaintPipeline,
 )
@@ -18,6 +18,8 @@ from pathlib import Path
 
 from backend.model_registry import ModelRegistryEntry, get_model_entry
 from backend.resource_logging import resource_logger
+from testing.pipeline_stable_diffusion import(StableDiffusionPipeline)
+
 OUTPUT_DIR = Path("outputs")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
