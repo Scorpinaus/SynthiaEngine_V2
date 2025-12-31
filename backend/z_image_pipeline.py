@@ -170,3 +170,86 @@ def run_z_image_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
             torch.cuda.empty_cache()
 
     return {"images": [f"/outputs/{name}" for name in filenames]}
+
+
+@torch.inference_mode()
+def run_z_image_img2img(
+    initial_image,
+    strength: float,
+    prompt: str,
+    negative_prompt: str,
+    steps: int,
+    guidance_scale: float,
+    seed: int | None,
+    model: str | None,
+    num_images: int,
+) -> dict[str, list[str]]:
+    logger.info("seed=%s", seed)
+    if seed is None or seed == 0:
+        base_seed = torch.randint(0, 2**31, (1,)).item()
+    else:
+        base_seed = int(seed)
+
+    batch_id = _make_batch_id()
+
+    pipe = load_z_image_pipeline(model)
+    width, height = initial_image.size
+    logger.info(
+        "Z-Image Img2Img: model=%s seed=%s steps=%s guidance_scale=%s size=%sx%s strength=%s num_images=%s",
+        model,
+        base_seed,
+        steps,
+        guidance_scale,
+        width,
+        height,
+        strength,
+        num_images,
+    )
+
+    filenames: list[str] = []
+
+    with GEN_LOCK:
+        for i in range(num_images):
+            current_seed = base_seed + i
+
+            generator = torch.Generator(device="cpu").manual_seed(current_seed)
+
+            with torch.autocast("cuda", dtype=torch.bfloat16):
+                call_kwargs = dict(
+                    prompt=prompt,
+                    image=initial_image,
+                    strength=strength,
+                    num_inference_steps=steps,
+                    guidance_scale=guidance_scale,
+                    generator=generator,
+                )
+                if negative_prompt:
+                    call_kwargs["negative_prompt"] = negative_prompt
+
+                image = pipe(**call_kwargs).images[0]
+
+            filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
+            pnginfo = _build_png_metadata({
+                "mode": "img2img",
+                "pipeline": "z-image",
+                "prompt": prompt,
+                "negative_prompt": negative_prompt,
+                "steps": steps,
+                "guidance_scale": guidance_scale,
+                "width": width,
+                "height": height,
+                "seed": current_seed,
+                "model": model,
+                "strength": strength,
+                "batch_id": batch_id,
+            })
+            image.save(filename, pnginfo=pnginfo)
+            logger.info("Image %s saved to %s", i, filename.name)
+
+            filenames.append(filename.name)
+
+            del image
+            gc.collect()
+            torch.cuda.empty_cache()
+
+    return {"images": [f"/outputs/{name}" for name in filenames]}
