@@ -43,6 +43,22 @@ def _build_png_metadata(metadata: dict[str, object]) -> PngInfo:
     return info
 
 
+def _align_pad_token_dtype(pipe: ZImagePipeline | ZImageImg2ImgPipeline) -> None:
+    transformer = pipe.transformer
+    try:
+        first_param = next(transformer.parameters())
+    except StopIteration:
+        return
+    target_dtype = first_param.dtype
+    target_device = first_param.device
+    for attr in ("x_pad_token", "cap_pad_token"):
+        token = getattr(transformer, attr, None)
+        if token is None:
+            continue
+        if token.dtype != target_dtype or token.device != target_device:
+            token.data = token.data.to(dtype=target_dtype, device=target_device)
+
+
 def load_z_image_pipeline(model_name: str | None) -> ZImagePipeline:
     entry = get_model_entry(model_name)
 
@@ -56,23 +72,25 @@ def load_z_image_pipeline(model_name: str | None) -> ZImagePipeline:
     if entry.model_type == "diffusers":
         pipe = ZImagePipeline.from_pretrained(
             source,
-            dtype=torch.bfloat16,
+            torch_dtype=torch.bfloat16,
             low_cpu_mem_usage=True,
         )
     elif entry.model_type == "single-file":
         pipe = ZImagePipeline.from_single_file(
             source,
-            dtype=torch.bfloat16,
+            torch_dtype=torch.bfloat16,
             low_cpu_mem_usage=True,
         )
     else:
         raise ValueError(f"Unsupported model type: {entry.model_type}")
     
+    # _align_pad_token_dtype(pipe)
+
     dtypes = set(p.dtype for p in pipe.transformer.parameters())
-    logger.info("Transformer dtypes:", dtypes)
+    logger.info("Transformer dtypes: %s", dtypes)
     
-    logger.info("Allocated GB:", torch.cuda.memory_allocated()/1024**3)
-    logger.info("Reserved GB:", torch.cuda.memory_reserved()/1024**3)
+    logger.info("Allocated GB: %s", torch.cuda.memory_allocated() / 1024**3)
+    logger.info("Reserved GB: %s", torch.cuda.memory_reserved() / 1024**3)
     
     pipe.enable_sequential_cpu_offload()
 
@@ -98,23 +116,25 @@ def load_z_image_img2img_pipeline(model_name: str | None) -> ZImageImg2ImgPipeli
     if entry.model_type == "diffusers":
         pipe = ZImageImg2ImgPipeline.from_pretrained(
             source,
-            dtype=torch.bfloat16,
+            torch_dtype=torch.bfloat16,
             low_cpu_mem_usage=True,
         )
     elif entry.model_type == "single-file":
         pipe = ZImageImg2ImgPipeline.from_single_file(
             source,
-            dtype=torch.bfloat16,
+            torch_dtype=torch.bfloat16,
             low_cpu_mem_usage=True,
         )
     else:
         raise ValueError(f"Unsupported model type: {entry.model_type}")
 
-    dtypes = set(p.dtype for p in pipe.transformer.parameters())
-    logger.info("Transformer dtypes:", dtypes)
+    # _align_pad_token_dtype(pipe)
 
-    logger.info("Allocated GB:", torch.cuda.memory_allocated()/1024**3)
-    logger.info("Reserved GB:", torch.cuda.memory_reserved()/1024**3)
+    dtypes = set(p.dtype for p in pipe.transformer.parameters())
+    logger.info("Transformer dtypes: %s", dtypes)
+
+    logger.info("Allocated GB: %s", torch.cuda.memory_allocated() / 1024**3)
+    logger.info("Reserved GB: %s", torch.cuda.memory_reserved() / 1024**3)
 
     pipe.enable_sequential_cpu_offload()
 

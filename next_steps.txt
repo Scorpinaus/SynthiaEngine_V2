@@ -6,16 +6,19 @@ Next Steps:
  4. Add image metadata & gallery
 
 - Model Architectures:
- 1. SDXL
- 2. SD3
- 3. SDXL Turbo
- 4. Flux
- 5. Z-Image
- 6. AuraFlow
+ 1. SD3
+ 2. SDXL Turbo
+ 3. Flux
+ 4. Z-Image (text-2-image up, pending img2img)
+ 5. AuraFlow
  7. 
 
 - Features
  1. Embeddings
  2. LoRAs and their variants
  3. ControlNet, ControlNetXS, ControlNetUnion
+
+Current implementation flaw:
+- Pipeline does not clear at end of render
+- OOM issues
 
