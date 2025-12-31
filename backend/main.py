@@ -11,7 +11,8 @@ from PIL import Image
 from pydantic import BaseModel
 
 from backend.config import DEFAULTS
-from backend.model_registry import MODEL_REGISTRY, ModelRegistryEntry
+from backend.model_cache import clear_all_pipelines, prepare_model_family
+from backend.model_registry import MODEL_REGISTRY, ModelRegistryEntry, get_model_family
 from backend.sd15_pipeline import (
     create_blur_mask,
     generate_images,
@@ -150,6 +151,7 @@ async def list_history():
 async def generate(req: GenerateRequest, request: Request):
     logger.info("Request JSON: %s", await request.json())
     logger.info("Parsed seed: %s", req.seed)
+    prepare_model_family(get_model_family(req.model))
     filenames = generate_images(
         prompt=req.prompt,
         negative_prompt=req.negative_prompt,
@@ -173,6 +175,7 @@ async def generate(req: GenerateRequest, request: Request):
 async def generate_sdxl_text2img(req: SdxlGenerateRequest, request: Request):
     logger.info("SDXL request JSON: %s", await request.json())
     logger.info("Parsed SDXL seed: %s", req.seed)
+    prepare_model_family(get_model_family(req.model))
 
     return run_sdxl_text2img(req.model_dump())
 
@@ -181,6 +184,7 @@ async def generate_sdxl_text2img(req: SdxlGenerateRequest, request: Request):
 async def generate_z_image_text2img(req: ZImageGenerateRequest, request: Request):
     logger.info("Z-Image request JSON: %s", await request.json())
     logger.info("Parsed Z-Image seed: %s", req.seed)
+    prepare_model_family(get_model_family(req.model))
 
     return run_z_image_text2img(req.model_dump())
 
@@ -209,6 +213,7 @@ async def generate_z_image_img2img(
         raise HTTPException(status_code=400, detail="Invalid image file.") from exc
 
     init_image = init_image.resize((width, height))
+    prepare_model_family(get_model_family(model))
 
     return run_z_image_img2img(
         initial_image=init_image,
@@ -250,6 +255,7 @@ async def generate_sdxl_img2img(
         raise HTTPException(status_code=400, detail="Invalid image file.") from exc
 
     init_image = init_image.resize((width, height))
+    prepare_model_family(get_model_family(model))
 
     return run_sdxl_img2img(
         initial_image=init_image,
@@ -299,6 +305,7 @@ async def generate_sdxl_inpaint(
 
     if mask.size != init_image.size:
         mask = mask.resize(init_image.size, resample=Image.NEAREST)
+    prepare_model_family(get_model_family(model))
 
     return run_sdxl_inpaint(
         initial_image=init_image,
@@ -342,6 +349,7 @@ async def generate_img2img(
         raise HTTPException(status_code=400, detail="Invalid image file.") from exc
 
     init_image = init_image.resize((width, height))
+    prepare_model_family(get_model_family(model))
 
     filenames = generate_images_img2img(
         initial_image=init_image,
@@ -394,6 +402,7 @@ async def generate_inpaint(
 
     if mask.size != init_image.size:
         mask = mask.resize(init_image.size, resample=Image.NEAREST)
+    prepare_model_family(get_model_family(model))
 
     filenames = generate_images_inpaint(
         initial_image=init_image,
@@ -431,3 +440,9 @@ async def create_blur_mask_endpoint(
     output = BytesIO()
     blurred_mask.save(output, format="PNG")
     return Response(content=output.getvalue(), media_type="image/png")
+
+
+@app.post("/api/cache/clear")
+async def clear_model_cache():
+    clear_all_pipelines()
+    return {"status": "cleared"}

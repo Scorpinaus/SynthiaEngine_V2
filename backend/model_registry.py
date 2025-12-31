@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 from pydantic import BaseModel
@@ -41,3 +42,23 @@ def get_model_entry(model_name: str | None) -> ModelRegistryEntry:
         raise ValueError("Model registry is empty.")
 
     return MODEL_REGISTRY[0]
+
+
+def get_model_family(model_name: str | None) -> str | None:
+    if model_name:
+        for entry in MODEL_REGISTRY:
+            if entry.name == model_name:
+                return entry.family
+
+        lowered = model_name.lower()
+        if re.search(r"sdxl", lowered):
+            return "sdxl"
+        if re.search(r"z[-_\s]?image|turbo", lowered):
+            return "z-image-turbo"
+        if re.search(r"sd[\s_-]*1\.?5|sd15", lowered):
+            return "sd15"
+
+    if MODEL_REGISTRY:
+        return MODEL_REGISTRY[0].family
+
+    return None
