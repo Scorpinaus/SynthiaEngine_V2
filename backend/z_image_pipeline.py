@@ -43,20 +43,20 @@ def _build_png_metadata(metadata: dict[str, object]) -> PngInfo:
     return info
 
 
-def _align_pad_token_dtype(pipe: ZImagePipeline | ZImageImg2ImgPipeline) -> None:
-    transformer = pipe.transformer
-    try:
-        first_param = next(transformer.parameters())
-    except StopIteration:
-        return
-    target_dtype = first_param.dtype
-    target_device = first_param.device
-    for attr in ("x_pad_token", "cap_pad_token"):
-        token = getattr(transformer, attr, None)
-        if token is None:
-            continue
-        if token.dtype != target_dtype or token.device != target_device:
-            token.data = token.data.to(dtype=target_dtype, device=target_device)
+# def _align_pad_token_dtype(pipe: ZImagePipeline | ZImageImg2ImgPipeline) -> None:
+#     transformer = pipe.transformer
+#     try:
+#         first_param = next(transformer.parameters())
+#     except StopIteration:
+#         return
+#     target_dtype = first_param.dtype
+#     target_device = first_param.device
+#     for attr in ("x_pad_token", "cap_pad_token"):
+#         token = getattr(transformer, attr, None)
+#         if token is None:
+#             continue
+#         if token.dtype != target_dtype or token.device != target_device:
+#             token.data = token.data.to(dtype=target_dtype, device=target_device)
 
 
 def load_z_image_pipeline(model_name: str | None) -> ZImagePipeline:
@@ -83,8 +83,6 @@ def load_z_image_pipeline(model_name: str | None) -> ZImagePipeline:
         )
     else:
         raise ValueError(f"Unsupported model type: {entry.model_type}")
-    
-    # _align_pad_token_dtype(pipe)
 
     dtypes = set(p.dtype for p in pipe.transformer.parameters())
     logger.info("Transformer dtypes: %s", dtypes)
@@ -127,8 +125,6 @@ def load_z_image_img2img_pipeline(model_name: str | None) -> ZImageImg2ImgPipeli
         )
     else:
         raise ValueError(f"Unsupported model type: {entry.model_type}")
-
-    # _align_pad_token_dtype(pipe)
 
     dtypes = set(p.dtype for p in pipe.transformer.parameters())
     logger.info("Transformer dtypes: %s", dtypes)
@@ -191,7 +187,6 @@ def run_z_image_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
             print("Allocated GB:", torch.cuda.memory_allocated()/1024**3)
             print("Reserved GB:", torch.cuda.memory_reserved()/1024**3)
             
-            # ✅ autocast reduces activation memory
             with torch.autocast("cuda", dtype=torch.bfloat16):
                 call_kwargs = dict(
                     prompt=prompt,
