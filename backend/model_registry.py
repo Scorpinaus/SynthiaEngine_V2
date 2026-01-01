@@ -32,6 +32,11 @@ def load_model_registry() -> list[ModelRegistryEntry]:
 MODEL_REGISTRY: list[ModelRegistryEntry] = load_model_registry()
 
 
+def save_model_registry(entries: list[ModelRegistryEntry]) -> None:
+    payload = [entry.dict() for entry in entries]
+    REGISTRY_PATH.write_text(json.dumps(payload, indent=4), encoding="utf-8")
+
+
 def get_model_entry(model_name: str | None) -> ModelRegistryEntry:
     if model_name:
         for entry in MODEL_REGISTRY:
