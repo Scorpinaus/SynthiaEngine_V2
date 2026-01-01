@@ -1070,18 +1070,18 @@ class StableDiffusionPipeline(
             if sys_used is not None and sys_total is not None:
                 sys_mem_str = f"{_fmt_mib(sys_used)}/{_fmt_mib(sys_total)}"
 
-            logger.info(
-                "mem[%s]: vram_alloc=%s (Δ%s) vram_reserved=%s (Δ%s) cpu_rss=%s (Δ%s) sys_used=%s (Δ%s)",
-                label_with_meta,
-                _fmt_mib(vram_alloc),
-                _fmt_delta(delta_vram_alloc),
-                _fmt_mib(vram_reserved),
-                _fmt_delta(delta_vram_reserved),
-                _fmt_mib(cpu_rss),
-                _fmt_delta(delta_cpu_rss),
-                sys_mem_str,
-                _fmt_delta(delta_sys_used),
-            )
+            # logger.info(
+            #     "mem[%s]: vram_alloc=%s (Δ%s) vram_reserved=%s (Δ%s) cpu_rss=%s (Δ%s) sys_used=%s (Δ%s)",
+            #     label_with_meta,
+            #     _fmt_mib(vram_alloc),
+            #     _fmt_delta(delta_vram_alloc),
+            #     _fmt_mib(vram_reserved),
+            #     _fmt_delta(delta_vram_reserved),
+            #     _fmt_mib(cpu_rss),
+            #     _fmt_delta(delta_cpu_rss),
+            #     sys_mem_str,
+            #     _fmt_delta(delta_sys_used),
+            # )
 
         def _log_mem_peaks():
             if not mem_log_enabled:

@@ -10,6 +10,7 @@ from diffusers import ZImageImg2ImgPipeline, ZImagePipeline
 import threading
 
 from backend.model_registry import ModelRegistryEntry, get_model_entry
+from backend.pipeline_utils import build_fixed_step_timesteps
 
 GEN_LOCK = threading.Lock()
 OUTPUT_DIR = Path("outputs")
@@ -78,6 +79,7 @@ def load_z_image_pipeline(model_name: str | None) -> ZImagePipeline:
     elif entry.model_type == "single-file":
         pipe = ZImagePipeline.from_single_file(
             source,
+            config="Tongyi-MAI/Z-Image-Turbo",
             torch_dtype=torch.bfloat16,
             low_cpu_mem_usage=True,
         )
@@ -274,6 +276,9 @@ def run_z_image_img2img(
 
             print("Allocated GB:", torch.cuda.memory_allocated()/1024**3)
             print("Reserved GB:", torch.cuda.memory_reserved()/1024**3)
+            
+            # device = getattr(pipe, "_execution_device", None) or pipe.device
+            # timesteps = build_fixed_step_timesteps(pipe.scheduler, steps, strength, device=device)
 
             with torch.autocast("cuda", dtype=torch.bfloat16):
                 call_kwargs = dict(

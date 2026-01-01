@@ -146,6 +146,17 @@ async def list_history():
     records.sort(key=lambda item: item.get("timestamp", 0), reverse=True)
     return records
 
+def remap_img2img_strength(strength:float, min_strength = 0.0, gamma: float=0.5) -> float:
+    clamped = max(0.0, min(1.0, strength))
+    if min_strength <= 0.0:
+        # remapped = clamped
+        remapped = clamped ** gamma
+    else:
+        normalized = max(0.0, min(1.0, (clamped - min_strength) / (1.0 - min_strength)))
+        # remapped = min_strength + normalized * (1.0 - min_strength)
+        remapped = min_strength + (normalized**gamma) * (1.0 - min_strength)        
+    return max(0.0, min(1.0, remapped))
+
 ## SD1.5
 
 @app.post("/generate")
@@ -197,12 +208,13 @@ async def generate_img2img(
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Invalid image file.") from exc
 
+    remapped_strength = remap_img2img_strength(strength)
     init_image = init_image.resize((width, height))
     prepare_model(model)
 
     filenames = generate_images_img2img(
         initial_image=init_image,
-        strength=strength,
+        strength=remapped_strength,
         prompt=prompt,
         negative_prompt=negative_prompt,
         steps=steps,
@@ -252,6 +264,7 @@ async def generate_inpaint(
     if mask.size != init_image.size:
         mask = mask.resize(init_image.size, resample=Image.NEAREST)
     prepare_model(model)
+    remapped_strength = remap_img2img_strength(strength)
 
     filenames = generate_images_inpaint(
         initial_image=init_image,
@@ -264,7 +277,7 @@ async def generate_inpaint(
         scheduler=scheduler,
         model=model,
         num_images=num_images,
-        strength=strength,
+        strength=remapped_strength,
         padding_mask_crop = padding_mask_crop,
         clip_skip=clip_skip
     )
@@ -308,11 +321,12 @@ async def generate_sdxl_img2img(
         raise HTTPException(status_code=400, detail="Invalid image file.") from exc
 
     init_image = init_image.resize((width, height))
+    remapped_strength = remap_img2img_strength(strength)
     prepare_model(model)
 
     return run_sdxl_img2img(
         initial_image=init_image,
-        strength=strength,
+        strength=remapped_strength,
         prompt=prompt,
         negative_prompt=negative_prompt,
         steps=steps,
@@ -356,6 +370,8 @@ async def generate_sdxl_inpaint(
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Invalid mask image file.") from exc
 
+
+    remapped_strength = remap_img2img_strength(strength)
     if mask.size != init_image.size:
         mask = mask.resize(init_image.size, resample=Image.NEAREST)
     prepare_model(model)
@@ -363,7 +379,7 @@ async def generate_sdxl_inpaint(
     return run_sdxl_inpaint(
         initial_image=init_image,
         mask_image=mask,
-        strength=strength,
+        strength=remapped_strength,
         prompt=prompt,
         negative_prompt=negative_prompt,
         steps=steps,
@@ -407,13 +423,13 @@ async def generate_z_image_img2img(
         init_image = Image.open(BytesIO(image_bytes)).convert("RGB")
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Invalid image file.") from exc
-
+    remapped_strength = remap_img2img_strength(strength)
     init_image = init_image.resize((width, height))
     prepare_model(model)
 
     return run_z_image_img2img(
         initial_image=init_image,
-        strength=strength,
+        strength=remapped_strength,
         prompt=prompt,
         negative_prompt=negative_prompt,
         steps=steps,

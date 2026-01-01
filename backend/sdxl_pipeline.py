@@ -12,6 +12,7 @@ from diffusers import (
 )
 
 from backend.model_registry import ModelRegistryEntry, get_model_entry
+from backend.pipeline_utils import build_fixed_step_timesteps
 
 OUTPUT_DIR = Path("outputs")
 OUTPUT_DIR.mkdir(exist_ok=True)
@@ -236,6 +237,9 @@ def run_sdxl_img2img(
         current_seed = base_seed + i
         generator = torch.Generator(device="cuda").manual_seed(current_seed)
 
+        device = getattr(pipe, "_execution_device", None) or pipe.device
+        timesteps = build_fixed_step_timesteps(pipe.scheduler, steps, strength, device = device)
+
         image = pipe(
             prompt=prompt,
             negative_prompt=negative_prompt,
@@ -306,6 +310,9 @@ def run_sdxl_inpaint(
     for i in range(num_images):
         current_seed = base_seed + i
         generator = torch.Generator(device="cuda").manual_seed(current_seed)
+
+        # device = getattr(pipe, "_execution_device", None) or pipe.device
+        # timesteps = build_fixed_step_timesteps(pipe.scheduler, steps, strength, device = device)
 
         image = pipe(
             prompt=prompt,
