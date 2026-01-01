@@ -25,6 +25,34 @@
                 </div>
                 <button id="models-refresh" class="secondary" type="button">Refresh</button>
             </div>
+            <div class="models-toolbar">
+                <div class="models-summary">
+                    <span id="models-count">0</span>
+                    <span class="models-summary-label">models</span>
+                    <span id="models-updated" class="models-updated"></span>
+                </div>
+                <div class="models-filters">
+                    <label class="models-filter">
+                        <span>Search</span>
+                        <input id="models-search" type="search" placeholder="Search by name, family, ID, or type" />
+                    </label>
+                    <label class="models-filter">
+                        <span>Family</span>
+                        <select id="models-family">
+                            <option value="">All families</option>
+                        </select>
+                    </label>
+                    <label class="models-filter">
+                        <span>Sort</span>
+                        <select id="models-sort">
+                            <option value="name">Name</option>
+                            <option value="family">Family</option>
+                            <option value="type">Model type</option>
+                            <option value="location">Location</option>
+                        </select>
+                    </label>
+                </div>
+            </div>
             <div id="models-state" class="models-state">Loading model registry…</div>
             <div id="models-grid" class="models-grid"></div>
         </section>
