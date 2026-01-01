@@ -19,7 +19,7 @@ from backend.sd15_pipeline import (
     generate_images_img2img,
     generate_images_inpaint,
 )
-from backend.flux_pipeline import run_flux_text2img
+from backend.flux_pipeline import run_flux_img2img, run_flux_text2img
 from backend.sdxl_pipeline import (
     run_sdxl_img2img,
     run_sdxl_inpaint,
@@ -464,6 +464,47 @@ async def generate_flux_text2img(req: FluxGenerateRequest, request: Request):
     prepare_model(req.model)
 
     return run_flux_text2img(req.model_dump())
+
+
+@app.post("/api/flux/img2img")
+async def generate_flux_img2img(
+    initial_image: UploadFile = File(...),
+    strength: float = Form(0.75),
+    prompt: str = Form(...),
+    negative_prompt: str = Form(DEFAULTS["negative_prompt"]),
+    steps: int = Form(DEFAULTS["steps"]),
+    guidance_scale: float = Form(DEFAULTS["cfg"]),
+    width: int = Form(1024),
+    height: int = Form(1024),
+    seed: int | None = Form(None),
+    num_images: int = Form(1),
+    model: str | None = Form(None),
+):
+    if not 0 <= strength <= 1:
+        raise HTTPException(status_code=400, detail="Strength must be between 0 and 1.")
+
+    image_bytes = await initial_image.read()
+    try:
+        init_image = Image.open(BytesIO(image_bytes)).convert("RGB")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid image file.") from exc
+
+    init_image = init_image.resize((width, height))
+    prepare_model(model)
+
+    return run_flux_img2img(
+        initial_image=init_image,
+        strength=strength,
+        prompt=prompt,
+        negative_prompt=negative_prompt,
+        steps=steps,
+        guidance_scale=guidance_scale,
+        width=width,
+        height=height,
+        seed=seed,
+        model=model,
+        num_images=num_images,
+    )
 
 ## Inpainting related endpoints
 

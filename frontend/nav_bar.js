@@ -8,6 +8,7 @@ const NAV_ITEMS = [
     { href: "z_image.html", label: "Z-Image Text2Img" },
     { href: "z_image_img2img.html", label: "Z-Image Img2Img" },
     { href: "flux.html", label: "Flux Text2Img" },
+    { href: "flux_img2img.html", label: "Flux Img2Img" },
     { href: "history.html", label: "History" },
 ];
 
