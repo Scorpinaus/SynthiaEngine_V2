@@ -12,5 +12,7 @@ psutil>=6.1.0
 
 diffusers>=0.36.0
 transformers>=4.47.0
+sentencepiece>=0.2.0
+protobuf >=6.33.2
 accelerate>=1.2.1
 safetensors>=0.4.5
