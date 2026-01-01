@@ -4,11 +4,20 @@ const state = {
     loading: false,
     error: null,
     models: [],
+    search: "",
+    family: "",
+    sort: "name",
+    lastUpdated: null,
 };
 
 const modelsState = document.getElementById("models-state");
 const modelsGrid = document.getElementById("models-grid");
 const refreshButton = document.getElementById("models-refresh");
+const modelsCount = document.getElementById("models-count");
+const modelsUpdated = document.getElementById("models-updated");
+const modelsSearch = document.getElementById("models-search");
+const modelsFamily = document.getElementById("models-family");
+const modelsSort = document.getElementById("models-sort");
 
 function setState(next) {
     Object.assign(state, next);
@@ -25,6 +34,13 @@ function buildDetailRow(label, value) {
     row.appendChild(dt);
     row.appendChild(dd);
     return row;
+}
+
+function buildPill(text, variant = "default") {
+    const pill = document.createElement("span");
+    pill.className = `model-pill model-pill-${variant}`;
+    pill.textContent = text || "Unknown";
+    return pill;
 }
 
 function buildLink(link) {
@@ -49,18 +65,22 @@ function buildCard(model) {
     header.className = "model-card-header";
     const title = document.createElement("h3");
     title.textContent = model.name || "Unnamed model";
-    const family = document.createElement("span");
-    family.className = "model-tag";
-    family.textContent = model.family || "Unknown family";
+    const subtitle = document.createElement("p");
+    subtitle.className = "model-subtitle";
+    subtitle.textContent = model.model_id ? `ID: ${model.model_id}` : "ID: Unknown";
     header.appendChild(title);
-    header.appendChild(family);
+    header.appendChild(subtitle);
+
+    const pills = document.createElement("div");
+    pills.className = "model-pill-group";
+    pills.appendChild(buildPill(model.family || "Unknown family", "family"));
+    pills.appendChild(buildPill(model.model_type || "Unknown type", "type"));
+    pills.appendChild(buildPill(model.location_type || "Unknown location", "location"));
 
     const meta = document.createElement("dl");
     meta.className = "model-details";
-    meta.appendChild(buildDetailRow("Model type", model.model_type || "Unknown"));
-    meta.appendChild(buildDetailRow("Location", model.location_type || "Unknown"));
-    meta.appendChild(buildDetailRow("Model ID", model.model_id ?? "Unknown"));
     meta.appendChild(buildDetailRow("Version", model.version || "Unknown"));
+    meta.appendChild(buildDetailRow("Model ID", model.model_id ?? "Unknown"));
 
     const linkRow = document.createElement("div");
     linkRow.className = "model-detail-row";
@@ -73,8 +93,86 @@ function buildCard(model) {
     meta.appendChild(linkRow);
 
     card.appendChild(header);
+    card.appendChild(pills);
     card.appendChild(meta);
     return card;
+}
+
+function normalize(value) {
+    return String(value || "").toLowerCase();
+}
+
+function getFilteredModels() {
+    const query = normalize(state.search);
+    const family = normalize(state.family);
+    return state.models.filter((model) => {
+        const familyValue = normalize(model.family);
+        if (family && familyValue !== family) {
+            return false;
+        }
+        if (!query) {
+            return true;
+        }
+        return [
+            model.name,
+            model.family,
+            model.model_type,
+            model.model_id,
+            model.location_type,
+            model.version,
+        ]
+            .map(normalize)
+            .some((value) => value.includes(query));
+    });
+}
+
+function sortModels(models) {
+    const sortKey = state.sort;
+    const getValue = (model) => {
+        switch (sortKey) {
+            case "family":
+                return model.family || "";
+            case "type":
+                return model.model_type || "";
+            case "location":
+                return model.location_type || "";
+            default:
+                return model.name || "";
+        }
+    };
+    return [...models].sort((a, b) => getValue(a).localeCompare(getValue(b)));
+}
+
+function updateFamilyOptions(models) {
+    const selected = state.family;
+    const families = Array.from(
+        new Set(models.map((model) => model.family).filter(Boolean))
+    ).sort((a, b) => a.localeCompare(b));
+    modelsFamily.innerHTML = "";
+    const allOption = document.createElement("option");
+    allOption.value = "";
+    allOption.textContent = "All families";
+    modelsFamily.appendChild(allOption);
+    families.forEach((family) => {
+        const option = document.createElement("option");
+        option.value = family;
+        option.textContent = family;
+        modelsFamily.appendChild(option);
+    });
+    modelsFamily.value = selected;
+}
+
+function updateSummary(visibleCount, totalCount) {
+    modelsCount.textContent = visibleCount;
+    const countLabel = document.querySelector(".models-summary-label");
+    if (countLabel) {
+        countLabel.textContent = totalCount === 1 ? "model" : "models";
+    }
+    if (state.lastUpdated) {
+        modelsUpdated.textContent = `Updated ${state.lastUpdated.toLocaleTimeString()}`;
+    } else {
+        modelsUpdated.textContent = "";
+    }
 }
 
 function render() {
@@ -89,17 +187,28 @@ function render() {
     if (state.error) {
         modelsState.textContent = state.error;
         modelsState.style.display = "block";
+        updateSummary(0, state.models.length);
         return;
     }
 
     if (!state.models.length) {
         modelsState.textContent = "No models found in the registry.";
         modelsState.style.display = "block";
+        updateSummary(0, 0);
+        return;
+    }
+
+    const filtered = sortModels(getFilteredModels());
+    updateSummary(filtered.length, state.models.length);
+
+    if (!filtered.length) {
+        modelsState.textContent = "No models match your current filters.";
+        modelsState.style.display = "block";
         return;
     }
 
     modelsState.style.display = "none";
-    state.models.forEach((model) => {
+    filtered.forEach((model) => {
         modelsGrid.appendChild(buildCard(model));
     });
 }
@@ -113,8 +222,8 @@ async function fetchModels() {
         }
         const data = await response.json();
         const models = Array.isArray(data) ? data : [];
-        models.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-        setState({ models, loading: false });
+        setState({ models, loading: false, lastUpdated: new Date() });
+        updateFamilyOptions(models);
     } catch (error) {
         setState({ loading: false, error: "Unable to load models. Try again shortly." });
         console.error(error);
@@ -122,5 +231,14 @@ async function fetchModels() {
 }
 
 refreshButton.addEventListener("click", fetchModels);
+modelsSearch.addEventListener("input", (event) => {
+    setState({ search: event.target.value });
+});
+modelsFamily.addEventListener("change", (event) => {
+    setState({ family: event.target.value });
+});
+modelsSort.addEventListener("change", (event) => {
+    setState({ sort: event.target.value });
+});
 
 fetchModels();
