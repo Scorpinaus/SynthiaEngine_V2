@@ -315,20 +315,27 @@ button {
     box-shadow: 0 12px 24px rgba(40, 36, 32, 0.08);
     padding: 16px;
     display: grid;
-    gap: 12px;
+    gap: 14px;
 }
 
 .model-card-header {
     display: flex;
     flex-wrap: wrap;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
     gap: 10px;
+}
+
+.model-card-title {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
 }
 
 .model-card-header h3 {
     margin: 0;
     font-size: 18px;
+    word-break: break-word;
 }
 
 .model-tag {
@@ -342,15 +349,37 @@ button {
     font-weight: 600;
 }
 
+.model-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.model-pill {
+    background: #f7f3ed;
+    border-radius: 999px;
+    padding: 6px 12px;
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    text-transform: none;
+    color: #2b2a28;
+    font-weight: 600;
+    border: 1px solid #e3ddd4;
+}
+
 .model-details {
     display: grid;
-    gap: 8px;
+    gap: 10px;
     margin: 0;
+    background: #f7f3ed;
+    border-radius: 12px;
+    border: 1px solid #e3ddd4;
+    padding: 10px 12px;
 }
 
 .model-detail-row {
     display: grid;
-    grid-template-columns: 120px 1fr;
+    grid-template-columns: 110px 1fr;
     gap: 12px;
     font-size: 14px;
 }
@@ -364,6 +393,31 @@ button {
     margin: 0;
     color: #2b2a28;
     word-break: break-word;
+}
+
+.model-code {
+    font-family: "SFMono-Regular", "Consolas", "Liberation Mono", monospace;
+    background: #ffffff;
+    border-radius: 999px;
+    padding: 2px 8px;
+    border: 1px solid #e3ddd4;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.model-muted {
+    color: #6b645c;
+}
+
+.model-link {
+    color: #3a5a40;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.model-link:hover {
+    text-decoration: underline;
 }
 
 .model-form-panel {
