@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from backend.config import DEFAULTS
 from backend.model_cache import clear_all_pipelines, prepare_model
-from backend.model_registry import MODEL_REGISTRY, ModelRegistryEntry
+from backend.model_registry import MODEL_REGISTRY, ModelRegistryEntry, save_model_registry
 from backend.sd15_pipeline import (
     create_blur_mask,
     generate_images,
@@ -95,6 +95,16 @@ class FluxGenerateRequest(BaseModel):
     model: str | None = None
 
 
+class ModelCreateRequest(BaseModel):
+    name: str
+    family: str
+    model_type: str
+    location_type: str
+    model_id: int
+    version: str
+    link: str
+
+
 def _extract_png_metadata(path: Path) -> dict[str, str]:
     try:
         with Image.open(path) as image:
@@ -135,6 +145,17 @@ async def list_models(family: str | None = None):
         pattern = re.compile(re.escape(family_value), re.IGNORECASE)
 
     return [entry for entry in MODEL_REGISTRY if pattern.search(entry.family)]
+
+
+@app.post("/models", response_model=ModelRegistryEntry, status_code=201)
+async def create_model(req: ModelCreateRequest):
+    if any(entry.name == req.name for entry in MODEL_REGISTRY):
+        raise HTTPException(status_code=409, detail="Model name already exists.")
+
+    entry = ModelRegistryEntry(**req.dict())
+    MODEL_REGISTRY.append(entry)
+    save_model_registry(MODEL_REGISTRY)
+    return entry
 
 
 @app.get("/history")

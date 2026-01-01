@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Synthia Engine Add Model</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+    <div class="app">
+        <header class="header">
+            <h1>Synthia Engine</h1>
+            <div id="nav-root"></div>
+        </header>
+
+        <section class="model-form-panel">
+            <div class="model-form-header">
+                <div>
+                    <h2>Add a Model</h2>
+                    <p>Register a new model entry in the model registry.</p>
+                </div>
+            </div>
+            <form id="model-form" class="model-form">
+                <label class="field">
+                    <span>Name</span>
+                    <input name="name" type="text" placeholder="stable-diffusion-v1-5" required />
+                </label>
+                <label class="field">
+                    <span>Family</span>
+                    <input name="family" type="text" placeholder="sd15" required />
+                </label>
+                <label class="field">
+                    <span>Model Type</span>
+                    <input name="model_type" type="text" placeholder="diffusers" required />
+                </label>
+                <label class="field">
+                    <span>Location Type</span>
+                    <input name="location_type" type="text" placeholder="hub" required />
+                </label>
+                <label class="field">
+                    <span>Model ID</span>
+                    <input name="model_id" type="text" placeholder="Auto-assigned" readonly />
+                </label>
+                <label class="field">
+                    <span>Version</span>
+                    <input name="version" type="text" placeholder="hub" required />
+                </label>
+                <label class="field">
+                    <span>Link</span>
+                    <input name="link" type="text" placeholder="runwayml/stable-diffusion-v1-5" required />
+                </label>
+                <button class="primary" type="submit">Add model</button>
+            </form>
+            <div id="model-form-state" class="model-form-state" aria-live="polite"></div>
+        </section>
+    </div>
+
+    <script src="nav_bar.js?v=1"></script>
+    <script src="model_add.js?v=1"></script>
+</body>
+
+</html>
