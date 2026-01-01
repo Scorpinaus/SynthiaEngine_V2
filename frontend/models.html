@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Synthia Engine Models</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+    <div class="app">
+        <header class="header">
+            <h1>Synthia Engine</h1>
+            <div id="nav-root"></div>
+        </header>
+
+        <section class="models-panel">
+            <div class="models-header">
+                <div>
+                    <h2>Model Registry</h2>
+                    <p>Review the available models and their registry metadata.</p>
+                </div>
+                <button id="models-refresh" class="secondary" type="button">Refresh</button>
+            </div>
+            <div id="models-state" class="models-state">Loading model registry…</div>
+            <div id="models-grid" class="models-grid"></div>
+        </section>
+    </div>
+
+    <script src="nav_bar.js?v=1"></script>
+    <script src="models.js?v=1"></script>
+</body>
+
+</html>

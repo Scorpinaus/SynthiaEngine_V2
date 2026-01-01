@@ -270,6 +270,141 @@ button {
     font-size: 13px;
 }
 
+.models-panel {
+    background: #fdfbf7;
+    border: 1px solid #e1dbd2;
+    border-radius: 18px;
+    padding: 20px;
+    display: grid;
+    gap: 18px;
+}
+
+.models-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.models-header h2 {
+    margin: 0 0 6px 0;
+    font-size: 22px;
+}
+
+.models-header p {
+    margin: 0;
+    color: #6b645c;
+    font-size: 14px;
+}
+
+.models-state {
+    font-size: 14px;
+    color: #6b645c;
+}
+
+.models-grid {
+    display: grid;
+    gap: 18px;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.model-card {
+    background: #ffffff;
+    border-radius: 16px;
+    border: 1px solid #e3ddd4;
+    box-shadow: 0 12px 24px rgba(40, 36, 32, 0.08);
+    padding: 16px;
+    display: grid;
+    gap: 12px;
+}
+
+.model-card-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.model-card-header h3 {
+    margin: 0;
+    font-size: 18px;
+}
+
+.model-tag {
+    background: #efe9df;
+    border-radius: 999px;
+    padding: 6px 12px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #3a5a40;
+    font-weight: 600;
+}
+
+.model-details {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+}
+
+.model-detail-row {
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    gap: 12px;
+    font-size: 14px;
+}
+
+.model-detail-row dt {
+    font-weight: 600;
+    color: #6b645c;
+}
+
+.model-detail-row dd {
+    margin: 0;
+    color: #2b2a28;
+    word-break: break-word;
+}
+
+.model-form-panel {
+    background: #fdfbf7;
+    border: 1px solid #e1dbd2;
+    border-radius: 18px;
+    padding: 20px;
+    display: grid;
+    gap: 18px;
+    max-width: 640px;
+}
+
+.model-form-header h2 {
+    margin: 0 0 6px 0;
+    font-size: 22px;
+}
+
+.model-form-header p {
+    margin: 0;
+    color: #6b645c;
+    font-size: 14px;
+}
+
+.model-form {
+    display: grid;
+    gap: 14px;
+}
+
+.model-form-state {
+    font-size: 14px;
+    color: #6b645c;
+}
+
+.model-form-state.success {
+    color: #3a5a40;
+}
+
+.model-form-state.error {
+    color: #a33a2b;
+}
+
 .gallery-header h2 {
     margin: 0 0 4px 0;
     font-size: 20px;

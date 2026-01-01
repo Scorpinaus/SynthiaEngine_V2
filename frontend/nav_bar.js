@@ -10,6 +10,8 @@ const NAV_ITEMS = [
     { href: "flux.html", label: "Flux Text2Img" },
     { href: "flux_img2img.html", label: "Flux Img2Img" },
     { href: "flux_inpaint.html", label: "Flux Inpaint" },
+    { href: "models.html", label: "Models" },
+    { href: "model_add.html", label: "Add Model" },
     { href: "history.html", label: "History" },
 ];
 
