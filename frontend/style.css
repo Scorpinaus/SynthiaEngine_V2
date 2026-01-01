@@ -286,6 +286,60 @@ button {
     gap: 16px;
 }
 
+.models-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    align-items: center;
+    justify-content: space-between;
+    background: #f7f1e9;
+    border-radius: 14px;
+    padding: 14px 16px;
+    border: 1px solid #e8e0d6;
+}
+
+.models-summary {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-weight: 600;
+    color: #2b2a28;
+}
+
+.models-summary #models-count {
+    font-size: 20px;
+}
+
+.models-updated {
+    font-weight: 500;
+    font-size: 12px;
+    color: #6b645c;
+    margin-left: 12px;
+}
+
+.models-filters {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    flex: 1;
+}
+
+.models-filter {
+    display: grid;
+    gap: 6px;
+    font-size: 12px;
+    color: #6b645c;
+}
+
+.models-filter input,
+.models-filter select {
+    border: 1px solid #d8d1c7;
+    border-radius: 10px;
+    padding: 8px 10px;
+    font-size: 13px;
+    background: #ffffff;
+}
+
 .models-header h2 {
     margin: 0 0 6px 0;
     font-size: 22px;
@@ -323,7 +377,9 @@ button {
     flex-wrap: wrap;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 10px;
+    display: grid;
+    gap: 4px;
+
 }
 
 .model-card-title {
@@ -338,15 +394,44 @@ button {
     word-break: break-word;
 }
 
-.model-tag {
-    background: #efe9df;
+.model-subtitle {
+    margin: 0;
+    font-size: 13px;
+    color: #6b645c;
+}
+
+.model-pill-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.model-pill {
     border-radius: 999px;
     padding: 6px 12px;
-    font-size: 12px;
-    text-transform: uppercase;
+    font-size: 11px;
     letter-spacing: 0.08em;
-    color: #3a5a40;
+    text-transform: uppercase;
     font-weight: 600;
+    border: 1px solid transparent;
+}
+
+.model-pill-family {
+    background: #efe9df;
+    color: #3a5a40;
+    border-color: #dfd6c9;
+}
+
+.model-pill-type {
+    background: #e7eef6;
+    color: #30507a;
+    border-color: #d6e2f1;
+}
+
+.model-pill-location {
+    background: #f7eaea;
+    color: #7a2f2f;
+    border-color: #eed0d0;
 }
 
 .model-card-meta {
