@@ -51,6 +51,8 @@ def get_model_family(model_name: str | None) -> str | None:
                 return entry.family
 
         lowered = model_name.lower()
+        if re.search(r"flux", lowered):
+            return "flux"
         if re.search(r"sdxl", lowered):
             return "sdxl"
         if re.search(r"z[-_\s]?image|turbo", lowered):

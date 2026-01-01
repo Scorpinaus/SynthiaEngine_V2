@@ -7,6 +7,7 @@ const NAV_ITEMS = [
     { href: "sdxl_inpaint.html", label: "SDXL Inpaint" },
     { href: "z_image.html", label: "Z-Image Text2Img" },
     { href: "z_image_img2img.html", label: "Z-Image Img2Img" },
+    { href: "flux.html", label: "Flux Text2Img" },
     { href: "history.html", label: "History" },
 ];
 
