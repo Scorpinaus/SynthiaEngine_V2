@@ -19,7 +19,7 @@ from backend.sd15_pipeline import (
     generate_images_img2img,
     generate_images_inpaint,
 )
-from backend.flux_pipeline import run_flux_img2img, run_flux_text2img
+from backend.flux_pipeline import run_flux_img2img, run_flux_inpaint, run_flux_text2img
 from backend.sdxl_pipeline import (
     run_sdxl_img2img,
     run_sdxl_inpaint,
@@ -501,6 +501,52 @@ async def generate_flux_img2img(
         guidance_scale=guidance_scale,
         width=width,
         height=height,
+        seed=seed,
+        model=model,
+        num_images=num_images,
+    )
+
+
+@app.post("/api/flux/inpaint")
+async def generate_flux_inpaint(
+    initial_image: UploadFile = File(...),
+    mask_image: UploadFile = File(...),
+    strength: float = Form(0.5),
+    prompt: str = Form(...),
+    negative_prompt: str = Form(DEFAULTS["negative_prompt"]),
+    steps: int = Form(DEFAULTS["steps"]),
+    guidance_scale: float = Form(DEFAULTS["cfg"]),
+    seed: int | None = Form(None),
+    num_images: int = Form(1),
+    model: str | None = Form(None),
+):
+    if not 0 <= strength <= 1:
+        raise HTTPException(status_code=400, detail="Strength must be between 0 and 1.")
+
+    image_bytes = await initial_image.read()
+    mask_bytes = await mask_image.read()
+    try:
+        init_image = Image.open(BytesIO(image_bytes)).convert("RGB")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid initial image file.") from exc
+
+    try:
+        mask = Image.open(BytesIO(mask_bytes)).convert("L")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid mask image file.") from exc
+
+    if mask.size != init_image.size:
+        mask = mask.resize(init_image.size, resample=Image.NEAREST)
+    prepare_model(model)
+
+    return run_flux_inpaint(
+        initial_image=init_image,
+        mask_image=mask,
+        strength=strength,
+        prompt=prompt,
+        negative_prompt=negative_prompt,
+        steps=steps,
+        guidance_scale=guidance_scale,
         seed=seed,
         model=model,
         num_images=num_images,
