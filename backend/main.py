@@ -19,6 +19,7 @@ from backend.sd15_pipeline import (
     generate_images_img2img,
     generate_images_inpaint,
 )
+from backend.flux_pipeline import run_flux_text2img
 from backend.sdxl_pipeline import (
     run_sdxl_img2img,
     run_sdxl_inpaint,
@@ -82,6 +83,18 @@ class ZImageGenerateRequest(BaseModel):
     model: str | None = None
 
 
+class FluxGenerateRequest(BaseModel):
+    prompt: str
+    negative_prompt: str | None = DEFAULTS["negative_prompt"]
+    steps: int = DEFAULTS["steps"]
+    guidance_scale: float = DEFAULTS["cfg"]
+    width: int = 1024
+    height: int = 1024
+    seed: int | None = None
+    num_images: int = 1
+    model: str | None = None
+
+
 def _extract_png_metadata(path: Path) -> dict[str, str]:
     try:
         with Image.open(path) as image:
@@ -116,6 +129,8 @@ async def list_models(family: str | None = None):
         pattern = re.compile(r"sdxl", re.IGNORECASE)
     elif family_value == "z-image-turbo":
         pattern = re.compile(r"z-image-turbo", re.IGNORECASE)
+    elif family_value == "flux":
+        pattern = re.compile(r"flux", re.IGNORECASE)
     else:
         pattern = re.compile(re.escape(family_value), re.IGNORECASE)
 
@@ -424,6 +439,15 @@ async def generate_z_image_img2img(
         model=model,
         num_images=num_images,
     )
+
+## Flux Endpoints
+@app.post("/api/flux/text2img")
+async def generate_flux_text2img(req: FluxGenerateRequest, request: Request):
+    # logger.info("Flux request JSON: %s", await request.json())
+    # logger.info("Parsed Flux seed: %s", req.seed)
+    prepare_model(req.model)
+
+    return run_flux_text2img(req.model_dump())
 
 ## Inpainting related endpoints
 
