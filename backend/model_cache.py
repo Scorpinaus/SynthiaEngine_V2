@@ -62,6 +62,7 @@ def clear_z_image_pipelines(collect_memory: bool = True) -> None:
 
 def clear_flux_pipelines(collect_memory: bool = True) -> None:
     _clear_cache(flux_pipeline.PIPELINE_CACHE)
+    _clear_cache(flux_pipeline.IMG2IMG_PIPELINE_CACHE)
     if collect_memory:
         _collect_memory()
 
