@@ -98,7 +98,10 @@ def load_flux_img2img_pipeline(model_name: str | None) -> FluxImg2ImgPipeline:
     else:
         raise ValueError(f"Unsupported model type: {entry.model_type}")
 
-    pipe.enable_model_cpu_offload()
+    pipe.enable_attention_slicing("max")
+    pipe.vae.enable_slicing()
+    pipe.vae.enable_tiling()
+    pipe.enable_sequential_cpu_offload()
 
     IMG2IMG_PIPELINE_CACHE[entry.name] = pipe
     return pipe
