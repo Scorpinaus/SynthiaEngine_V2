@@ -43,6 +43,7 @@ loadModels();
 
 const controlnetState = {
     previewUrl: null,
+    previewBlob: null,
     preprocessors: new Map(),
 };
 
@@ -59,6 +60,16 @@ function updateControlNetIndicator() {
             ? "ControlNet preprocessor ready for SD1.5."
             : "No preprocessor applied.";
     }
+}
+
+function updateControlNetActiveFlag() {
+    const flag = document.getElementById("controlnet-active-flag");
+    if (!flag) {
+        return;
+    }
+    const enabledToggle = document.getElementById("controlnet-enabled");
+    const isActive = Boolean(enabledToggle?.checked && controlnetState.previewUrl);
+    flag.classList.toggle("is-hidden", !isActive);
 }
 
 function toggleControlNetPanel() {
@@ -195,6 +206,7 @@ async function applyPreprocessor() {
         URL.revokeObjectURL(controlnetState.previewUrl);
     }
     controlnetState.previewUrl = URL.createObjectURL(blob);
+    controlnetState.previewBlob = blob;
     if (preview) {
         preview.src = controlnetState.previewUrl;
     }
@@ -207,6 +219,7 @@ async function applyPreprocessor() {
         enabledToggle.checked = true;
     }
     updateControlNetIndicator();
+    updateControlNetActiveFlag();
 }
 
 function initControlNetUI() {
@@ -224,15 +237,23 @@ function initControlNetUI() {
     closeButton?.addEventListener("click", closePreprocessorModal);
     overlay?.addEventListener("click", closePreprocessorModal);
     applyButton?.addEventListener("click", applyPreprocessor);
-    enabledToggle?.addEventListener("change", updateControlNetIndicator);
+    enabledToggle?.addEventListener("change", () => {
+        updateControlNetIndicator();
+        updateControlNetActiveFlag();
+    });
     select?.addEventListener("change", (event) => {
         updatePreprocessorDefaults(event.target.value);
         updateDownloadLinkState(false);
     });
-    fileInput?.addEventListener("change", () => updateDownloadLinkState(false));
+    fileInput?.addEventListener("change", () => {
+        controlnetState.previewBlob = null;
+        updateDownloadLinkState(false);
+        updateControlNetActiveFlag();
+    });
 
     loadPreprocessors();
     updateControlNetIndicator();
+    updateControlNetActiveFlag();
     updateDownloadLinkState(false);
 }
 
@@ -252,6 +273,9 @@ async function generate() {
     const model = document.getElementById("model_select").value;
     const clip_skip = document.getElementById("clip_skip").value;
     const num_images = Number(document.getElementById("num_images").value);
+    const controlnetEnabled = Boolean(
+        document.getElementById("controlnet-enabled")?.checked
+    );
 
     const payload = {
         prompt,
@@ -268,11 +292,37 @@ async function generate() {
     };
     console.log("Generate payload", payload);
 
-    const res = await fetch(`${API_BASE}/generate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-    });
+    let res;
+    if (controlnetEnabled && controlnetState.previewBlob) {
+        const formData = new FormData();
+        formData.append("control_image", controlnetState.previewBlob, "controlnet.png");
+        formData.append("prompt", prompt);
+        formData.append("negative_prompt", negative_prompt);
+        formData.append("steps", String(steps));
+        formData.append("cfg", String(cfg));
+        formData.append("width", String(width));
+        formData.append("height", String(height));
+        formData.append("seed", seed === null ? "" : String(seed));
+        formData.append("scheduler", scheduler);
+        formData.append("num_images", String(num_images));
+        if (model) {
+            formData.append("model", model);
+        }
+        formData.append("clip_skip", String(clip_skip));
+        res = await fetch(`${API_BASE}/api/controlnet/text2img`, {
+            method: "POST",
+            body: formData,
+        });
+    } else {
+        res = await fetch(`${API_BASE}/generate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                ...payload,
+                controlnet_active: controlnetEnabled,
+            }),
+        });
+    }
 
     const data = await res.json();
     gallery.setImages(Array.isArray(data.images) ? data.images : []);

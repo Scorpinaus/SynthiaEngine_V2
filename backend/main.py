@@ -24,6 +24,7 @@ from backend.sd15_pipeline import (
     generate_images,
     generate_images_img2img,
     generate_images_inpaint,
+    generate_images_controlnet,
 )
 from backend.flux_pipeline import run_flux_img2img, run_flux_inpaint, run_flux_text2img
 from backend.sdxl_pipeline import (
@@ -62,6 +63,8 @@ class GenerateRequest(BaseModel):
     num_images: int = 1
     model: str | None = None
     clip_skip: int = 1
+    controlnet_active: bool = False
+    controlnet_model: str = DEFAULTS["controlnet_model"]
 
 
 class SdxlGenerateRequest(BaseModel):
@@ -272,6 +275,12 @@ async def generate(req: GenerateRequest, request: Request):
     # logger.info("Request JSON: %s", await request.json())
     # logger.info("Parsed seed: %s", req.seed)
     prepare_model(req.model)
+
+    if req.controlnet_active:
+        raise HTTPException(
+            status_code=400,
+            detail="ControlNet active requires /api/controlnet/text2img with an image.",
+        )
     
     filenames = generate_images(
         prompt=req.prompt,
@@ -285,6 +294,52 @@ async def generate(req: GenerateRequest, request: Request):
         model=req.model,
         num_images = req.num_images,
         clip_skip = req.clip_skip,
+    )
+
+    return {
+        "images": [f"/outputs/{name}" for name in filenames]
+    }
+
+
+@app.post("/api/controlnet/text2img")
+async def generate_controlnet_text2img(
+    control_image: UploadFile = File(...),
+    prompt: str = Form(...),
+    negative_prompt: str = Form(DEFAULTS["negative_prompt"]),
+    steps: int = Form(DEFAULTS["steps"]),
+    cfg: float = Form(DEFAULTS["cfg"]),
+    width: int = Form(DEFAULTS["width"]),
+    height: int = Form(DEFAULTS["height"]),
+    seed: int | None = Form(None),
+    scheduler: str = Form("euler"),
+    num_images: int = Form(1),
+    model: str | None = Form(None),
+    clip_skip: int = Form(1),
+    controlnet_model: str = Form(DEFAULTS["controlnet_model"]),
+):
+    image_bytes = await control_image.read()
+    try:
+        controlnet_image = Image.open(BytesIO(image_bytes)).convert("RGB")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid control image file.") from exc
+
+    controlnet_image = controlnet_image.resize((width, height))
+    prepare_model(model)
+
+    filenames = generate_images_controlnet(
+        prompt=prompt,
+        negative_prompt=negative_prompt,
+        steps=steps,
+        cfg=cfg,
+        width=width,
+        height=height,
+        seed=seed,
+        scheduler=scheduler,
+        model=model,
+        num_images=num_images,
+        clip_skip=clip_skip,
+        controlnet_model=controlnet_model,
+        control_image=controlnet_image,
     )
 
     return {

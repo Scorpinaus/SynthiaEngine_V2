@@ -41,6 +41,7 @@ def clear_sd15_pipelines(collect_memory: bool = True) -> None:
     _clear_cache(sd15_pipeline.PIPELINE_CACHE)
     _clear_cache(sd15_pipeline.IMG2IMG_PIPELINE_CACHE)
     _clear_cache(sd15_pipeline.INPAINT_PIPELINE_CACHE)
+    _clear_cache(sd15_pipeline.CONTROLNET_PIPELINE_CACHE)
     if collect_memory:
         _collect_memory()
 
