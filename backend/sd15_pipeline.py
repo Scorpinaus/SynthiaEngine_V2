@@ -8,6 +8,8 @@ from diffusers import (
     StableDiffusionPipeline,
     StableDiffusionImg2ImgPipeline,
     StableDiffusionInpaintPipeline,
+    StableDiffusionControlNetPipeline,
+    ControlNetModel,
 )
 from diffusers import (EulerDiscreteScheduler,
     EulerAncestralDiscreteScheduler,
@@ -27,6 +29,7 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 PIPELINE_CACHE: dict[str, StableDiffusionPipeline] = {}
 IMG2IMG_PIPELINE_CACHE: dict[str, StableDiffusionImg2ImgPipeline] = {}
 INPAINT_PIPELINE_CACHE: dict[str, StableDiffusionInpaintPipeline] = {}
+CONTROLNET_PIPELINE_CACHE: dict[str, StableDiffusionControlNetPipeline] = {}
 
 logger = logging.getLogger(__name__)
 if not logger.handlers:
@@ -126,6 +129,40 @@ def load_inpaint_pipeline(model_name: str | None):
 
     return inpaint_pipe
 
+
+def load_controlnet_pipeline(model_name: str | None, controlnet_model: str):
+    entry = get_model_entry(model_name)
+    cache_key = f"{entry.name}::{controlnet_model}"
+    if cache_key in CONTROLNET_PIPELINE_CACHE:
+        return CONTROLNET_PIPELINE_CACHE[cache_key]
+
+    source = _resolve_model_source(entry)
+    logger.info("Base model: %s", source)
+    controlnet = ControlNetModel.from_pretrained(
+        controlnet_model,
+        torch_dtype=torch.float16,
+    )
+
+    if entry.model_type == "diffusers":
+        pipe = StableDiffusionControlNetPipeline.from_pretrained(
+            source,
+            controlnet=controlnet,
+            torch_dtype=torch.float16,
+            safety_checker=None,
+        )
+    elif entry.model_type == "single-file":
+        pipe = StableDiffusionControlNetPipeline.from_single_file(
+            source,
+            controlnet=controlnet,
+            torch_dtype=torch.float16,
+            safety_checker=None,
+        )
+    else:
+        raise ValueError(f"Unsupported model type: {entry.model_type}")
+
+    pipe.to("cuda")
+    CONTROLNET_PIPELINE_CACHE[cache_key] = pipe
+    return pipe
 def create_scheduler(name: str, pipe):
     name = name.lower()
     
@@ -239,6 +276,76 @@ def _build_png_metadata(metadata: dict[str, object]) -> PngInfo:
             continue
         info.add_text(key, str(value))
     return info
+
+
+@resource_logger.log_resources
+def generate_images_controlnet(
+    prompt: str,
+    negative_prompt: str,
+    steps: int,
+    cfg: float,
+    width: int,
+    height: int,
+    seed: int | None,
+    scheduler: str,
+    model: str | None,
+    num_images: int,
+    clip_skip: int,
+    controlnet_model: str,
+    control_image: Image.Image,
+    batch_id: str | None = None,
+) -> list[str]:
+    if not batch_id:
+        batch_id = _make_batch_id()
+
+    pipe = load_controlnet_pipeline(model, controlnet_model)
+    pipe.scheduler = create_scheduler(scheduler, pipe)
+    pipe.safety_checker = None
+    pipe.enable_xformers_memory_efficient_attention()
+
+    if clip_skip > 1:
+        pipe.text_encoder.config.num_hidden_layers = (
+            pipe.text_encoder.config.num_hidden_layers - (clip_skip - 1)
+        )
+
+    generator = None
+    if seed is not None:
+        generator = torch.Generator(device="cuda").manual_seed(seed)
+
+    results = pipe(
+        prompt=prompt,
+        negative_prompt=negative_prompt,
+        num_inference_steps=steps,
+        guidance_scale=cfg,
+        width=width,
+        height=height,
+        image=control_image,
+        num_images_per_prompt=num_images,
+        generator=generator,
+    )
+
+    metadata = {
+        "prompt": prompt,
+        "negative_prompt": negative_prompt,
+        "steps": steps,
+        "cfg": cfg,
+        "width": width,
+        "height": height,
+        "seed": seed,
+        "scheduler": scheduler,
+        "model": model,
+        "controlnet_model": controlnet_model,
+        "batch_id": batch_id,
+    }
+    png_info = _build_png_metadata(metadata)
+
+    filenames = []
+    for idx, image in enumerate(results.images):
+        name = f"{batch_id}_controlnet_{idx}.png"
+        image.save(OUTPUT_DIR / name, pnginfo=png_info)
+        filenames.append(name)
+
+    return filenames
 
 
 # @resource_logger.annotate(

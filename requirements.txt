@@ -16,3 +16,4 @@ sentencepiece>=0.2.0
 protobuf >=6.33.2
 accelerate>=1.2.1
 safetensors>=0.4.5
+-e ./controlnet_aux

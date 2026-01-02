@@ -2,6 +2,7 @@ import logging
 import re
 from datetime import datetime, timezone
 from io import BytesIO
+import json
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
@@ -11,6 +12,11 @@ from PIL import Image
 from pydantic import BaseModel
 
 from backend.config import DEFAULTS
+from backend.controlnet_preprocessors import get_preprocessor, list_preprocessors
+from backend.controlnet_preprocessor_registry import (
+    CONTROLNET_PREPROCESSOR_REGISTRY,
+    ControlNetPreprocessorModelEntry,
+)
 from backend.model_cache import clear_all_pipelines, prepare_model
 from backend.model_registry import MODEL_REGISTRY, ModelRegistryEntry, save_model_registry
 from backend.sd15_pipeline import (
@@ -18,6 +24,7 @@ from backend.sd15_pipeline import (
     generate_images,
     generate_images_img2img,
     generate_images_inpaint,
+    generate_images_controlnet,
 )
 from backend.flux_pipeline import run_flux_img2img, run_flux_inpaint, run_flux_text2img
 from backend.sdxl_pipeline import (
@@ -56,6 +63,8 @@ class GenerateRequest(BaseModel):
     num_images: int = 1
     model: str | None = None
     clip_skip: int = 1
+    controlnet_active: bool = False
+    controlnet_model: str = DEFAULTS["controlnet_model"]
 
 
 class SdxlGenerateRequest(BaseModel):
@@ -105,6 +114,13 @@ class ModelCreateRequest(BaseModel):
     link: str
 
 
+class ControlNetPreprocessorInfo(BaseModel):
+    id: str
+    name: str
+    description: str
+    defaults: dict[str, object]
+
+
 def _extract_png_metadata(path: Path) -> dict[str, str]:
     try:
         with Image.open(path) as image:
@@ -145,6 +161,65 @@ async def list_models(family: str | None = None):
         pattern = re.compile(re.escape(family_value), re.IGNORECASE)
 
     return [entry for entry in MODEL_REGISTRY if pattern.search(entry.family)]
+
+
+@app.get("/api/controlnet/preprocessors", response_model=list[ControlNetPreprocessorInfo])
+async def list_controlnet_preprocessors():
+    preprocessors = list_preprocessors()
+    return [
+        ControlNetPreprocessorInfo(
+            id=preprocessor.id,
+            name=preprocessor.name,
+            description=preprocessor.description,
+            defaults=preprocessor.defaults,
+        )
+        for preprocessor in preprocessors
+    ]
+
+
+@app.get(
+    "/api/controlnet/preprocessor-models",
+    response_model=list[ControlNetPreprocessorModelEntry],
+)
+async def list_controlnet_preprocessor_models():
+    return CONTROLNET_PREPROCESSOR_REGISTRY
+
+
+@app.post("/api/controlnet/preprocess")
+async def run_controlnet_preprocessor(
+    image: UploadFile = File(...),
+    preprocessor_id: str = Form(...),
+    params: str | None = Form(None),
+    low_threshold: int | None = Form(None),
+    high_threshold: int | None = Form(None),
+):
+    image_bytes = await image.read()
+    try:
+        source_image = Image.open(BytesIO(image_bytes)).convert("RGB")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid image file.") from exc
+
+    try:
+        preprocessor = get_preprocessor(preprocessor_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    parsed_params: dict[str, object] = {}
+    if params:
+        try:
+            parsed_params = json.loads(params)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail="Invalid params JSON.") from exc
+
+    if low_threshold is not None:
+        parsed_params["low_threshold"] = low_threshold
+    if high_threshold is not None:
+        parsed_params["high_threshold"] = high_threshold
+
+    processed = preprocessor.process(source_image, parsed_params)
+    output = BytesIO()
+    processed.save(output, format="PNG")
+    return Response(content=output.getvalue(), media_type="image/png")
 
 
 @app.post("/models", response_model=ModelRegistryEntry, status_code=201)
@@ -200,6 +275,12 @@ async def generate(req: GenerateRequest, request: Request):
     # logger.info("Request JSON: %s", await request.json())
     # logger.info("Parsed seed: %s", req.seed)
     prepare_model(req.model)
+
+    if req.controlnet_active:
+        raise HTTPException(
+            status_code=400,
+            detail="ControlNet active requires /api/controlnet/text2img with an image.",
+        )
     
     filenames = generate_images(
         prompt=req.prompt,
@@ -213,6 +294,52 @@ async def generate(req: GenerateRequest, request: Request):
         model=req.model,
         num_images = req.num_images,
         clip_skip = req.clip_skip,
+    )
+
+    return {
+        "images": [f"/outputs/{name}" for name in filenames]
+    }
+
+
+@app.post("/api/controlnet/text2img")
+async def generate_controlnet_text2img(
+    control_image: UploadFile = File(...),
+    prompt: str = Form(...),
+    negative_prompt: str = Form(DEFAULTS["negative_prompt"]),
+    steps: int = Form(DEFAULTS["steps"]),
+    cfg: float = Form(DEFAULTS["cfg"]),
+    width: int = Form(DEFAULTS["width"]),
+    height: int = Form(DEFAULTS["height"]),
+    seed: int | None = Form(None),
+    scheduler: str = Form("euler"),
+    num_images: int = Form(1),
+    model: str | None = Form(None),
+    clip_skip: int = Form(1),
+    controlnet_model: str = Form(DEFAULTS["controlnet_model"]),
+):
+    image_bytes = await control_image.read()
+    try:
+        controlnet_image = Image.open(BytesIO(image_bytes)).convert("RGB")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid control image file.") from exc
+
+    controlnet_image = controlnet_image.resize((width, height))
+    prepare_model(model)
+
+    filenames = generate_images_controlnet(
+        prompt=prompt,
+        negative_prompt=negative_prompt,
+        steps=steps,
+        cfg=cfg,
+        width=width,
+        height=height,
+        seed=seed,
+        scheduler=scheduler,
+        model=model,
+        num_images=num_images,
+        clip_skip=clip_skip,
+        controlnet_model=controlnet_model,
+        control_image=controlnet_image,
     )
 
     return {

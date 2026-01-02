@@ -259,6 +259,155 @@ button {
     color: #6b645c;
 }
 
+.field-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    text-transform: none;
+    letter-spacing: normal;
+}
+
+.controlnet-panel {
+    border: 1px solid #e3ddd4;
+    border-radius: 14px;
+    overflow: hidden;
+    background: #fdfbf7;
+}
+
+.controlnet-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 14px;
+    background: #f3eee5;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.controlnet-toggle .indicator {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: #c9c2b8;
+    box-shadow: inset 0 0 0 2px #b2aba2;
+}
+
+.controlnet-toggle .indicator.is-active {
+    background: #3a5a40;
+    box-shadow: inset 0 0 0 2px #2f4e36;
+}
+
+.controlnet-content {
+    display: none;
+    padding: 12px 14px 16px;
+    gap: 10px;
+    background: #ffffff;
+}
+
+.controlnet-content.is-open {
+    display: grid;
+}
+
+.controlnet-status {
+    font-size: 13px;
+    color: #6b645c;
+}
+
+.modal {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    z-index: 1000;
+}
+
+.modal.hidden {
+    display: none;
+}
+
+.modal-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(43, 42, 40, 0.55);
+}
+
+.modal-content {
+    position: relative;
+    background: #ffffff;
+    border-radius: 18px;
+    padding: 18px;
+    width: min(520px, 90vw);
+    box-shadow: 0 20px 40px rgba(40, 36, 32, 0.25);
+    display: grid;
+    gap: 14px;
+}
+
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.modal-body {
+    display: grid;
+    gap: 12px;
+}
+
+.preprocessor-description {
+    margin: 0;
+    font-size: 13px;
+    color: #6b645c;
+}
+
+.is-hidden {
+    display: none;
+}
+
+.preprocessor-preview {
+    display: grid;
+    gap: 6px;
+    font-size: 13px;
+    color: #6b645c;
+}
+
+.preprocessor-preview img {
+    width: 100%;
+    border-radius: 12px;
+    border: 1px solid #e3ddd4;
+    background: #f7f3ed;
+    min-height: 160px;
+    object-fit: contain;
+}
+
+.controlnet-download {
+    text-align: center;
+    text-decoration: none;
+}
+
+.controlnet-download.is-disabled {
+    pointer-events: none;
+    opacity: 0.6;
+}
+
+.controlnet-active-flag {
+    margin-top: 8px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: #3a5a40;
+    color: #f7f4ee;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
 .history-meta-row dd {
     margin: 0;
     word-break: break-word;
