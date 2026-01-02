@@ -1,5 +1,7 @@
 import logging
 import re
+import shutil
+import tempfile
 from datetime import datetime, timezone
 from io import BytesIO
 import json
@@ -18,6 +20,7 @@ from backend.controlnet_preprocessor_registry import (
     ControlNetPreprocessorModelEntry,
 )
 from backend.model_cache import clear_all_pipelines, prepare_model
+from backend.model_analysis import SUPPORTED_EXTS, analyze_model_file
 from backend.model_registry import MODEL_REGISTRY, ModelRegistryEntry, save_model_registry
 from backend.sd15_pipeline import (
     create_blur_mask,
@@ -121,6 +124,20 @@ class ControlNetPreprocessorInfo(BaseModel):
     defaults: dict[str, object]
 
 
+class ModelLayerRow(BaseModel):
+    key: str
+    shape: str
+    dtype: str
+
+
+class ModelAnalysisResponse(BaseModel):
+    file_name: str
+    loader: str
+    total: int
+    returned: int
+    rows: list[ModelLayerRow]
+
+
 def _extract_png_metadata(path: Path) -> dict[str, str]:
     try:
         with Image.open(path) as image:
@@ -199,6 +216,7 @@ async def run_controlnet_preprocessor(
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Invalid image file.") from exc
 
+
     try:
         preprocessor = get_preprocessor(preprocessor_id)
     except KeyError as exc:
@@ -220,6 +238,41 @@ async def run_controlnet_preprocessor(
     output = BytesIO()
     processed.save(output, format="PNG")
     return Response(content=output.getvalue(), media_type="image/png")
+
+
+@app.post("/api/tools/analyze-model", response_model=ModelAnalysisResponse)
+async def analyze_model_layers(
+    file: UploadFile = File(...),
+    limit: int | None = Form(None),
+):
+    filename = file.filename or "uploaded_model"
+    suffix = Path(filename).suffix.lower()
+    if suffix not in SUPPORTED_EXTS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file extension: {suffix or 'unknown'}.",
+        )
+
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+            shutil.copyfileobj(file.file, temp_file)
+            temp_path = Path(temp_file.name)
+
+        rows, loader, total = analyze_model_file(temp_path, limit=limit)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        if temp_path and temp_path.exists():
+            temp_path.unlink(missing_ok=True)
+
+    return ModelAnalysisResponse(
+        file_name=filename,
+        loader=loader,
+        total=total,
+        returned=len(rows),
+        rows=[ModelLayerRow(key=k, shape=s, dtype=d) for k, s, d in rows],
+    )
 
 
 @app.post("/models", response_model=ModelRegistryEntry, status_code=201)

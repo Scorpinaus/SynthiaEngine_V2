@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Synthia Engine Tools & Analysis</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+    <div class="app">
+        <header class="header">
+            <h1>Synthia Engine</h1>
+            <div id="nav-root"></div>
+        </header>
+
+        <section class="tools-panel">
+            <div class="tools-header">
+                <div>
+                    <h2>Tools & Analysis</h2>
+                    <p>Inspect checkpoint files and list their parameter layers.</p>
+                </div>
+            </div>
+
+            <div class="tools-warning">
+                <strong>Note:</strong> `.pt`/`.ckpt` files are loaded with torch and should only be used from trusted sources.
+            </div>
+
+            <form id="tools-form" class="tools-form">
+                <label class="tools-field">
+                    <span>Model file (.safetensors, .pt, .ckpt, .ckpr, .model)</span>
+                    <input id="tools-file" type="file" accept=".safetensors,.pt,.ckpt,.ckpr,.model" required />
+                </label>
+                <div class="tools-row">
+                    <label class="tools-field tools-field-inline">
+                        <span>Row limit (optional)</span>
+                        <input id="tools-limit" type="number" min="0" placeholder="0 = all" />
+                    </label>
+                    <button id="tools-submit" class="primary" type="submit">Analyze model</button>
+                </div>
+            </form>
+
+            <div class="tools-state" id="tools-state">Select a model file to begin.</div>
+
+            <div class="tools-results" id="tools-results" hidden>
+                <div class="tools-summary">
+                    <div>
+                        <div class="tools-summary-title" id="tools-file-name"></div>
+                        <div class="tools-summary-meta" id="tools-summary-meta"></div>
+                    </div>
+                    <div class="tools-summary-count" id="tools-summary-count"></div>
+                </div>
+                <div class="tools-table-wrapper">
+                    <table class="tools-table">
+                        <thead>
+                            <tr>
+                                <th>Key</th>
+                                <th>Shape</th>
+                                <th>dtype</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tools-table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script src="nav_bar.js?v=1"></script>
+    <script src="tools_analysis.js?v=1"></script>
+</body>
+
+</html>
