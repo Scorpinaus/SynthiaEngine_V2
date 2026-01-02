@@ -2,6 +2,7 @@ import logging
 import re
 from datetime import datetime, timezone
 from io import BytesIO
+import json
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
@@ -11,6 +12,7 @@ from PIL import Image
 from pydantic import BaseModel
 
 from backend.config import DEFAULTS
+from backend.controlnet_preprocessors import get_preprocessor, list_preprocessors
 from backend.model_cache import clear_all_pipelines, prepare_model
 from backend.model_registry import MODEL_REGISTRY, ModelRegistryEntry, save_model_registry
 from backend.sd15_pipeline import (
@@ -105,6 +107,13 @@ class ModelCreateRequest(BaseModel):
     link: str
 
 
+class ControlNetPreprocessorInfo(BaseModel):
+    id: str
+    name: str
+    description: str
+    defaults: dict[str, object]
+
+
 def _extract_png_metadata(path: Path) -> dict[str, str]:
     try:
         with Image.open(path) as image:
@@ -145,6 +154,57 @@ async def list_models(family: str | None = None):
         pattern = re.compile(re.escape(family_value), re.IGNORECASE)
 
     return [entry for entry in MODEL_REGISTRY if pattern.search(entry.family)]
+
+
+@app.get("/api/controlnet/preprocessors", response_model=list[ControlNetPreprocessorInfo])
+async def list_controlnet_preprocessors():
+    preprocessors = list_preprocessors()
+    return [
+        ControlNetPreprocessorInfo(
+            id=preprocessor.id,
+            name=preprocessor.name,
+            description=preprocessor.description,
+            defaults=preprocessor.defaults,
+        )
+        for preprocessor in preprocessors
+    ]
+
+
+@app.post("/api/controlnet/preprocess")
+async def run_controlnet_preprocessor(
+    image: UploadFile = File(...),
+    preprocessor_id: str = Form(...),
+    params: str | None = Form(None),
+    low_threshold: int | None = Form(None),
+    high_threshold: int | None = Form(None),
+):
+    image_bytes = await image.read()
+    try:
+        source_image = Image.open(BytesIO(image_bytes)).convert("RGB")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid image file.") from exc
+
+    try:
+        preprocessor = get_preprocessor(preprocessor_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    parsed_params: dict[str, object] = {}
+    if params:
+        try:
+            parsed_params = json.loads(params)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail="Invalid params JSON.") from exc
+
+    if low_threshold is not None:
+        parsed_params["low_threshold"] = low_threshold
+    if high_threshold is not None:
+        parsed_params["high_threshold"] = high_threshold
+
+    processed = preprocessor.process(source_image, parsed_params)
+    output = BytesIO()
+    processed.save(output, format="PNG")
+    return Response(content=output.getvalue(), media_type="image/png")
 
 
 @app.post("/models", response_model=ModelRegistryEntry, status_code=201)

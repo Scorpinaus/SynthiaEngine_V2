@@ -36,6 +36,22 @@
                     <textarea id="negative_prompt" class="textarea-small" placeholder="Optional negative prompt..."></textarea>
                 </label>
 
+                <div class="controlnet-panel">
+                    <button class="controlnet-toggle" type="button" id="controlnet-toggle">
+                        <span class="indicator" id="controlnet-indicator"></span>
+                        <span>ControlNet Preprocessors</span>
+                        <span class="chevron" id="controlnet-chevron">▾</span>
+                    </button>
+                    <div class="controlnet-content" id="controlnet-content">
+                        <label class="field field-inline">
+                            <input type="checkbox" id="controlnet-enabled" />
+                            <span>Enable ControlNet</span>
+                        </label>
+                        <button class="secondary" id="open-preprocessors" type="button">Open Preprocessors</button>
+                        <div class="controlnet-status" id="controlnet-status">No preprocessor applied.</div>
+                    </div>
+                </div>
+
                 <div class="field-row">
                     <label class="field">
                         <span>Seed</span>
@@ -120,6 +136,51 @@
                     <div id="viewer-thumbs" class="viewer-thumbs"></div>
                 </div>
             </section>
+        </div>
+    </div>
+
+    <div class="modal hidden" id="preprocessor-modal" aria-hidden="true">
+        <div class="modal-overlay" id="preprocessor-overlay"></div>
+        <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="preprocessor-title">
+            <div class="modal-header">
+                <h2 id="preprocessor-title">ControlNet Preprocessors (SD1.5)</h2>
+                <button class="secondary" id="close-preprocessors" type="button">Close</button>
+            </div>
+            <div class="modal-body">
+                <label class="field">
+                    <span>Preprocessor</span>
+                    <select id="preprocessor-select"></select>
+                </label>
+                <p class="preprocessor-description" id="preprocessor-description"></p>
+                <label class="field">
+                    <span>Input Image</span>
+                    <input id="preprocessor-image" type="file" accept="image/*" />
+                </label>
+                <div class="field-row" id="canny-thresholds">
+                    <label class="field">
+                        <span>Low Threshold</span>
+                        <input id="preprocessor-low-threshold" type="number" min="0" max="255" value="100" />
+                    </label>
+                    <label class="field">
+                        <span>High Threshold</span>
+                        <input id="preprocessor-high-threshold" type="number" min="0" max="255" value="200" />
+                    </label>
+                </div>
+                <button class="primary" id="apply-preprocessor" type="button">Apply Preprocessor</button>
+                <div class="preprocessor-preview">
+                    <span>Preview</span>
+                    <img id="preprocessor-preview" alt="Preprocessor output preview" />
+                    <a
+                        id="download-control-image"
+                        class="secondary controlnet-download is-disabled"
+                        href="#"
+                        download="controlnet_preprocessor.png"
+                        aria-disabled="true"
+                    >
+                        Download Control Image
+                    </a>
+                </div>
+            </div>
         </div>
     </div>
 

@@ -1,6 +1,7 @@
+const API_BASE = "http://127.0.0.1:8000";
 const gallery = createGalleryViewer({
     buildImageUrl: (path, idx, stamp) => {
-        return "http://127.0.0.1:8000" + path + `?t=${stamp}_${idx}`;
+        return API_BASE + path + `?t=${stamp}_${idx}`;
     },
 });
 
@@ -10,7 +11,7 @@ async function loadModels() {
     const select = document.getElementById("model_select");
     select.innerHTML = "";
     try {
-        const res = await fetch("http://127.0.0.1:8000/models?family=sd15");
+        const res = await fetch(`${API_BASE}/models?family=sd15`);
         const models = await res.json();
 
         if (!Array.isArray(models) || models.length === 0) {
@@ -39,6 +40,203 @@ async function loadModels() {
 }
 
 loadModels();
+
+const controlnetState = {
+    previewUrl: null,
+    preprocessors: new Map(),
+};
+
+function updateControlNetIndicator() {
+    const indicator = document.getElementById("controlnet-indicator");
+    const enabledToggle = document.getElementById("controlnet-enabled");
+    const status = document.getElementById("controlnet-status");
+    const isActive = Boolean(enabledToggle?.checked && controlnetState.previewUrl);
+    if (indicator) {
+        indicator.classList.toggle("is-active", isActive);
+    }
+    if (status) {
+        status.textContent = isActive
+            ? "ControlNet preprocessor ready for SD1.5."
+            : "No preprocessor applied.";
+    }
+}
+
+function toggleControlNetPanel() {
+    const content = document.getElementById("controlnet-content");
+    const chevron = document.getElementById("controlnet-chevron");
+    if (!content || !chevron) {
+        return;
+    }
+    const isOpen = content.classList.toggle("is-open");
+    chevron.textContent = isOpen ? "▴" : "▾";
+}
+
+function updateDownloadLinkState(isReady) {
+    const downloadLink = document.getElementById("download-control-image");
+    if (!downloadLink) {
+        return;
+    }
+    downloadLink.setAttribute("aria-disabled", isReady ? "false" : "true");
+    downloadLink.classList.toggle("is-disabled", !isReady);
+    if (!isReady) {
+        downloadLink.href = "#";
+    }
+}
+
+async function loadPreprocessors() {
+    const select = document.getElementById("preprocessor-select");
+    if (!select) {
+        return;
+    }
+    select.innerHTML = "";
+    try {
+        const res = await fetch(`${API_BASE}/api/controlnet/preprocessors`);
+        const preprocessors = await res.json();
+        preprocessors.forEach((preprocessor) => {
+            const option = document.createElement("option");
+            option.value = preprocessor.id;
+            option.textContent = preprocessor.name;
+            select.appendChild(option);
+            controlnetState.preprocessors.set(preprocessor.id, preprocessor);
+        });
+        updatePreprocessorDefaults(select.value);
+    } catch (error) {
+        const fallback = document.createElement("option");
+        fallback.value = "canny";
+        fallback.textContent = "Canny";
+        select.appendChild(fallback);
+        console.warn("Failed to load preprocessors:", error);
+    }
+}
+
+function updatePreprocessorDefaults(preprocessorId) {
+    const definition = controlnetState.preprocessors.get(preprocessorId);
+    const defaults = definition?.defaults ?? {};
+    const description = definition?.description ?? "";
+    const lowThresholdInput = document.getElementById("preprocessor-low-threshold");
+    const highThresholdInput = document.getElementById("preprocessor-high-threshold");
+    const descriptionNode = document.getElementById("preprocessor-description");
+    const cannyRow = document.getElementById("canny-thresholds");
+    if (lowThresholdInput) {
+        lowThresholdInput.value = Number(defaults.low_threshold ?? 100);
+    }
+    if (highThresholdInput) {
+        highThresholdInput.value = Number(defaults.high_threshold ?? 200);
+    }
+    if (descriptionNode) {
+        descriptionNode.textContent = description;
+    }
+    if (cannyRow) {
+        const isCanny = preprocessorId === "canny";
+        cannyRow.classList.toggle("is-hidden", !isCanny);
+    }
+}
+
+function buildPreprocessorParams(preprocessorId) {
+    const definition = controlnetState.preprocessors.get(preprocessorId);
+    const params = { ...(definition?.defaults ?? {}) };
+    if (preprocessorId === "canny") {
+        const lowThresholdInput = document.getElementById("preprocessor-low-threshold");
+        const highThresholdInput = document.getElementById("preprocessor-high-threshold");
+        params.low_threshold = Number(lowThresholdInput?.value ?? params.low_threshold ?? 100);
+        params.high_threshold = Number(highThresholdInput?.value ?? params.high_threshold ?? 200);
+    }
+    return params;
+}
+
+function openPreprocessorModal() {
+    const modal = document.getElementById("preprocessor-modal");
+    if (!modal) {
+        return;
+    }
+    modal.classList.remove("hidden");
+    modal.setAttribute("aria-hidden", "false");
+}
+
+function closePreprocessorModal() {
+    const modal = document.getElementById("preprocessor-modal");
+    if (!modal) {
+        return;
+    }
+    modal.classList.add("hidden");
+    modal.setAttribute("aria-hidden", "true");
+}
+
+async function applyPreprocessor() {
+    const fileInput = document.getElementById("preprocessor-image");
+    const select = document.getElementById("preprocessor-select");
+    const preview = document.getElementById("preprocessor-preview");
+    const downloadLink = document.getElementById("download-control-image");
+    const enabledToggle = document.getElementById("controlnet-enabled");
+
+    if (!fileInput?.files?.length) {
+        alert("Please select an input image for the preprocessor.");
+        return;
+    }
+    const formData = new FormData();
+    formData.append("image", fileInput.files[0]);
+    const selectedId = select?.value ?? "canny";
+    formData.append("preprocessor_id", selectedId);
+    formData.append("params", JSON.stringify(buildPreprocessorParams(selectedId)));
+
+    const res = await fetch(`${API_BASE}/api/controlnet/preprocess`, {
+        method: "POST",
+        body: formData,
+    });
+
+    if (!res.ok) {
+        console.error("Preprocessor failed", res.status);
+        alert("Preprocessor failed. Check the backend logs for details.");
+        return;
+    }
+
+    const blob = await res.blob();
+    if (controlnetState.previewUrl) {
+        URL.revokeObjectURL(controlnetState.previewUrl);
+    }
+    controlnetState.previewUrl = URL.createObjectURL(blob);
+    if (preview) {
+        preview.src = controlnetState.previewUrl;
+    }
+    if (downloadLink) {
+        downloadLink.href = controlnetState.previewUrl;
+        downloadLink.setAttribute("download", "controlnet_preprocessor.png");
+    }
+    updateDownloadLinkState(true);
+    if (enabledToggle) {
+        enabledToggle.checked = true;
+    }
+    updateControlNetIndicator();
+}
+
+function initControlNetUI() {
+    const toggleButton = document.getElementById("controlnet-toggle");
+    const openButton = document.getElementById("open-preprocessors");
+    const closeButton = document.getElementById("close-preprocessors");
+    const overlay = document.getElementById("preprocessor-overlay");
+    const applyButton = document.getElementById("apply-preprocessor");
+    const enabledToggle = document.getElementById("controlnet-enabled");
+    const select = document.getElementById("preprocessor-select");
+    const fileInput = document.getElementById("preprocessor-image");
+
+    toggleButton?.addEventListener("click", toggleControlNetPanel);
+    openButton?.addEventListener("click", openPreprocessorModal);
+    closeButton?.addEventListener("click", closePreprocessorModal);
+    overlay?.addEventListener("click", closePreprocessorModal);
+    applyButton?.addEventListener("click", applyPreprocessor);
+    enabledToggle?.addEventListener("change", updateControlNetIndicator);
+    select?.addEventListener("change", (event) => {
+        updatePreprocessorDefaults(event.target.value);
+        updateDownloadLinkState(false);
+    });
+    fileInput?.addEventListener("change", () => updateDownloadLinkState(false));
+
+    loadPreprocessors();
+    updateControlNetIndicator();
+    updateDownloadLinkState(false);
+}
+
+initControlNetUI();
 
 async function generate() {
     const prompt = document.getElementById("prompt").value;
@@ -70,7 +268,7 @@ async function generate() {
     };
     console.log("Generate payload", payload);
 
-    const res = await fetch("http://127.0.0.1:8000/generate", {
+    const res = await fetch(`${API_BASE}/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
