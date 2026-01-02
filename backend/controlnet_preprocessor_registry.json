@@ -4,62 +4,71 @@
         "name": "Canny",
         "description": "Canny edge detector via controlnet-aux.",
         "repo_id": null,
-        "revision": null
+        "revision": null,
+        "local_path": null
     },
     {
         "id": "hed",
         "name": "HED",
         "description": "Holistically-nested edge detection via controlnet-aux.",
         "repo_id": null,
-        "revision": null
+        "revision": null,
+        "local_path": null
     },
     {
         "id": "midas-depth",
         "name": "Midas Depth",
         "description": "Depth estimation via MiDaS (controlnet-aux).",
         "repo_id": null,
-        "revision": null
+        "revision": null,
+        "local_path": null
     },
     {
         "id": "openpose",
         "name": "OpenPose",
         "description": "Pose detection via OpenPose (controlnet-aux).",
         "repo_id": null,
-        "revision": null
+        "revision": null,
+        "local_path": null
     },
     {
         "id": "mlsd",
         "name": "MLSD",
         "description": "Line detection via MLSD (controlnet-aux).",
         "repo_id": null,
-        "revision": null
+        "revision": null,
+        "local_path": null
     },
     {
         "id": "lineart",
         "name": "Lineart",
         "description": "Lineart extraction via controlnet-aux.",
         "repo_id": null,
-        "revision": null
+        "revision": null,
+        "local_path": null
     },
     {
         "id": "lineart-anime",
         "name": "Lineart Anime",
         "description": "Anime lineart extraction via controlnet-aux.",
         "repo_id": null,
-        "revision": null
+        "revision": null,
+        "local_path": null
     },
     {
         "id": "pidinet",
         "name": "PidiNet",
         "description": "PiDiNet edge detector via controlnet-aux.",
         "repo_id": null,
-        "revision": null
+        "revision": null,
+        "local_path": null
     },
     {
         "id": "normal-bae",
         "name": "Normal BAE",
         "description": "Surface normals via NormalBae (controlnet-aux).",
         "repo_id": null,
-        "revision": null
+        "revision": null,
+        "local_path": null
     }
 ]

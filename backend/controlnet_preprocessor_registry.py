@@ -10,6 +10,7 @@ class ControlNetPreprocessorModelEntry(BaseModel):
     description: str
     repo_id: str | None = None
     revision: str | None = None
+    local_path: str | None = None
 
 
 REGISTRY_PATH = Path(__file__).with_name("controlnet_preprocessor_registry.json")
