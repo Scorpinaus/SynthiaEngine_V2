@@ -511,6 +511,143 @@ button {
     grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
 }
 
+.tools-panel {
+    background: #fdfbf7;
+    border: 1px solid #e1dbd2;
+    border-radius: 18px;
+    padding: 20px;
+    display: grid;
+    gap: 18px;
+}
+
+.tools-header h2 {
+    margin: 0 0 6px 0;
+    font-size: 22px;
+}
+
+.tools-header p {
+    margin: 0;
+    color: #6b645c;
+    font-size: 14px;
+}
+
+.tools-warning {
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: #fff6e8;
+    border: 1px solid #f1ddc0;
+    font-size: 13px;
+    color: #6b4b1f;
+}
+
+.tools-form {
+    display: grid;
+    gap: 14px;
+}
+
+.tools-field {
+    display: grid;
+    gap: 6px;
+    font-size: 12px;
+    color: #6b645c;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.tools-field input {
+    text-transform: none;
+    letter-spacing: normal;
+}
+
+.tools-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    align-items: flex-end;
+}
+
+.tools-field-inline {
+    flex: 1;
+    min-width: 200px;
+}
+
+.tools-state {
+    font-size: 14px;
+    color: #6b645c;
+}
+
+.tools-state.is-error {
+    color: #9b2c2c;
+}
+
+.tools-results {
+    display: grid;
+    gap: 16px;
+}
+
+.tools-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    background: #f7f1e9;
+    border-radius: 14px;
+    padding: 12px 16px;
+    border: 1px solid #e8e0d6;
+}
+
+.tools-summary-title {
+    font-weight: 600;
+}
+
+.tools-summary-meta {
+    font-size: 13px;
+    color: #6b645c;
+}
+
+.tools-summary-count {
+    font-weight: 600;
+}
+
+.tools-table-wrapper {
+    background: #ffffff;
+    border-radius: 16px;
+    border: 1px solid #e3ddd4;
+    overflow: hidden;
+    box-shadow: 0 12px 24px rgba(40, 36, 32, 0.08);
+}
+
+.tools-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.tools-table thead {
+    background: #f3eee6;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 11px;
+    color: #6b645c;
+}
+
+.tools-table th,
+.tools-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #ece5db;
+    text-align: left;
+    vertical-align: top;
+}
+
+.tools-table tbody tr:nth-child(even) {
+    background: #fdfaf5;
+}
+
+.tools-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
 .model-card {
     background: #ffffff;
     border-radius: 16px;
