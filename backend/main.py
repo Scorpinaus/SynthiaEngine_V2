@@ -13,6 +13,10 @@ from pydantic import BaseModel
 
 from backend.config import DEFAULTS
 from backend.controlnet_preprocessors import get_preprocessor, list_preprocessors
+from backend.controlnet_preprocessor_registry import (
+    CONTROLNET_PREPROCESSOR_REGISTRY,
+    ControlNetPreprocessorModelEntry,
+)
 from backend.model_cache import clear_all_pipelines, prepare_model
 from backend.model_registry import MODEL_REGISTRY, ModelRegistryEntry, save_model_registry
 from backend.sd15_pipeline import (
@@ -168,6 +172,14 @@ async def list_controlnet_preprocessors():
         )
         for preprocessor in preprocessors
     ]
+
+
+@app.get(
+    "/api/controlnet/preprocessor-models",
+    response_model=list[ControlNetPreprocessorModelEntry],
+)
+async def list_controlnet_preprocessor_models():
+    return CONTROLNET_PREPROCESSOR_REGISTRY
 
 
 @app.post("/api/controlnet/preprocess")
