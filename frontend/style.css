@@ -316,6 +316,84 @@ button {
     color: #6b645c;
 }
 
+.lora-panel {
+    border: 1px solid #e3ddd4;
+    border-radius: 14px;
+    overflow: hidden;
+    background: #fdfbf7;
+}
+
+.lora-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 14px;
+    background: #f3eee5;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.lora-content {
+    display: none;
+    padding: 12px 14px 16px;
+    gap: 12px;
+    background: #ffffff;
+}
+
+.lora-content.is-open {
+    display: grid;
+}
+
+.lora-section {
+    display: grid;
+    gap: 10px;
+}
+
+.lora-selected {
+    display: grid;
+    gap: 10px;
+}
+
+.lora-list {
+    display: grid;
+    gap: 10px;
+}
+
+.lora-item {
+    display: grid;
+    gap: 8px;
+    padding: 10px;
+    border-radius: 12px;
+    border: 1px solid #ece4d6;
+    background: #fdf9f2;
+}
+
+.lora-item-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.lora-strength {
+    display: grid;
+    gap: 6px;
+    font-size: 12px;
+    color: #6b645c;
+}
+
+.lora-strength input[type="range"] {
+    width: 100%;
+}
+
+.lora-remove {
+    align-self: flex-start;
+}
+
 .modal {
     position: fixed;
     inset: 0;

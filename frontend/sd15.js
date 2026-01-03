@@ -326,6 +326,8 @@ async function initControlNet() {
 
 initControlNet();
 
+window.LoraPanel?.init({ apiBase: API_BASE, family: "sd15" });
+
 async function generate() {
     const prompt = document.getElementById("prompt").value;
     const steps = Number(document.getElementById("steps").value);
@@ -343,6 +345,7 @@ async function generate() {
     const controlnetEnabled = Boolean(
         document.getElementById("controlnet-enabled")?.checked
     );
+    const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
 
     const payload = {
         prompt,
@@ -355,8 +358,11 @@ async function generate() {
         height,
         model,
         num_images,
-        clip_skip
+        clip_skip,
     };
+    if (loraAdapters.length > 0) {
+        payload.lora_adapters = loraAdapters;
+    }
     console.log("Generate payload", payload);
 
     let res;
@@ -376,6 +382,9 @@ async function generate() {
             formData.append("model", model);
         }
         formData.append("clip_skip", String(clip_skip));
+        if (loraAdapters.length > 0) {
+            formData.append("lora_adapters", JSON.stringify(loraAdapters));
+        }
         res = await fetch(`${API_BASE}/api/controlnet/text2img`, {
             method: "POST",
             body: formData,
@@ -394,5 +403,3 @@ async function generate() {
     const data = await res.json();
     gallery.setImages(Array.isArray(data.images) ? data.images : []);
 }
-
-

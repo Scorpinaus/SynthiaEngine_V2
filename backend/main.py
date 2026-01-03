@@ -22,6 +22,11 @@ from backend.controlnet_preprocessor_registry import (
 from backend.model_cache import clear_all_pipelines, prepare_model
 from backend.model_analysis import SUPPORTED_EXTS, analyze_model_file
 from backend.model_registry import MODEL_REGISTRY, ModelRegistryEntry, save_model_registry
+from backend.lora_registry import (
+    LORA_REGISTRY,
+    LoraRegistryEntry,
+    add_lora,
+)
 from backend.sd15_pipeline import (
     create_blur_mask,
     generate_images,
@@ -54,6 +59,11 @@ app.add_middleware(
 app.mount("/outputs", StaticFiles(directory="outputs"), name="outputs")
 
 ## BaseModel references
+class LoraAdapterRequest(BaseModel):
+    lora_id: int
+    strength: float = 1.0
+
+
 class GenerateRequest(BaseModel):
     prompt: str
     negative_prompt: str | None = DEFAULTS["negative_prompt"]
@@ -68,6 +78,7 @@ class GenerateRequest(BaseModel):
     clip_skip: int = 1
     controlnet_active: bool = False
     controlnet_model: str = DEFAULTS["controlnet_model"]
+    lora_adapters: list[LoraAdapterRequest] = []
 
 
 class SdxlGenerateRequest(BaseModel):
@@ -115,6 +126,15 @@ class ModelCreateRequest(BaseModel):
     model_id: int
     version: str
     link: str
+
+
+class LoraCreateRequest(BaseModel):
+    lora_id: int
+    lora_model_family: str
+    lora_type: str
+    lora_location: str
+    file_path: str
+    name: str | None = None
 
 
 class ControlNetPreprocessorInfo(BaseModel):
@@ -178,6 +198,31 @@ async def list_models(family: str | None = None):
         pattern = re.compile(re.escape(family_value), re.IGNORECASE)
 
     return [entry for entry in MODEL_REGISTRY if pattern.search(entry.family)]
+
+
+@app.get("/lora-models", response_model=list[LoraRegistryEntry])
+async def list_lora_models(family: str | None = None):
+    if not family:
+        return LORA_REGISTRY
+
+    family_value = family.strip().lower()
+    if not family_value:
+        return LORA_REGISTRY
+
+    return [
+        entry
+        for entry in LORA_REGISTRY
+        if entry.lora_model_family.lower() == family_value
+    ]
+
+
+@app.post("/lora-models", response_model=LoraRegistryEntry)
+async def create_lora_model(req: LoraCreateRequest):
+    try:
+        entry = LoraRegistryEntry(**req.dict())
+        return add_lora(entry)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/controlnet/preprocessors", response_model=list[ControlNetPreprocessorInfo])
@@ -347,6 +392,7 @@ async def generate(req: GenerateRequest, request: Request):
         model=req.model,
         num_images = req.num_images,
         clip_skip = req.clip_skip,
+        lora_adapters=req.lora_adapters,
     )
 
     return {

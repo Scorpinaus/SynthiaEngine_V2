@@ -1,0 +1,22 @@
+<div class="lora-panel">
+    <button class="lora-toggle" type="button" id="lora-toggle">
+        <span>LoRA Adapters</span>
+        <span class="chevron" id="lora-chevron">▾</span>
+    </button>
+    <div class="lora-content" id="lora-content">
+        <div class="lora-section">
+            <label class="field">
+                <span>Available LoRAs</span>
+                <select id="lora-select">
+                    <option value="" disabled selected>Loading LoRAs...</option>
+                </select>
+            </label>
+            <button class="secondary" type="button" id="add-lora">Add LoRA</button>
+        </div>
+        <div class="lora-selected">
+            <div class="field-hint" id="lora-empty">No LoRAs selected.</div>
+            <div id="lora-list" class="lora-list"></div>
+        </div>
+        <div class="field-hint">LoRA strength ranges from 0.0 to 1.0.</div>
+    </div>
+</div>
