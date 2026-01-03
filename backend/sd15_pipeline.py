@@ -19,6 +19,7 @@ from diffusers import (EulerDiscreteScheduler,
 from pathlib import Path
 
 from backend.model_registry import ModelRegistryEntry, get_model_entry
+from backend.lora_registry import get_lora_entry
 from backend.resource_logging import resource_logger
 # from testing.pipeline_stable_diffusion import(StableDiffusionPipeline)
 from backend.pipeline_utils import build_fixed_step_timesteps
@@ -364,6 +365,7 @@ def generate_images(
     model: str | None,
     num_images:int,
     clip_skip: int,
+    lora_adapters: list[object] | None = None,
     batch_id: str | None = None,
 ):
     logger.info("seed=%s", seed)
@@ -389,41 +391,68 @@ def generate_images(
     )
         
     filenames = []
+    adapter_names: list[str] = []
 
-    for i in range(num_images):
-        current_seed = base_seed + i
-        generator = torch.Generator(device="cuda").manual_seed(current_seed)
-        
-        image = pipe(
-            prompt=prompt,
-            negative_prompt=negative_prompt,
-            num_inference_steps=steps,
-            guidance_scale=cfg,
-            width=width,
-            height=height,
-            generator=generator,
-            clip_skip = clip_skip,
-        ).images[0]
-        
-        filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
-        pnginfo = _build_png_metadata({
-            "mode": "txt2img",
-            "prompt": prompt,
-            "negative_prompt": negative_prompt,
-            "steps": steps,
-            "cfg": cfg,
-            "width": width,
-            "height": height,
-            "seed": current_seed,
-            "scheduler": scheduler,
-            "model": model,
-            "clip_skip": clip_skip,
-            "batch_id": batch_id,
-        })
-        image.save(filename, pnginfo=pnginfo)
-        logger.info("Image %s saved to %s", i, filename.name)
-        
-        filenames.append(filename.name)
+    if lora_adapters:
+        weights: list[float] = []
+        for adapter in lora_adapters:
+            if isinstance(adapter, dict):
+                lora_id = adapter.get("lora_id")
+                strength = adapter.get("strength", 1.0)
+            else:
+                lora_id = getattr(adapter, "lora_id", None)
+                strength = getattr(adapter, "strength", 1.0)
+            if lora_id is None:
+                raise ValueError("LoRA adapter missing lora_id.")
+            entry = get_lora_entry(int(lora_id))
+            if entry.lora_model_family.lower() != "sd15":
+                raise ValueError(f"LoRA {entry.lora_id} is not compatible with SD1.5.")
+            adapter_name = f"lora_{entry.lora_id}"
+            source = entry.file_path
+            pipe.load_lora_weights(source, adapter_name=adapter_name)
+            adapter_names.append(adapter_name)
+            weights.append(float(strength))
+        if hasattr(pipe, "set_adapters"):
+            pipe.set_adapters(adapter_names, adapter_weights=weights)
+
+    try:
+        for i in range(num_images):
+            current_seed = base_seed + i
+            generator = torch.Generator(device="cuda").manual_seed(current_seed)
+
+            image = pipe(
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                num_inference_steps=steps,
+                guidance_scale=cfg,
+                width=width,
+                height=height,
+                generator=generator,
+                clip_skip = clip_skip,
+            ).images[0]
+
+            filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
+            pnginfo = _build_png_metadata({
+                "mode": "txt2img",
+                "prompt": prompt,
+                "negative_prompt": negative_prompt,
+                "steps": steps,
+                "cfg": cfg,
+                "width": width,
+                "height": height,
+                "seed": current_seed,
+                "scheduler": scheduler,
+                "model": model,
+                "clip_skip": clip_skip,
+                "batch_id": batch_id,
+            })
+            image.save(filename, pnginfo=pnginfo)
+            logger.info("Image %s saved to %s", i, filename.name)
+
+            filenames.append(filename.name)
+    finally:
+        if adapter_names and hasattr(pipe, "unload_lora_weights"):
+            pipe.unload_lora_weights()
 
     return filenames
 
