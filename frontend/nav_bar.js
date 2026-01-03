@@ -1,7 +1,7 @@
 const NAV_ITEMS = [
-    { href: "index.html", label: "Text2Img" },
-    { href: "img2img.html", label: "Img2Img" },
-    { href: "inpaint.html", label: "Inpaint" },
+    { href: "sd15.html", label: "Text2Img" },
+    { href: "sd15_img2img.html", label: "Img2Img" },
+    { href: "sd15_inpainting.html", label: "Inpaint" },
     { href: "sdxl.html", label: "SDXL Text2Img" },
     { href: "sdxl_img2img.html", label: "SDXL Img2Img" },
     { href: "sdxl_inpaint.html", label: "SDXL Inpaint" },
@@ -25,7 +25,7 @@ function renderNavBar() {
     const nav = document.createElement("nav");
     nav.className = "header-nav";
 
-    const currentPath = window.location.pathname.split("/").pop() || "index.html";
+    const currentPath = window.location.pathname.split("/").pop() || "sd15.html";
 
     NAV_ITEMS.forEach((item) => {
         const link = document.createElement("a");
@@ -46,3 +46,4 @@ if (document.readyState === "loading") {
 } else {
     renderNavBar();
 }
+

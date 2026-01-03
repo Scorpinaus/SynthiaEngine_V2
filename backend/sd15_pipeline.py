@@ -2,7 +2,7 @@ import torch
 import logging
 import random
 import time
-from PIL import ImageFilter
+from PIL import ImageFilter, Image
 from PIL.PngImagePlugin import PngInfo
 from diffusers import (
     StableDiffusionPipeline,
@@ -277,8 +277,6 @@ def _build_png_metadata(metadata: dict[str, object]) -> PngInfo:
         info.add_text(key, str(value))
     return info
 
-
-@resource_logger.log_resources
 def generate_images_controlnet(
     prompt: str,
     negative_prompt: str,

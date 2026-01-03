@@ -70,6 +70,7 @@ function updateControlNetActiveFlag() {
     const enabledToggle = document.getElementById("controlnet-enabled");
     const isActive = Boolean(enabledToggle?.checked && controlnetState.previewUrl);
     flag.classList.toggle("is-hidden", !isActive);
+    flag.style.display = isActive ? "inline-flex" : "none";
 }
 
 function toggleControlNetPanel() {
@@ -94,6 +95,67 @@ function updateDownloadLinkState(isReady) {
     }
 }
 
+let controlNetUiReady = false;
+let controlNetUiLoading = null;
+
+async function loadControlNetModal() {
+    const container = document.getElementById("controlnet-preprocessor-root");
+    if (!container) {
+        return;
+    }
+    try {
+        const res = await fetch("controlnet_preprocessor.html");
+        if (!res.ok) {
+            throw new Error(`Failed to load ControlNet preprocessor UI: ${res.status}`);
+        }
+        container.innerHTML = await res.text();
+    } catch (error) {
+        console.warn("Failed to load ControlNet preprocessor UI:", error);
+    }
+}
+
+async function loadControlNetPanel() {
+    const container = document.getElementById("controlnet-panel-root");
+    if (!container) {
+        return;
+    }
+    try {
+        const res = await fetch("controlnet_panel.html");
+        if (!res.ok) {
+            throw new Error(`Failed to load ControlNet panel UI: ${res.status}`);
+        }
+        container.innerHTML = await res.text();
+    } catch (error) {
+        console.warn("Failed to load ControlNet panel UI:", error);
+    }
+}
+
+async function ensureControlNetUI() {
+    if (controlNetUiReady) {
+        return;
+    }
+    if (controlNetUiLoading) {
+        return controlNetUiLoading;
+    }
+    controlNetUiLoading = (async () => {
+        await loadControlNetPanel();
+        await loadControlNetModal();
+        const panel = document.getElementById("controlnet-toggle");
+        const modal = document.getElementById("preprocessor-modal");
+        if (!panel || !modal) {
+            throw new Error("ControlNet preprocessor UI failed to load.");
+        }
+        initControlNetUI();
+        controlNetUiReady = true;
+    })()
+        .catch((error) => {
+            console.warn("ControlNet UI initialization failed:", error);
+        })
+        .finally(() => {
+            controlNetUiLoading = null;
+        });
+    return controlNetUiLoading;
+}
 async function loadPreprocessors() {
     const select = document.getElementById("preprocessor-select");
     if (!select) {
@@ -155,7 +217,8 @@ function buildPreprocessorParams(preprocessorId) {
     return params;
 }
 
-function openPreprocessorModal() {
+async function openPreprocessorModal() {
+    await ensureControlNetUI();
     const modal = document.getElementById("preprocessor-modal");
     if (!modal) {
         return;
@@ -257,7 +320,11 @@ function initControlNetUI() {
     updateDownloadLinkState(false);
 }
 
-initControlNetUI();
+async function initControlNet() {
+    await ensureControlNetUI();
+}
+
+initControlNet();
 
 async function generate() {
     const prompt = document.getElementById("prompt").value;
@@ -327,3 +394,5 @@ async function generate() {
     const data = await res.json();
     gallery.setImages(Array.isArray(data.images) ? data.images : []);
 }
+
+
