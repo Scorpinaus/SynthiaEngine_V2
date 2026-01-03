@@ -346,12 +346,6 @@ def generate_images_controlnet(
 
     return filenames
 
-
-# @resource_logger.annotate(
-#     "generate",
-#     metadata_builder=_resource_metadata,
-#     batch_id_factory=_make_batch_id,
-# )
 @torch.inference_mode()
 def generate_images(
     prompt: str,
@@ -380,15 +374,7 @@ def generate_images(
     pipe.scheduler = create_scheduler(scheduler, pipe)
     logger.info(
         "Generate: model=%s seed=%s scheduler=%s steps=%s cfg=%s size=%sx%s num_images=%s",
-        model,
-        base_seed,
-        scheduler,
-        steps,
-        cfg,
-        width,
-        height,
-        num_images,
-    )
+        model, base_seed, scheduler, steps, cfg, width, height, num_images,)
         
     filenames = []
     adapter_names: list[str] = []
@@ -402,16 +388,20 @@ def generate_images(
             else:
                 lora_id = getattr(adapter, "lora_id", None)
                 strength = getattr(adapter, "strength", 1.0)
+                
             if lora_id is None:
                 raise ValueError("LoRA adapter missing lora_id.")
             entry = get_lora_entry(int(lora_id))
+            
             if entry.lora_model_family.lower() != "sd15":
-                raise ValueError(f"LoRA {entry.lora_id} is not compatible with SD1.5.")
-            adapter_name = f"lora_{entry.lora_id}"
+                raise ValueError(f"LoRA {entry.name} is not compatible with SD1.5.")
+            
+            adapter_name = f"lora_{entry.name}"
             source = entry.file_path
             pipe.load_lora_weights(source, adapter_name=adapter_name)
             adapter_names.append(adapter_name)
             weights.append(float(strength))
+            logger.info('lora_name: %s , lora_id: %s, lora_weight: %s', adapter_name, entry.lora_id, strength)
         if hasattr(pipe, "set_adapters"):
             pipe.set_adapters(adapter_names, adapter_weights=weights)
 
@@ -456,12 +446,6 @@ def generate_images(
 
     return filenames
 
-
-# @resource_logger.annotate(
-#     "generate_img2img",
-#     metadata_builder=_resource_metadata,
-#     batch_id_factory=_make_batch_id,
-# )
 @torch.inference_mode()
 def generate_images_img2img(
     initial_image,
@@ -546,12 +530,6 @@ def generate_images_img2img(
 
     return filenames
 
-
-# @resource_logger.annotate(
-#     "generate_inpaint",
-#     metadata_builder=_resource_metadata,
-#     batch_id_factory=_make_batch_id,
-# )
 @torch.inference_mode()
 def generate_images_inpaint(
     initial_image,

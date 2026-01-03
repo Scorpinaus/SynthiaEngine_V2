@@ -1,1 +1,27 @@
-[]
+[
+  {
+    "lora_id": 1,
+    "lora_model_family": "sd15",
+    "lora_type": "lora",
+    "lora_location": "local",
+    "file_path": "D:\\diffusion\\loras\\Anime Detailer - [Concept] - Version 1.safetensors",
+    "name": "Anime Detailer Version 1"
+  },
+  {
+    "lora_id": 2,
+    "lora_model_family": "sdxl",
+    "lora_type": "lycoris",
+    "lora_location": "local",
+    "file_path": "/absolute/or/relative/path/to/lora.safetensors",
+    "name": "My SDXL LoRA"
+  },
+  {
+    "lora_id": 3,
+    "lora_model_family": "sd15",
+    "lora_type": "lora",
+    "lora_location": "local",
+    "file_path": "D:\\diffusion\\loras\\DetailerMix.safetensors",
+    "name": "DetailerMix"
+  }
+]
+
