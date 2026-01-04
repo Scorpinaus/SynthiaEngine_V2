@@ -1,8 +1,50 @@
+import torch
+
 from diffusers import (EulerDiscreteScheduler,
     EulerAncestralDiscreteScheduler,
     DPMSolverMultistepScheduler,
     DDIMScheduler,
-    DPMSolverSinglestepScheduler, KDPM2DiscreteScheduler, KDPM2AncestralDiscreteScheduler, HeunDiscreteScheduler, LMSDiscreteScheduler, DEISMultistepScheduler, UniPCMultistepScheduler)
+    DPMSolverSinglestepScheduler, KDPM2DiscreteScheduler, KDPM2AncestralDiscreteScheduler, HeunDiscreteScheduler, LMSDiscreteScheduler, DEISMultistepScheduler, UniPCMultistepScheduler,
+    FlowMatchEulerDiscreteScheduler, FlowMatchHeunDiscreteScheduler)
+
+
+class FlowMatchHeunDiscreteSchedulerWithMu(FlowMatchHeunDiscreteScheduler):
+    def set_timesteps(
+        self,
+        num_inference_steps: int,
+        device=None,
+        sigmas=None,
+        mu=None,
+        timesteps=None,
+        **kwargs,
+    ):
+        euler_scheduler = FlowMatchEulerDiscreteScheduler.from_config(self.config)
+        scheduler_kwargs = {}
+        if sigmas is not None:
+            scheduler_kwargs["sigmas"] = sigmas
+        if timesteps is not None:
+            scheduler_kwargs["timesteps"] = timesteps
+        if mu is not None:
+            scheduler_kwargs["mu"] = mu
+
+        euler_scheduler.set_timesteps(num_inference_steps, device=device, **scheduler_kwargs)
+
+        self.num_inference_steps = euler_scheduler.num_inference_steps
+        base_timesteps = euler_scheduler.timesteps
+        base_sigmas = euler_scheduler.sigmas
+
+        timesteps = torch.cat([base_timesteps[:1], base_timesteps[1:].repeat_interleave(2)])
+        sigmas = torch.cat([base_sigmas[:1], base_sigmas[1:-1].repeat_interleave(2), base_sigmas[-1:]])
+
+        target_device = device if device is not None else base_sigmas.device
+        self.timesteps = timesteps.to(device=target_device)
+        self.sigmas = sigmas.to(device=target_device)
+
+        self.prev_derivative = None
+        self.dt = None
+        self._step_index = None
+        self._begin_index = None
+        self.sample = None
 
 def create_scheduler(name: str, pipe):
     name = name.lower()
@@ -18,7 +60,6 @@ def create_scheduler(name: str, pipe):
             pipe.scheduler.config,
             use_karras_sigmas=True,
         )    
-    
     if name == "dpm++2m_sde":
         return DPMSolverMultistepScheduler.from_config(
             pipe.scheduler.config,
@@ -70,6 +111,12 @@ def create_scheduler(name: str, pipe):
 
     if name == "euler_a":
         return EulerAncestralDiscreteScheduler.from_config(pipe.scheduler.config)
+    
+    if name == "flowmatch_euler":
+        return FlowMatchEulerDiscreteScheduler.from_config(pipe.scheduler.config)
+    
+    if name == "flowmatch_heun":
+        return FlowMatchHeunDiscreteSchedulerWithMu.from_config(pipe.scheduler.config)
 
     if name == "heun":
         return HeunDiscreteScheduler.from_config(pipe.scheduler.config)

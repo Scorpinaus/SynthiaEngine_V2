@@ -63,6 +63,8 @@ function renderNavBar() {
             link.className = "secondary nav-link";
             link.href = item.href;
             link.textContent = item.label;
+            link.style.justifyContent = "center";
+            link.style.textAlign = "center";
             link.setAttribute("role", "menuitem");
             if (item.href === currentPath) {
                 link.classList.add("is-active");
