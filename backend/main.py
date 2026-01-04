@@ -89,6 +89,7 @@ class SdxlGenerateRequest(BaseModel):
     width: int = DEFAULTS["width"]
     height: int = DEFAULTS["height"]
     seed: int | None = None
+    scheduler: str = "euler"
     num_images: int = 1
     model: str | None = None
     clip_skip: int = 1
@@ -102,6 +103,7 @@ class ZImageGenerateRequest(BaseModel):
     width: int = 1024
     height: int = 1024
     seed: int | None = None
+    scheduler: str = "euler"
     num_images: int = 1
     model: str | None = None
 
@@ -114,6 +116,7 @@ class FluxGenerateRequest(BaseModel):
     width: int = 1024
     height: int = 1024
     seed: int | None = None
+    scheduler: str = "euler"
     num_images: int = 1
     model: str | None = None
 
@@ -569,6 +572,7 @@ async def generate_sdxl_img2img(
     width: int = Form(1024),
     height: int = Form(1024),
     seed: int | None = Form(None),
+    scheduler: str = Form("euler"),
     num_images: int = Form(1),
     model: str | None = Form(None),
     clip_skip: int = Form(1),
@@ -596,6 +600,7 @@ async def generate_sdxl_img2img(
         width=width,
         height=height,
         seed=seed,
+        scheduler=scheduler,
         model=model,
         num_images=num_images,
         clip_skip=clip_skip,
@@ -612,6 +617,7 @@ async def generate_sdxl_inpaint(
     steps: int = Form(DEFAULTS["steps"]),
     guidance_scale: float = Form(DEFAULTS["cfg"]),
     seed: int | None = Form(None),
+    scheduler: str = Form("euler"),
     num_images: int = Form(1),
     model: str | None = Form(None),
     padding_mask_crop: int = Form(32),
@@ -647,6 +653,7 @@ async def generate_sdxl_inpaint(
         steps=steps,
         guidance_scale=guidance_scale,
         seed=seed,
+        scheduler=scheduler,
         model=model,
         num_images=num_images,
         padding_mask_crop=padding_mask_crop,
@@ -674,6 +681,7 @@ async def generate_z_image_img2img(
     width: int = Form(1024),
     height: int = Form(1024),
     seed: int | None = Form(None),
+    scheduler: str = Form("euler"),
     num_images: int = Form(1),
     model: str | None = Form(None),
 ):
@@ -699,6 +707,7 @@ async def generate_z_image_img2img(
         width=width,
         height=height,
         seed=seed,
+        scheduler=scheduler,
         model=model,
         num_images=num_images,
     )
@@ -724,6 +733,7 @@ async def generate_flux_img2img(
     width: int = Form(1024),
     height: int = Form(1024),
     seed: int | None = Form(None),
+    scheduler: str = Form("euler"),
     num_images: int = Form(1),
     model: str | None = Form(None),
 ):
@@ -749,6 +759,7 @@ async def generate_flux_img2img(
         width=width,
         height=height,
         seed=seed,
+        scheduler=scheduler,
         model=model,
         num_images=num_images,
     )
@@ -764,6 +775,7 @@ async def generate_flux_inpaint(
     steps: int = Form(DEFAULTS["steps"]),
     guidance_scale: float = Form(DEFAULTS["cfg"]),
     seed: int | None = Form(None),
+    scheduler: str = Form("euler"),
     num_images: int = Form(1),
     model: str | None = Form(None),
 ):
@@ -795,6 +807,7 @@ async def generate_flux_inpaint(
         steps=steps,
         guidance_scale=guidance_scale,
         seed=seed,
+        scheduler=scheduler,
         model=model,
         num_images=num_images,
     )

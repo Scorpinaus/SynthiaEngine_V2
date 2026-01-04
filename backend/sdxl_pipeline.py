@@ -13,6 +13,7 @@ from diffusers import (
 
 from backend.model_registry import ModelRegistryEntry, get_model_entry
 from backend.pipeline_utils import build_fixed_step_timesteps
+from backend.schedulers import create_scheduler
 
 OUTPUT_DIR = Path("outputs")
 OUTPUT_DIR.mkdir(exist_ok=True)
@@ -148,6 +149,7 @@ def run_sdxl_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
     model = payload.get("model")
     num_images = int(payload.get("num_images", 1))
     clip_skip = int(payload.get("clip_skip", 1))
+    scheduler = payload.get("scheduler")
 
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
@@ -164,6 +166,7 @@ def run_sdxl_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
     )
 
     filenames: list[str] = []
+    pipe.scheduler = create_scheduler(scheduler, pipe)
 
     for i in range(num_images):
         current_seed = base_seed + i
@@ -216,6 +219,7 @@ def run_sdxl_img2img(
     model: str | None,
     num_images: int,
     clip_skip: int,
+    scheduler: str
 ) -> dict[str, list[str]]:
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
@@ -232,6 +236,7 @@ def run_sdxl_img2img(
     )
 
     filenames: list[str] = []
+    pipe.scheduler = create_scheduler(scheduler, pipe) 
 
     for i in range(num_images):
         current_seed = base_seed + i
@@ -289,6 +294,7 @@ def run_sdxl_inpaint(
     num_images: int,
     padding_mask_crop: int,
     clip_skip: int,
+    scheduler: str
 ) -> dict[str, list[str]]:
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
@@ -306,6 +312,7 @@ def run_sdxl_inpaint(
     )
 
     filenames: list[str] = []
+    pipe.scheduler = create_scheduler(scheduler, pipe)
 
     for i in range(num_images):
         current_seed = base_seed + i

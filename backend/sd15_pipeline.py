@@ -11,11 +11,6 @@ from diffusers import (
     StableDiffusionControlNetPipeline,
     ControlNetModel,
 )
-from diffusers import (EulerDiscreteScheduler,
-    EulerAncestralDiscreteScheduler,
-    DPMSolverMultistepScheduler,
-    DDIMScheduler,
-    DPMSolverSinglestepScheduler, KDPM2DiscreteScheduler, KDPM2AncestralDiscreteScheduler, HeunDiscreteScheduler, LMSDiscreteScheduler, DEISMultistepScheduler, UniPCMultistepScheduler)
 from pathlib import Path
 
 from backend.model_registry import ModelRegistryEntry, get_model_entry
@@ -23,6 +18,7 @@ from backend.lora_registry import get_lora_entry
 from backend.resource_logging import resource_logger
 # from testing.pipeline_stable_diffusion import(StableDiffusionPipeline)
 from backend.pipeline_utils import build_fixed_step_timesteps
+from backend.schedulers import create_scheduler
 
 OUTPUT_DIR = Path("outputs")
 OUTPUT_DIR.mkdir(exist_ok=True)
@@ -37,12 +33,42 @@ if not logger.handlers:
     logging.basicConfig(level=logging.INFO)
 
 
+## Helper functions
+
 def _resolve_model_source(entry: ModelRegistryEntry) -> str:
     if entry.location_type == "hub":
         return entry.link
 
     return str(Path(entry.link).expanduser())
 
+def create_blur_mask(mask_image, blur_factor: int):
+    blur_factor = max(0, min(blur_factor, 128))
+    if blur_factor == 0:
+        return mask_image
+    return mask_image.filter(ImageFilter.GaussianBlur(radius=blur_factor))
+
+
+def _make_batch_id() -> str:
+    return f"b{int(time.time())}_{random.randint(1000, 9999)}"
+
+
+def _resource_metadata(bound_args):
+    return {
+        "batch_id": bound_args.arguments.get("batch_id"),
+        "model": bound_args.arguments.get("model"),
+        "num_images": bound_args.arguments.get("num_images"),
+    }
+
+
+def _build_png_metadata(metadata: dict[str, object]) -> PngInfo:
+    info = PngInfo()
+    for key, value in metadata.items():
+        if value is None:
+            continue
+        info.add_text(key, str(value))
+    return info
+
+## Load pipelines
 
 def load_pipeline(model_name: str | None):
     entry = get_model_entry(model_name)
@@ -164,119 +190,8 @@ def load_controlnet_pipeline(model_name: str | None, controlnet_model: str):
     pipe.to("cuda")
     CONTROLNET_PIPELINE_CACHE[cache_key] = pipe
     return pipe
-def create_scheduler(name: str, pipe):
-    name = name.lower()
-    
-    if name == "ddim":
-        return DDIMScheduler.from_config(pipe.scheduler.config)
-    
-    if name == "dpm++2m":
-        return DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
 
-    if name == "dpm++2m_karras":
-        return DPMSolverMultistepScheduler.from_config(
-            pipe.scheduler.config,
-            use_karras_sigmas=True,
-        )    
-    
-    if name == "dpm++2m_sde":
-        return DPMSolverMultistepScheduler.from_config(
-            pipe.scheduler.config,
-            algorithm_type="sde-dpmsolver++",
-        )
-    
-    if name == "dpm++2m_sde_karras":
-        return DPMSolverMultistepScheduler.from_config(
-            pipe.scheduler.config,
-            algorithm_type="sde-dpmsolver++",
-            use_karras_sigmas=True,
-        )        
-
-    if name == "dpm++_sde":
-        return DPMSolverSinglestepScheduler.from_config(
-            pipe.scheduler.config,
-        )
-
-    if name == "dpm++_sde_karras":
-        return DPMSolverSinglestepScheduler.from_config(
-            pipe.scheduler.config,
-            use_karras_sigmas = True,
-        )
-        
-    if name == "dpm2":
-        return KDPM2DiscreteScheduler.from_config(
-            pipe.scheduler.config,
-        )
-    
-    if name == "dpm2_karras":
-        return KDPM2DiscreteScheduler.from_config(
-            pipe.scheduler.config,
-            use_karras_sigmas = True,
-        )
-
-    if name == "dpm2_a":
-        return KDPM2AncestralDiscreteScheduler.from_config(
-            pipe.scheduler.config,
-        )    
-
-    if name == "dpm2_a_karras":
-        return KDPM2AncestralDiscreteScheduler.from_config(
-            pipe.scheduler.config,
-            use_karras_sigmas = True,
-        ) 
-        
-    if name == "euler":
-        return EulerDiscreteScheduler.from_config(pipe.scheduler.config)
-
-    if name == "euler_a":
-        return EulerAncestralDiscreteScheduler.from_config(pipe.scheduler.config)
-
-    if name == "heun":
-        return HeunDiscreteScheduler.from_config(pipe.scheduler.config)
-    
-    if name == "lms":
-        return LMSDiscreteScheduler.from_config(pipe.scheduler.config)
-    
-    if name == "lms_karras":
-        return LMSDiscreteScheduler.from_config(
-            pipe.scheduler.config,
-            use_karras_sigmas = True)
-
-    if name == "deis":
-        return DEISMultistepScheduler.from_config(pipe.scheduler.config)
-    
-    if name == "unipc":
-        return UniPCMultistepScheduler.from_config(pipe.scheduler.config)
-
-    raise ValueError(f"Unknown scheduler: {name}")
-
-
-def create_blur_mask(mask_image, blur_factor: int):
-    blur_factor = max(0, min(blur_factor, 128))
-    if blur_factor == 0:
-        return mask_image
-    return mask_image.filter(ImageFilter.GaussianBlur(radius=blur_factor))
-
-
-def _make_batch_id() -> str:
-    return f"b{int(time.time())}_{random.randint(1000, 9999)}"
-
-
-def _resource_metadata(bound_args):
-    return {
-        "batch_id": bound_args.arguments.get("batch_id"),
-        "model": bound_args.arguments.get("model"),
-        "num_images": bound_args.arguments.get("num_images"),
-    }
-
-
-def _build_png_metadata(metadata: dict[str, object]) -> PngInfo:
-    info = PngInfo()
-    for key, value in metadata.items():
-        if value is None:
-            continue
-        info.add_text(key, str(value))
-    return info
+## Generate and render images
 
 def generate_images_controlnet(
     prompt: str,
@@ -492,9 +407,6 @@ def generate_images_img2img(
         current_seed = base_seed + i
         generator = torch.Generator(device="cuda").manual_seed(current_seed)
 
-        # device = getattr(pipe, "_execution_device", None) or pipe.device
-        # timesteps = build_fixed_step_timesteps(pipe.scheduler, steps, strength, device=device)
-
         image = pipe(
             prompt=prompt,
             negative_prompt=negative_prompt,
@@ -560,16 +472,8 @@ def generate_images_inpaint(
     width, height = initial_image.size
     logger.info(
         "Inpaint: model=%s seed=%s scheduler=%s steps=%s cfg=%s size=%sx%s num_images=%s strength=%s, padding_mask_crop=%s",
-        model,
-        base_seed,
-        scheduler,
-        steps,
-        cfg,
-        width,
-        height,
-        num_images,
-        strength,
-        padding_mask_crop
+        model, base_seed, scheduler, steps, cfg,
+        width, height, num_images, strength, padding_mask_crop
     )
 
     filenames = []
@@ -577,9 +481,6 @@ def generate_images_inpaint(
     for i in range(num_images):
         current_seed = base_seed + i
         generator = torch.Generator(device="cuda").manual_seed(current_seed)
-
-        # device = getattr(pipe, "_execution_device", None) or pipe.device
-        # timesteps = build_fixed_step_timesteps(pipe.scheduler, steps, strength, device=device)
 
         image = pipe(
             prompt=prompt,

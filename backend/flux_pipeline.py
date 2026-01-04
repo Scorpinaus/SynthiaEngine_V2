@@ -1,3 +1,6 @@
+"""
+Docstring for backend.flux_pipeline
+"""
 import gc
 import logging
 import random
@@ -10,7 +13,11 @@ from PIL.PngImagePlugin import PngInfo
 from diffusers import FluxImg2ImgPipeline, FluxInpaintPipeline, FluxPipeline
 
 from backend.model_registry import ModelRegistryEntry, get_model_entry
+from backend.schedulers import create_scheduler
 
+"""
+    Static Variables and Logging
+"""
 GEN_LOCK = threading.Lock()
 OUTPUT_DIR = Path("outputs")
 OUTPUT_DIR.mkdir(exist_ok=True)
@@ -24,6 +31,9 @@ if not logger.handlers:
     logging.basicConfig(level=logging.INFO)
 
 
+    """
+    Miscelleous methods
+    """
 def _resolve_model_source(entry: ModelRegistryEntry) -> str:
     if entry.location_type == "hub":
         return entry.link
@@ -43,6 +53,9 @@ def _build_png_metadata(metadata: dict[str, object]) -> PngInfo:
         info.add_text(key, str(value))
     return info
 
+"""
+    Methods for loading flux pipelines
+"""
 
 def load_flux_pipeline(model_name: str | None) -> FluxPipeline:
     entry = get_model_entry(model_name)
@@ -107,7 +120,6 @@ def load_flux_img2img_pipeline(model_name: str | None) -> FluxImg2ImgPipeline:
     IMG2IMG_PIPELINE_CACHE[entry.name] = pipe
     return pipe
 
-
 def load_flux_inpaint_pipeline(model_name: str | None) -> FluxInpaintPipeline:
     entry = get_model_entry(model_name)
 
@@ -131,11 +143,17 @@ def load_flux_inpaint_pipeline(model_name: str | None) -> FluxInpaintPipeline:
     else:
         raise ValueError(f"Unsupported model type: {entry.model_type}")
 
-    pipe.enable_model_cpu_offload()
+    pipe.enable_attention_slicing("max")
+    pipe.vae.enable_slicing()
+    pipe.vae.enable_tiling()
+    pipe.enable_sequential_cpu_offload()
 
     INPAINT_PIPELINE_CACHE[entry.name] = pipe
     return pipe
 
+"""
+    Generates and renders image
+"""
 
 @torch.inference_mode()
 def run_flux_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
@@ -148,6 +166,7 @@ def run_flux_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
     seed = payload.get("seed")
     model = payload.get("model")
     num_images = int(payload.get("num_images", 1))
+    scheduler = str(payload.get("scheduler") or "euler")
 
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
@@ -160,16 +179,11 @@ def run_flux_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
     pipe = load_flux_pipeline(model)
     logger.info(
         "Flux Generate: model=%s seed=%s steps=%s guidance_scale=%s size=%sx%s num_images=%s",
-        model,
-        base_seed,
-        steps,
-        guidance_scale,
-        width,
-        height,
-        num_images,
+        model, base_seed, steps, guidance_scale, width, height, num_images,
     )
 
     filenames: list[str] = []
+    pipe.scheduler = create_scheduler(scheduler, pipe)
 
     with GEN_LOCK:
         for i in range(num_images):
@@ -229,6 +243,7 @@ def run_flux_img2img(
     seed: int | None,
     model: str | None,
     num_images: int,
+    scheduler: str,
 ) -> dict[str, list[str]]:
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
@@ -241,17 +256,12 @@ def run_flux_img2img(
     pipe = load_flux_img2img_pipeline(model)
     logger.info(
         "Flux Img2Img: model=%s seed=%s steps=%s guidance_scale=%s size=%sx%s strength=%s num_images=%s",
-        model,
-        base_seed,
-        steps,
-        guidance_scale,
-        width,
-        height,
-        strength,
-        num_images,
+        model, base_seed, steps, guidance_scale, width,
+        height, strength,num_images,
     )
 
     filenames: list[str] = []
+    pipe.scheduler = create_scheduler(scheduler, pipe)
 
     with GEN_LOCK:
         for i in range(num_images):
@@ -314,6 +324,7 @@ def run_flux_inpaint(
     seed: int | None,
     model: str | None,
     num_images: int,
+    scheduler: str,
 ) -> dict[str, list[str]]:
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
@@ -326,15 +337,12 @@ def run_flux_inpaint(
     pipe = load_flux_inpaint_pipeline(model)
     logger.info(
         "Flux Inpaint: model=%s seed=%s steps=%s guidance_scale=%s strength=%s num_images=%s",
-        model,
-        base_seed,
-        steps,
-        guidance_scale,
-        strength,
+        model, base_seed, steps, guidance_scale, strength,
         num_images,
     )
 
     filenames: list[str] = []
+    pipe.scheduler = create_scheduler(scheduler, pipe)
 
     with GEN_LOCK:
         for i in range(num_images):

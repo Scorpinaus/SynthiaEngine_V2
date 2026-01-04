@@ -44,6 +44,7 @@ async function generate() {
     const prompt = document.getElementById("prompt").value;
     const steps = Number(document.getElementById("steps").value);
     const guidance_scale = Number(document.getElementById("cfg").value);
+    const scheduler = document.getElementById("scheduler")?.value ?? "euler";
     const seedValue = document.getElementById("seed").value;
     const seedNumber = seedValue === "" ? null : Number(seedValue);
     const seed = Number.isFinite(seedNumber) ? seedNumber : null;
@@ -59,6 +60,7 @@ async function generate() {
         negative_prompt,
         steps,
         guidance_scale,
+        scheduler,
         seed,
         width,
         height,

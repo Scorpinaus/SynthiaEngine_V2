@@ -28,7 +28,48 @@ body {
 .header-nav {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
+    position: relative;
+}
+
+.nav-group {
+    position: relative;
+    padding-bottom: 8px;
+}
+
+.nav-group-toggle {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 600;
+    padding: 10px 14px;
+}
+
+.nav-group-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    min-width: 220px;
+    display: none;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    background: #ffffff;
+    border: 1px solid #e1dbd2;
+    border-radius: 14px;
+    box-shadow: 0 14px 28px rgba(40, 36, 32, 0.15);
+    z-index: 50;
+}
+
+.nav-group:hover .nav-group-menu,
+.nav-group:focus-within .nav-group-menu,
+.nav-group.is-open .nav-group-menu {
+    display: flex;
+}
+
+.nav-group-menu .nav-link {
+    justify-content: flex-start;
+    width: 100%;
 }
 
 .layout {

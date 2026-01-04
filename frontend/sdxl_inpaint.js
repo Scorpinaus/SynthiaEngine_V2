@@ -343,6 +343,7 @@ async function generateSdxlInpaint() {
     const prompt = document.getElementById("prompt").value;
     const steps = Number(document.getElementById("steps").value);
     const guidanceScale = Number(document.getElementById("guidance_scale").value);
+    const scheduler = document.getElementById("scheduler")?.value ?? "euler";
     const seedValue = document.getElementById("seed").value;
     const seedNumber = seedValue === "" ? null : Number(seedValue);
     const seed = Number.isFinite(seedNumber) ? seedNumber : null;
@@ -360,6 +361,7 @@ async function generateSdxlInpaint() {
     formData.append("negative_prompt", negative_prompt);
     formData.append("steps", steps.toString());
     formData.append("guidance_scale", guidanceScale.toString());
+    formData.append("scheduler", scheduler);
     formData.append("seed", seed === null ? "" : seed.toString());
     formData.append("num_images", num_images.toString());
     formData.append("model", model);

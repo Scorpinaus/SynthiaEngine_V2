@@ -7,15 +7,12 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="style.css?v=2" />
 </head>
 
 <body>
     <div class="app">
-        <header class="header">
-            <h1>Synthia Engine</h1>
-            <div id="nav-root"></div>
-        </header>
+        <div id="header-root"></div>
 
         <div class="layout">
             <section class="controls">
@@ -62,6 +59,8 @@
                     <input id="cfg" type="number" step="0.5" value="7" />
                 </label>
 
+                <div id="scheduler-panel-root"></div>
+
                 <div class="field-row">
                     <label class="field">
                         <span>Width</span>
@@ -102,9 +101,12 @@
         </div>
     </div>
 
+    <script src="header.js?v=1"></script>
     <script src="nav_bar.js?v=1"></script>
     <script src="gallery.js?v=1"></script>
+    <script src="scheduler_panel.js?v=1"></script>
     <script src="flux_img2img.js?v=1"></script>
 </body>
 
 </html>
+

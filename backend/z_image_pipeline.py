@@ -11,6 +11,7 @@ import threading
 
 from backend.model_registry import ModelRegistryEntry, get_model_entry
 from backend.pipeline_utils import build_fixed_step_timesteps
+from backend.schedulers import create_scheduler
 
 GEN_LOCK = threading.Lock()
 OUTPUT_DIR = Path("outputs")
@@ -59,6 +60,7 @@ def _build_png_metadata(metadata: dict[str, object]) -> PngInfo:
 #         if token.dtype != target_dtype or token.device != target_device:
 #             token.data = token.data.to(dtype=target_dtype, device=target_device)
 
+## Load Pipelines
 
 def load_z_image_pipeline(model_name: str | None) -> ZImagePipeline:
     entry = get_model_entry(model_name)
@@ -143,13 +145,13 @@ def load_z_image_img2img_pipeline(model_name: str | None) -> ZImageImg2ImgPipeli
     IMG2IMG_PIPELINE_CACHE[entry.name] = pipe
     return pipe
 
+## Run and generate renders
 
 @torch.inference_mode()
 def run_z_image_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
+    
     prompt = str(payload.get("prompt") or "")
-    
     negative_prompt = str(payload.get("negative_prompt") or "").strip()
-    
     steps = int(payload.get("steps", 8))
     guidance_scale = float(payload.get("guidance_scale", 0.0))
     width = int(payload.get("width", 1024))
@@ -157,6 +159,7 @@ def run_z_image_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
     seed = payload.get("seed")
     model = payload.get("model")
     num_images = int(payload.get("num_images", 1))
+    scheduler = str(payload.get("scheduler") or "euler")
 
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
@@ -179,6 +182,7 @@ def run_z_image_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
     )
 
     filenames: list[str] = []
+    pipe.scheduler = create_scheduler(scheduler, pipe)
 
     with GEN_LOCK:
         for i in range(num_images):
@@ -216,6 +220,7 @@ def run_z_image_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
                 "height": height,
                 "seed": current_seed,
                 "model": model,
+                "scheduler": scheduler,
                 "batch_id": batch_id,
             })
             image.save(filename, pnginfo=pnginfo)
@@ -244,6 +249,7 @@ def run_z_image_img2img(
     seed: int | None,
     model: str | None,
     num_images: int,
+    scheduler: str,
 ) -> dict[str, list[str]]:
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
@@ -267,6 +273,7 @@ def run_z_image_img2img(
     )
 
     filenames: list[str] = []
+    pipe.scheduler = create_scheduler(scheduler, pipe)
 
     with GEN_LOCK:
         for i in range(num_images):
@@ -276,9 +283,6 @@ def run_z_image_img2img(
 
             print("Allocated GB:", torch.cuda.memory_allocated()/1024**3)
             print("Reserved GB:", torch.cuda.memory_reserved()/1024**3)
-            
-            # device = getattr(pipe, "_execution_device", None) or pipe.device
-            # timesteps = build_fixed_step_timesteps(pipe.scheduler, steps, strength, device=device)
 
             with torch.autocast("cuda", dtype=torch.bfloat16):
                 call_kwargs = dict(
@@ -310,6 +314,7 @@ def run_z_image_img2img(
                 "seed": current_seed,
                 "model": model,
                 "strength": strength,
+                "scheduler": scheduler,
                 "batch_id": batch_id,
             })
             image.save(filename, pnginfo=pnginfo)

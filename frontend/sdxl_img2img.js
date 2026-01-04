@@ -52,6 +52,7 @@ async function generateSdxlImg2Img() {
     const prompt = document.getElementById("prompt").value;
     const steps = Number(document.getElementById("steps").value);
     const guidance_scale = Number(document.getElementById("cfg").value);
+    const scheduler = document.getElementById("scheduler")?.value ?? "euler";
     const seedValue = document.getElementById("seed").value;
     const seedNumber = seedValue === "" ? null : Number(seedValue);
     const seed = Number.isFinite(seedNumber) ? seedNumber : null;
@@ -69,6 +70,7 @@ async function generateSdxlImg2Img() {
     formData.append("negative_prompt", negative_prompt);
     formData.append("steps", steps.toString());
     formData.append("guidance_scale", guidance_scale.toString());
+    formData.append("scheduler", scheduler);
     formData.append("seed", seed === null ? "" : seed.toString());
     formData.append("width", width.toString());
     formData.append("height", height.toString());
