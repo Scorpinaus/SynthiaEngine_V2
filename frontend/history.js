@@ -18,14 +18,44 @@ const state = {
     loading: false,
     error: null,
     records: [],
+    batches: [],
+    selectedBatchId: null,
+    selectedIndex: 0,
 };
 
 const historyState = document.getElementById("history-state");
-const historyGrid = document.getElementById("history-grid");
+const historyLayout = document.getElementById("history-layout");
+const historyBatchList = document.getElementById("history-batch-list");
+const historyBatchCount = document.getElementById("history-batch-count");
+const viewerTitle = document.getElementById("history-viewer-title");
+const viewerSubtitle = document.getElementById("history-viewer-subtitle");
+const viewerFrame = document.getElementById("history-viewer-frame");
+const viewerCount = document.getElementById("history-viewer-count");
+const viewerMeta = document.getElementById("history-meta");
+const viewerThumbs = document.getElementById("history-thumbs");
+const prevButton = document.getElementById("history-prev");
+const nextButton = document.getElementById("history-next");
 const refreshButton = document.getElementById("history-refresh");
+const isMounted = Boolean(
+    historyState &&
+        historyLayout &&
+        historyBatchList &&
+        viewerTitle &&
+        viewerSubtitle &&
+        viewerFrame &&
+        viewerCount &&
+        viewerMeta &&
+        viewerThumbs &&
+        prevButton &&
+        nextButton &&
+        refreshButton
+);
 
 function setState(next) {
     Object.assign(state, next);
+    if (!isMounted) {
+        return;
+    }
     render();
 }
 
@@ -61,80 +91,173 @@ function buildMetadata(metadata) {
     return hasEntries ? list : null;
 }
 
-function buildCard(record, index) {
-    const card = document.createElement("article");
-    card.className = "history-card";
+function getBatchId(record) {
+    const batchId = record?.metadata?.batch_id;
+    if (batchId === undefined || batchId === null || batchId === "") {
+        return "Unbatched";
+    }
+    return String(batchId);
+}
 
-    const imageWrap = document.createElement("div");
-    imageWrap.className = "history-image";
+function groupRecords(records) {
+    const grouped = new Map();
+
+    records.forEach((record) => {
+        const id = getBatchId(record);
+        if (!grouped.has(id)) {
+            grouped.set(id, []);
+        }
+        grouped.get(id).push(record);
+    });
+
+    const batches = Array.from(grouped.entries()).map(([id, items]) => {
+        const latest = items.reduce((max, item) => Math.max(max, item.timestamp ?? 0), 0);
+        return { id, items, latest };
+    });
+
+    batches.sort((a, b) => b.latest - a.latest);
+    return batches;
+}
+
+function selectBatch(batchId, index) {
+    setState({ selectedBatchId: batchId, selectedIndex: index });
+}
+
+function renderBatchList() {
+    historyBatchList.innerHTML = "";
+
+    if (historyBatchCount) {
+        const batchCount = state.batches.length;
+        const renderCount = state.records.length;
+        historyBatchCount.textContent = `${batchCount} batch${batchCount === 1 ? "" : "es"} | ${renderCount} render${renderCount === 1 ? "" : "s"}`;
+    }
+
+    state.batches.forEach((batch) => {
+        if (!batch.items.length) {
+            return;
+        }
+        const batchButton = document.createElement("button");
+        batchButton.type = "button";
+        batchButton.className = "history-batch";
+        if (batch.id === state.selectedBatchId) {
+            batchButton.classList.add("is-active");
+        }
+        batchButton.addEventListener("click", () => selectBatch(batch.id, 0));
+
+        const preview = document.createElement("div");
+        preview.className = "history-batch-preview";
+        const previewImage = document.createElement("img");
+        previewImage.loading = "lazy";
+        previewImage.src = `${API_BASE}${batch.items[0].url}`;
+        previewImage.alt = batch.items[0].filename || `Batch ${batch.id}`;
+        preview.appendChild(previewImage);
+
+        batchButton.appendChild(preview);
+        historyBatchList.appendChild(batchButton);
+    });
+}
+
+function updateNavigation(count) {
+    const disabled = count <= 1;
+    prevButton.disabled = disabled;
+    nextButton.disabled = disabled;
+}
+
+function renderViewer() {
+    viewerFrame.innerHTML = "";
+    viewerThumbs.innerHTML = "";
+    viewerMeta.innerHTML = "";
+
+    const batch = state.batches.find((item) => item.id === state.selectedBatchId);
+    if (!batch || !batch.items.length) {
+        viewerSubtitle.textContent = "Pick a batch to inspect prompt metadata.";
+        viewerCount.textContent = "";
+        const empty = document.createElement("div");
+        empty.className = "history-viewer-empty";
+        empty.textContent = "Select a batch to preview.";
+        viewerFrame.appendChild(empty);
+        updateNavigation(0);
+        return;
+    }
+
+    const selectedIndex = Math.min(state.selectedIndex, batch.items.length - 1);
+    const record = batch.items[selectedIndex];
+
+    viewerSubtitle.textContent = `Image ${selectedIndex + 1} of ${batch.items.length} | ${formatTimestamp(record.timestamp)}`;
+    viewerCount.textContent = `Image ${selectedIndex + 1} of ${batch.items.length}`;
+
     const img = document.createElement("img");
     img.loading = "lazy";
     img.src = `${API_BASE}${record.url}`;
-    img.alt = `Render ${record.filename || index + 1}`;
-    imageWrap.appendChild(img);
+    img.alt = record.filename || `Render ${selectedIndex + 1}`;
+    viewerFrame.appendChild(img);
 
-    const meta = document.createElement("div");
-    meta.className = "history-meta";
-
-    const title = document.createElement("div");
-    title.className = "history-meta-title";
-    const name = document.createElement("span");
-    name.textContent = record.filename || `Render ${index + 1}`;
-    const time = document.createElement("span");
-    time.className = "history-meta-time";
-    time.textContent = formatTimestamp(record.timestamp);
-    title.appendChild(name);
-    title.appendChild(time);
-
-    const details = document.createElement("details");
-    details.className = "history-details";
-    const summary = document.createElement("summary");
-    summary.textContent = "Prompt metadata";
-    details.appendChild(summary);
     const metadataList = buildMetadata(record.metadata || {});
     if (metadataList) {
-        details.appendChild(metadataList);
+        viewerMeta.appendChild(metadataList);
     } else {
         const empty = document.createElement("p");
         empty.className = "history-empty-meta";
         empty.textContent = "No prompt metadata available.";
-        details.appendChild(empty);
+        viewerMeta.appendChild(empty);
     }
 
-    meta.appendChild(title);
-    meta.appendChild(details);
+    batch.items.forEach((item, index) => {
+        const thumb = document.createElement("img");
+        thumb.className = "viewer-thumb";
+        if (index === selectedIndex) {
+            thumb.classList.add("is-active");
+        }
+        thumb.loading = "lazy";
+        thumb.src = `${API_BASE}${item.url}`;
+        thumb.alt = item.filename || `Render ${index + 1}`;
+        thumb.addEventListener("click", () => selectBatch(batch.id, index));
+        viewerThumbs.appendChild(thumb);
+    });
 
-    card.appendChild(imageWrap);
-    card.appendChild(meta);
-
-    return card;
+    updateNavigation(batch.items.length);
 }
 
 function render() {
-    historyGrid.innerHTML = "";
-
+    if (!isMounted) {
+        return;
+    }
     if (state.loading) {
-        historyState.textContent = "Loading render history…";
+        historyState.textContent = "Loading render history...";
         historyState.style.display = "block";
+        historyLayout.style.display = "none";
         return;
     }
 
     if (state.error) {
         historyState.textContent = state.error;
         historyState.style.display = "block";
+        historyLayout.style.display = "none";
         return;
     }
 
     if (!state.records.length) {
         historyState.textContent = "No renders yet. Generate an image to populate the gallery.";
         historyState.style.display = "block";
+        historyLayout.style.display = "none";
         return;
     }
 
     historyState.style.display = "none";
-    state.records.forEach((record, index) => {
-        historyGrid.appendChild(buildCard(record, index));
-    });
+    historyLayout.style.display = "grid";
+
+    renderBatchList();
+    renderViewer();
+}
+
+function shiftSelection(direction) {
+    const batch = state.batches.find((item) => item.id === state.selectedBatchId);
+    if (!batch || !batch.items.length) {
+        return;
+    }
+    const count = batch.items.length;
+    const nextIndex = (state.selectedIndex + direction + count) % count;
+    setState({ selectedIndex: nextIndex });
 }
 
 async function fetchHistory() {
@@ -147,13 +270,32 @@ async function fetchHistory() {
         const data = await response.json();
         const records = Array.isArray(data) ? data : [];
         records.sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
-        setState({ records, loading: false });
+        const batches = groupRecords(records);
+
+        let selectedBatchId = state.selectedBatchId;
+        let selectedIndex = state.selectedIndex;
+        if (!selectedBatchId || !batches.some((batch) => batch.id === selectedBatchId)) {
+            selectedBatchId = batches[0]?.id ?? null;
+            selectedIndex = 0;
+        } else {
+            const selectedBatch = batches.find((batch) => batch.id === selectedBatchId);
+            if (selectedBatch && selectedIndex >= selectedBatch.items.length) {
+                selectedIndex = 0;
+            }
+        }
+
+        setState({ records, batches, selectedBatchId, selectedIndex, loading: false });
     } catch (error) {
         setState({ loading: false, error: "Unable to load history. Try again shortly." });
         console.error(error);
     }
 }
 
-refreshButton.addEventListener("click", fetchHistory);
-
-fetchHistory();
+if (isMounted) {
+    refreshButton.addEventListener("click", fetchHistory);
+    prevButton.addEventListener("click", () => shiftSelection(-1));
+    nextButton.addEventListener("click", () => shiftSelection(1));
+    fetchHistory();
+} else {
+    console.warn("History UI elements not found. Skipping history initialization.");
+}

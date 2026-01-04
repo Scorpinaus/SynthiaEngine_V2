@@ -17,20 +17,54 @@
         <section class="history-panel">
             <div class="history-header">
                 <div>
-                    <h2>History &amp; Gallery</h2>
-                    <p>Browse the most recent renders and inspect their prompt metadata.</p>
+                    <h2>Render Gallery</h2>
+                    <p>Browse your renders via the render list. You can view the images in the same render batch</p>
                 </div>
                 <button id="history-refresh" class="secondary" type="button">Refresh</button>
             </div>
-            <div id="history-state" class="history-state">Loading render history…</div>
-            <div id="history-grid" class="history-grid"></div>
+            <div id="history-state" class="history-state">Loading render history...</div>
+            <div id="history-layout" class="history-layout">
+                <aside class="history-batches">
+                    <div class="history-batches-header">
+                        <div>
+                            <h3>Render List</h3>
+                            <p id="history-batch-count" class="history-batch-count"></p>
+                        </div>
+                    </div>
+                    <div id="history-batch-list" class="history-batch-list"></div>
+                </aside>
+                <section class="history-viewer">
+                    <div class="history-viewer-header">
+                        <div>
+                            <h3 id="history-viewer-title"></h3>
+                            <p id="history-viewer-subtitle">Pick a batch to inspect prompt metadata.</p>
+                        </div>
+                        <div class="history-viewer-nav">
+                            <button id="history-prev" class="secondary" type="button" aria-label="Previous image">Prev</button>
+                            <button id="history-next" class="secondary" type="button" aria-label="Next image">Next</button>
+                        </div>
+                    </div>
+                    <div class="viewer">
+                        <div id="history-viewer-frame" class="viewer-frame">
+                            <div class="history-viewer-empty">Select a batch to preview.</div>
+                        </div>
+                        <div class="viewer-controls">
+                            <span id="history-viewer-count"></span>
+                        </div>
+                        <div id="history-thumbs" class="viewer-thumbs"></div>
+                    </div>
+                    <div class="history-meta-block">
+                        <h4>Prompt metadata</h4>
+                        <div id="history-meta" class="history-meta-output"></div>
+                    </div>
+                </section>
+            </div>
         </section>
     </div>
 
     <script src="header.js?v=1"></script>
     <script src="nav_bar.js?v=1"></script>
-    <script src="history.js?v=1"></script>
+    <script src="history.js?v=2"></script>
 </body>
 
 </html>
-
