@@ -68,6 +68,44 @@ def _build_png_metadata(metadata: dict[str, object]) -> PngInfo:
         info.add_text(key, str(value))
     return info
 
+
+def _apply_lora_adapters(pipe, lora_adapters: list[object] | None) -> list[str]:
+    if not lora_adapters:
+        return []
+
+    adapter_names: list[str] = []
+    weights: list[float] = []
+    for adapter in lora_adapters:
+        if isinstance(adapter, dict):
+            lora_id = adapter.get("lora_id")
+            strength = adapter.get("strength", 1.0)
+        else:
+            lora_id = getattr(adapter, "lora_id", None)
+            strength = getattr(adapter, "strength", 1.0)
+
+        if lora_id is None:
+            raise ValueError("LoRA adapter missing lora_id.")
+        entry = get_lora_entry(int(lora_id))
+
+        if entry.lora_model_family.lower() != "sd15":
+            raise ValueError(f"LoRA {entry.name} is not compatible with SD1.5.")
+
+        adapter_name = f"lora_{entry.name}"
+        source = entry.file_path
+        pipe.load_lora_weights(source, adapter_name=adapter_name)
+        adapter_names.append(adapter_name)
+        weights.append(float(strength))
+        logger.info(
+            "lora_name: %s , lora_id: %s, lora_weight: %s",
+            adapter_name,
+            entry.lora_id,
+            strength,
+        )
+    if hasattr(pipe, "set_adapters"):
+        pipe.set_adapters(adapter_names, adapter_weights=weights)
+
+    return adapter_names
+
 ## Load pipelines
 
 def load_pipeline(model_name: str | None):
@@ -292,33 +330,7 @@ def generate_images(
         model, base_seed, scheduler, steps, cfg, width, height, num_images,)
         
     filenames = []
-    adapter_names: list[str] = []
-
-    if lora_adapters:
-        weights: list[float] = []
-        for adapter in lora_adapters:
-            if isinstance(adapter, dict):
-                lora_id = adapter.get("lora_id")
-                strength = adapter.get("strength", 1.0)
-            else:
-                lora_id = getattr(adapter, "lora_id", None)
-                strength = getattr(adapter, "strength", 1.0)
-                
-            if lora_id is None:
-                raise ValueError("LoRA adapter missing lora_id.")
-            entry = get_lora_entry(int(lora_id))
-            
-            if entry.lora_model_family.lower() != "sd15":
-                raise ValueError(f"LoRA {entry.name} is not compatible with SD1.5.")
-            
-            adapter_name = f"lora_{entry.name}"
-            source = entry.file_path
-            pipe.load_lora_weights(source, adapter_name=adapter_name)
-            adapter_names.append(adapter_name)
-            weights.append(float(strength))
-            logger.info('lora_name: %s , lora_id: %s, lora_weight: %s', adapter_name, entry.lora_id, strength)
-        if hasattr(pipe, "set_adapters"):
-            pipe.set_adapters(adapter_names, adapter_weights=weights)
+    adapter_names = _apply_lora_adapters(pipe, lora_adapters)
 
     try:
         for i in range(num_images):
@@ -376,6 +388,7 @@ def generate_images_img2img(
     model: str | None,
     num_images: int,
     clip_skip: int,
+    lora_adapters: list[object] | None = None,
     batch_id: str | None = None,
 ):
     logger.info("seed=%s", seed)
@@ -402,43 +415,48 @@ def generate_images_img2img(
     )
 
     filenames = []
+    adapter_names = _apply_lora_adapters(pipe, lora_adapters)
 
-    for i in range(num_images):
-        current_seed = base_seed + i
-        generator = torch.Generator(device="cuda").manual_seed(current_seed)
+    try:
+        for i in range(num_images):
+            current_seed = base_seed + i
+            generator = torch.Generator(device="cuda").manual_seed(current_seed)
 
-        image = pipe(
-            prompt=prompt,
-            negative_prompt=negative_prompt,
-            image=initial_image,
-            strength=strength,
-            num_inference_steps=steps,
-            guidance_scale=cfg,
-            generator=generator,
-            clip_skip=clip_skip
-        ).images[0]
+            image = pipe(
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                image=initial_image,
+                strength=strength,
+                num_inference_steps=steps,
+                guidance_scale=cfg,
+                generator=generator,
+                clip_skip=clip_skip,
+            ).images[0]
 
-        filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
-        image_width, image_height = initial_image.size
-        pnginfo = _build_png_metadata({
-            "mode": "img2img",
-            "prompt": prompt,
-            "negative_prompt": negative_prompt,
-            "steps": steps,
-            "cfg": cfg,
-            "width": image_width,
-            "height": image_height,
-            "seed": current_seed,
-            "scheduler": scheduler,
-            "model": model,
-            "strength": strength,
-            "clip_skip": clip_skip,
-            "batch_id": batch_id,
-        })
-        image.save(filename, pnginfo=pnginfo)
-        logger.info("Image %s saved to %s", i, filename.name)
+            filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
+            image_width, image_height = initial_image.size
+            pnginfo = _build_png_metadata({
+                "mode": "img2img",
+                "prompt": prompt,
+                "negative_prompt": negative_prompt,
+                "steps": steps,
+                "cfg": cfg,
+                "width": image_width,
+                "height": image_height,
+                "seed": current_seed,
+                "scheduler": scheduler,
+                "model": model,
+                "strength": strength,
+                "clip_skip": clip_skip,
+                "batch_id": batch_id,
+            })
+            image.save(filename, pnginfo=pnginfo)
+            logger.info("Image %s saved to %s", i, filename.name)
 
-        filenames.append(filename.name)
+            filenames.append(filename.name)
+    finally:
+        if adapter_names and hasattr(pipe, "unload_lora_weights"):
+            pipe.unload_lora_weights()
 
     return filenames
 

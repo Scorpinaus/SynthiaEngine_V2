@@ -176,6 +176,27 @@ def _extract_png_metadata(path: Path) -> dict[str, str]:
         return {}
 
 
+def _parse_lora_adapters(raw_value: str | None) -> list[LoraAdapterRequest]:
+    if not raw_value:
+        return []
+
+    try:
+        payload = json.loads(raw_value)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Invalid LoRA adapter payload.") from exc
+
+    if not isinstance(payload, list):
+        raise HTTPException(status_code=400, detail="LoRA adapter payload must be a list.")
+
+    adapters: list[LoraAdapterRequest] = []
+    for entry in payload:
+        if not isinstance(entry, dict):
+            raise HTTPException(status_code=400, detail="LoRA adapter entry must be an object.")
+        adapters.append(LoraAdapterRequest(**entry))
+
+    return adapters
+
+
 @app.get("/health")
 async def health_check():
     return {"status": "ok"}
@@ -462,7 +483,8 @@ async def generate_img2img(
     scheduler: str = Form("euler"),
     num_images: int = Form(1),
     model: str | None = Form(None),
-    clip_skip: int = Form(1)
+    clip_skip: int = Form(1),
+    lora_adapters: str | None = Form(None),
 ):
     if not 0 <= strength <= 1:
         raise HTTPException(status_code=400, detail="Strength must be between 0 and 1.")
@@ -476,6 +498,7 @@ async def generate_img2img(
     remapped_strength = remap_img2img_strength(strength)
     init_image = init_image.resize((width, height))
     prepare_model(model)
+    parsed_lora_adapters = _parse_lora_adapters(lora_adapters)
 
     filenames = generate_images_img2img(
         initial_image=init_image,
@@ -490,7 +513,8 @@ async def generate_img2img(
         scheduler=scheduler,
         model=model,
         num_images=num_images,
-        clip_skip=clip_skip
+        clip_skip=clip_skip,
+        lora_adapters=parsed_lora_adapters,
     )
 
     return {
