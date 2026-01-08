@@ -1,5 +1,6 @@
 import torch
 import logging
+import math
 import random
 import time
 from PIL import ImageFilter, Image
@@ -67,6 +68,62 @@ def _build_png_metadata(metadata: dict[str, object]) -> PngInfo:
             continue
         info.add_text(key, str(value))
     return info
+
+
+def _snap_dimension(value: int, multiple: int = 8) -> int:
+    if multiple <= 0:
+        return value
+    return max(multiple, int(math.ceil(value / multiple)) * multiple)
+
+
+def _upscale_image(image: Image.Image, scale: float) -> Image.Image:
+    if scale <= 1.0:
+        return image
+    target_width = _snap_dimension(int(round(image.width * scale)))
+    target_height = _snap_dimension(int(round(image.height * scale)))
+    return image.resize((target_width, target_height), resample=Image.LANCZOS)
+
+
+def apply_hires_fix(
+    image: Image.Image,
+    prompt: str,
+    negative_prompt: str,
+    steps: int,
+    cfg: float,
+    seed: int | None,
+    scheduler: str,
+    model: str | None,
+    clip_skip: int,
+    hires_scale: float,
+    hires_strength: float = 0.35,
+    lora_adapters: list[object] | None = None,
+) -> Image.Image:
+    if hires_scale <= 1.0:
+        return image
+
+    upscaled = _upscale_image(image, hires_scale)
+    pipe = load_img2img_pipeline(model)
+    pipe.scheduler = create_scheduler(scheduler, pipe)
+    adapter_names = _apply_lora_adapters(pipe, lora_adapters)
+
+    generator = None
+    if seed is not None:
+        generator = torch.Generator(device="cuda").manual_seed(seed)
+
+    try:
+        return pipe(
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            image=upscaled,
+            strength=hires_strength,
+            num_inference_steps=steps,
+            guidance_scale=cfg,
+            generator=generator,
+            clip_skip=clip_skip,
+        ).images[0]
+    finally:
+        if adapter_names and hasattr(pipe, "unload_lora_weights"):
+            pipe.unload_lora_weights()
 
 
 def _apply_lora_adapters(pipe, lora_adapters: list[object] | None) -> list[str]:
@@ -313,6 +370,8 @@ def generate_images(
     num_images:int,
     clip_skip: int,
     lora_adapters: list[object] | None = None,
+    hires_scale: float = 1.0,
+    hires_enabled: bool = False,
     batch_id: str | None = None,
 ):
     logger.info("seed=%s", seed)
@@ -348,6 +407,21 @@ def generate_images(
                 clip_skip = clip_skip,
             ).images[0]
 
+            if hires_enabled:
+                image = apply_hires_fix(
+                    image=image,
+                    prompt=prompt,
+                    negative_prompt=negative_prompt,
+                    steps=steps,
+                    cfg=cfg,
+                    seed=current_seed,
+                    scheduler=scheduler,
+                    model=model,
+                    clip_skip=clip_skip,
+                    hires_scale=hires_scale,
+                    lora_adapters=lora_adapters,
+                )
+
             filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
             pnginfo = _build_png_metadata({
                 "mode": "txt2img",
@@ -361,6 +435,8 @@ def generate_images(
                 "scheduler": scheduler,
                 "model": model,
                 "clip_skip": clip_skip,
+                "hires_enabled": hires_enabled,
+                "hires_scale": hires_scale,
                 "batch_id": batch_id,
             })
             image.save(filename, pnginfo=pnginfo)
