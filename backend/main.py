@@ -79,6 +79,8 @@ class GenerateRequest(BaseModel):
     controlnet_active: bool = False
     controlnet_model: str = DEFAULTS["controlnet_model"]
     lora_adapters: list[LoraAdapterRequest] = []
+    hires_enabled: bool = False
+    hires_scale: float = 1.0
 
 
 class SdxlGenerateRequest(BaseModel):
@@ -403,6 +405,11 @@ async def generate(req: GenerateRequest, request: Request):
             status_code=400,
             detail="ControlNet active requires /api/controlnet/text2img with an image.",
         )
+    if req.hires_enabled and req.hires_scale < 1.0:
+        raise HTTPException(
+            status_code=400,
+            detail="Hi-res scale must be at least 1.0.",
+        )
     
     filenames = generate_images(
         prompt=req.prompt,
@@ -417,6 +424,8 @@ async def generate(req: GenerateRequest, request: Request):
         num_images = req.num_images,
         clip_skip = req.clip_skip,
         lora_adapters=req.lora_adapters,
+        hires_enabled=req.hires_enabled,
+        hires_scale=req.hires_scale,
     )
 
     return {

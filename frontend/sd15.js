@@ -339,6 +339,9 @@ async function generate() {
     const negative_prompt = document.getElementById("negative_prompt").value;
     const width = Number(document.getElementById("width").value);
     const height = Number(document.getElementById("height").value);
+    const hires_enabled = Boolean(document.getElementById("hires_enabled")?.checked);
+    const hiresScaleInput = Number(document.getElementById("hires_scale").value);
+    const hires_scale = Number.isFinite(hiresScaleInput) ? hiresScaleInput : 1.0;
     const model = document.getElementById("model_select").value;
     const clip_skip = document.getElementById("clip_skip").value;
     const num_images = Number(document.getElementById("num_images").value);
@@ -356,6 +359,8 @@ async function generate() {
         seed,
         width,
         height,
+        hires_enabled,
+        hires_scale,
         model,
         num_images,
         clip_skip,
