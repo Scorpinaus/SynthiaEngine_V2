@@ -23,6 +23,7 @@ from backend.pipeline_utils import (
     resolve_model_source,
 )
 from backend.schedulers import create_scheduler
+from backend.prompt_utils import build_prompt_embeddings
 
 OUTPUT_DIR = Path("outputs")
 OUTPUT_DIR.mkdir(exist_ok=True)
@@ -80,6 +81,8 @@ def apply_hires_fix(
     hires_scale: float,
     hires_strength: float = 0.35,
     lora_adapters: list[object] | None = None,
+    prompt_embeds: torch.Tensor | None = None,
+    negative_prompt_embeds: torch.Tensor | None = None,
 ) -> Image.Image:
     if hires_scale <= 1.0:
         return image
@@ -95,14 +98,16 @@ def apply_hires_fix(
 
     try:
         return pipe(
-            prompt=prompt,
-            negative_prompt=negative_prompt,
+            prompt=None if prompt_embeds is not None else prompt,
+            negative_prompt=None if negative_prompt_embeds is not None else negative_prompt,
             image=upscaled,
             strength=hires_strength,
             num_inference_steps=steps,
             guidance_scale=cfg,
             generator=generator,
             clip_skip=clip_skip,
+            prompt_embeds=prompt_embeds,
+            negative_prompt_embeds=negative_prompt_embeds,
         ).images[0]
     finally:
         if adapter_names and hasattr(pipe, "unload_lora_weights"):
@@ -373,6 +378,11 @@ def generate_images(
         
     filenames = []
     adapter_names = _apply_lora_adapters(pipe, lora_adapters)
+    prompt_embeds, negative_prompt_embeds, use_prompt_embeds = build_prompt_embeddings(
+        pipe,
+        prompt,
+        negative_prompt,
+    )
 
     try:
         for i in range(num_images):
@@ -380,14 +390,16 @@ def generate_images(
             generator = torch.Generator(device="cuda").manual_seed(current_seed)
 
             image = pipe(
-                prompt=prompt,
-                negative_prompt=negative_prompt,
+                prompt=None if use_prompt_embeds else prompt,
+                negative_prompt=None if use_prompt_embeds else negative_prompt,
                 num_inference_steps=steps,
                 guidance_scale=cfg,
                 width=width,
                 height=height,
                 generator=generator,
                 clip_skip = clip_skip,
+                prompt_embeds=prompt_embeds if use_prompt_embeds else None,
+                negative_prompt_embeds=negative_prompt_embeds if use_prompt_embeds else None,
             ).images[0]
 
             if hires_enabled:
@@ -403,6 +415,8 @@ def generate_images(
                     clip_skip=clip_skip,
                     hires_scale=hires_scale,
                     lora_adapters=lora_adapters,
+                    prompt_embeds=prompt_embeds if use_prompt_embeds else None,
+                    negative_prompt_embeds=negative_prompt_embeds if use_prompt_embeds else None,
                 )
 
             filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
