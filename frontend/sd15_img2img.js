@@ -1,6 +1,6 @@
 const gallery = createGalleryViewer({
     buildImageUrl: (path, idx, stamp) => {
-        return "http://127.0.0.1:8000" + path + `?t=${stamp}_${idx}`;
+        return API_BASE + path + `?t=${stamp}_${idx}`;
     },
 });
 
@@ -10,7 +10,7 @@ async function loadModels() {
     const select = document.getElementById("model_select");
     select.innerHTML = "";
     try {
-        const res = await fetch("http://127.0.0.1:8000/models?family=sd15");
+        const res = await fetch(`${API_BASE}/models?family=sd15`);
         const models = await res.json();
 
         if (!Array.isArray(models) || models.length === 0) {
@@ -40,6 +40,8 @@ async function loadModels() {
 
 loadModels();
 
+window.LoraPanel?.init({ apiBase: API_BASE, family: "sd15" });
+
 async function generateImg2Img() {
     const initialImageInput = document.getElementById("initial_image");
     const initialFile = initialImageInput.files[0];
@@ -63,6 +65,7 @@ async function generateImg2Img() {
     const num_images = Number(document.getElementById("num_images").value);
     const model = document.getElementById("model_select").value;
     const clip_skip = Number(document.getElementById("clip_skip").value);
+    const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
 
     const formData = new FormData();
     formData.append("initial_image", initialFile);
@@ -78,8 +81,11 @@ async function generateImg2Img() {
     formData.append("num_images", num_images.toString());
     formData.append("model", model);
     formData.append("clip_skip", clip_skip);
+    if (loraAdapters.length > 0) {
+        formData.append("lora_adapters", JSON.stringify(loraAdapters));
+    }
 
-    const res = await fetch("http://127.0.0.1:8000/generate-img2img", {
+    const res = await fetch(`${API_BASE}/generate-img2img`, {
         method: "POST",
         body: formData,
     });

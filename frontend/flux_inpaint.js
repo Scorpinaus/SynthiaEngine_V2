@@ -1,6 +1,6 @@
 const gallery = createGalleryViewer({
     buildImageUrl: (path, idx, stamp) => {
-        return "http://127.0.0.1:8000" + path + `?t=${stamp}_${idx}`;
+        return API_BASE + path + `?t=${stamp}_${idx}`;
     },
 });
 
@@ -59,7 +59,7 @@ async function loadModels() {
     const select = document.getElementById("model_select");
     select.innerHTML = "";
     try {
-        const res = await fetch("http://127.0.0.1:8000/models?family=flux");
+        const res = await fetch(`${API_BASE}/models?family=flux`);
         const models = await res.json();
 
         if (!Array.isArray(models) || models.length === 0) {
@@ -303,7 +303,7 @@ async function generateBlurMask() {
         const formData = new FormData();
         formData.append("mask_image", maskBlob, "mask.png");
         formData.append("blur_factor", blurFactor.toString());
-        const res = await fetch("http://127.0.0.1:8000/create-blur-mask", {
+        const res = await fetch(`${API_BASE}/create-blur-mask`, {
             method: "POST",
             body: formData,
         });
@@ -363,7 +363,7 @@ async function generateFluxInpaint() {
     formData.append("num_images", num_images.toString());
     formData.append("model", model);
     formData.append("strength", strength.toString());
-    const res = await fetch("http://127.0.0.1:8000/api/flux/inpaint", {
+    const res = await fetch(`${API_BASE}/api/flux/inpaint`, {
         method: "POST",
         body: formData,
     });

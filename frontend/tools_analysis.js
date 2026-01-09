@@ -1,5 +1,3 @@
-const API_BASE = "http://127.0.0.1:8000";
-
 const form = document.getElementById("tools-form");
 const fileInput = document.getElementById("tools-file");
 const limitInput = document.getElementById("tools-limit");

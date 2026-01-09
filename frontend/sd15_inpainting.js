@@ -1,6 +1,6 @@
 const gallery = createGalleryViewer({
     buildImageUrl: (path, idx, stamp) => {
-        return "http://127.0.0.1:8000" + path + `?t=${stamp}_${idx}`;
+        return API_BASE + path + `?t=${stamp}_${idx}`;
     },
 });
 
@@ -59,7 +59,7 @@ async function loadModels() {
     const select = document.getElementById("model_select");
     select.innerHTML = "";
     try {
-        const res = await fetch("http://127.0.0.1:8000/models?family=sd15");
+        const res = await fetch(`${API_BASE}/models?family=sd15`);
         const models = await res.json();
 
         if (!Array.isArray(models) || models.length === 0) {
@@ -303,7 +303,7 @@ async function generateBlurMask() {
         const formData = new FormData();
         formData.append("mask_image", maskBlob, "mask.png");
         formData.append("blur_factor", blurFactor.toString());
-        const res = await fetch("http://127.0.0.1:8000/create-blur-mask", {
+        const res = await fetch(`${API_BASE}/create-blur-mask`, {
             method: "POST",
             body: formData,
         });
@@ -369,7 +369,7 @@ async function generateInpaint() {
     formData.append("padding_mask_crop", paddingMaskCrop);
     formData.append("clip_skip", clip_skip);
 
-    const res = await fetch("http://127.0.0.1:8000/generate-inpaint", {
+    const res = await fetch(`${API_BASE}/generate-inpaint`, {
         method: "POST",
         body: formData,
     });

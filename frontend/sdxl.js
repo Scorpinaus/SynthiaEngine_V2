@@ -1,6 +1,6 @@
 const gallery = createGalleryViewer({
     buildImageUrl: (path, idx, stamp) => {
-        return "http://127.0.0.1:8000" + path + `?t=${stamp}_${idx}`;
+        return API_BASE + path + `?t=${stamp}_${idx}`;
     },
 });
 
@@ -10,7 +10,7 @@ async function loadModels() {
     const select = document.getElementById("model_select");
     select.innerHTML = "";
     try {
-        const res = await fetch("http://127.0.0.1:8000/models?family=sdxl");
+        const res = await fetch(`${API_BASE}/models?family=sdxl`);
         const models = await res.json();
 
         if (!Array.isArray(models) || models.length === 0) {
@@ -70,12 +70,22 @@ async function generate() {
     };
     console.log("Generate payload", payload);
 
-    const res = await fetch("http://127.0.0.1:8000/api/sdxl/text2img", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-    });
+    try {
+        const res = await fetch(`${API_BASE}/api/sdxl/text2img`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        });
 
-    const data = await res.json();
-    gallery.setImages(Array.isArray(data.images) ? data.images : []);
+        if (!res.ok) {
+            const errorText = await res.text();
+            throw new Error(`SDXL request failed (${res.status}): ${errorText}`);
+        }
+
+        const data = await res.json();
+        gallery.setImages(Array.isArray(data.images) ? data.images : []);
+    } catch (error) {
+        console.warn("Failed to generate SDXL images:", error);
+        gallery.setImages([]);
+    }
 }

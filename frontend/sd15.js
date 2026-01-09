@@ -1,4 +1,3 @@
-const API_BASE = "http://127.0.0.1:8000";
 const gallery = createGalleryViewer({
     buildImageUrl: (path, idx, stamp) => {
         return API_BASE + path + `?t=${stamp}_${idx}`;
@@ -339,6 +338,9 @@ async function generate() {
     const negative_prompt = document.getElementById("negative_prompt").value;
     const width = Number(document.getElementById("width").value);
     const height = Number(document.getElementById("height").value);
+    const hires_enabled = Boolean(document.getElementById("hires_enabled")?.checked);
+    const hiresScaleInput = Number(document.getElementById("hires_scale").value);
+    const hires_scale = Number.isFinite(hiresScaleInput) ? hiresScaleInput : 1.0;
     const model = document.getElementById("model_select").value;
     const clip_skip = document.getElementById("clip_skip").value;
     const num_images = Number(document.getElementById("num_images").value);
@@ -356,6 +358,8 @@ async function generate() {
         seed,
         width,
         height,
+        hires_enabled,
+        hires_scale,
         model,
         num_images,
         clip_skip,
@@ -365,41 +369,51 @@ async function generate() {
     }
     console.log("Generate payload", payload);
 
-    let res;
-    if (controlnetEnabled && controlnetState.previewBlob) {
-        const formData = new FormData();
-        formData.append("control_image", controlnetState.previewBlob, "controlnet.png");
-        formData.append("prompt", prompt);
-        formData.append("negative_prompt", negative_prompt);
-        formData.append("steps", String(steps));
-        formData.append("cfg", String(cfg));
-        formData.append("width", String(width));
-        formData.append("height", String(height));
-        formData.append("seed", seed === null ? "" : String(seed));
-        formData.append("scheduler", scheduler);
-        formData.append("num_images", String(num_images));
-        if (model) {
-            formData.append("model", model);
+    try {
+        let res;
+        if (controlnetEnabled && controlnetState.previewBlob) {
+            const formData = new FormData();
+            formData.append("control_image", controlnetState.previewBlob, "controlnet.png");
+            formData.append("prompt", prompt);
+            formData.append("negative_prompt", negative_prompt);
+            formData.append("steps", String(steps));
+            formData.append("cfg", String(cfg));
+            formData.append("width", String(width));
+            formData.append("height", String(height));
+            formData.append("seed", seed === null ? "" : String(seed));
+            formData.append("scheduler", scheduler);
+            formData.append("num_images", String(num_images));
+            if (model) {
+                formData.append("model", model);
+            }
+            formData.append("clip_skip", String(clip_skip));
+            if (loraAdapters.length > 0) {
+                formData.append("lora_adapters", JSON.stringify(loraAdapters));
+            }
+            res = await fetch(`${API_BASE}/api/controlnet/text2img`, {
+                method: "POST",
+                body: formData,
+            });
+        } else {
+            res = await fetch(`${API_BASE}/generate`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    ...payload,
+                    controlnet_active: controlnetEnabled,
+                }),
+            });
         }
-        formData.append("clip_skip", String(clip_skip));
-        if (loraAdapters.length > 0) {
-            formData.append("lora_adapters", JSON.stringify(loraAdapters));
-        }
-        res = await fetch(`${API_BASE}/api/controlnet/text2img`, {
-            method: "POST",
-            body: formData,
-        });
-    } else {
-        res = await fetch(`${API_BASE}/generate`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                ...payload,
-                controlnet_active: controlnetEnabled,
-            }),
-        });
-    }
 
-    const data = await res.json();
-    gallery.setImages(Array.isArray(data.images) ? data.images : []);
+        if (!res.ok) {
+            const errorText = await res.text();
+            throw new Error(`SD1.5 request failed (${res.status}): ${errorText}`);
+        }
+
+        const data = await res.json();
+        gallery.setImages(Array.isArray(data.images) ? data.images : []);
+    } catch (error) {
+        console.warn("Failed to generate SD1.5 images:", error);
+        gallery.setImages([]);
+    }
 }

@@ -1,9 +1,7 @@
 import torch
 import logging
-import random
-import time
+import math
 from PIL import ImageFilter, Image
-from PIL.PngImagePlugin import PngInfo
 from diffusers import (
     StableDiffusionPipeline,
     StableDiffusionImg2ImgPipeline,
@@ -13,11 +11,17 @@ from diffusers import (
 )
 from pathlib import Path
 
-from backend.model_registry import ModelRegistryEntry, get_model_entry
+from backend.logging_utils import configure_logging
+from backend.model_registry import get_model_entry
 from backend.lora_registry import get_lora_entry
 from backend.resource_logging import resource_logger
 # from testing.pipeline_stable_diffusion import(StableDiffusionPipeline)
-from backend.pipeline_utils import build_fixed_step_timesteps
+from backend.pipeline_utils import (
+    build_fixed_step_timesteps,
+    build_png_metadata,
+    make_batch_id,
+    resolve_model_source,
+)
 from backend.schedulers import create_scheduler
 
 OUTPUT_DIR = Path("outputs")
@@ -29,27 +33,16 @@ INPAINT_PIPELINE_CACHE: dict[str, StableDiffusionInpaintPipeline] = {}
 CONTROLNET_PIPELINE_CACHE: dict[str, StableDiffusionControlNetPipeline] = {}
 
 logger = logging.getLogger(__name__)
-if not logger.handlers:
-    logging.basicConfig(level=logging.INFO)
+configure_logging()
 
 
 ## Helper functions
-
-def _resolve_model_source(entry: ModelRegistryEntry) -> str:
-    if entry.location_type == "hub":
-        return entry.link
-
-    return str(Path(entry.link).expanduser())
 
 def create_blur_mask(mask_image, blur_factor: int):
     blur_factor = max(0, min(blur_factor, 128))
     if blur_factor == 0:
         return mask_image
     return mask_image.filter(ImageFilter.GaussianBlur(radius=blur_factor))
-
-
-def _make_batch_id() -> str:
-    return f"b{int(time.time())}_{random.randint(1000, 9999)}"
 
 
 def _resource_metadata(bound_args):
@@ -60,13 +53,98 @@ def _resource_metadata(bound_args):
     }
 
 
-def _build_png_metadata(metadata: dict[str, object]) -> PngInfo:
-    info = PngInfo()
-    for key, value in metadata.items():
-        if value is None:
-            continue
-        info.add_text(key, str(value))
-    return info
+def _snap_dimension(value: int, multiple: int = 8) -> int:
+    if multiple <= 0:
+        return value
+    return max(multiple, int(math.ceil(value / multiple)) * multiple)
+
+
+def _upscale_image(image: Image.Image, scale: float) -> Image.Image:
+    if scale <= 1.0:
+        return image
+    target_width = _snap_dimension(int(round(image.width * scale)))
+    target_height = _snap_dimension(int(round(image.height * scale)))
+    return image.resize((target_width, target_height), resample=Image.LANCZOS)
+
+
+def apply_hires_fix(
+    image: Image.Image,
+    prompt: str,
+    negative_prompt: str,
+    steps: int,
+    cfg: float,
+    seed: int | None,
+    scheduler: str,
+    model: str | None,
+    clip_skip: int,
+    hires_scale: float,
+    hires_strength: float = 0.35,
+    lora_adapters: list[object] | None = None,
+) -> Image.Image:
+    if hires_scale <= 1.0:
+        return image
+
+    upscaled = _upscale_image(image, hires_scale)
+    pipe = load_img2img_pipeline(model)
+    pipe.scheduler = create_scheduler(scheduler, pipe)
+    adapter_names = _apply_lora_adapters(pipe, lora_adapters)
+
+    generator = None
+    if seed is not None:
+        generator = torch.Generator(device="cuda").manual_seed(seed)
+
+    try:
+        return pipe(
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            image=upscaled,
+            strength=hires_strength,
+            num_inference_steps=steps,
+            guidance_scale=cfg,
+            generator=generator,
+            clip_skip=clip_skip,
+        ).images[0]
+    finally:
+        if adapter_names and hasattr(pipe, "unload_lora_weights"):
+            pipe.unload_lora_weights()
+
+
+def _apply_lora_adapters(pipe, lora_adapters: list[object] | None) -> list[str]:
+    if not lora_adapters:
+        return []
+
+    adapter_names: list[str] = []
+    weights: list[float] = []
+    for adapter in lora_adapters:
+        if isinstance(adapter, dict):
+            lora_id = adapter.get("lora_id")
+            strength = adapter.get("strength", 1.0)
+        else:
+            lora_id = getattr(adapter, "lora_id", None)
+            strength = getattr(adapter, "strength", 1.0)
+
+        if lora_id is None:
+            raise ValueError("LoRA adapter missing lora_id.")
+        entry = get_lora_entry(int(lora_id))
+
+        if entry.lora_model_family.lower() != "sd15":
+            raise ValueError(f"LoRA {entry.name} is not compatible with SD1.5.")
+
+        adapter_name = f"lora_{entry.name}"
+        source = entry.file_path
+        pipe.load_lora_weights(source, adapter_name=adapter_name)
+        adapter_names.append(adapter_name)
+        weights.append(float(strength))
+        logger.info(
+            "lora_name: %s , lora_id: %s, lora_weight: %s",
+            adapter_name,
+            entry.lora_id,
+            strength,
+        )
+    if hasattr(pipe, "set_adapters"):
+        pipe.set_adapters(adapter_names, adapter_weights=weights)
+
+    return adapter_names
 
 ## Load pipelines
 
@@ -76,7 +154,7 @@ def load_pipeline(model_name: str | None):
     if entry.name in PIPELINE_CACHE:
         return PIPELINE_CACHE[entry.name]
 
-    source = _resolve_model_source(entry)
+    source = resolve_model_source(entry)
     logger.info("URL: %s", source)
     if entry.model_type == "diffusers":
         pipe = StableDiffusionPipeline.from_pretrained(
@@ -105,7 +183,7 @@ def load_img2img_pipeline(model_name: str | None):
     if entry.name in IMG2IMG_PIPELINE_CACHE:
         return IMG2IMG_PIPELINE_CACHE[entry.name]
 
-    source = _resolve_model_source(entry)
+    source = resolve_model_source(entry)
     logger.info("URL: %s", source)
     if entry.model_type == "diffusers":
         img2img_pipe = StableDiffusionImg2ImgPipeline.from_pretrained(
@@ -134,7 +212,7 @@ def load_inpaint_pipeline(model_name: str | None):
     if entry.name in INPAINT_PIPELINE_CACHE:
         return INPAINT_PIPELINE_CACHE[entry.name]
 
-    source = _resolve_model_source(entry)
+    source = resolve_model_source(entry)
     logger.info("URL: %s", source)
     if entry.model_type == "diffusers":
         inpaint_pipe = StableDiffusionInpaintPipeline.from_pretrained(
@@ -163,7 +241,7 @@ def load_controlnet_pipeline(model_name: str | None, controlnet_model: str):
     if cache_key in CONTROLNET_PIPELINE_CACHE:
         return CONTROLNET_PIPELINE_CACHE[cache_key]
 
-    source = _resolve_model_source(entry)
+    source = resolve_model_source(entry)
     logger.info("Base model: %s", source)
     controlnet = ControlNetModel.from_pretrained(
         controlnet_model,
@@ -210,7 +288,7 @@ def generate_images_controlnet(
     batch_id: str | None = None,
 ) -> list[str]:
     if not batch_id:
-        batch_id = _make_batch_id()
+        batch_id = make_batch_id()
 
     pipe = load_controlnet_pipeline(model, controlnet_model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
@@ -251,7 +329,7 @@ def generate_images_controlnet(
         "controlnet_model": controlnet_model,
         "batch_id": batch_id,
     }
-    png_info = _build_png_metadata(metadata)
+    png_info = build_png_metadata(metadata)
 
     filenames = []
     for idx, image in enumerate(results.images):
@@ -275,6 +353,8 @@ def generate_images(
     num_images:int,
     clip_skip: int,
     lora_adapters: list[object] | None = None,
+    hires_scale: float = 1.0,
+    hires_enabled: bool = False,
     batch_id: str | None = None,
 ):
     logger.info("seed=%s", seed)
@@ -283,7 +363,7 @@ def generate_images(
     else:
         base_seed = seed
     if batch_id is None:
-        batch_id = _make_batch_id()
+        batch_id = make_batch_id()
     
     pipe = load_pipeline(model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
@@ -292,33 +372,7 @@ def generate_images(
         model, base_seed, scheduler, steps, cfg, width, height, num_images,)
         
     filenames = []
-    adapter_names: list[str] = []
-
-    if lora_adapters:
-        weights: list[float] = []
-        for adapter in lora_adapters:
-            if isinstance(adapter, dict):
-                lora_id = adapter.get("lora_id")
-                strength = adapter.get("strength", 1.0)
-            else:
-                lora_id = getattr(adapter, "lora_id", None)
-                strength = getattr(adapter, "strength", 1.0)
-                
-            if lora_id is None:
-                raise ValueError("LoRA adapter missing lora_id.")
-            entry = get_lora_entry(int(lora_id))
-            
-            if entry.lora_model_family.lower() != "sd15":
-                raise ValueError(f"LoRA {entry.name} is not compatible with SD1.5.")
-            
-            adapter_name = f"lora_{entry.name}"
-            source = entry.file_path
-            pipe.load_lora_weights(source, adapter_name=adapter_name)
-            adapter_names.append(adapter_name)
-            weights.append(float(strength))
-            logger.info('lora_name: %s , lora_id: %s, lora_weight: %s', adapter_name, entry.lora_id, strength)
-        if hasattr(pipe, "set_adapters"):
-            pipe.set_adapters(adapter_names, adapter_weights=weights)
+    adapter_names = _apply_lora_adapters(pipe, lora_adapters)
 
     try:
         for i in range(num_images):
@@ -336,8 +390,23 @@ def generate_images(
                 clip_skip = clip_skip,
             ).images[0]
 
+            if hires_enabled:
+                image = apply_hires_fix(
+                    image=image,
+                    prompt=prompt,
+                    negative_prompt=negative_prompt,
+                    steps=steps,
+                    cfg=cfg,
+                    seed=current_seed,
+                    scheduler=scheduler,
+                    model=model,
+                    clip_skip=clip_skip,
+                    hires_scale=hires_scale,
+                    lora_adapters=lora_adapters,
+                )
+
             filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
-            pnginfo = _build_png_metadata({
+            pnginfo = build_png_metadata({
                 "mode": "txt2img",
                 "prompt": prompt,
                 "negative_prompt": negative_prompt,
@@ -349,6 +418,8 @@ def generate_images(
                 "scheduler": scheduler,
                 "model": model,
                 "clip_skip": clip_skip,
+                "hires_enabled": hires_enabled,
+                "hires_scale": hires_scale,
                 "batch_id": batch_id,
             })
             image.save(filename, pnginfo=pnginfo)
@@ -376,6 +447,7 @@ def generate_images_img2img(
     model: str | None,
     num_images: int,
     clip_skip: int,
+    lora_adapters: list[object] | None = None,
     batch_id: str | None = None,
 ):
     logger.info("seed=%s", seed)
@@ -384,7 +456,7 @@ def generate_images_img2img(
     else:
         base_seed = seed
     if batch_id is None:
-        batch_id = _make_batch_id()
+        batch_id = make_batch_id()
 
     pipe = load_img2img_pipeline(model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
@@ -402,43 +474,48 @@ def generate_images_img2img(
     )
 
     filenames = []
+    adapter_names = _apply_lora_adapters(pipe, lora_adapters)
 
-    for i in range(num_images):
-        current_seed = base_seed + i
-        generator = torch.Generator(device="cuda").manual_seed(current_seed)
+    try:
+        for i in range(num_images):
+            current_seed = base_seed + i
+            generator = torch.Generator(device="cuda").manual_seed(current_seed)
 
-        image = pipe(
-            prompt=prompt,
-            negative_prompt=negative_prompt,
-            image=initial_image,
-            strength=strength,
-            num_inference_steps=steps,
-            guidance_scale=cfg,
-            generator=generator,
-            clip_skip=clip_skip
-        ).images[0]
+            image = pipe(
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                image=initial_image,
+                strength=strength,
+                num_inference_steps=steps,
+                guidance_scale=cfg,
+                generator=generator,
+                clip_skip=clip_skip,
+            ).images[0]
 
-        filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
-        image_width, image_height = initial_image.size
-        pnginfo = _build_png_metadata({
-            "mode": "img2img",
-            "prompt": prompt,
-            "negative_prompt": negative_prompt,
-            "steps": steps,
-            "cfg": cfg,
-            "width": image_width,
-            "height": image_height,
-            "seed": current_seed,
-            "scheduler": scheduler,
-            "model": model,
-            "strength": strength,
-            "clip_skip": clip_skip,
-            "batch_id": batch_id,
-        })
-        image.save(filename, pnginfo=pnginfo)
-        logger.info("Image %s saved to %s", i, filename.name)
+            filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
+            image_width, image_height = initial_image.size
+            pnginfo = build_png_metadata({
+                "mode": "img2img",
+                "prompt": prompt,
+                "negative_prompt": negative_prompt,
+                "steps": steps,
+                "cfg": cfg,
+                "width": image_width,
+                "height": image_height,
+                "seed": current_seed,
+                "scheduler": scheduler,
+                "model": model,
+                "strength": strength,
+                "clip_skip": clip_skip,
+                "batch_id": batch_id,
+            })
+            image.save(filename, pnginfo=pnginfo)
+            logger.info("Image %s saved to %s", i, filename.name)
 
-        filenames.append(filename.name)
+            filenames.append(filename.name)
+    finally:
+        if adapter_names and hasattr(pipe, "unload_lora_weights"):
+            pipe.unload_lora_weights()
 
     return filenames
 
@@ -465,7 +542,7 @@ def generate_images_inpaint(
     else:
         base_seed = seed
     if batch_id is None:
-        batch_id = _make_batch_id()
+        batch_id = make_batch_id()
 
     pipe = load_inpaint_pipeline(model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
@@ -496,7 +573,7 @@ def generate_images_inpaint(
         ).images[0]
 
         filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
-        pnginfo = _build_png_metadata({
+        pnginfo = build_png_metadata({
             "mode": "inpaint",
             "prompt": prompt,
             "negative_prompt": negative_prompt,
