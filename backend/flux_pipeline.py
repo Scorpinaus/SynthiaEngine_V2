@@ -3,16 +3,19 @@ Docstring for backend.flux_pipeline
 """
 import gc
 import logging
-import random
 import threading
-import time
 from pathlib import Path
 
 import torch
-from PIL.PngImagePlugin import PngInfo
 from diffusers import FluxImg2ImgPipeline, FluxInpaintPipeline, FluxPipeline
 
-from backend.model_registry import ModelRegistryEntry, get_model_entry
+from backend.logging_utils import configure_logging
+from backend.model_registry import get_model_entry
+from backend.pipeline_utils import (
+    build_png_metadata,
+    make_batch_id,
+    resolve_model_source,
+)
 from backend.schedulers import create_scheduler
 
 """
@@ -27,32 +30,12 @@ IMG2IMG_PIPELINE_CACHE: dict[str, FluxImg2ImgPipeline] = {}
 INPAINT_PIPELINE_CACHE: dict[str, FluxInpaintPipeline] = {}
 
 logger = logging.getLogger(__name__)
-if not logger.handlers:
-    logging.basicConfig(level=logging.INFO)
+configure_logging()
 
 
     """
     Miscelleous methods
     """
-def _resolve_model_source(entry: ModelRegistryEntry) -> str:
-    if entry.location_type == "hub":
-        return entry.link
-
-    return str(Path(entry.link).expanduser())
-
-
-def _make_batch_id() -> str:
-    return f"b{int(time.time())}_{random.randint(1000, 9999)}"
-
-
-def _build_png_metadata(metadata: dict[str, object]) -> PngInfo:
-    info = PngInfo()
-    for key, value in metadata.items():
-        if value is None:
-            continue
-        info.add_text(key, str(value))
-    return info
-
 """
     Methods for loading flux pipelines
 """
@@ -64,7 +47,7 @@ def load_flux_pipeline(model_name: str | None) -> FluxPipeline:
     if pipe is not None:
         return pipe
 
-    source = _resolve_model_source(entry)
+    source = resolve_model_source(entry)
     logger.info("Flux model source: %s", source)
 
     if entry.model_type == "diffusers":
@@ -96,7 +79,7 @@ def load_flux_img2img_pipeline(model_name: str | None) -> FluxImg2ImgPipeline:
     if pipe is not None:
         return pipe
 
-    source = _resolve_model_source(entry)
+    source = resolve_model_source(entry)
     logger.info("Flux img2img model source: %s", source)
 
     if entry.model_type == "diffusers":
@@ -127,7 +110,7 @@ def load_flux_inpaint_pipeline(model_name: str | None) -> FluxInpaintPipeline:
     if pipe is not None:
         return pipe
 
-    source = _resolve_model_source(entry)
+    source = resolve_model_source(entry)
     logger.info("Flux inpaint model source: %s", source)
 
     if entry.model_type == "diffusers":
@@ -174,7 +157,7 @@ def run_flux_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
     else:
         base_seed = int(seed)
 
-    batch_id = _make_batch_id()
+    batch_id = make_batch_id()
 
     pipe = load_flux_pipeline(model)
     logger.info(
@@ -205,7 +188,7 @@ def run_flux_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
                 image = pipe(**call_kwargs).images[0]
 
             filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
-            pnginfo = _build_png_metadata({
+            pnginfo = build_png_metadata({
                 "mode": "txt2img",
                 "pipeline": "flux",
                 "prompt": prompt,
@@ -251,7 +234,7 @@ def run_flux_img2img(
     else:
         base_seed = int(seed)
 
-    batch_id = _make_batch_id()
+    batch_id = make_batch_id()
 
     pipe = load_flux_img2img_pipeline(model)
     logger.info(
@@ -286,7 +269,7 @@ def run_flux_img2img(
 
             filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
             image_width, image_height = initial_image.size
-            pnginfo = _build_png_metadata({
+            pnginfo = build_png_metadata({
                 "mode": "img2img",
                 "pipeline": "flux",
                 "prompt": prompt,
@@ -332,7 +315,7 @@ def run_flux_inpaint(
     else:
         base_seed = int(seed)
 
-    batch_id = _make_batch_id()
+    batch_id = make_batch_id()
 
     pipe = load_flux_inpaint_pipeline(model)
     logger.info(
@@ -366,7 +349,7 @@ def run_flux_inpaint(
 
             filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
             image_width, image_height = initial_image.size
-            pnginfo = _build_png_metadata({
+            pnginfo = build_png_metadata({
                 "mode": "inpaint",
                 "pipeline": "flux",
                 "prompt": prompt,

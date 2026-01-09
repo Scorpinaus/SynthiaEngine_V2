@@ -1,16 +1,19 @@
 import logging
-import random
-import time
 from pathlib import Path
 
 import torch, gc
-from PIL.PngImagePlugin import PngInfo
 from diffusers import ZImageImg2ImgPipeline, ZImagePipeline
 
 import threading
 
-from backend.model_registry import ModelRegistryEntry, get_model_entry
-from backend.pipeline_utils import build_fixed_step_timesteps
+from backend.logging_utils import configure_logging
+from backend.model_registry import get_model_entry
+from backend.pipeline_utils import (
+    build_fixed_step_timesteps,
+    build_png_metadata,
+    make_batch_id,
+    resolve_model_source,
+)
 from backend.schedulers import create_scheduler
 
 GEN_LOCK = threading.Lock()
@@ -21,28 +24,7 @@ PIPELINE_CACHE: dict[str, ZImagePipeline] = {}
 IMG2IMG_PIPELINE_CACHE: dict[str, ZImageImg2ImgPipeline] = {}
 
 logger = logging.getLogger(__name__)
-if not logger.handlers:
-    logging.basicConfig(level=logging.INFO)
-
-
-def _resolve_model_source(entry: ModelRegistryEntry) -> str:
-    if entry.location_type == "hub":
-        return entry.link
-
-    return str(Path(entry.link).expanduser())
-
-
-def _make_batch_id() -> str:
-    return f"b{int(time.time())}_{random.randint(1000, 9999)}"
-
-
-def _build_png_metadata(metadata: dict[str, object]) -> PngInfo:
-    info = PngInfo()
-    for key, value in metadata.items():
-        if value is None:
-            continue
-        info.add_text(key, str(value))
-    return info
+configure_logging()
 
 
 # def _align_pad_token_dtype(pipe: ZImagePipeline | ZImageImg2ImgPipeline) -> None:
@@ -69,7 +51,7 @@ def load_z_image_pipeline(model_name: str | None) -> ZImagePipeline:
     if pipe is not None:
         return pipe
 
-    source = _resolve_model_source(entry)
+    source = resolve_model_source(entry)
     logger.info("Z-Image model source: %s", source)
 
     if entry.model_type == "diffusers":
@@ -112,7 +94,7 @@ def load_z_image_img2img_pipeline(model_name: str | None) -> ZImageImg2ImgPipeli
     if pipe is not None:
         return pipe
 
-    source = _resolve_model_source(entry)
+    source = resolve_model_source(entry)
     logger.info("Z-Image img2img model source: %s", source)
 
     if entry.model_type == "diffusers":
@@ -167,7 +149,7 @@ def run_z_image_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
     else:
         base_seed = int(seed)
 
-    batch_id = _make_batch_id()
+    batch_id = make_batch_id()
 
     pipe = load_z_image_pipeline(model)
     logger.info(
@@ -209,7 +191,7 @@ def run_z_image_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
                 image = pipe(**call_kwargs).images[0]
 
             filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
-            pnginfo = _build_png_metadata({
+            pnginfo = build_png_metadata({
                 "mode": "txt2img",
                 "pipeline": "z-image",
                 "prompt": prompt,
@@ -257,7 +239,7 @@ def run_z_image_img2img(
     else:
         base_seed = int(seed)
 
-    batch_id = _make_batch_id()
+    batch_id = make_batch_id()
 
     pipe = load_z_image_img2img_pipeline(model)
     logger.info(
@@ -302,7 +284,7 @@ def run_z_image_img2img(
 
             filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
             image_width, image_height = initial_image.size
-            pnginfo = _build_png_metadata({
+            pnginfo = build_png_metadata({
                 "mode": "img2img",
                 "pipeline": "z-image",
                 "prompt": prompt,

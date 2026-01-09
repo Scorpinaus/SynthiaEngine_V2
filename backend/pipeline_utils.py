@@ -1,8 +1,41 @@
 from __future__ import annotations
 
-import torch
+import random
+import time
+from pathlib import Path
 
-def build_fixed_step_timesteps(scheduler, steps: int, strength: float, device: torch.device | str | None = None, ) -> torch.Tensor:
+import torch
+from PIL.PngImagePlugin import PngInfo
+
+from backend.model_registry import ModelRegistryEntry
+
+
+def resolve_model_source(entry: ModelRegistryEntry) -> str:
+    if entry.location_type == "hub":
+        return entry.link
+
+    return str(Path(entry.link).expanduser())
+
+
+def make_batch_id() -> str:
+    return f"b{int(time.time())}_{random.randint(1000, 9999)}"
+
+
+def build_png_metadata(metadata: dict[str, object]) -> PngInfo:
+    info = PngInfo()
+    for key, value in metadata.items():
+        if value is None:
+            continue
+        info.add_text(key, str(value))
+    return info
+
+
+def build_fixed_step_timesteps(
+    scheduler,
+    steps: int,
+    strength: float,
+    device: torch.device | str | None = None,
+) -> torch.Tensor:
     clamped_strength = max(0.0, min(1.0, strength))
     
     if device is not None:

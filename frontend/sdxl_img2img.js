@@ -1,6 +1,6 @@
 const gallery = createGalleryViewer({
     buildImageUrl: (path, idx, stamp) => {
-        return "http://127.0.0.1:8000" + path + `?t=${stamp}_${idx}`;
+        return API_BASE + path + `?t=${stamp}_${idx}`;
     },
 });
 
@@ -10,7 +10,7 @@ async function loadModels() {
     const select = document.getElementById("model_select");
     select.innerHTML = "";
     try {
-        const res = await fetch("http://127.0.0.1:8000/models?family=sdxl");
+        const res = await fetch(`${API_BASE}/models?family=sdxl`);
         const models = await res.json();
 
         if (!Array.isArray(models) || models.length === 0) {
@@ -79,7 +79,7 @@ async function generateSdxlImg2Img() {
     formData.append("model", model);
     formData.append("clip_skip", clip_skip);
 
-    const res = await fetch("http://127.0.0.1:8000/api/sdxl/img2img", {
+    const res = await fetch(`${API_BASE}/api/sdxl/img2img`, {
         method: "POST",
         body: formData,
     });
