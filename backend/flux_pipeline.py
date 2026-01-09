@@ -33,9 +33,6 @@ logger = logging.getLogger(__name__)
 configure_logging()
 
 
-    """
-    Miscelleous methods
-    """
 """
     Methods for loading flux pipelines
 """
