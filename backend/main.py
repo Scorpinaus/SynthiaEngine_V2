@@ -42,7 +42,7 @@ from backend.sdxl_pipeline import (
 )
 from backend.z_image_pipeline import run_z_image_img2img, run_z_image_text2img
 
-app = FastAPI(title="SD 1.5 API")
+app = FastAPI(title="SynthiaEngine API")
 logger = logging.getLogger(__name__)
 if not logger.handlers:
     logging.basicConfig(level=logging.INFO)
