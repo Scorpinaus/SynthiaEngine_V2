@@ -13,6 +13,7 @@ const EMPTY_VALUE = "Unknown";
 const modelsState = document.getElementById("models-state");
 const modelsGrid = document.getElementById("models-grid");
 const refreshButton = document.getElementById("models-refresh");
+const refreshLabel = refreshButton ? refreshButton.textContent : "Refresh";
 const modelsCount = document.getElementById("models-count");
 const modelsUpdated = document.getElementById("models-updated");
 const modelsSearch = document.getElementById("models-search");
@@ -68,6 +69,13 @@ function buildLink(link) {
     anchor.rel = "noreferrer";
     anchor.textContent = link;
     return anchor;
+}
+
+function buildCode(text) {
+    const code = document.createElement("code");
+    code.className = "model-code";
+    code.textContent = text || EMPTY_VALUE;
+    return code;
 }
 
 function buildCard(model) {

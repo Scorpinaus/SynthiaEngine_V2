@@ -156,10 +156,14 @@ function renderBatchList() {
     });
 }
 
-function updateNavigation(count) {
-    const disabled = count <= 1;
-    prevButton.disabled = disabled;
-    nextButton.disabled = disabled;
+function updateNavigation(count, selectedIndex) {
+    if (count <= 1) {
+        prevButton.disabled = true;
+        nextButton.disabled = true;
+        return;
+    }
+    prevButton.disabled = selectedIndex <= 0;
+    nextButton.disabled = selectedIndex >= count - 1;
 }
 
 function renderViewer() {
@@ -175,7 +179,7 @@ function renderViewer() {
         empty.className = "history-viewer-empty";
         empty.textContent = "Select a batch to preview.";
         viewerFrame.appendChild(empty);
-        updateNavigation(0);
+        updateNavigation(0, 0);
         return;
     }
 
@@ -214,7 +218,7 @@ function renderViewer() {
         viewerThumbs.appendChild(thumb);
     });
 
-    updateNavigation(batch.items.length);
+    updateNavigation(batch.items.length, selectedIndex);
 }
 
 function render() {
@@ -255,8 +259,10 @@ function shiftSelection(direction) {
         return;
     }
     const count = batch.items.length;
-    const nextIndex = (state.selectedIndex + direction + count) % count;
-    setState({ selectedIndex: nextIndex });
+    const nextIndex = Math.min(Math.max(state.selectedIndex + direction, 0), count - 1);
+    if (nextIndex !== state.selectedIndex) {
+        setState({ selectedIndex: nextIndex });
+    }
 }
 
 async function fetchHistory() {
