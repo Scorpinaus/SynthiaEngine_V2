@@ -1,4 +1,3 @@
-const API_BASE = "http://127.0.0.1:8000";
 const METADATA_FIELDS = [
     { key: "prompt", label: "Prompt" },
     { key: "negative_prompt", label: "Negative Prompt" },

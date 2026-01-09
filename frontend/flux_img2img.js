@@ -1,6 +1,6 @@
 const gallery = createGalleryViewer({
     buildImageUrl: (path, idx, stamp) => {
-        return "http://127.0.0.1:8000" + path + `?t=${stamp}_${idx}`;
+        return API_BASE + path + `?t=${stamp}_${idx}`;
     },
 });
 
@@ -10,7 +10,7 @@ async function loadModels() {
     const select = document.getElementById("model_select");
     select.innerHTML = "";
     try {
-        const res = await fetch("http://127.0.0.1:8000/models?family=flux");
+        const res = await fetch(`${API_BASE}/models?family=flux`);
         const models = await res.json();
 
         if (!Array.isArray(models) || models.length === 0) {
@@ -75,7 +75,7 @@ async function generateFluxImg2Img() {
     formData.append("model", model);
     formData.append("strength", String(strength));
 
-    const res = await fetch("http://127.0.0.1:8000/api/flux/img2img", {
+    const res = await fetch(`${API_BASE}/api/flux/img2img`, {
         method: "POST",
         body: formData,
     });

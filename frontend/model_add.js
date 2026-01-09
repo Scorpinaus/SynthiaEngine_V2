@@ -1,5 +1,3 @@
-const API_BASE = "http://127.0.0.1:8000";
-
 const form = document.getElementById("model-form");
 const state = document.getElementById("model-form-state");
 const modelIdField = form.querySelector('input[name="model_id"]');

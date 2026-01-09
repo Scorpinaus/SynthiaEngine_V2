@@ -1,5 +1,3 @@
-const API_BASE = "http://127.0.0.1:8000";
-
 const gallery = createGalleryViewer({
     buildImageUrl: (path, idx, stamp) => {
         return API_BASE + path + `?t=${stamp}_${idx}`;

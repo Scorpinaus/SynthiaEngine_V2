@@ -1,10 +1,7 @@
 import torch
 import logging
 import math
-import random
-import time
 from PIL import ImageFilter, Image
-from PIL.PngImagePlugin import PngInfo
 from diffusers import (
     StableDiffusionPipeline,
     StableDiffusionImg2ImgPipeline,
@@ -14,11 +11,17 @@ from diffusers import (
 )
 from pathlib import Path
 
-from backend.model_registry import ModelRegistryEntry, get_model_entry
+from backend.logging_utils import configure_logging
+from backend.model_registry import get_model_entry
 from backend.lora_registry import get_lora_entry
 from backend.resource_logging import resource_logger
 # from testing.pipeline_stable_diffusion import(StableDiffusionPipeline)
-from backend.pipeline_utils import build_fixed_step_timesteps
+from backend.pipeline_utils import (
+    build_fixed_step_timesteps,
+    build_png_metadata,
+    make_batch_id,
+    resolve_model_source,
+)
 from backend.schedulers import create_scheduler
 
 OUTPUT_DIR = Path("outputs")
@@ -30,17 +33,10 @@ INPAINT_PIPELINE_CACHE: dict[str, StableDiffusionInpaintPipeline] = {}
 CONTROLNET_PIPELINE_CACHE: dict[str, StableDiffusionControlNetPipeline] = {}
 
 logger = logging.getLogger(__name__)
-if not logger.handlers:
-    logging.basicConfig(level=logging.INFO)
+configure_logging()
 
 
 ## Helper functions
-
-def _resolve_model_source(entry: ModelRegistryEntry) -> str:
-    if entry.location_type == "hub":
-        return entry.link
-
-    return str(Path(entry.link).expanduser())
 
 def create_blur_mask(mask_image, blur_factor: int):
     blur_factor = max(0, min(blur_factor, 128))
@@ -49,25 +45,12 @@ def create_blur_mask(mask_image, blur_factor: int):
     return mask_image.filter(ImageFilter.GaussianBlur(radius=blur_factor))
 
 
-def _make_batch_id() -> str:
-    return f"b{int(time.time())}_{random.randint(1000, 9999)}"
-
-
 def _resource_metadata(bound_args):
     return {
         "batch_id": bound_args.arguments.get("batch_id"),
         "model": bound_args.arguments.get("model"),
         "num_images": bound_args.arguments.get("num_images"),
     }
-
-
-def _build_png_metadata(metadata: dict[str, object]) -> PngInfo:
-    info = PngInfo()
-    for key, value in metadata.items():
-        if value is None:
-            continue
-        info.add_text(key, str(value))
-    return info
 
 
 def _snap_dimension(value: int, multiple: int = 8) -> int:
@@ -171,7 +154,7 @@ def load_pipeline(model_name: str | None):
     if entry.name in PIPELINE_CACHE:
         return PIPELINE_CACHE[entry.name]
 
-    source = _resolve_model_source(entry)
+    source = resolve_model_source(entry)
     logger.info("URL: %s", source)
     if entry.model_type == "diffusers":
         pipe = StableDiffusionPipeline.from_pretrained(
@@ -200,7 +183,7 @@ def load_img2img_pipeline(model_name: str | None):
     if entry.name in IMG2IMG_PIPELINE_CACHE:
         return IMG2IMG_PIPELINE_CACHE[entry.name]
 
-    source = _resolve_model_source(entry)
+    source = resolve_model_source(entry)
     logger.info("URL: %s", source)
     if entry.model_type == "diffusers":
         img2img_pipe = StableDiffusionImg2ImgPipeline.from_pretrained(
@@ -229,7 +212,7 @@ def load_inpaint_pipeline(model_name: str | None):
     if entry.name in INPAINT_PIPELINE_CACHE:
         return INPAINT_PIPELINE_CACHE[entry.name]
 
-    source = _resolve_model_source(entry)
+    source = resolve_model_source(entry)
     logger.info("URL: %s", source)
     if entry.model_type == "diffusers":
         inpaint_pipe = StableDiffusionInpaintPipeline.from_pretrained(
@@ -258,7 +241,7 @@ def load_controlnet_pipeline(model_name: str | None, controlnet_model: str):
     if cache_key in CONTROLNET_PIPELINE_CACHE:
         return CONTROLNET_PIPELINE_CACHE[cache_key]
 
-    source = _resolve_model_source(entry)
+    source = resolve_model_source(entry)
     logger.info("Base model: %s", source)
     controlnet = ControlNetModel.from_pretrained(
         controlnet_model,
@@ -305,7 +288,7 @@ def generate_images_controlnet(
     batch_id: str | None = None,
 ) -> list[str]:
     if not batch_id:
-        batch_id = _make_batch_id()
+        batch_id = make_batch_id()
 
     pipe = load_controlnet_pipeline(model, controlnet_model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
@@ -346,7 +329,7 @@ def generate_images_controlnet(
         "controlnet_model": controlnet_model,
         "batch_id": batch_id,
     }
-    png_info = _build_png_metadata(metadata)
+    png_info = build_png_metadata(metadata)
 
     filenames = []
     for idx, image in enumerate(results.images):
@@ -380,7 +363,7 @@ def generate_images(
     else:
         base_seed = seed
     if batch_id is None:
-        batch_id = _make_batch_id()
+        batch_id = make_batch_id()
     
     pipe = load_pipeline(model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
@@ -423,7 +406,7 @@ def generate_images(
                 )
 
             filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
-            pnginfo = _build_png_metadata({
+            pnginfo = build_png_metadata({
                 "mode": "txt2img",
                 "prompt": prompt,
                 "negative_prompt": negative_prompt,
@@ -473,7 +456,7 @@ def generate_images_img2img(
     else:
         base_seed = seed
     if batch_id is None:
-        batch_id = _make_batch_id()
+        batch_id = make_batch_id()
 
     pipe = load_img2img_pipeline(model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
@@ -511,7 +494,7 @@ def generate_images_img2img(
 
             filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
             image_width, image_height = initial_image.size
-            pnginfo = _build_png_metadata({
+            pnginfo = build_png_metadata({
                 "mode": "img2img",
                 "prompt": prompt,
                 "negative_prompt": negative_prompt,
@@ -559,7 +542,7 @@ def generate_images_inpaint(
     else:
         base_seed = seed
     if batch_id is None:
-        batch_id = _make_batch_id()
+        batch_id = make_batch_id()
 
     pipe = load_inpaint_pipeline(model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
@@ -590,7 +573,7 @@ def generate_images_inpaint(
         ).images[0]
 
         filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
-        pnginfo = _build_png_metadata({
+        pnginfo = build_png_metadata({
             "mode": "inpaint",
             "prompt": prompt,
             "negative_prompt": negative_prompt,
