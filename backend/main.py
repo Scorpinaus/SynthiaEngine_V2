@@ -35,6 +35,11 @@ from backend.sd15_pipeline import (
     generate_images_controlnet,
 )
 from backend.flux_pipeline import run_flux_img2img, run_flux_inpaint, run_flux_text2img
+from backend.qwen_image_pipeline import (
+    run_qwen_image_img2img,
+    run_qwen_image_inpaint,
+    run_qwen_image_text2img,
+)
 from backend.sdxl_pipeline import (
     run_sdxl_img2img,
     run_sdxl_inpaint,
@@ -115,6 +120,20 @@ class FluxGenerateRequest(BaseModel):
     prompt: str
     negative_prompt: str | None = DEFAULTS["negative_prompt"]
     steps: int = DEFAULTS["steps"]
+    guidance_scale: float = DEFAULTS["cfg"]
+    width: int = 1024
+    height: int = 1024
+    seed: int | None = None
+    scheduler: str = "euler"
+    num_images: int = 1
+    model: str | None = None
+
+
+class QwenImageGenerateRequest(BaseModel):
+    prompt: str
+    negative_prompt: str | None = DEFAULTS["negative_prompt"]
+    steps: int = 30
+    true_cfg_scale: float = 4.0
     guidance_scale: float = DEFAULTS["cfg"]
     width: int = 1024
     height: int = 1024
@@ -219,6 +238,8 @@ async def list_models(family: str | None = None):
         pattern = re.compile(r"sdxl", re.IGNORECASE)
     elif family_value == "z-image-turbo":
         pattern = re.compile(r"z-image-turbo", re.IGNORECASE)
+    elif family_value == "qwen-image":
+        pattern = re.compile(r"qwen[-_\s]?image", re.IGNORECASE)
     elif family_value == "flux":
         pattern = re.compile(r"flux", re.IGNORECASE)
     else:
@@ -741,6 +762,109 @@ async def generate_z_image_img2img(
         guidance_scale=guidance_scale,
         width=width,
         height=height,
+        seed=seed,
+        scheduler=scheduler,
+        model=model,
+        num_images=num_images,
+    )
+
+## Qwen-Image Endpoints
+@app.post("/api/qwen-image/text2img")
+async def generate_qwen_image_text2img(req: QwenImageGenerateRequest, request: Request):
+    prepare_model(req.model)
+
+    return run_qwen_image_text2img(req.model_dump())
+
+
+@app.post("/api/qwen-image/img2img")
+async def generate_qwen_image_img2img(
+    initial_image: UploadFile = File(...),
+    strength: float = Form(0.75),
+    prompt: str = Form(...),
+    negative_prompt: str = Form(DEFAULTS["negative_prompt"]),
+    steps: int = Form(30),
+    true_cfg_scale: float = Form(4.0),
+    guidance_scale: float = Form(DEFAULTS["cfg"]),
+    width: int = Form(1024),
+    height: int = Form(1024),
+    seed: int | None = Form(None),
+    scheduler: str = Form("euler"),
+    num_images: int = Form(1),
+    model: str | None = Form(None),
+):
+    if not 0 <= strength <= 1:
+        raise HTTPException(status_code=400, detail="Strength must be between 0 and 1.")
+
+    image_bytes = await initial_image.read()
+    try:
+        init_image = Image.open(BytesIO(image_bytes)).convert("RGB")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid image file.") from exc
+
+    init_image = init_image.resize((width, height))
+    remapped_strength = remap_img2img_strength(strength)
+    prepare_model(model)
+
+    return run_qwen_image_img2img(
+        initial_image=init_image,
+        strength=remapped_strength,
+        prompt=prompt,
+        negative_prompt=negative_prompt,
+        steps=steps,
+        true_cfg_scale=true_cfg_scale,
+        guidance_scale=guidance_scale,
+        width=width,
+        height=height,
+        seed=seed,
+        scheduler=scheduler,
+        model=model,
+        num_images=num_images,
+    )
+
+
+@app.post("/api/qwen-image/inpaint")
+async def generate_qwen_image_inpaint(
+    initial_image: UploadFile = File(...),
+    mask_image: UploadFile = File(...),
+    strength: float = Form(0.5),
+    prompt: str = Form(...),
+    negative_prompt: str = Form(DEFAULTS["negative_prompt"]),
+    steps: int = Form(30),
+    true_cfg_scale: float = Form(4.0),
+    guidance_scale: float = Form(DEFAULTS["cfg"]),
+    seed: int | None = Form(None),
+    scheduler: str = Form("euler"),
+    num_images: int = Form(1),
+    model: str | None = Form(None),
+):
+    if not 0 <= strength <= 1:
+        raise HTTPException(status_code=400, detail="Strength must be between 0 and 1.")
+
+    image_bytes = await initial_image.read()
+    mask_bytes = await mask_image.read()
+    try:
+        init_image = Image.open(BytesIO(image_bytes)).convert("RGB")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid initial image file.") from exc
+
+    try:
+        mask = Image.open(BytesIO(mask_bytes)).convert("L")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid mask image file.") from exc
+
+    if mask.size != init_image.size:
+        mask = mask.resize(init_image.size, resample=Image.NEAREST)
+    prepare_model(model)
+
+    return run_qwen_image_inpaint(
+        initial_image=init_image,
+        mask_image=mask,
+        strength=strength,
+        prompt=prompt,
+        negative_prompt=negative_prompt,
+        steps=steps,
+        true_cfg_scale=true_cfg_scale,
+        guidance_scale=guidance_scale,
         seed=seed,
         scheduler=scheduler,
         model=model,

@@ -10,6 +10,9 @@ const NAV_GROUPS = [
             { href: "sdxl_inpaint.html", label: "SDXL Inpaint" },
             { href: "z_image.html", label: "Z-Image Text2Img" },
             { href: "z_image_img2img.html", label: "Z-Image Img2Img" },
+            { href: "qwen_image.html", label: "Qwen-Image Text2Img" },
+            { href: "qwen_image_img2img.html", label: "Qwen-Image Img2Img" },
+            { href: "qwen_image_inpaint.html", label: "Qwen-Image Inpaint" },
             { href: "flux.html", label: "Flux Text2Img" },
             { href: "flux_img2img.html", label: "Flux Img2Img" },
         ],
@@ -136,4 +139,3 @@ if (document.readyState === "loading") {
 document.addEventListener("header:loaded", () => {
     renderNavBar();
 });
-
