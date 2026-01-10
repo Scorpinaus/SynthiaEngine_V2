@@ -35,7 +35,7 @@ from backend.sd15_pipeline import (
     generate_images_controlnet,
 )
 from backend.flux_pipeline import run_flux_img2img, run_flux_inpaint, run_flux_text2img
-from backend.qwen_image_pipeline import run_qwen_image_text2img
+from backend.qwen_image_pipeline import run_qwen_image_img2img, run_qwen_image_text2img
 from backend.sdxl_pipeline import (
     run_sdxl_img2img,
     run_sdxl_inpaint,
@@ -768,6 +768,52 @@ async def generate_qwen_image_text2img(req: QwenImageGenerateRequest, request: R
     prepare_model(req.model)
 
     return run_qwen_image_text2img(req.model_dump())
+
+
+@app.post("/api/qwen-image/img2img")
+async def generate_qwen_image_img2img(
+    initial_image: UploadFile = File(...),
+    strength: float = Form(0.75),
+    prompt: str = Form(...),
+    negative_prompt: str = Form(DEFAULTS["negative_prompt"]),
+    steps: int = Form(30),
+    true_cfg_scale: float = Form(4.0),
+    guidance_scale: float = Form(DEFAULTS["cfg"]),
+    width: int = Form(1024),
+    height: int = Form(1024),
+    seed: int | None = Form(None),
+    scheduler: str = Form("euler"),
+    num_images: int = Form(1),
+    model: str | None = Form(None),
+):
+    if not 0 <= strength <= 1:
+        raise HTTPException(status_code=400, detail="Strength must be between 0 and 1.")
+
+    image_bytes = await initial_image.read()
+    try:
+        init_image = Image.open(BytesIO(image_bytes)).convert("RGB")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid image file.") from exc
+
+    init_image = init_image.resize((width, height))
+    remapped_strength = remap_img2img_strength(strength)
+    prepare_model(model)
+
+    return run_qwen_image_img2img(
+        initial_image=init_image,
+        strength=remapped_strength,
+        prompt=prompt,
+        negative_prompt=negative_prompt,
+        steps=steps,
+        true_cfg_scale=true_cfg_scale,
+        guidance_scale=guidance_scale,
+        width=width,
+        height=height,
+        seed=seed,
+        scheduler=scheduler,
+        model=model,
+        num_images=num_images,
+    )
 
 ## Flux Endpoints
 @app.post("/api/flux/text2img")
