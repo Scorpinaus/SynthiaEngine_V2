@@ -81,6 +81,7 @@ class GenerateRequest(BaseModel):
     lora_adapters: list[LoraAdapterRequest] = []
     hires_enabled: bool = False
     hires_scale: float = 1.0
+    weighting_policy: str = "diffusers-like"
 
 
 class SdxlGenerateRequest(BaseModel):
@@ -426,6 +427,7 @@ async def generate(req: GenerateRequest, request: Request):
         lora_adapters=req.lora_adapters,
         hires_enabled=req.hires_enabled,
         hires_scale=req.hires_scale,
+        weighting_policy=req.weighting_policy,
     )
 
     return {

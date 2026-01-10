@@ -360,6 +360,7 @@ def generate_images(
     lora_adapters: list[object] | None = None,
     hires_scale: float = 1.0,
     hires_enabled: bool = False,
+    weighting_policy: str = "diffusers-like",
     batch_id: str | None = None,
 ):
     logger.info("seed=%s", seed)
@@ -382,6 +383,7 @@ def generate_images(
         pipe,
         prompt,
         negative_prompt,
+        weighting_policy=weighting_policy,
     )
 
     try:

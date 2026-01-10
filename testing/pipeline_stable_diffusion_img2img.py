@@ -11,16 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import inspect
 from typing import Any, Callable, Dict, List, Optional, Union
 
+import numpy as np
+import PIL.Image
 import torch
 from packaging import version
 from transformers import CLIPImageProcessor, CLIPTextModel, CLIPTokenizer, CLIPVisionModelWithProjection
-try:
-    import psutil
-except ImportError:
-    psutil = None
 
 from diffusers.callbacks import MultiPipelineCallbacks, PipelineCallback
 from diffusers.configuration_utils import FrozenDict
@@ -30,6 +29,7 @@ from diffusers.models import AutoencoderKL, ImageProjection, UNet2DConditionMode
 from diffusers.models.lora import adjust_lora_scale_text_encoder
 from diffusers.schedulers import KarrasDiffusionSchedulers
 from diffusers.utils import (
+    PIL_INTERPOLATION,
     USE_PEFT_BACKEND,
     deprecate,
     is_torch_xla_available,
@@ -42,8 +42,14 @@ from diffusers.utils.torch_utils import randn_tensor
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline, StableDiffusionMixin
 from diffusers.pipelines.stable_diffusion.pipeline_output import StableDiffusionPipelineOutput
 from diffusers.pipelines.stable_diffusion.safety_checker import StableDiffusionSafetyChecker
-from diffusers.utils import is_torch_xla_available
-from pipeline_stable_diffusion_common import StableDiffusionCommonMixin, StableDiffusionDecodeLatentsMixin, retrieve_timesteps
+from pipeline_stable_diffusion_common import (
+    StableDiffusionCommonMixin,
+    StableDiffusionDecodeLatentsMixin,
+    StableDiffusionImg2ImgTimestepsMixin,
+    retrieve_latents,
+    retrieve_timesteps,
+)
+
 
 if is_torch_xla_available():
     import torch_xla.core.xla_model as xm
@@ -54,61 +60,70 @@ else:
 
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
+
 EXAMPLE_DOC_STRING = """
     Examples:
         ```py
+        >>> import requests
         >>> import torch
-        >>> from diffusers import StableDiffusionPipeline
+        >>> from PIL import Image
+        >>> from io import BytesIO
 
-        >>> pipe = StableDiffusionPipeline.from_pretrained(
-        ...     "stable-diffusion-v1-5/stable-diffusion-v1-5", torch_dtype=torch.float16
-        ... )
-        >>> pipe = pipe.to("cuda")
+        >>> from diffusers import StableDiffusionImg2ImgPipeline
 
-        >>> prompt = "a photo of an astronaut riding a horse on mars"
-        >>> image = pipe(prompt).images[0]
+        >>> device = "cuda"
+        >>> model_id_or_path = "stable-diffusion-v1-5/stable-diffusion-v1-5"
+        >>> pipe = StableDiffusionImg2ImgPipeline.from_pretrained(model_id_or_path, torch_dtype=torch.float16)
+        >>> pipe = pipe.to(device)
+
+        >>> url = "https://raw.githubusercontent.com/CompVis/stable-diffusion/main/assets/stable-samples/img2img/sketch-mountains-input.jpg"
+
+        >>> response = requests.get(url)
+        >>> init_image = Image.open(BytesIO(response.content)).convert("RGB")
+        >>> init_image = init_image.resize((768, 512))
+
+        >>> prompt = "A fantasy landscape, trending on artstation"
+
+        >>> images = pipe(prompt=prompt, image=init_image, strength=0.75, guidance_scale=7.5).images
+        >>> images[0].save("fantasy_landscape.png")
         ```
 """
+def preprocess(image):
+    deprecation_message = "The preprocess method is deprecated and will be removed in diffusers 1.0.0. Please use VaeImageProcessor.preprocess(...) instead"
+    deprecate("preprocess", "1.0.0", deprecation_message, standard_warn=False)
+    if isinstance(image, torch.Tensor):
+        return image
+    elif isinstance(image, PIL.Image.Image):
+        image = [image]
+
+    if isinstance(image[0], PIL.Image.Image):
+        w, h = image[0].size
+        w, h = (x - x % 8 for x in (w, h))  # resize to integer multiple of 8
+
+        image = [np.array(i.resize((w, h), resample=PIL_INTERPOLATION["lanczos"]))[None, :] for i in image]
+        image = np.concatenate(image, axis=0)
+        image = np.array(image).astype(np.float32) / 255.0
+        image = image.transpose(0, 3, 1, 2)
+        image = 2.0 * image - 1.0
+        image = torch.from_numpy(image)
+    elif isinstance(image[0], torch.Tensor):
+        image = torch.cat(image, dim=0)
+    return image
 
 
-def rescale_noise_cfg(noise_cfg, noise_pred_text, guidance_rescale=0.0):
-    r"""
-    Rescales `noise_cfg` tensor based on `guidance_rescale` to improve image quality and fix overexposure. Based on
-    Section 3.4 from [Common Diffusion Noise Schedules and Sample Steps are
-    Flawed](https://huggingface.co/papers/2305.08891).
-
-    Args:
-        noise_cfg (`torch.Tensor`):
-            The predicted noise tensor for the guided diffusion process.
-        noise_pred_text (`torch.Tensor`):
-            The predicted noise tensor for the text-guided diffusion process.
-        guidance_rescale (`float`, *optional*, defaults to 0.0):
-            A rescale factor applied to the noise predictions.
-
-    Returns:
-        noise_cfg (`torch.Tensor`): The rescaled noise prediction tensor.
-    """
-    std_text = noise_pred_text.std(dim=list(range(1, noise_pred_text.ndim)), keepdim=True)
-    std_cfg = noise_cfg.std(dim=list(range(1, noise_cfg.ndim)), keepdim=True)
-    # rescale the results from guidance (fixes overexposure)
-    noise_pred_rescaled = noise_cfg * (std_text / std_cfg)
-    # mix with the original results from guidance by factor guidance_rescale to avoid "plain looking" images
-    noise_cfg = guidance_rescale * noise_pred_rescaled + (1 - guidance_rescale) * noise_cfg
-    return noise_cfg
-
-
-class StableDiffusionPipeline(
+class StableDiffusionImg2ImgPipeline(
     StableDiffusionCommonMixin,
     StableDiffusionDecodeLatentsMixin,
+    StableDiffusionImg2ImgTimestepsMixin,
     DiffusionPipeline,
     StableDiffusionMixin,
     TextualInversionLoaderMixin,
-    StableDiffusionLoraLoaderMixin,
     IPAdapterMixin,
+    StableDiffusionLoraLoaderMixin,
     FromSingleFileMixin,
 ):
-    """
-    Pipeline for text-to-image generation using Stable Diffusion.
+    r"""
+    Pipeline for text-guided image-to-image generation using Stable Diffusion.
 
     This model inherits from [`DiffusionPipeline`]. Check the superclass documentation for the generic methods
     implemented for all pipelines (downloading, saving, running on a particular device, etc.).
@@ -207,12 +222,8 @@ class StableDiffusionPipeline(
             and hasattr(unet.config, "_diffusers_version")
             and version.parse(version.parse(unet.config._diffusers_version).base_version) < version.parse("0.9.0.dev0")
         )
-        self._is_unet_config_sample_size_int = unet is not None and isinstance(unet.config.sample_size, int)
         is_unet_sample_size_less_64 = (
-            unet is not None
-            and hasattr(unet.config, "sample_size")
-            and self._is_unet_config_sample_size_int
-            and unet.config.sample_size < 64
+            unet is not None and hasattr(unet.config, "sample_size") and unet.config.sample_size < 64
         )
         if is_unet_version_less_0_9_0 and is_unet_sample_size_less_64:
             deprecation_message = (
@@ -245,18 +256,10 @@ class StableDiffusionPipeline(
         self.image_processor = VaeImageProcessor(vae_scale_factor=self.vae_scale_factor)
         self.register_to_config(requires_safety_checker=requires_safety_checker)
 
-
-
-
-
-
-
-
     def check_inputs(
         self,
         prompt,
-        height,
-        width,
+        strength,
         callback_steps,
         negative_prompt=None,
         prompt_embeds=None,
@@ -265,21 +268,21 @@ class StableDiffusionPipeline(
         ip_adapter_image_embeds=None,
         callback_on_step_end_tensor_inputs=None,
     ):
-        if height % 8 != 0 or width % 8 != 0:
-            raise ValueError(f"`height` and `width` have to be divisible by 8 but are {height} and {width}.")
+        if strength < 0 or strength > 1:
+            raise ValueError(f"The value of strength should in [0.0, 1.0] but is {strength}")
 
         if callback_steps is not None and (not isinstance(callback_steps, int) or callback_steps <= 0):
             raise ValueError(
                 f"`callback_steps` has to be a positive integer but is {callback_steps} of type"
                 f" {type(callback_steps)}."
             )
+
         if callback_on_step_end_tensor_inputs is not None and not all(
             k in self._callback_tensor_inputs for k in callback_on_step_end_tensor_inputs
         ):
             raise ValueError(
                 f"`callback_on_step_end_tensor_inputs` has to be in {self._callback_tensor_inputs}, but found {[k for k in callback_on_step_end_tensor_inputs if k not in self._callback_tensor_inputs]}"
             )
-
         if prompt is not None and prompt_embeds is not None:
             raise ValueError(
                 f"Cannot forward both `prompt`: {prompt} and `prompt_embeds`: {prompt_embeds}. Please make sure to"
@@ -321,48 +324,87 @@ class StableDiffusionPipeline(
                     f"`ip_adapter_image_embeds` has to be a list of 3D or 4D tensors but is {ip_adapter_image_embeds[0].ndim}D"
                 )
 
-    def prepare_latents(self, batch_size, num_channels_latents, height, width, dtype, device, generator, latents=None):
-        shape = (
-            batch_size,
-            num_channels_latents,
-            int(height) // self.vae_scale_factor,
-            int(width) // self.vae_scale_factor,
-        )
-        if isinstance(generator, list) and len(generator) != batch_size:
+
+    def prepare_latents(self, image, timestep, batch_size, num_images_per_prompt, dtype, device, generator=None):
+        if not isinstance(image, (torch.Tensor, PIL.Image.Image, list)):
             raise ValueError(
-                f"You have passed a list of generators of length {len(generator)}, but requested an effective batch"
-                f" size of {batch_size}. Make sure the batch size matches the length of the generators."
+                f"`image` has to be of type `torch.Tensor`, `PIL.Image.Image` or list but is {type(image)}"
             )
 
-        if latents is None:
-            latents = randn_tensor(shape, generator=generator, device=device, dtype=dtype)
+        image = image.to(device=device, dtype=dtype)
+
+        batch_size = batch_size * num_images_per_prompt
+
+        if image.shape[1] == 4:
+            init_latents = image
+
         else:
-            latents = latents.to(device)
+            if isinstance(generator, list) and len(generator) != batch_size:
+                raise ValueError(
+                    f"You have passed a list of generators of length {len(generator)}, but requested an effective batch"
+                    f" size of {batch_size}. Make sure the batch size matches the length of the generators."
+                )
 
-        # scale the initial noise by the standard deviation required by the scheduler
-        latents = latents * self.scheduler.init_noise_sigma
+            elif isinstance(generator, list):
+                if image.shape[0] < batch_size and batch_size % image.shape[0] == 0:
+                    image = torch.cat([image] * (batch_size // image.shape[0]), dim=0)
+                elif image.shape[0] < batch_size and batch_size % image.shape[0] != 0:
+                    raise ValueError(
+                        f"Cannot duplicate `image` of batch size {image.shape[0]} to effective batch_size {batch_size} "
+                    )
+
+                init_latents = [
+                    retrieve_latents(self.vae.encode(image[i : i + 1]), generator=generator[i])
+                    for i in range(batch_size)
+                ]
+                init_latents = torch.cat(init_latents, dim=0)
+            else:
+                init_latents = retrieve_latents(self.vae.encode(image), generator=generator)
+
+            init_latents = self.vae.config.scaling_factor * init_latents
+
+        if batch_size > init_latents.shape[0] and batch_size % init_latents.shape[0] == 0:
+            # expand init_latents for batch_size
+            deprecation_message = (
+                f"You have passed {batch_size} text prompts (`prompt`), but only {init_latents.shape[0]} initial"
+                " images (`image`). Initial images are now duplicating to match the number of text prompts. Note"
+                " that this behavior is deprecated and will be removed in a version 1.0.0. Please make sure to update"
+                " your script to pass as many initial images as text prompts to suppress this warning."
+            )
+            deprecate("len(prompt) != len(image)", "1.0.0", deprecation_message, standard_warn=False)
+            additional_image_per_prompt = batch_size // init_latents.shape[0]
+            init_latents = torch.cat([init_latents] * additional_image_per_prompt, dim=0)
+        elif batch_size > init_latents.shape[0] and batch_size % init_latents.shape[0] != 0:
+            raise ValueError(
+                f"Cannot duplicate `image` of batch size {init_latents.shape[0]} to {batch_size} text prompts."
+            )
+        else:
+            init_latents = torch.cat([init_latents], dim=0)
+
+        shape = init_latents.shape
+        noise = randn_tensor(shape, generator=generator, device=device, dtype=dtype)
+
+        # get latents
+        init_latents = self.scheduler.add_noise(init_latents, noise, timestep)
+        latents = init_latents
+
         return latents
-
-    @property
-    def guidance_rescale(self):
-        return self._guidance_rescale
 
     @torch.no_grad()
     @replace_example_docstring(EXAMPLE_DOC_STRING)
     def __call__(
         self,
         prompt: Union[str, List[str]] = None,
-        height: Optional[int] = None,
-        width: Optional[int] = None,
-        num_inference_steps: int = 50,
+        image: PipelineImageInput = None,
+        strength: float = 0.8,
+        num_inference_steps: Optional[int] = 50,
         timesteps: List[int] = None,
         sigmas: List[float] = None,
-        guidance_scale: float = 7.5,
+        guidance_scale: Optional[float] = 7.5,
         negative_prompt: Optional[Union[str, List[str]]] = None,
         num_images_per_prompt: Optional[int] = 1,
-        eta: float = 0.0,
+        eta: Optional[float] = 0.0,
         generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
-        latents: Optional[torch.Tensor] = None,
         prompt_embeds: Optional[torch.Tensor] = None,
         negative_prompt_embeds: Optional[torch.Tensor] = None,
         ip_adapter_image: Optional[PipelineImageInput] = None,
@@ -370,8 +412,7 @@ class StableDiffusionPipeline(
         output_type: Optional[str] = "pil",
         return_dict: bool = True,
         cross_attention_kwargs: Optional[Dict[str, Any]] = None,
-        guidance_rescale: float = 0.0,
-        clip_skip: Optional[int] = None,
+        clip_skip: int = None,
         callback_on_step_end: Optional[
             Union[Callable[[int, int, Dict], None], PipelineCallback, MultiPipelineCallbacks]
         ] = None,
@@ -384,13 +425,21 @@ class StableDiffusionPipeline(
         Args:
             prompt (`str` or `List[str]`, *optional*):
                 The prompt or prompts to guide image generation. If not defined, you need to pass `prompt_embeds`.
-            height (`int`, *optional*, defaults to `self.unet.config.sample_size * self.vae_scale_factor`):
-                The height in pixels of the generated image.
-            width (`int`, *optional*, defaults to `self.unet.config.sample_size * self.vae_scale_factor`):
-                The width in pixels of the generated image.
+            image (`torch.Tensor`, `PIL.Image.Image`, `np.ndarray`, `List[torch.Tensor]`, `List[PIL.Image.Image]`, or `List[np.ndarray]`):
+                `Image`, numpy array or tensor representing an image batch to be used as the starting point. For both
+                numpy array and pytorch tensor, the expected value range is between `[0, 1]` If it's a tensor or a list
+                or tensors, the expected shape should be `(B, C, H, W)` or `(C, H, W)`. If it is a numpy array or a
+                list of arrays, the expected shape should be `(B, H, W, C)` or `(H, W, C)` It can also accept image
+                latents as `image`, but if passing latents directly it is not encoded again.
+            strength (`float`, *optional*, defaults to 0.8):
+                Indicates extent to transform the reference `image`. Must be between 0 and 1. `image` is used as a
+                starting point and more noise is added the higher the `strength`. The number of denoising steps depends
+                on the amount of noise initially added. When `strength` is 1, added noise is maximum and the denoising
+                process runs for the full number of iterations specified in `num_inference_steps`. A value of 1
+                essentially ignores `image`.
             num_inference_steps (`int`, *optional*, defaults to 50):
                 The number of denoising steps. More denoising steps usually lead to a higher quality image at the
-                expense of slower inference.
+                expense of slower inference. This parameter is modulated by `strength`.
             timesteps (`List[int]`, *optional*):
                 Custom timesteps to use for the denoising process with schedulers which support a `timesteps` argument
                 in their `set_timesteps` method. If not defined, the default behavior when `num_inference_steps` is
@@ -413,10 +462,6 @@ class StableDiffusionPipeline(
             generator (`torch.Generator` or `List[torch.Generator]`, *optional*):
                 A [`torch.Generator`](https://pytorch.org/docs/stable/generated/torch.Generator.html) to make
                 generation deterministic.
-            latents (`torch.Tensor`, *optional*):
-                Pre-generated noisy latents sampled from a Gaussian distribution, to be used as inputs for image
-                generation. Can be used to tweak the same generation with different prompts. If not provided, a latents
-                tensor is generated by sampling using the supplied random `generator`.
             prompt_embeds (`torch.Tensor`, *optional*):
                 Pre-generated text embeddings. Can be used to easily tweak text inputs (prompt weighting). If not
                 provided, text embeddings are generated from the `prompt` input argument.
@@ -437,10 +482,6 @@ class StableDiffusionPipeline(
             cross_attention_kwargs (`dict`, *optional*):
                 A kwargs dictionary that if specified is passed along to the [`AttentionProcessor`] as defined in
                 [`self.processor`](https://github.com/huggingface/diffusers/blob/main/src/diffusers/models/attention_processor.py).
-            guidance_rescale (`float`, *optional*, defaults to 0.0):
-                Guidance rescale factor from [Common Diffusion Noise Schedules and Sample Steps are
-                Flawed](https://huggingface.co/papers/2305.08891). Guidance rescale factor should fix overexposure when
-                using zero terminal SNR.
             clip_skip (`int`, *optional*):
                 Number of layers to be skipped from CLIP while computing the prompt embeddings. A value of 1 means that
                 the output of the pre-final layer will be used for computing the prompt embeddings.
@@ -453,7 +494,6 @@ class StableDiffusionPipeline(
                 The list of tensor inputs for the `callback_on_step_end` function. The tensors specified in the list
                 will be passed as `callback_kwargs` argument. You will only be able to include variables listed in the
                 `._callback_tensor_inputs` attribute of your pipeline class.
-
         Examples:
 
         Returns:
@@ -471,38 +511,22 @@ class StableDiffusionPipeline(
             deprecate(
                 "callback",
                 "1.0.0",
-                "Passing `callback` as an input argument to `__call__` is deprecated, consider using `callback_on_step_end`",
+                "Passing `callback` as an input argument to `__call__` is deprecated, consider use `callback_on_step_end`",
             )
         if callback_steps is not None:
             deprecate(
                 "callback_steps",
                 "1.0.0",
-                "Passing `callback_steps` as an input argument to `__call__` is deprecated, consider using `callback_on_step_end`",
+                "Passing `callback_steps` as an input argument to `__call__` is deprecated, consider use `callback_on_step_end`",
             )
 
         if isinstance(callback_on_step_end, (PipelineCallback, MultiPipelineCallbacks)):
             callback_on_step_end_tensor_inputs = callback_on_step_end.tensor_inputs
 
-        # 0. Default height and width to unet
-        if not height or not width:
-            height = (
-                self.unet.config.sample_size
-                if self._is_unet_config_sample_size_int
-                else self.unet.config.sample_size[0]
-            )
-            width = (
-                self.unet.config.sample_size
-                if self._is_unet_config_sample_size_int
-                else self.unet.config.sample_size[1]
-            )
-            height, width = height * self.vae_scale_factor, width * self.vae_scale_factor
-        # to deal with lora scaling and other possible forward hooks
-
         # 1. Check inputs. Raise error if not correct
         self.check_inputs(
             prompt,
-            height,
-            width,
+            strength,
             callback_steps,
             negative_prompt,
             prompt_embeds,
@@ -513,7 +537,6 @@ class StableDiffusionPipeline(
         )
 
         self._guidance_scale = guidance_scale
-        self._guidance_rescale = guidance_rescale
         self._clip_skip = clip_skip
         self._cross_attention_kwargs = cross_attention_kwargs
         self._interrupt = False
@@ -527,155 +550,11 @@ class StableDiffusionPipeline(
             batch_size = prompt_embeds.shape[0]
 
         device = self._execution_device
-        mem_log_enabled = logger.isEnabledFor(20)
-        mem_prev = {}
-        mem_peaks = {
-            "vram_alloc": {"value": 0, "label": None},
-            "vram_reserved": {"value": 0, "label": None},
-            "cpu_rss": {"value": 0, "label": None},
-            "sys_used": {"value": 0, "label": None},
-        }
-        process = None
-        if psutil is not None:
-            try:
-                process = psutil.Process()
-            except Exception:
-                process = None
-        if isinstance(device, torch.device):
-            device_type = device.type
-        else:
-            device_type = str(device)
-        has_cuda = torch.cuda.is_available() and device_type == "cuda"
-
-        def _bytes_to_mib(value):
-            if value is None:
-                return None
-            return value / (1024 * 1024)
-
-        def _fmt_mib(value):
-            if value is None:
-                return "n/a"
-            return f"{_bytes_to_mib(value):.1f}MiB"
-
-        def _fmt_delta(value):
-            if value is None:
-                return "n/a"
-            return f"{_bytes_to_mib(value):+.1f}MiB"
-
-        def _update_peak(key, value, label):
-            if value is None:
-                return
-            if mem_peaks[key]["label"] is None or value > mem_peaks[key]["value"]:
-                mem_peaks[key]["value"] = value
-                mem_peaks[key]["label"] = label
-
-        def _log_mem(label, step_idx=None, timestep=None):
-            if not mem_log_enabled:
-                return
-
-            vram_alloc = None
-            vram_reserved = None
-            cpu_rss = None
-            sys_used = None
-            sys_total = None
-
-            if has_cuda:
-                try:
-                    vram_alloc = torch.cuda.memory_allocated(device)
-                    vram_reserved = torch.cuda.memory_reserved(device)
-                except Exception:
-                    vram_alloc = None
-                    vram_reserved = None
-
-            if process is not None:
-                try:
-                    mem_info = process.memory_info()
-                    cpu_rss = mem_info.rss
-                    vm = psutil.virtual_memory()
-                    sys_used = vm.used
-                    sys_total = vm.total
-                except Exception:
-                    cpu_rss = None
-                    sys_used = None
-                    sys_total = None
-
-            meta = []
-            if step_idx is not None:
-                meta.append(f"step={step_idx}")
-            if timestep is not None:
-                if isinstance(timestep, torch.Tensor):
-                    meta.append(f"t={timestep.item()}")
-                else:
-                    meta.append(f"t={timestep}")
-            label_suffix = f" ({', '.join(meta)})" if meta else ""
-            label_with_meta = f"{label}{label_suffix}"
-
-            delta_vram_alloc = None
-            delta_vram_reserved = None
-            delta_cpu_rss = None
-            delta_sys_used = None
-            if mem_prev:
-                if vram_alloc is not None and mem_prev.get("vram_alloc") is not None:
-                    delta_vram_alloc = vram_alloc - mem_prev["vram_alloc"]
-                if vram_reserved is not None and mem_prev.get("vram_reserved") is not None:
-                    delta_vram_reserved = vram_reserved - mem_prev["vram_reserved"]
-                if cpu_rss is not None and mem_prev.get("cpu_rss") is not None:
-                    delta_cpu_rss = cpu_rss - mem_prev["cpu_rss"]
-                if sys_used is not None and mem_prev.get("sys_used") is not None:
-                    delta_sys_used = sys_used - mem_prev["sys_used"]
-
-            mem_prev["vram_alloc"] = vram_alloc
-            mem_prev["vram_reserved"] = vram_reserved
-            mem_prev["cpu_rss"] = cpu_rss
-            mem_prev["sys_used"] = sys_used
-
-            _update_peak("vram_alloc", vram_alloc, label_with_meta)
-            _update_peak("vram_reserved", vram_reserved, label_with_meta)
-            _update_peak("cpu_rss", cpu_rss, label_with_meta)
-            _update_peak("sys_used", sys_used, label_with_meta)
-
-            sys_mem_str = "n/a"
-            if sys_used is not None and sys_total is not None:
-                sys_mem_str = f"{_fmt_mib(sys_used)}/{_fmt_mib(sys_total)}"
-
-            # logger.info(
-            #     "mem[%s]: vram_alloc=%s (Δ%s) vram_reserved=%s (Δ%s) cpu_rss=%s (Δ%s) sys_used=%s (Δ%s)",
-            #     label_with_meta,
-            #     _fmt_mib(vram_alloc),
-            #     _fmt_delta(delta_vram_alloc),
-            #     _fmt_mib(vram_reserved),
-            #     _fmt_delta(delta_vram_reserved),
-            #     _fmt_mib(cpu_rss),
-            #     _fmt_delta(delta_cpu_rss),
-            #     sys_mem_str,
-            #     _fmt_delta(delta_sys_used),
-            # )
-
-        def _log_mem_peaks():
-            if not mem_log_enabled:
-                return
-
-            def _peak_str(key):
-                peak = mem_peaks[key]
-                if peak["label"] is None:
-                    return "n/a"
-                return f"{_fmt_mib(peak['value'])} at {peak['label']}"
-
-            logger.info(
-                "mem_peak: vram_alloc=%s; vram_reserved=%s; cpu_rss=%s; sys_used=%s",
-                _peak_str("vram_alloc"),
-                _peak_str("vram_reserved"),
-                _peak_str("cpu_rss"),
-                _peak_str("sys_used"),
-            )
-
-        _log_mem("start")
 
         # 3. Encode input prompt
-        lora_scale = (
+        text_encoder_lora_scale = (
             self.cross_attention_kwargs.get("scale", None) if self.cross_attention_kwargs is not None else None
         )
-
         prompt_embeds, negative_prompt_embeds = self.encode_prompt(
             prompt,
             device,
@@ -684,11 +563,9 @@ class StableDiffusionPipeline(
             negative_prompt,
             prompt_embeds=prompt_embeds,
             negative_prompt_embeds=negative_prompt_embeds,
-            lora_scale=lora_scale,
+            lora_scale=text_encoder_lora_scale,
             clip_skip=self.clip_skip,
         )
-        _log_mem("after_encode_prompt")
-
         # For classifier free guidance, we need to do two forward passes.
         # Here we concatenate the unconditional and text embeddings into a single batch
         # to avoid doing two forward passes
@@ -703,48 +580,47 @@ class StableDiffusionPipeline(
                 batch_size * num_images_per_prompt,
                 self.do_classifier_free_guidance,
             )
-            _log_mem("after_ip_adapter_embeds")
 
-        # 4. Prepare timesteps
+        # 4. Preprocess image
+        image = self.image_processor.preprocess(image)
+
+        # 5. set timesteps
         timesteps, num_inference_steps = retrieve_timesteps(
             self.scheduler, num_inference_steps, device, timesteps, sigmas
         )
-        _log_mem("after_timesteps")
+        timesteps, num_inference_steps = self.get_timesteps(num_inference_steps, strength, device)
+        latent_timestep = timesteps[:1].repeat(batch_size * num_images_per_prompt)
 
-        # 5. Prepare latent variables
-        num_channels_latents = self.unet.config.in_channels
+        # 6. Prepare latent variables
         latents = self.prepare_latents(
-            batch_size * num_images_per_prompt,
-            num_channels_latents,
-            height,
-            width,
+            image,
+            latent_timestep,
+            batch_size,
+            num_images_per_prompt,
             prompt_embeds.dtype,
             device,
             generator,
-            latents,
         )
-        _log_mem("after_prepare_latents")
 
-        # 6. Prepare extra step kwargs. TODO: Logic should ideally just be moved out of the pipeline
+        # 7. Prepare extra step kwargs. TODO: Logic should ideally just be moved out of the pipeline
         extra_step_kwargs = self.prepare_extra_step_kwargs(generator, eta)
 
-        # 6.1 Add image embeds for IP-Adapter
+        # 7.1 Add image embeds for IP-Adapter
         added_cond_kwargs = (
             {"image_embeds": image_embeds}
-            if (ip_adapter_image is not None or ip_adapter_image_embeds is not None)
+            if ip_adapter_image is not None or ip_adapter_image_embeds is not None
             else None
         )
 
-        # 6.2 Optionally get Guidance Scale Embedding
+        # 7.2 Optionally get Guidance Scale Embedding
         timestep_cond = None
         if self.unet.config.time_cond_proj_dim is not None:
             guidance_scale_tensor = torch.tensor(self.guidance_scale - 1).repeat(batch_size * num_images_per_prompt)
             timestep_cond = self.get_guidance_scale_embedding(
                 guidance_scale_tensor, embedding_dim=self.unet.config.time_cond_proj_dim
             ).to(device=device, dtype=latents.dtype)
-        _log_mem("after_timestep_cond")
 
-        # 7. Denoising loop
+        # 8. Denoising loop
         num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
         self._num_timesteps = len(timesteps)
         with self.progress_bar(total=num_inference_steps) as progress_bar:
@@ -754,8 +630,7 @@ class StableDiffusionPipeline(
 
                 # expand the latents if we are doing classifier free guidance
                 latent_model_input = torch.cat([latents] * 2) if self.do_classifier_free_guidance else latents
-                if hasattr(self.scheduler, "scale_model_input"):
-                    latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
+                latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
 
                 # predict the noise residual
                 noise_pred = self.unet(
@@ -773,10 +648,6 @@ class StableDiffusionPipeline(
                     noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
                     noise_pred = noise_pred_uncond + self.guidance_scale * (noise_pred_text - noise_pred_uncond)
 
-                if self.do_classifier_free_guidance and self.guidance_rescale > 0.0:
-                    # Based on 3.4. in https://huggingface.co/papers/2305.08891
-                    noise_pred = rescale_noise_cfg(noise_pred, noise_pred_text, guidance_rescale=self.guidance_rescale)
-
                 # compute the previous noisy sample x_t -> x_t-1
                 latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
 
@@ -793,9 +664,8 @@ class StableDiffusionPipeline(
                 # call the callback, if provided
                 if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0):
                     progress_bar.update()
-                    step_idx = i // getattr(self.scheduler, "order", 1)
-                    _log_mem("denoise_step", step_idx=step_idx, timestep=t)
                     if callback is not None and i % callback_steps == 0:
+                        step_idx = i // getattr(self.scheduler, "order", 1)
                         callback(step_idx, t, latents)
 
                 if XLA_AVAILABLE:
@@ -805,25 +675,20 @@ class StableDiffusionPipeline(
             image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[
                 0
             ]
-            _log_mem("after_vae_decode")
             image, has_nsfw_concept = self.run_safety_checker(image, device, prompt_embeds.dtype)
-            _log_mem("after_safety_checker")
         else:
             image = latents
             has_nsfw_concept = None
-            _log_mem("after_latent_output")
 
         if has_nsfw_concept is None:
             do_denormalize = [True] * image.shape[0]
         else:
             do_denormalize = [not has_nsfw for has_nsfw in has_nsfw_concept]
+
         image = self.image_processor.postprocess(image, output_type=output_type, do_denormalize=do_denormalize)
-        _log_mem("after_postprocess")
 
         # Offload all models
         self.maybe_free_model_hooks()
-        _log_mem("after_offload")
-        _log_mem_peaks()
 
         if not return_dict:
             return (image, has_nsfw_concept)

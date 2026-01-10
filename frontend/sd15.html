@@ -85,6 +85,15 @@
                 </label>
 
                 <label class="field">
+                    <span>Prompt Weighting</span>
+                    <select id="weighting_policy">
+                        <option value="diffusers-like" selected>Diffusers-like</option>
+                        <option value="a1111-like">A1111-like</option>
+                        <option value="comfyui-like">ComfyUI-like</option>
+                    </select>
+                </label>
+
+                <label class="field">
                     <span>Images</span>
                     <input id="num_images" type="number" value="1" min="1" max="8" />
                 </label>

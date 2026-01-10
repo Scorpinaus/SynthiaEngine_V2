@@ -1,22 +1,17 @@
 Next Steps:
 - Low-hanging fruit
- 1. Schedulers
- 2. Add resource logging
- 3. Upscalers
- 4. Add image metadata & gallery
+ 1. Add resource logging
+ 2. Upscalers
 
 - Text-to-Image Model Architectures to Support:
  1. SD 2.1/2.0 (No fine-tunes)
  2. SD3/SD3.5 (No fine-tunes)
  3. SDXL Turbo
- 4. Flux/Flux 2
- 5. Z-Image (text-2-image up, pending img2img)
  6. AuraFlow
  7. Kandinsky
  8. Kolors
  9. Lumina
  10. Auraflow/PixArt
- 11. QwenImage
  12. Wuerstrchen
 
 - Features
