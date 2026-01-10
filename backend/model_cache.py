@@ -4,6 +4,7 @@ import threading
 import torch
 
 from backend import flux_pipeline
+from backend import qwen_image_pipeline
 from backend import sd15_pipeline
 from backend import sdxl_pipeline
 from backend import z_image_pipeline
@@ -61,6 +62,12 @@ def clear_z_image_pipelines(collect_memory: bool = True) -> None:
         _collect_memory()
 
 
+def clear_qwen_image_pipelines(collect_memory: bool = True) -> None:
+    _clear_cache(qwen_image_pipeline.PIPELINE_CACHE)
+    if collect_memory:
+        _collect_memory()
+
+
 def clear_flux_pipelines(collect_memory: bool = True) -> None:
     _clear_cache(flux_pipeline.PIPELINE_CACHE)
     _clear_cache(flux_pipeline.IMG2IMG_PIPELINE_CACHE)
@@ -73,6 +80,7 @@ def clear_all_pipelines() -> None:
     clear_sd15_pipelines(collect_memory=False)
     clear_sdxl_pipelines(collect_memory=False)
     clear_z_image_pipelines(collect_memory=False)
+    clear_qwen_image_pipelines(collect_memory=False)
     clear_flux_pipelines(collect_memory=False)
     _collect_memory()
 
@@ -87,6 +95,8 @@ def _normalize_family(family: str | None) -> str | None:
         return "sdxl"
     if "z-image" in lowered or "z image" in lowered or "zimage" in lowered or "turbo" in lowered:
         return "z-image-turbo"
+    if "qwen" in lowered and "image" in lowered:
+        return "qwen-image"
     if "flux" in lowered:
         return "flux"
     if "sd1.5" in lowered or "sd15" in lowered or "sd 1.5" in lowered or "sd_1.5" in lowered:
@@ -107,14 +117,22 @@ def prepare_model_family(target_family: str | None) -> None:
         if normalized == "sd15":
             clear_sdxl_pipelines()
             clear_z_image_pipelines()
+            clear_qwen_image_pipelines()
             clear_flux_pipelines()
         elif normalized == "sdxl":
             clear_sd15_pipelines()
             clear_z_image_pipelines()
+            clear_qwen_image_pipelines()
             clear_flux_pipelines()
         elif normalized == "z-image-turbo":
             clear_sd15_pipelines()
             clear_sdxl_pipelines()
+            clear_qwen_image_pipelines()
+            clear_flux_pipelines()
+        elif normalized == "qwen-image":
+            clear_sd15_pipelines()
+            clear_sdxl_pipelines()
+            clear_z_image_pipelines()
             clear_flux_pipelines()
         elif normalized == "flux":
             clear_sd15_pipelines()
@@ -139,14 +157,22 @@ def prepare_model(model_name: str | None) -> None:
             if normalized == "sd15":
                 clear_sdxl_pipelines()
                 clear_z_image_pipelines()
+                clear_qwen_image_pipelines()
                 clear_flux_pipelines()
             elif normalized == "sdxl":
                 clear_sd15_pipelines()
                 clear_z_image_pipelines()
+                clear_qwen_image_pipelines()
                 clear_flux_pipelines()
             elif normalized == "z-image-turbo":
                 clear_sd15_pipelines()
                 clear_sdxl_pipelines()
+                clear_qwen_image_pipelines()
+                clear_flux_pipelines()
+            elif normalized == "qwen-image":
+                clear_sd15_pipelines()
+                clear_sdxl_pipelines()
+                clear_z_image_pipelines()
                 clear_flux_pipelines()
             elif normalized == "flux":
                 clear_sd15_pipelines()
@@ -168,6 +194,8 @@ def prepare_model(model_name: str | None) -> None:
             clear_sdxl_pipelines()
         elif normalized == "z-image-turbo":
             clear_z_image_pipelines()
+        elif normalized == "qwen-image":
+            clear_qwen_image_pipelines()
         elif normalized == "flux":
             clear_flux_pipelines()
         else:
