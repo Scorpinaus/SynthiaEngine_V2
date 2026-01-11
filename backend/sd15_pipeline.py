@@ -2,6 +2,7 @@ import torch
 import logging
 import math
 from PIL import ImageFilter, Image
+
 from diffusers import (
     StableDiffusionPipeline,
     StableDiffusionImg2ImgPipeline,
@@ -24,6 +25,12 @@ from backend.pipeline_utils import (
 )
 from backend.schedulers import create_scheduler
 from backend.prompt_utils import build_prompt_embeddings
+from backend import config
+from backend.pipeline_layer_logging import (
+    append_layers_report,
+    capture_runtime_used_layers,
+    collect_pipeline_layers,
+)
 
 OUTPUT_DIR = Path("outputs")
 OUTPUT_DIR.mkdir(exist_ok=True)
@@ -309,17 +316,55 @@ def generate_images_controlnet(
     if seed is not None:
         generator = torch.Generator(device="cuda").manual_seed(seed)
 
-    results = pipe(
-        prompt=prompt,
-        negative_prompt=negative_prompt,
-        num_inference_steps=steps,
-        guidance_scale=cfg,
-        width=width,
-        height=height,
-        image=control_image,
-        num_images_per_prompt=num_images,
-        generator=generator,
-    )
+    arch_layers = None
+    used_layer_names = None
+    name_to_type = None
+
+    if config.PIPELINE_LAYER_LOGGING_ENABLED:
+        arch_layers = collect_pipeline_layers(
+            pipe,
+            leaf_only=config.PIPELINE_LAYER_LOGGING_LEAF_ONLY,
+        )
+        with capture_runtime_used_layers(
+            pipe,
+            leaf_only=config.PIPELINE_LAYER_LOGGING_LEAF_ONLY,
+        ) as (used_layer_names, name_to_type, name_to_inputs, name_to_calls):
+            results = pipe(
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                num_inference_steps=steps,
+                guidance_scale=cfg,
+                width=width,
+                height=height,
+                image=control_image,
+                num_images_per_prompt=num_images,
+                generator=generator,
+            )
+    else:
+        results = pipe(
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            num_inference_steps=steps,
+            guidance_scale=cfg,
+            width=width,
+            height=height,
+            image=control_image,
+            num_images_per_prompt=num_images,
+            generator=generator,
+        )
+
+    if config.PIPELINE_LAYER_LOGGING_ENABLED:
+        append_layers_report(
+            output_dir=OUTPUT_DIR,
+            batch_id=batch_id,
+            label="sd15_controlnet",
+            pipeline_name=pipe.__class__.__name__,
+            architecture_layers=arch_layers,
+            runtime_used_layer_names=used_layer_names,
+            runtime_name_to_type=name_to_type,
+            runtime_name_to_input_summary=(name_to_inputs if config.PIPELINE_LAYER_LOGGING_CAPTURE_INPUTS else None),
+            runtime_name_to_call_count=(name_to_calls if config.PIPELINE_LAYER_LOGGING_CAPTURE_INPUTS else None),
+        )
 
     metadata = {
         "prompt": prompt,
@@ -379,30 +424,89 @@ def generate_images(
         
     filenames = []
     adapter_names = _apply_lora_adapters(pipe, lora_adapters)
-    prompt_embeds, negative_prompt_embeds, use_prompt_embeds = build_prompt_embeddings(
-        pipe,
-        prompt,
-        negative_prompt,
-        weighting_policy=weighting_policy,
-    )
+
+    arch_layers = None
+    if config.PIPELINE_LAYER_LOGGING_ENABLED:
+        arch_layers = collect_pipeline_layers(
+            pipe,
+            leaf_only=config.PIPELINE_LAYER_LOGGING_LEAF_ONLY,
+        )
+
+    prompt_embeds = None
+    negative_prompt_embeds = None
+    use_prompt_embeds = False
+    prompt_embeds_ready = False
+    if not config.PIPELINE_LAYER_LOGGING_ENABLED:
+        prompt_embeds, negative_prompt_embeds, use_prompt_embeds = build_prompt_embeddings(
+            pipe,
+            prompt,
+            negative_prompt,
+            weighting_policy=weighting_policy,
+        )
+        prompt_embeds_ready = True
 
     try:
         for i in range(num_images):
             current_seed = base_seed + i
             generator = torch.Generator(device="cuda").manual_seed(current_seed)
 
-            image = pipe(
-                prompt=None if use_prompt_embeds else prompt,
-                negative_prompt=None if use_prompt_embeds else negative_prompt,
-                num_inference_steps=steps,
-                guidance_scale=cfg,
-                width=width,
-                height=height,
-                generator=generator,
-                clip_skip = clip_skip,
-                prompt_embeds=prompt_embeds if use_prompt_embeds else None,
-                negative_prompt_embeds=negative_prompt_embeds if use_prompt_embeds else None,
-            ).images[0]
+            if config.PIPELINE_LAYER_LOGGING_ENABLED and i == 0:
+                with capture_runtime_used_layers(
+                    pipe,
+                    leaf_only=config.PIPELINE_LAYER_LOGGING_LEAF_ONLY,
+                ) as (used_layer_names, name_to_type, name_to_inputs, name_to_calls):
+                    prompt_embeds, negative_prompt_embeds, use_prompt_embeds = build_prompt_embeddings(
+                        pipe,
+                        prompt,
+                        negative_prompt,
+                        weighting_policy=weighting_policy,
+                    )
+                    prompt_embeds_ready = True
+                    image = pipe(
+                        prompt=None if use_prompt_embeds else prompt,
+                        negative_prompt=None if use_prompt_embeds else negative_prompt,
+                        num_inference_steps=steps,
+                        guidance_scale=cfg,
+                        width=width,
+                        height=height,
+                        generator=generator,
+                        clip_skip=clip_skip,
+                        prompt_embeds=prompt_embeds if use_prompt_embeds else None,
+                        negative_prompt_embeds=negative_prompt_embeds if use_prompt_embeds else None,
+                    ).images[0]
+
+                append_layers_report(
+                    output_dir=OUTPUT_DIR,
+                    batch_id=batch_id,
+                    label="sd15_txt2img",
+                    pipeline_name=pipe.__class__.__name__,
+                    architecture_layers=arch_layers,
+                    runtime_used_layer_names=used_layer_names,
+                    runtime_name_to_type=name_to_type,
+                    runtime_name_to_input_summary=(name_to_inputs if config.PIPELINE_LAYER_LOGGING_CAPTURE_INPUTS else None),
+                    runtime_name_to_call_count=(name_to_calls if config.PIPELINE_LAYER_LOGGING_CAPTURE_INPUTS else None),
+                )
+            else:
+                if not prompt_embeds_ready:
+                    prompt_embeds, negative_prompt_embeds, use_prompt_embeds = build_prompt_embeddings(
+                        pipe,
+                        prompt,
+                        negative_prompt,
+                        weighting_policy=weighting_policy,
+                    )
+                    prompt_embeds_ready = True
+                image = pipe(
+                    prompt=None if use_prompt_embeds else prompt,
+                    negative_prompt=None if use_prompt_embeds else negative_prompt,
+                    num_inference_steps=steps,
+                    guidance_scale=cfg,
+                    width=width,
+                    height=height,
+                    generator=generator,
+                    clip_skip=clip_skip,
+                    prompt_embeds=prompt_embeds if use_prompt_embeds else None,
+                    negative_prompt_embeds=negative_prompt_embeds if use_prompt_embeds else None,
+                ).images[0]
 
             if hires_enabled:
                 image = apply_hires_fix(
@@ -497,16 +601,47 @@ def generate_images_img2img(
             current_seed = base_seed + i
             generator = torch.Generator(device="cuda").manual_seed(current_seed)
 
-            image = pipe(
-                prompt=prompt,
-                negative_prompt=negative_prompt,
-                image=initial_image,
-                strength=strength,
-                num_inference_steps=steps,
-                guidance_scale=cfg,
-                generator=generator,
-                clip_skip=clip_skip,
-            ).images[0]
+            if config.PIPELINE_LAYER_LOGGING_ENABLED and i == 0:
+                arch_layers = collect_pipeline_layers(
+                    pipe,
+                    leaf_only=config.PIPELINE_LAYER_LOGGING_LEAF_ONLY,
+                )
+                with capture_runtime_used_layers(
+                    pipe,
+                    leaf_only=config.PIPELINE_LAYER_LOGGING_LEAF_ONLY,
+                ) as (used_layer_names, name_to_type, name_to_inputs, name_to_calls):
+                    image = pipe(
+                        prompt=prompt,
+                        negative_prompt=negative_prompt,
+                        image=initial_image,
+                        strength=strength,
+                        num_inference_steps=steps,
+                        guidance_scale=cfg,
+                        generator=generator,
+                        clip_skip=clip_skip,
+                    ).images[0]
+                append_layers_report(
+                    output_dir=OUTPUT_DIR,
+                    batch_id=batch_id,
+                    label="sd15_img2img",
+                    pipeline_name=pipe.__class__.__name__,
+                    architecture_layers=arch_layers,
+                    runtime_used_layer_names=used_layer_names,
+                    runtime_name_to_type=name_to_type,
+                    runtime_name_to_input_summary=(name_to_inputs if config.PIPELINE_LAYER_LOGGING_CAPTURE_INPUTS else None),
+                    runtime_name_to_call_count=(name_to_calls if config.PIPELINE_LAYER_LOGGING_CAPTURE_INPUTS else None),
+                )
+            else:
+                image = pipe(
+                    prompt=prompt,
+                    negative_prompt=negative_prompt,
+                    image=initial_image,
+                    strength=strength,
+                    num_inference_steps=steps,
+                    guidance_scale=cfg,
+                    generator=generator,
+                    clip_skip=clip_skip,
+                ).images[0]
 
             filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
             image_width, image_height = initial_image.size
@@ -575,18 +710,51 @@ def generate_images_inpaint(
         current_seed = base_seed + i
         generator = torch.Generator(device="cuda").manual_seed(current_seed)
 
-        image = pipe(
-            prompt=prompt,
-            negative_prompt=negative_prompt,
-            image=initial_image,
-            mask_image=mask_image,
-            num_inference_steps=steps,
-            guidance_scale=cfg,
-            generator=generator,
-            strength=strength,
-            padding_mask_crop = padding_mask_crop,
-            clip_skip= clip_skip
-        ).images[0]
+        if config.PIPELINE_LAYER_LOGGING_ENABLED and i == 0:
+            arch_layers = collect_pipeline_layers(
+                pipe,
+                leaf_only=config.PIPELINE_LAYER_LOGGING_LEAF_ONLY,
+            )
+            with capture_runtime_used_layers(
+                pipe,
+                leaf_only=config.PIPELINE_LAYER_LOGGING_LEAF_ONLY,
+            ) as (used_layer_names, name_to_type, name_to_inputs, name_to_calls):
+                image = pipe(
+                    prompt=prompt,
+                    negative_prompt=negative_prompt,
+                    image=initial_image,
+                    mask_image=mask_image,
+                    num_inference_steps=steps,
+                    guidance_scale=cfg,
+                    generator=generator,
+                    strength=strength,
+                    padding_mask_crop=padding_mask_crop,
+                    clip_skip=clip_skip,
+                ).images[0]
+            append_layers_report(
+                output_dir=OUTPUT_DIR,
+                batch_id=batch_id,
+                label="sd15_inpaint",
+                pipeline_name=pipe.__class__.__name__,
+                architecture_layers=arch_layers,
+                runtime_used_layer_names=used_layer_names,
+                runtime_name_to_type=name_to_type,
+                runtime_name_to_input_summary=(name_to_inputs if config.PIPELINE_LAYER_LOGGING_CAPTURE_INPUTS else None),
+                runtime_name_to_call_count=(name_to_calls if config.PIPELINE_LAYER_LOGGING_CAPTURE_INPUTS else None),
+            )
+        else:
+            image = pipe(
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                image=initial_image,
+                mask_image=mask_image,
+                num_inference_steps=steps,
+                guidance_scale=cfg,
+                generator=generator,
+                strength=strength,
+                padding_mask_crop=padding_mask_crop,
+                clip_skip=clip_skip,
+            ).images[0]
 
         filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
         pnginfo = build_png_metadata({
