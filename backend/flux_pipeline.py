@@ -13,6 +13,8 @@ from backend.logging_utils import configure_logging
 from backend.model_registry import get_model_entry
 from backend.pipeline_utils import (
     build_png_metadata,
+    build_batch_output_relpath,
+    get_batch_output_dir,
     make_batch_id,
     resolve_model_source,
 )
@@ -155,6 +157,7 @@ def run_flux_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
         base_seed = int(seed)
 
     batch_id = make_batch_id()
+    batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
     pipe = load_flux_pipeline(model)
     logger.info(
@@ -184,7 +187,7 @@ def run_flux_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
 
                 image = pipe(**call_kwargs).images[0]
 
-            filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
+            filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
             pnginfo = build_png_metadata({
                 "mode": "txt2img",
                 "pipeline": "flux",
@@ -201,7 +204,7 @@ def run_flux_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
             image.save(filename, pnginfo=pnginfo)
             logger.info("Image %s saved to %s", i, filename.name)
 
-            filenames.append(filename.name)
+            filenames.append(build_batch_output_relpath(batch_id, filename.name))
 
             del image
             gc.collect()
@@ -232,6 +235,7 @@ def run_flux_img2img(
         base_seed = int(seed)
 
     batch_id = make_batch_id()
+    batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
     pipe = load_flux_img2img_pipeline(model)
     logger.info(
@@ -264,7 +268,7 @@ def run_flux_img2img(
 
                 image = pipe(**call_kwargs).images[0]
 
-            filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
+            filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
             image_width, image_height = initial_image.size
             pnginfo = build_png_metadata({
                 "mode": "img2img",
@@ -283,7 +287,7 @@ def run_flux_img2img(
             image.save(filename, pnginfo=pnginfo)
             logger.info("Image %s saved to %s", i, filename.name)
 
-            filenames.append(filename.name)
+            filenames.append(build_batch_output_relpath(batch_id, filename.name))
 
             del image
             gc.collect()
@@ -313,6 +317,7 @@ def run_flux_inpaint(
         base_seed = int(seed)
 
     batch_id = make_batch_id()
+    batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
     pipe = load_flux_inpaint_pipeline(model)
     logger.info(
@@ -344,7 +349,7 @@ def run_flux_inpaint(
 
                 image = pipe(**call_kwargs).images[0]
 
-            filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
+            filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
             image_width, image_height = initial_image.size
             pnginfo = build_png_metadata({
                 "mode": "inpaint",
@@ -363,7 +368,7 @@ def run_flux_inpaint(
             image.save(filename, pnginfo=pnginfo)
             logger.info("Image %s saved to %s", i, filename.name)
 
-            filenames.append(filename.name)
+            filenames.append(build_batch_output_relpath(batch_id, filename.name))
 
             del image
             gc.collect()

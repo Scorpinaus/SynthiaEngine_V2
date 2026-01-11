@@ -9,6 +9,8 @@ from backend.logging_utils import configure_logging
 from backend.model_registry import get_model_entry
 from backend.pipeline_utils import (
     build_png_metadata,
+    build_batch_output_relpath,
+    get_batch_output_dir,
     make_batch_id,
     resolve_model_source,
 )
@@ -149,6 +151,7 @@ def run_qwen_image_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
         base_seed = int(seed)
 
     batch_id = make_batch_id()
+    batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
     pipe = load_qwen_image_pipeline(model)
     logger.info(
@@ -186,7 +189,7 @@ def run_qwen_image_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
 
                 image = pipe(**call_kwargs).images[0]
 
-            filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
+            filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
             pnginfo = build_png_metadata(
                 {
                     "mode": "txt2img",
@@ -207,7 +210,7 @@ def run_qwen_image_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
             image.save(filename, pnginfo=pnginfo)
             logger.info("Image %s saved to %s", i, filename.name)
 
-            filenames.append(filename.name)
+            filenames.append(build_batch_output_relpath(batch_id, filename.name))
 
     return {"images": [f"/outputs/{name}" for name in filenames]}
 
@@ -235,6 +238,7 @@ def run_qwen_image_img2img(
         base_seed = int(seed)
 
     batch_id = make_batch_id()
+    batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
     pipe = load_qwen_image_img2img_pipeline(model)
     logger.info(
@@ -275,7 +279,7 @@ def run_qwen_image_img2img(
 
                 image = pipe(**call_kwargs).images[0]
 
-            filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
+            filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
             image_width, image_height = initial_image.size
             pnginfo = build_png_metadata(
                 {
@@ -298,7 +302,7 @@ def run_qwen_image_img2img(
             image.save(filename, pnginfo=pnginfo)
             logger.info("Image %s saved to %s", i, filename.name)
 
-            filenames.append(filename.name)
+            filenames.append(build_batch_output_relpath(batch_id, filename.name))
 
     return {"images": [f"/outputs/{name}" for name in filenames]}
 
@@ -325,6 +329,7 @@ def run_qwen_image_inpaint(
         base_seed = int(seed)
 
     batch_id = make_batch_id()
+    batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
     pipe = load_qwen_image_inpaint_pipeline(model)
     width, height = initial_image.size
@@ -365,7 +370,7 @@ def run_qwen_image_inpaint(
 
                 image = pipe(**call_kwargs).images[0]
 
-            filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
+            filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
             pnginfo = build_png_metadata(
                 {
                     "mode": "inpaint",
@@ -387,6 +392,6 @@ def run_qwen_image_inpaint(
             image.save(filename, pnginfo=pnginfo)
             logger.info("Image %s saved to %s", i, filename.name)
 
-            filenames.append(filename.name)
+            filenames.append(build_batch_output_relpath(batch_id, filename.name))
 
     return {"images": [f"/outputs/{name}" for name in filenames]}

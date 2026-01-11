@@ -10,7 +10,7 @@ DEFAULTS = {
 RESOURCE_LOGGING_ENABLED = True
 RESOURCE_LOGGING_INTERVAL_S = 0.5
 
-# Writes `outputs/{batch_id}_layers.txt` during pipeline runs.
+# Writes `outputs/batch_{batch_id}/{batch_id}_layers.txt` during pipeline runs.
 PIPELINE_LAYER_LOGGING_ENABLED = True
 PIPELINE_LAYER_LOGGING_LEAF_ONLY = True
 

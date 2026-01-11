@@ -211,7 +211,7 @@ def append_layers_report(
     runtime_name_to_input_summary: Mapping[str, str] | None = None,
     runtime_name_to_call_count: Mapping[str, int] | None = None,
 ) -> Path:
-    output_dir.mkdir(exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
     report_path = output_dir / f"{batch_id}_layers.txt"
 
     timestamp = _dt.datetime.now(tz=_dt.timezone.utc).isoformat()

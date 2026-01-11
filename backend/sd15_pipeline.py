@@ -20,6 +20,8 @@ from backend.resource_logging import resource_logger
 from backend.pipeline_utils import (
     build_fixed_step_timesteps,
     build_png_metadata,
+    build_batch_output_relpath,
+    get_batch_output_dir,
     make_batch_id,
     resolve_model_source,
 )
@@ -353,9 +355,11 @@ def generate_images_controlnet(
             generator=generator,
         )
 
+    batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
+
     if config.PIPELINE_LAYER_LOGGING_ENABLED:
         append_layers_report(
-            output_dir=OUTPUT_DIR,
+            output_dir=batch_output_dir,
             batch_id=batch_id,
             label="sd15_controlnet",
             pipeline_name=pipe.__class__.__name__,
@@ -384,8 +388,8 @@ def generate_images_controlnet(
     filenames = []
     for idx, image in enumerate(results.images):
         name = f"{batch_id}_controlnet_{idx}.png"
-        image.save(OUTPUT_DIR / name, pnginfo=png_info)
-        filenames.append(name)
+        image.save(batch_output_dir / name, pnginfo=png_info)
+        filenames.append(build_batch_output_relpath(batch_id, name))
 
     return filenames
 
@@ -415,6 +419,8 @@ def generate_images(
         base_seed = seed
     if batch_id is None:
         batch_id = make_batch_id()
+
+    batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
     
     pipe = load_pipeline(model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
@@ -476,7 +482,7 @@ def generate_images(
                     ).images[0]
 
                 append_layers_report(
-                    output_dir=OUTPUT_DIR,
+                    output_dir=batch_output_dir,
                     batch_id=batch_id,
                     label="sd15_txt2img",
                     pipeline_name=pipe.__class__.__name__,
@@ -525,7 +531,7 @@ def generate_images(
                     negative_prompt_embeds=negative_prompt_embeds if use_prompt_embeds else None,
                 )
 
-            filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
+            filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
             pnginfo = build_png_metadata({
                 "mode": "txt2img",
                 "prompt": prompt,
@@ -545,7 +551,7 @@ def generate_images(
             image.save(filename, pnginfo=pnginfo)
             logger.info("Image %s saved to %s", i, filename.name)
 
-            filenames.append(filename.name)
+            filenames.append(build_batch_output_relpath(batch_id, filename.name))
     finally:
         if adapter_names and hasattr(pipe, "unload_lora_weights"):
             pipe.unload_lora_weights()
@@ -577,6 +583,8 @@ def generate_images_img2img(
         base_seed = seed
     if batch_id is None:
         batch_id = make_batch_id()
+
+    batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
     pipe = load_img2img_pipeline(model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
@@ -621,7 +629,7 @@ def generate_images_img2img(
                         clip_skip=clip_skip,
                     ).images[0]
                 append_layers_report(
-                    output_dir=OUTPUT_DIR,
+                    output_dir=batch_output_dir,
                     batch_id=batch_id,
                     label="sd15_img2img",
                     pipeline_name=pipe.__class__.__name__,
@@ -643,7 +651,7 @@ def generate_images_img2img(
                     clip_skip=clip_skip,
                 ).images[0]
 
-            filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
+            filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
             image_width, image_height = initial_image.size
             pnginfo = build_png_metadata({
                 "mode": "img2img",
@@ -663,7 +671,7 @@ def generate_images_img2img(
             image.save(filename, pnginfo=pnginfo)
             logger.info("Image %s saved to %s", i, filename.name)
 
-            filenames.append(filename.name)
+            filenames.append(build_batch_output_relpath(batch_id, filename.name))
     finally:
         if adapter_names and hasattr(pipe, "unload_lora_weights"):
             pipe.unload_lora_weights()
@@ -694,6 +702,8 @@ def generate_images_inpaint(
         base_seed = seed
     if batch_id is None:
         batch_id = make_batch_id()
+
+    batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
     pipe = load_inpaint_pipeline(model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
@@ -732,7 +742,7 @@ def generate_images_inpaint(
                     clip_skip=clip_skip,
                 ).images[0]
             append_layers_report(
-                output_dir=OUTPUT_DIR,
+                output_dir=batch_output_dir,
                 batch_id=batch_id,
                 label="sd15_inpaint",
                 pipeline_name=pipe.__class__.__name__,
@@ -756,7 +766,7 @@ def generate_images_inpaint(
                 clip_skip=clip_skip,
             ).images[0]
 
-        filename = OUTPUT_DIR / f"{batch_id}_{current_seed}.png"
+        filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
         pnginfo = build_png_metadata({
             "mode": "inpaint",
             "prompt": prompt,
@@ -776,6 +786,6 @@ def generate_images_inpaint(
         image.save(filename, pnginfo=pnginfo)
         logger.info("Image %s saved to %s", i, filename.name)
 
-        filenames.append(filename.name)
+        filenames.append(build_batch_output_relpath(batch_id, filename.name))
 
     return filenames

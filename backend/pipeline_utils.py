@@ -30,6 +30,16 @@ def build_png_metadata(metadata: dict[str, object]) -> PngInfo:
     return info
 
 
+def get_batch_output_dir(output_dir: Path, batch_id: str) -> Path:
+    batch_dir = output_dir / f"batch_{batch_id}"
+    batch_dir.mkdir(parents=True, exist_ok=True)
+    return batch_dir
+
+
+def build_batch_output_relpath(batch_id: str, filename: str) -> str:
+    return (Path(f"batch_{batch_id}") / filename).as_posix()
+
+
 def build_fixed_step_timesteps(
     scheduler,
     steps: int,

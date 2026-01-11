@@ -385,15 +385,16 @@ async def list_history():
         return []
 
     records: list[dict[str, object]] = []
-    for image_path in OUTPUT_DIR.glob("*.png"):
+    for image_path in OUTPUT_DIR.rglob("*.png"):
         stat = image_path.stat()
         timestamp = stat.st_mtime
         created_at = datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat()
         metadata = _extract_png_metadata(image_path)
+        relative_path = image_path.relative_to(OUTPUT_DIR).as_posix()
         records.append(
             {
-                "filename": image_path.name,
-                "url": f"/outputs/{image_path.name}",
+                "filename": relative_path,
+                "url": f"/outputs/{relative_path}",
                 "timestamp": timestamp,
                 "created_at": created_at,
                 "metadata": metadata,
