@@ -101,6 +101,8 @@ class SdxlGenerateRequest(BaseModel):
     num_images: int = 1
     model: str | None = None
     clip_skip: int = 1
+    hires_enabled: bool = False
+    hires_scale: float = 1.0
 
 
 class ZImageGenerateRequest(BaseModel):
@@ -615,6 +617,12 @@ async def generate_sdxl_text2img(req: SdxlGenerateRequest, request: Request):
     # logger.info("SDXL request JSON: %s", await request.json())
     # logger.info("Parsed SDXL seed: %s", req.seed)
     prepare_model(req.model)
+
+    if req.hires_enabled and req.hires_scale < 1.0:
+        raise HTTPException(
+            status_code=400,
+            detail="Hi-res scale must be at least 1.0.",
+        )
 
     return run_sdxl_text2img(req.model_dump())
 
