@@ -54,6 +54,9 @@ async function generate() {
     const model = document.getElementById("model_select").value;
     const num_images = Number(document.getElementById("num_images").value);
     const clip_skip = Number(document.getElementById("clip_skip").value);
+    const hires_enabled = Boolean(document.getElementById("hires_enabled")?.checked);
+    const hiresScaleInput = Number(document.getElementById("hires_scale").value);
+    const hires_scale = Number.isFinite(hiresScaleInput) ? hiresScaleInput : 1.0;
 
     const payload = {
         prompt,
@@ -67,6 +70,8 @@ async function generate() {
         model,
         num_images,
         clip_skip,
+        hires_enabled,
+        hires_scale,
     };
     console.log("Generate payload", payload);
 

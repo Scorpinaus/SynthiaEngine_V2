@@ -1,7 +1,9 @@
 import logging
+import math
 from pathlib import Path
 
 import torch
+from PIL import Image
 from diffusers import (
     StableDiffusionXLImg2ImgPipeline,
     StableDiffusionXLPipeline,
@@ -29,6 +31,56 @@ INPAINT_PIPELINE_CACHE: dict[str, StableDiffusionXLInpaintPipeline] = {}
 
 logger = logging.getLogger(__name__)
 configure_logging()
+
+
+def _snap_dimension(value: int, multiple: int = 8) -> int:
+    if multiple <= 0:
+        return value
+    return max(multiple, int(math.ceil(value / multiple)) * multiple)
+
+
+def _upscale_image(image: Image.Image, scale: float) -> Image.Image:
+    if scale <= 1.0:
+        return image
+    target_width = _snap_dimension(int(round(image.width * scale)))
+    target_height = _snap_dimension(int(round(image.height * scale)))
+    return image.resize((target_width, target_height), resample=Image.LANCZOS)
+
+
+def apply_hires_fix(
+    image: Image.Image,
+    prompt: str,
+    negative_prompt: str,
+    steps: int,
+    guidance_scale: float,
+    seed: int | None,
+    scheduler: str,
+    model: str | None,
+    clip_skip: int,
+    hires_scale: float,
+    hires_strength: float = 0.35,
+) -> Image.Image:
+    if hires_scale <= 1.0:
+        return image
+
+    upscaled = _upscale_image(image, hires_scale)
+    pipe = load_sdxl_img2img_pipeline(model)
+    pipe.scheduler = create_scheduler(scheduler, pipe)
+
+    generator = None
+    if seed is not None:
+        generator = torch.Generator(device="cuda").manual_seed(seed)
+
+    return pipe(
+        prompt=prompt,
+        negative_prompt=negative_prompt,
+        image=upscaled,
+        strength=hires_strength,
+        num_inference_steps=steps,
+        guidance_scale=guidance_scale,
+        generator=generator,
+        clip_skip=clip_skip,
+    ).images[0]
 
 
 def load_sdxl_pipeline(model_name: str | None) -> StableDiffusionXLPipeline:
@@ -134,6 +186,8 @@ def run_sdxl_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
     num_images = int(payload.get("num_images", 1))
     clip_skip = int(payload.get("clip_skip", 1))
     scheduler = payload.get("scheduler")
+    hires_enabled = bool(payload.get("hires_enabled", False))
+    hires_scale = float(payload.get("hires_scale", 1.0))
 
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
@@ -168,6 +222,20 @@ def run_sdxl_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
             clip_skip=clip_skip,
         ).images[0]
 
+        if hires_enabled:
+            image = apply_hires_fix(
+                image=image,
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                steps=steps,
+                guidance_scale=guidance_scale,
+                seed=current_seed,
+                scheduler=scheduler,
+                model=model,
+                clip_skip=clip_skip,
+                hires_scale=hires_scale,
+            )
+
         filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
         pnginfo = build_png_metadata({
             "mode": "txt2img",
@@ -180,6 +248,8 @@ def run_sdxl_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
             "seed": current_seed,
             "model": model,
             "clip_skip": clip_skip,
+            "hires_enabled": hires_enabled,
+            "hires_scale": hires_scale,
             "batch_id": batch_id,
         })
         image.save(filename, pnginfo=pnginfo)
