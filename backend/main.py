@@ -5,13 +5,15 @@ import tempfile
 from datetime import datetime, timezone
 from io import BytesIO
 import json
+import asyncio
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from backend.config import DEFAULTS
 from backend.controlnet_preprocessors import get_preprocessor, list_preprocessors
@@ -46,6 +48,15 @@ from backend.sdxl_pipeline import (
     run_sdxl_text2img,
 )
 from backend.z_image_pipeline import run_z_image_img2img, run_z_image_text2img
+from backend.job_queue import (
+    JobNotFoundError,
+    JobQueueConfig,
+    cancel_job,
+    create_job_queue,
+    enqueue_job,
+    get_job,
+    list_jobs,
+)
 
 app = FastAPI(title="SynthiaEngine API")
 logger = logging.getLogger(__name__)
@@ -62,6 +73,8 @@ app.add_middleware(
 )
 
 app.mount("/outputs", StaticFiles(directory="outputs"), name="outputs")
+
+ALLOWED_JOB_KINDS = {"noop", "sdxl_text2img"}
 
 ## BaseModel references
 class LoraAdapterRequest(BaseModel):
@@ -185,6 +198,62 @@ class ModelAnalysisResponse(BaseModel):
     rows: list[ModelLayerRow]
 
 
+class JobCreateRequest(BaseModel):
+    kind: str
+    payload: dict[str, object] = Field(default_factory=dict)
+
+
+class JobResponse(BaseModel):
+    id: str
+    kind: str
+    status: str
+    payload: dict[str, object]
+    result: dict[str, object] | None = None
+    error: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+
+
+def _serialize_job(job) -> JobResponse:
+    return JobResponse(
+        id=job.id,
+        kind=job.kind,
+        status=job.status,
+        payload=dict(job.payload or {}),
+        result=dict(job.result) if job.result else None,
+        error=job.error,
+        created_at=job.created_at.isoformat() if job.created_at else None,
+        updated_at=job.updated_at.isoformat() if job.updated_at else None,
+        started_at=job.started_at.isoformat() if job.started_at else None,
+        finished_at=job.finished_at.isoformat() if job.finished_at else None,
+    )
+
+
+def _get_job_sessionmaker():
+    sessionmaker = getattr(app.state, "job_sessionmaker", None)
+    if sessionmaker is None:
+        raise HTTPException(status_code=503, detail="Job queue not initialized.")
+    return sessionmaker
+
+
+@app.on_event("startup")
+def _startup_job_queue() -> None:
+    engine, sessionmaker, worker = create_job_queue(JobQueueConfig())
+    worker.start()
+    app.state.job_engine = engine
+    app.state.job_sessionmaker = sessionmaker
+    app.state.job_worker = worker
+
+
+@app.on_event("shutdown")
+def _shutdown_job_queue() -> None:
+    worker = getattr(app.state, "job_worker", None)
+    if worker is not None:
+        worker.stop()
+
+
 def _extract_png_metadata(path: Path) -> dict[str, str]:
     try:
         with Image.open(path) as image:
@@ -224,6 +293,81 @@ def _parse_lora_adapters(raw_value: str | None) -> list[LoraAdapterRequest]:
 @app.get("/health")
 async def health_check():
     return {"status": "ok"}
+
+
+@app.post("/api/jobs", response_model=JobResponse, status_code=201)
+async def submit_job(req: JobCreateRequest):
+    if req.kind not in ALLOWED_JOB_KINDS:
+        raise HTTPException(status_code=400, detail=f"Unsupported job kind: {req.kind}")
+
+    sessionmaker = _get_job_sessionmaker()
+    job = enqueue_job(sessionmaker, kind=req.kind, payload=dict(req.payload))
+    return _serialize_job(job)
+
+
+@app.get("/api/jobs/{job_id}", response_model=JobResponse)
+async def fetch_job(job_id: str):
+    sessionmaker = _get_job_sessionmaker()
+    try:
+        job = get_job(sessionmaker, job_id)
+    except JobNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Job not found.") from exc
+    return _serialize_job(job)
+
+
+@app.get("/api/jobs", response_model=list[JobResponse])
+async def fetch_jobs(limit: int = 50):
+    sessionmaker = _get_job_sessionmaker()
+    jobs = list_jobs(sessionmaker, limit=max(1, min(500, int(limit))))
+    return [_serialize_job(job) for job in jobs]
+
+
+@app.post("/api/jobs/{job_id}/cancel", response_model=JobResponse)
+async def cancel_queued_job(job_id: str):
+    sessionmaker = _get_job_sessionmaker()
+    try:
+        job = cancel_job(sessionmaker, job_id)
+    except JobNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Job not found.") from exc
+    return _serialize_job(job)
+
+
+@app.get("/api/jobs/{job_id}/events")
+async def stream_job_events(job_id: str):
+    sessionmaker = _get_job_sessionmaker()
+    try:
+        get_job(sessionmaker, job_id)
+    except JobNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Job not found.") from exc
+
+    async def event_generator():
+        last_status = None
+        while True:
+            try:
+                job = get_job(sessionmaker, job_id)
+            except JobNotFoundError:
+                payload = {"error": "Job not found.", "status": "missing"}
+                yield f"data: {json.dumps(payload)}\n\n"
+                break
+
+            job_response = _serialize_job(job)
+            payload = job_response.model_dump()
+            status = payload.get("status")
+            if status != last_status:
+                yield f"data: {json.dumps(payload)}\n\n"
+                last_status = status
+
+            if status in {"succeeded", "failed", "canceled"}:
+                break
+
+            await asyncio.sleep(1.0)
+
+    headers = {
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+    }
+    return StreamingResponse(event_generator(), media_type="text/event-stream", headers=headers)
+
 
 @app.get("/models", response_model=list[ModelRegistryEntry])
 async def list_models(family: str | None = None):
@@ -289,8 +433,7 @@ async def list_controlnet_preprocessors():
     ]
 
 
-@app.get(
-    "/api/controlnet/preprocessor-models",
+@app.get("/api/controlnet/preprocessor-models",
     response_model=list[ControlNetPreprocessorModelEntry],
 )
 async def list_controlnet_preprocessor_models():

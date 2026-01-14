@@ -1,0 +1,26 @@
+<section class="jobs-panel">
+    <div class="jobs-header">
+        <h3>Job Queue</h3>
+        <span id="jobs-status" class="jobs-status">Idle</span>
+    </div>
+    <div class="jobs-tabs">
+        <button class="jobs-tab is-active" type="button" data-tab="current">Current</button>
+        <button class="jobs-tab" type="button" data-tab="recent">Recent</button>
+    </div>
+    <div class="jobs-tab-panel" data-tab-panel="current">
+        <div class="jobs-section">
+            <h4>Active</h4>
+            <ul id="jobs-active" class="jobs-list"></ul>
+        </div>
+        <div class="jobs-section">
+            <h4>Queued</h4>
+            <ul id="jobs-queued" class="jobs-list"></ul>
+        </div>
+    </div>
+    <div class="jobs-tab-panel" data-tab-panel="recent" hidden>
+        <div class="jobs-section">
+            <h4>Recent</h4>
+            <ul id="jobs-recent" class="jobs-list"></ul>
+        </div>
+    </div>
+</section>

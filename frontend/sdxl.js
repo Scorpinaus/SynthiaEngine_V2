@@ -6,6 +6,9 @@ const gallery = createGalleryViewer({
 
 gallery.render();
 
+let activeJobToken = 0;
+let activeEventSource = null;
+
 async function loadModels() {
     const select = document.getElementById("model_select");
     select.innerHTML = "";
@@ -40,7 +43,40 @@ async function loadModels() {
 
 loadModels();
 
+function setJobUiState(isBusy, message) {
+    const button = document.getElementById("generate_button");
+
+    if (button) {
+        button.disabled = Boolean(isBusy);
+        button.textContent = isBusy ? "Generating..." : "Generate";
+    }
+}
+
+function closeActiveEventSource() {
+    if (activeEventSource) {
+        activeEventSource.close();
+        activeEventSource = null;
+    }
+}
+
+async function submitJob(kind, payload) {
+    const res = await fetch(`${API_BASE}/api/jobs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind, payload }),
+    });
+
+    if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Job submit failed (${res.status}): ${errorText}`);
+    }
+
+    return await res.json();
+}
+
 async function generate() {
+    const token = ++activeJobToken;
+    closeActiveEventSource();
     const prompt = document.getElementById("prompt").value;
     const steps = Number(document.getElementById("steps").value);
     const guidance_scale = Number(document.getElementById("cfg").value);
@@ -76,21 +112,68 @@ async function generate() {
     console.log("Generate payload", payload);
 
     try {
-        const res = await fetch(`${API_BASE}/api/sdxl/text2img`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-        });
-
-        if (!res.ok) {
-            const errorText = await res.text();
-            throw new Error(`SDXL request failed (${res.status}): ${errorText}`);
+        setJobUiState(true, "Submitting job...");
+        const createdJob = await submitJob("sdxl_text2img", payload);
+        const jobId = createdJob?.id;
+        if (!jobId) {
+            throw new Error("Job submit did not return an id.");
         }
 
-        const data = await res.json();
-        gallery.setImages(Array.isArray(data.images) ? data.images : []);
+        setJobUiState(true, `Queued (job ${jobId})`);
+
+        const source = new EventSource(`${API_BASE}/api/jobs/${jobId}/events`);
+        activeEventSource = source;
+
+        source.onmessage = (event) => {
+            if (token !== activeJobToken) {
+                source.close();
+                return;
+            }
+
+            let job;
+            try {
+                job = JSON.parse(event.data);
+            } catch (parseError) {
+                console.warn("Failed to parse job event:", parseError);
+                return;
+            }
+
+            const status = job?.status ?? "unknown";
+            if (status === "queued") {
+                setJobUiState(true, `Queued (job ${jobId})`);
+            } else if (status === "running") {
+                setJobUiState(true, `Running (job ${jobId})`);
+            } else if (status === "succeeded") {
+                const images = job?.result?.images;
+                gallery.setImages(Array.isArray(images) ? images : []);
+                setJobUiState(false, `Done (job ${jobId})`);
+                source.close();
+            } else if (status === "failed") {
+                const err = job?.error ?? "Unknown error.";
+                setJobUiState(false, `Failed (job ${jobId})`);
+                gallery.setImages([]);
+                source.close();
+                console.warn("Job failed:", err);
+            } else if (status === "canceled") {
+                setJobUiState(false, `Canceled (job ${jobId})`);
+                gallery.setImages([]);
+                source.close();
+            } else {
+                setJobUiState(true, `Status: ${status} (job ${jobId})`);
+            }
+        };
+
+        source.onerror = () => {
+            if (token !== activeJobToken) {
+                source.close();
+                return;
+            }
+            setJobUiState(false, "Job update stream lost.");
+            source.close();
+        };
     } catch (error) {
         console.warn("Failed to generate SDXL images:", error);
         gallery.setImages([]);
+        setJobUiState(false, "Failed to generate.");
     }
 }
