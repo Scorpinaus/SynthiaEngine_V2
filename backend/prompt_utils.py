@@ -32,7 +32,7 @@ _A1111_RE_ATTENTION = re.compile(
 \\|
 \(|
 \[|
-:\s*([+-]?[.\d]+)\s*\)|
+:([+-]?[.\d]+)\)|
 \)|
 ]|
 [^\\()\[\]:]+|
@@ -467,9 +467,8 @@ def _parse_prompt_attention_a1111(text: str, enable_break: bool) -> list[tuple[s
                 parts = re.split(_A1111_RE_BREAK, token)
                 for idx, part in enumerate(parts):
                     if idx > 0:
-                        res.append([" ", 1.0])
-                    if part:
-                        res.append([part, 1.0])
+                        res.append(["BREAK", -1.0])
+                    res.append([part, 1.0])
             else:
                 res.append([token, 1.0])
 
@@ -481,17 +480,18 @@ def _parse_prompt_attention_a1111(text: str, enable_break: bool) -> list[tuple[s
     if not res:
         return [("", 1.0)]
 
-    # merge identical weights
-    merged: list[tuple[str, float]] = []
-    for t, w in res:
-        text_part = str(t)
-        weight_part = float(w)
-        if not text_part:
-            continue
-        if merged and merged[-1][1] == weight_part:
-            merged[-1] = (merged[-1][0] + text_part, weight_part)
+    # merge runs of identical weights
+    i = 0
+    while i + 1 < len(res):
+        if res[i][1] == res[i + 1][1]:
+            res[i][0] = f"{res[i][0]}{res[i + 1][0]}"
+            res.pop(i + 1)
         else:
-            merged.append((text_part, weight_part))
+            i += 1
+
+    merged: list[tuple[str, float]] = []
+    for text_part, weight_part in res:
+        merged.append((str(text_part), float(weight_part)))
     return merged
 
 

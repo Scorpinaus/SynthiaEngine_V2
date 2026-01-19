@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gc
 import random
 import time
 from pathlib import Path
@@ -65,3 +66,9 @@ def build_fixed_step_timesteps(
         start_index, max_index, steps, device = initial_timesteps.device,
     ).round().long()
     return initial_timesteps[index_positions]
+
+
+def cleanup_memory(*, clear_cuda: bool = True) -> None:
+    gc.collect()
+    if clear_cuda and torch.cuda.is_available():
+        torch.cuda.empty_cache()

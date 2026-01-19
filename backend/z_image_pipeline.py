@@ -1,17 +1,18 @@
 import logging
-from pathlib import Path
 
-import torch, gc
+import torch
 from diffusers import ZImageImg2ImgPipeline, ZImagePipeline
 
 import threading
 
+from backend.config import OUTPUT_DIR
 from backend.logging_utils import configure_logging
 from backend.model_registry import get_model_entry
 from backend.pipeline_utils import (
     build_fixed_step_timesteps,
     build_png_metadata,
     build_batch_output_relpath,
+    cleanup_memory,
     get_batch_output_dir,
     make_batch_id,
     resolve_model_source,
@@ -19,11 +20,6 @@ from backend.pipeline_utils import (
 from backend.schedulers import create_scheduler
 
 GEN_LOCK = threading.Lock()
-OUTPUT_DIR = Path("outputs")
-OUTPUT_DIR.mkdir(exist_ok=True)
-
-PIPELINE_CACHE: dict[str, ZImagePipeline] = {}
-IMG2IMG_PIPELINE_CACHE: dict[str, ZImageImg2ImgPipeline] = {}
 
 logger = logging.getLogger(__name__)
 configure_logging()
@@ -48,10 +44,6 @@ configure_logging()
 
 def load_z_image_pipeline(model_name: str | None) -> ZImagePipeline:
     entry = get_model_entry(model_name)
-
-    pipe = PIPELINE_CACHE.get(entry.name)
-    if pipe is not None:
-        return pipe
 
     source = resolve_model_source(entry)
     logger.info("Z-Image model source: %s", source)
@@ -81,20 +73,13 @@ def load_z_image_pipeline(model_name: str | None) -> ZImagePipeline:
     pipe.enable_sequential_cpu_offload()
 
     # Cleanup any transient allocations after load
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    cleanup_memory()
     
-    PIPELINE_CACHE[entry.name] = pipe
     return pipe
 
 
 def load_z_image_img2img_pipeline(model_name: str | None) -> ZImageImg2ImgPipeline:
     entry = get_model_entry(model_name)
-
-    pipe = IMG2IMG_PIPELINE_CACHE.get(entry.name)
-    if pipe is not None:
-        return pipe
 
     source = resolve_model_source(entry)
     logger.info("Z-Image img2img model source: %s", source)
@@ -122,11 +107,8 @@ def load_z_image_img2img_pipeline(model_name: str | None) -> ZImageImg2ImgPipeli
 
     pipe.enable_sequential_cpu_offload()
 
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    cleanup_memory()
 
-    IMG2IMG_PIPELINE_CACHE[entry.name] = pipe
     return pipe
 
 ## Run and generate renders
@@ -215,8 +197,7 @@ def run_z_image_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
             
             # ✅ release per-image intermediates
             del image
-            gc.collect()
-            torch.cuda.empty_cache()
+            cleanup_memory()
 
     return {"images": [f"/outputs/{name}" for name in filenames]}
 
@@ -309,7 +290,6 @@ def run_z_image_img2img(
             filenames.append(build_batch_output_relpath(batch_id, filename.name))
 
             del image
-            gc.collect()
-            torch.cuda.empty_cache()
+            cleanup_memory()
 
     return {"images": [f"/outputs/{name}" for name in filenames]}

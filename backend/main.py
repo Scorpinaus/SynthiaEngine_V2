@@ -15,13 +15,12 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from pydantic import BaseModel, Field
 
-from backend.config import DEFAULTS
+from backend.config import DEFAULTS, OUTPUT_DIR
 from backend.controlnet_preprocessors import get_preprocessor, list_preprocessors
 from backend.controlnet_preprocessor_registry import (
     CONTROLNET_PREPROCESSOR_REGISTRY,
     ControlNetPreprocessorModelEntry,
 )
-from backend.model_cache import clear_all_pipelines, prepare_model
 from backend.model_analysis import SUPPORTED_EXTS, analyze_model_file
 from backend.model_registry import MODEL_REGISTRY, ModelRegistryEntry, save_model_registry
 from backend.lora_registry import (
@@ -63,8 +62,6 @@ logger = logging.getLogger(__name__)
 if not logger.handlers:
     logging.basicConfig(level=logging.INFO)
 
-OUTPUT_DIR = Path("outputs")
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -72,7 +69,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.mount("/outputs", StaticFiles(directory="outputs"), name="outputs")
+app.mount("/outputs", StaticFiles(directory=OUTPUT_DIR), name="outputs")
 
 ALLOWED_JOB_KINDS = {"noop", "sdxl_text2img"}
 
@@ -566,8 +563,6 @@ def remap_img2img_strength(strength:float, min_strength = 0.0, gamma: float=0.5)
 async def generate(req: GenerateRequest, request: Request):
     # logger.info("Request JSON: %s", await request.json())
     # logger.info("Parsed seed: %s", req.seed)
-    prepare_model(req.model)
-
     if req.controlnet_active:
         raise HTTPException(
             status_code=400,
@@ -625,8 +620,6 @@ async def generate_controlnet_text2img(
         raise HTTPException(status_code=400, detail="Invalid control image file.") from exc
 
     controlnet_image = controlnet_image.resize((width, height))
-    prepare_model(model)
-
     filenames = generate_images_controlnet(
         prompt=prompt,
         negative_prompt=negative_prompt,
@@ -675,7 +668,6 @@ async def generate_img2img(
 
     remapped_strength = remap_img2img_strength(strength)
     init_image = init_image.resize((width, height))
-    prepare_model(model)
     parsed_lora_adapters = _parse_lora_adapters(lora_adapters)
 
     filenames = generate_images_img2img(
@@ -730,7 +722,6 @@ async def generate_inpaint(
 
     if mask.size != init_image.size:
         mask = mask.resize(init_image.size, resample=Image.NEAREST)
-    prepare_model(model)
     remapped_strength = remap_img2img_strength(strength)
 
     filenames = generate_images_inpaint(
@@ -759,8 +750,6 @@ async def generate_inpaint(
 async def generate_sdxl_text2img(req: SdxlGenerateRequest, request: Request):
     # logger.info("SDXL request JSON: %s", await request.json())
     # logger.info("Parsed SDXL seed: %s", req.seed)
-    prepare_model(req.model)
-
     if req.hires_enabled and req.hires_scale < 1.0:
         raise HTTPException(
             status_code=400,
@@ -796,8 +785,6 @@ async def generate_sdxl_img2img(
 
     init_image = init_image.resize((width, height))
     remapped_strength = remap_img2img_strength(strength)
-    prepare_model(model)
-
     return run_sdxl_img2img(
         initial_image=init_image,
         strength=remapped_strength,
@@ -850,8 +837,6 @@ async def generate_sdxl_inpaint(
     remapped_strength = remap_img2img_strength(strength)
     if mask.size != init_image.size:
         mask = mask.resize(init_image.size, resample=Image.NEAREST)
-    prepare_model(model)
-
     return run_sdxl_inpaint(
         initial_image=init_image,
         mask_image=mask,
@@ -873,8 +858,6 @@ async def generate_sdxl_inpaint(
 async def generate_z_image_text2img(req: ZImageGenerateRequest, request: Request):
     # logger.info("Z-Image request JSON: %s", await request.json())
     # logger.info("Parsed Z-Image seed: %s", req.seed)
-    prepare_model(req.model)
-
     return run_z_image_text2img(req.model_dump())
 
 
@@ -903,8 +886,6 @@ async def generate_z_image_img2img(
         raise HTTPException(status_code=400, detail="Invalid image file.") from exc
     remapped_strength = remap_img2img_strength(strength)
     init_image = init_image.resize((width, height))
-    prepare_model(model)
-
     return run_z_image_img2img(
         initial_image=init_image,
         strength=remapped_strength,
@@ -923,8 +904,6 @@ async def generate_z_image_img2img(
 ## Qwen-Image Endpoints
 @app.post("/api/qwen-image/text2img")
 async def generate_qwen_image_text2img(req: QwenImageGenerateRequest, request: Request):
-    prepare_model(req.model)
-
     return run_qwen_image_text2img(req.model_dump())
 
 
@@ -955,8 +934,6 @@ async def generate_qwen_image_img2img(
 
     init_image = init_image.resize((width, height))
     remapped_strength = remap_img2img_strength(strength)
-    prepare_model(model)
-
     return run_qwen_image_img2img(
         initial_image=init_image,
         strength=remapped_strength,
@@ -1006,8 +983,6 @@ async def generate_qwen_image_inpaint(
 
     if mask.size != init_image.size:
         mask = mask.resize(init_image.size, resample=Image.NEAREST)
-    prepare_model(model)
-
     return run_qwen_image_inpaint(
         initial_image=init_image,
         mask_image=mask,
@@ -1028,8 +1003,6 @@ async def generate_qwen_image_inpaint(
 async def generate_flux_text2img(req: FluxGenerateRequest, request: Request):
     # logger.info("Flux request JSON: %s", await request.json())
     # logger.info("Parsed Flux seed: %s", req.seed)
-    prepare_model(req.model)
-
     return run_flux_text2img(req.model_dump())
 
 
@@ -1058,8 +1031,6 @@ async def generate_flux_img2img(
         raise HTTPException(status_code=400, detail="Invalid image file.") from exc
 
     init_image = init_image.resize((width, height))
-    prepare_model(model)
-
     return run_flux_img2img(
         initial_image=init_image,
         strength=strength,
@@ -1107,8 +1078,6 @@ async def generate_flux_inpaint(
 
     if mask.size != init_image.size:
         mask = mask.resize(init_image.size, resample=Image.NEAREST)
-    prepare_model(model)
-
     return run_flux_inpaint(
         initial_image=init_image,
         mask_image=mask,
@@ -1142,7 +1111,3 @@ async def create_blur_mask_endpoint(
     return Response(content=output.getvalue(), media_type="image/png")
 
 
-@app.post("/api/cache/clear")
-async def clear_model_cache():
-    clear_all_pipelines()
-    return {"status": "cleared"}

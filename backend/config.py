@@ -1,3 +1,8 @@
+from pathlib import Path
+
+OUTPUT_DIR = Path("outputs")
+OUTPUT_DIR.mkdir(exist_ok=True)
+
 DEFAULTS = {
     "steps": 20,
     "cfg": 7.5,

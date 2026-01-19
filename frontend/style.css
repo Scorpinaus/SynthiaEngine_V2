@@ -191,6 +191,8 @@ button {
     padding-top: 12px;
     display: grid;
     gap: 12px;
+    max-height: 500px;
+    overflow-y: auto;
 }
 
 .jobs-tabs {

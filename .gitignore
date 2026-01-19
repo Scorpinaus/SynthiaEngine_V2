@@ -1,3 +1,5 @@
 .venv/
 outputs/
 backend/model_registry.json
+__pycache__/
+*.pyc

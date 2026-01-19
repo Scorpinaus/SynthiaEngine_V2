@@ -68,7 +68,7 @@
     async function refreshJobQueue() {
         try {
             setJobsStatus("Refreshing...");
-            const res = await fetch(`${API_BASE}/api/jobs?limit=50`);
+            const res = await fetch(`${API_BASE}/api/jobs?limit=10`);
             if (!res.ok) {
                 const errorText = await res.text();
                 throw new Error(`Jobs request failed (${res.status}): ${errorText}`);

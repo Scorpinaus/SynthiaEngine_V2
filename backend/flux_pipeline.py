@@ -1,19 +1,19 @@
 """
 Docstring for backend.flux_pipeline
 """
-import gc
 import logging
 import threading
-from pathlib import Path
 
 import torch
 from diffusers import FluxImg2ImgPipeline, FluxInpaintPipeline, FluxPipeline
 
+from backend.config import OUTPUT_DIR
 from backend.logging_utils import configure_logging
 from backend.model_registry import get_model_entry
 from backend.pipeline_utils import (
     build_png_metadata,
     build_batch_output_relpath,
+    cleanup_memory,
     get_batch_output_dir,
     make_batch_id,
     resolve_model_source,
@@ -24,12 +24,6 @@ from backend.schedulers import create_scheduler
     Static Variables and Logging
 """
 GEN_LOCK = threading.Lock()
-OUTPUT_DIR = Path("outputs")
-OUTPUT_DIR.mkdir(exist_ok=True)
-
-PIPELINE_CACHE: dict[str, FluxPipeline] = {}
-IMG2IMG_PIPELINE_CACHE: dict[str, FluxImg2ImgPipeline] = {}
-INPAINT_PIPELINE_CACHE: dict[str, FluxInpaintPipeline] = {}
 
 logger = logging.getLogger(__name__)
 configure_logging()
@@ -41,10 +35,6 @@ configure_logging()
 
 def load_flux_pipeline(model_name: str | None) -> FluxPipeline:
     entry = get_model_entry(model_name)
-
-    pipe = PIPELINE_CACHE.get(entry.name)
-    if pipe is not None:
-        return pipe
 
     source = resolve_model_source(entry)
     logger.info("Flux model source: %s", source)
@@ -67,16 +57,11 @@ def load_flux_pipeline(model_name: str | None) -> FluxPipeline:
     pipe.vae.enable_tiling()
     pipe.enable_sequential_cpu_offload()
 
-    PIPELINE_CACHE[entry.name] = pipe
     return pipe
 
 
 def load_flux_img2img_pipeline(model_name: str | None) -> FluxImg2ImgPipeline:
     entry = get_model_entry(model_name)
-
-    pipe = IMG2IMG_PIPELINE_CACHE.get(entry.name)
-    if pipe is not None:
-        return pipe
 
     source = resolve_model_source(entry)
     logger.info("Flux img2img model source: %s", source)
@@ -99,15 +84,10 @@ def load_flux_img2img_pipeline(model_name: str | None) -> FluxImg2ImgPipeline:
     pipe.vae.enable_tiling()
     pipe.enable_sequential_cpu_offload()
 
-    IMG2IMG_PIPELINE_CACHE[entry.name] = pipe
     return pipe
 
 def load_flux_inpaint_pipeline(model_name: str | None) -> FluxInpaintPipeline:
     entry = get_model_entry(model_name)
-
-    pipe = INPAINT_PIPELINE_CACHE.get(entry.name)
-    if pipe is not None:
-        return pipe
 
     source = resolve_model_source(entry)
     logger.info("Flux inpaint model source: %s", source)
@@ -130,7 +110,6 @@ def load_flux_inpaint_pipeline(model_name: str | None) -> FluxInpaintPipeline:
     pipe.vae.enable_tiling()
     pipe.enable_sequential_cpu_offload()
 
-    INPAINT_PIPELINE_CACHE[entry.name] = pipe
     return pipe
 
 """
@@ -207,8 +186,7 @@ def run_flux_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
             filenames.append(build_batch_output_relpath(batch_id, filename.name))
 
             del image
-            gc.collect()
-            torch.cuda.empty_cache()
+            cleanup_memory()
 
     return {"images": [f"/outputs/{name}" for name in filenames]}
 
@@ -290,8 +268,7 @@ def run_flux_img2img(
             filenames.append(build_batch_output_relpath(batch_id, filename.name))
 
             del image
-            gc.collect()
-            torch.cuda.empty_cache()
+            cleanup_memory()
 
     return {"images": [f"/outputs/{name}" for name in filenames]}
 
@@ -371,7 +348,6 @@ def run_flux_inpaint(
             filenames.append(build_batch_output_relpath(batch_id, filename.name))
 
             del image
-            gc.collect()
-            torch.cuda.empty_cache()
+            cleanup_memory()
 
     return {"images": [f"/outputs/{name}" for name in filenames]}

@@ -1,10 +1,10 @@
 import logging
 import threading
-from pathlib import Path
 
 import torch
 from diffusers import QwenImageImg2ImgPipeline, QwenImageInpaintPipeline, QwenImagePipeline
 
+from backend.config import OUTPUT_DIR
 from backend.logging_utils import configure_logging
 from backend.model_registry import get_model_entry
 from backend.pipeline_utils import (
@@ -17,12 +17,6 @@ from backend.pipeline_utils import (
 from backend.schedulers import create_scheduler
 
 GEN_LOCK = threading.Lock()
-OUTPUT_DIR = Path("outputs")
-OUTPUT_DIR.mkdir(exist_ok=True)
-
-PIPELINE_CACHE: dict[str, QwenImagePipeline] = {}
-IMG2IMG_PIPELINE_CACHE: dict[str, QwenImageImg2ImgPipeline] = {}
-INPAINT_PIPELINE_CACHE: dict[str, QwenImageInpaintPipeline] = {}
 
 logger = logging.getLogger(__name__)
 configure_logging()
@@ -30,10 +24,6 @@ configure_logging()
 
 def load_qwen_image_pipeline(model_name: str | None) -> QwenImagePipeline:
     entry = get_model_entry(model_name)
-
-    pipe = PIPELINE_CACHE.get(entry.name)
-    if pipe is not None:
-        return pipe
 
     source = resolve_model_source(entry)
     logger.info("Qwen-Image model source: %s", source)
@@ -58,16 +48,11 @@ def load_qwen_image_pipeline(model_name: str | None) -> QwenImagePipeline:
         pipe.vae.enable_tiling()
     pipe.enable_sequential_cpu_offload()
 
-    PIPELINE_CACHE[entry.name] = pipe
     return pipe
 
 
 def load_qwen_image_img2img_pipeline(model_name: str | None) -> QwenImageImg2ImgPipeline:
     entry = get_model_entry(model_name)
-
-    pipe = IMG2IMG_PIPELINE_CACHE.get(entry.name)
-    if pipe is not None:
-        return pipe
 
     source = resolve_model_source(entry)
     logger.info("Qwen-Image img2img model source: %s", source)
@@ -92,16 +77,11 @@ def load_qwen_image_img2img_pipeline(model_name: str | None) -> QwenImageImg2Img
         pipe.vae.enable_tiling()
     pipe.enable_sequential_cpu_offload()
 
-    IMG2IMG_PIPELINE_CACHE[entry.name] = pipe
     return pipe
 
 
 def load_qwen_image_inpaint_pipeline(model_name: str | None) -> QwenImageInpaintPipeline:
     entry = get_model_entry(model_name)
-
-    pipe = INPAINT_PIPELINE_CACHE.get(entry.name)
-    if pipe is not None:
-        return pipe
 
     source = resolve_model_source(entry)
     logger.info("Qwen-Image inpaint model source: %s", source)
@@ -126,7 +106,6 @@ def load_qwen_image_inpaint_pipeline(model_name: str | None) -> QwenImageInpaint
         pipe.vae.enable_tiling()
     pipe.enable_sequential_cpu_offload()
 
-    INPAINT_PIPELINE_CACHE[entry.name] = pipe
     return pipe
 
 

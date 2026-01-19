@@ -10,11 +10,10 @@ from diffusers import (
     StableDiffusionControlNetPipeline,
     ControlNetModel,
 )
-from pathlib import Path
 
+from backend.config import OUTPUT_DIR
 from backend.logging_utils import configure_logging
 from backend.model_registry import get_model_entry
-from backend.lora_registry import get_lora_entry
 from backend.resource_logging import resource_logger
 # from testing.pipeline_stable_diffusion import(StableDiffusionPipeline)
 from backend.pipeline_utils import (
@@ -33,14 +32,7 @@ from backend.pipeline_layer_logging import (
     capture_runtime_used_layers,
     collect_pipeline_layers,
 )
-
-OUTPUT_DIR = Path("outputs")
-OUTPUT_DIR.mkdir(exist_ok=True)
-
-PIPELINE_CACHE: dict[str, StableDiffusionPipeline] = {}
-IMG2IMG_PIPELINE_CACHE: dict[str, StableDiffusionImg2ImgPipeline] = {}
-INPAINT_PIPELINE_CACHE: dict[str, StableDiffusionInpaintPipeline] = {}
-CONTROLNET_PIPELINE_CACHE: dict[str, StableDiffusionControlNetPipeline] = {}
+from backend.lora_utils import apply_lora_adapters_with_validation, write_lora_coverage_report
 
 logger = logging.getLogger(__name__)
 configure_logging()
@@ -123,50 +115,24 @@ def apply_hires_fix(
             pipe.unload_lora_weights()
 
 
-def _apply_lora_adapters(pipe, lora_adapters: list[object] | None) -> list[str]:
-    if not lora_adapters:
-        return []
-
-    adapter_names: list[str] = []
-    weights: list[float] = []
-    for adapter in lora_adapters:
-        if isinstance(adapter, dict):
-            lora_id = adapter.get("lora_id")
-            strength = adapter.get("strength", 1.0)
-        else:
-            lora_id = getattr(adapter, "lora_id", None)
-            strength = getattr(adapter, "strength", 1.0)
-
-        if lora_id is None:
-            raise ValueError("LoRA adapter missing lora_id.")
-        entry = get_lora_entry(int(lora_id))
-
-        if entry.lora_model_family.lower() != "sd15":
-            raise ValueError(f"LoRA {entry.name} is not compatible with SD1.5.")
-
-        adapter_name = f"lora_{entry.name}"
-        source = entry.file_path
-        pipe.load_lora_weights(source, adapter_name=adapter_name)
-        adapter_names.append(adapter_name)
-        weights.append(float(strength))
-        logger.info(
-            "lora_name: %s , lora_id: %s, lora_weight: %s",
-            adapter_name,
-            entry.lora_id,
-            strength,
-        )
-    if hasattr(pipe, "set_adapters"):
-        pipe.set_adapters(adapter_names, adapter_weights=weights)
-
+def _apply_lora_adapters(
+    pipe,
+    lora_adapters: list[object] | None,
+    *,
+    validate: bool = False,
+) -> list[str]:
+    adapter_names, _ = apply_lora_adapters_with_validation(
+        pipe,
+        lora_adapters,
+        expected_family="sd15",
+        validate=validate,
+    )
     return adapter_names
 
 ## Load pipelines
 
 def load_pipeline(model_name: str | None):
     entry = get_model_entry(model_name)
-
-    if entry.name in PIPELINE_CACHE:
-        return PIPELINE_CACHE[entry.name]
 
     source = resolve_model_source(entry)
     logger.info("URL: %s", source)
@@ -186,16 +152,11 @@ def load_pipeline(model_name: str | None):
         raise ValueError(f"Unsupported model type: {entry.model_type}")
 
     pipe.to("cuda")
-    PIPELINE_CACHE[entry.name] = pipe
-
     return pipe
 
 
 def load_img2img_pipeline(model_name: str | None):
     entry = get_model_entry(model_name)
-
-    if entry.name in IMG2IMG_PIPELINE_CACHE:
-        return IMG2IMG_PIPELINE_CACHE[entry.name]
 
     source = resolve_model_source(entry)
     logger.info("URL: %s", source)
@@ -215,16 +176,11 @@ def load_img2img_pipeline(model_name: str | None):
         raise ValueError(f"Unsupported model type: {entry.model_type}")
 
     img2img_pipe.to("cuda")
-    IMG2IMG_PIPELINE_CACHE[entry.name] = img2img_pipe
-
     return img2img_pipe
 
 
 def load_inpaint_pipeline(model_name: str | None):
     entry = get_model_entry(model_name)
-
-    if entry.name in INPAINT_PIPELINE_CACHE:
-        return INPAINT_PIPELINE_CACHE[entry.name]
 
     source = resolve_model_source(entry)
     logger.info("URL: %s", source)
@@ -244,16 +200,11 @@ def load_inpaint_pipeline(model_name: str | None):
         raise ValueError(f"Unsupported model type: {entry.model_type}")
 
     inpaint_pipe.to("cuda")
-    INPAINT_PIPELINE_CACHE[entry.name] = inpaint_pipe
-
     return inpaint_pipe
 
 
 def load_controlnet_pipeline(model_name: str | None, controlnet_model: str):
     entry = get_model_entry(model_name)
-    cache_key = f"{entry.name}::{controlnet_model}"
-    if cache_key in CONTROLNET_PIPELINE_CACHE:
-        return CONTROLNET_PIPELINE_CACHE[cache_key]
 
     source = resolve_model_source(entry)
     logger.info("Base model: %s", source)
@@ -280,7 +231,6 @@ def load_controlnet_pipeline(model_name: str | None, controlnet_model: str):
         raise ValueError(f"Unsupported model type: {entry.model_type}")
 
     pipe.to("cuda")
-    CONTROLNET_PIPELINE_CACHE[cache_key] = pipe
     return pipe
 
 ## Generate and render images
@@ -429,7 +379,15 @@ def generate_images(
         model, base_seed, scheduler, steps, cfg, width, height, num_images,)
         
     filenames = []
-    adapter_names = _apply_lora_adapters(pipe, lora_adapters)
+    adapter_names, lora_coverage = apply_lora_adapters_with_validation(
+        pipe,
+        lora_adapters,
+        expected_family="sd15",
+        validate=True,
+    )
+    report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
+    if report_path is not None:
+        logger.info("LoRA coverage report saved to %s", report_path)
 
     arch_layers = None
     if config.PIPELINE_LAYER_LOGGING_ENABLED:
