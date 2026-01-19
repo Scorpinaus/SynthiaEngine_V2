@@ -792,6 +792,13 @@ button {
     gap: 16px;
 }
 
+.models-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
 .models-toolbar {
     display: flex;
     flex-wrap: wrap;
@@ -1156,6 +1163,15 @@ button {
     display: grid;
     gap: 18px;
     max-width: 640px;
+    margin: 0 auto;
+}
+
+.model-form-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
 }
 
 .model-form-header h2 {

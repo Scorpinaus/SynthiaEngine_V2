@@ -21,7 +21,6 @@ const NAV_GROUPS = [
         label: "Models",
         items: [
             { href: "models.html", label: "Models" },
-            { href: "model_add.html", label: "Add Model" },
             { href: "tools_analysis.html", label: "Tools & Analysis" },
         ],
     },

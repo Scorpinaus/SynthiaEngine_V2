@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8" />
-    <title>Synthia Engine Add Model</title>
+    <title>Add Base Model Form</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -17,14 +17,15 @@
         <section class="model-form-panel">
             <div class="model-form-header">
                 <div>
-                    <h2>Add a Model</h2>
-                    <p>Register a new model entry in the model registry.</p>
+                    <h2>Add Base Model Form</h2>
+                    <p>Register a new base model entry in the model registry.</p>
                 </div>
+                <a class="secondary nav-link" href="models.html">Back to models</a>
             </div>
             <form id="model-form" class="model-form">
                 <label class="field">
                     <span>Name</span>
-                    <input name="name" type="text" placeholder="stable-diffusion-v1-5" required />
+                    <input name="name" type="text" placeholder="Input model name" required />
                 </label>
                 <label class="field">
                     <span>Family</span>
@@ -32,11 +33,19 @@
                 </label>
                 <label class="field">
                     <span>Model Type</span>
-                    <input name="model_type" type="text" placeholder="diffusers" required />
+                    <select name="model_type" required>
+                        <option value="" disabled selected>Select a model type</option>
+                        <option value="diffusers">diffusers</option>
+                        <option value="single_file">single_file</option>
+                    </select>
                 </label>
                 <label class="field">
                     <span>Location Type</span>
-                    <input name="location_type" type="text" placeholder="hub" required />
+                    <select name="location_type" required>
+                        <option value="" disabled selected>Select a location</option>
+                        <option value="local">Local</option>
+                        <option value="hub">Hub</option>
+                    </select>
                 </label>
                 <label class="field">
                     <span>Model ID</span>
@@ -47,8 +56,8 @@
                     <input name="version" type="text" placeholder="hub" required />
                 </label>
                 <label class="field">
-                    <span>Link</span>
-                    <input name="link" type="text" placeholder="runwayml/stable-diffusion-v1-5" required />
+                    <span>Local Link or Website Link</span>
+                    <input name="link" type="text" placeholder="C:\\models\\sd15 or runwayml/stable-diffusion-v1-5" required />
                 </label>
                 <button class="primary" type="submit">Add model</button>
             </form>
@@ -58,7 +67,7 @@
 
     <script src="api_config.js?v=1"></script>
     <script src="header.js?v=1"></script>
-    <script src="nav_bar.js?v=1"></script>
+    <script src="nav_bar.js?v=2"></script>
     <script src="model_add.js?v=1"></script>
 </body>
 
