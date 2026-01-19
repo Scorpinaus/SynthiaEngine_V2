@@ -1,5 +1,6 @@
 .venv/
 outputs/
+.temp-sd-embed/
 backend/model_registry.json
 __pycache__/
 *.pyc
