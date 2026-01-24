@@ -6,6 +6,53 @@ const gallery = createGalleryViewer({
 
 gallery.render();
 
+let activeJobToken = 0;
+let activeEventSource = null;
+
+function closeActiveEventSource() {
+    if (activeEventSource) {
+        activeEventSource.close();
+        activeEventSource = null;
+    }
+}
+
+function makeIdempotencyKey() {
+    if (typeof crypto?.randomUUID === "function") {
+        return crypto.randomUUID();
+    }
+    return `idemp_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
+async function uploadArtifact(blobOrFile, filename = "upload.png") {
+    const formData = new FormData();
+    formData.append("file", blobOrFile, filename);
+    const res = await fetch(`${API_BASE}/api/artifacts`, {
+        method: "POST",
+        body: formData,
+    });
+    if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Artifact upload failed (${res.status}): ${errorText}`);
+    }
+    return await res.json();
+}
+
+async function submitWorkflow(payload, idempotencyKey) {
+    const res = await fetch(`${API_BASE}/api/jobs`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify({ kind: "workflow", payload }),
+    });
+    if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Job submit failed (${res.status}): ${errorText}`);
+    }
+    return await res.json();
+}
+
 async function loadModels() {
     const select = document.getElementById("model_select");
     select.innerHTML = "";
@@ -328,6 +375,9 @@ initControlNet();
 window.LoraPanel?.init({ apiBase: API_BASE, family: "sd15" });
 
 async function generate() {
+    const token = ++activeJobToken;
+    closeActiveEventSource();
+
     const prompt = document.getElementById("prompt").value;
     const steps = Number(document.getElementById("steps").value);
     const cfg = Number(document.getElementById("cfg").value);
@@ -351,71 +401,120 @@ async function generate() {
     );
     const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
 
-    const payload = {
-        prompt,
-        negative_prompt,
-        steps,
-        cfg,
-        scheduler,
-        seed,
-        width,
-        height,
-        hires_enabled,
-        hires_scale,
-        model,
-        num_images,
-        clip_skip,
-        weighting_policy,
-    };
-    if (loraAdapters.length > 0) {
-        payload.lora_adapters = loraAdapters;
-    }
-    console.log("Generate payload", payload);
+    const idempotencyKey = makeIdempotencyKey();
 
     try {
-        let res;
-        if (controlnetEnabled && controlnetState.previewBlob) {
-            const formData = new FormData();
-            formData.append("control_image", controlnetState.previewBlob, "controlnet.png");
-            formData.append("prompt", prompt);
-            formData.append("negative_prompt", negative_prompt);
-            formData.append("steps", String(steps));
-            formData.append("cfg", String(cfg));
-            formData.append("width", String(width));
-            formData.append("height", String(height));
-            formData.append("seed", seed === null ? "" : String(seed));
-            formData.append("scheduler", scheduler);
-            formData.append("num_images", String(num_images));
-            if (model) {
-                formData.append("model", model);
+        const tasks = [];
+
+        if (controlnetEnabled) {
+            if (!controlnetState.previewBlob) {
+                throw new Error("ControlNet enabled but no preprocessor output image is ready.");
             }
-            formData.append("clip_skip", String(clip_skip));
-            formData.append("weighting_policy", String(weighting_policy));
+            const uploaded = await uploadArtifact(controlnetState.previewBlob, "controlnet.png");
+            const inputs = {
+                control_image: `@artifact:${uploaded.artifact_id}`,
+                prompt,
+                negative_prompt,
+                steps,
+                cfg,
+                scheduler,
+                seed,
+                width,
+                height,
+                model,
+                num_images,
+                clip_skip,
+                weighting_policy,
+            };
             if (loraAdapters.length > 0) {
-                formData.append("lora_adapters", JSON.stringify(loraAdapters));
+                inputs.lora_adapters = loraAdapters;
             }
-            res = await fetch(`${API_BASE}/api/controlnet/text2img`, {
-                method: "POST",
-                body: formData,
-            });
+            tasks.push({ id: "t1", type: "sd15.controlnet.text2img", inputs });
         } else {
-            res = await fetch(`${API_BASE}/generate`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    ...payload,
-                    controlnet_active: controlnetEnabled,
-                }),
+            const inputs = {
+                prompt,
+                negative_prompt,
+                steps,
+                cfg,
+                scheduler,
+                seed,
+                width,
+                height,
+                model,
+                num_images,
+                clip_skip,
+                weighting_policy,
+            };
+            if (loraAdapters.length > 0) {
+                inputs.lora_adapters = loraAdapters;
+            }
+            tasks.push({ id: "t1", type: "sd15.text2img", inputs });
+        }
+
+        let returnRef = "@t1.images";
+        if (hires_enabled && hires_scale > 1.0) {
+            tasks.push({
+                id: "hires",
+                type: "sd15.hires_fix",
+                inputs: {
+                    images: "@t1.images",
+                    prompt,
+                    negative_prompt,
+                    steps,
+                    cfg,
+                    scheduler,
+                    seed,
+                    model,
+                    clip_skip,
+                    hires_scale,
+                    weighting_policy,
+                    lora_adapters: loraAdapters,
+                },
             });
+            returnRef = "@hires.images";
         }
 
-        if (!res.ok) {
-            const errorText = await res.text();
-            throw new Error(`SD1.5 request failed (${res.status}): ${errorText}`);
+        const workflowPayload = { tasks, return: returnRef };
+        const createdJob = await submitWorkflow(workflowPayload, idempotencyKey);
+        const jobId = createdJob?.id;
+        if (!jobId) {
+            throw new Error("Job submit did not return an id.");
         }
 
-        const data = await res.json();
-        gallery.setImages(Array.isArray(data.images) ? data.images : []);
+        const source = new EventSource(`${API_BASE}/api/jobs/${jobId}/events`);
+        activeEventSource = source;
+
+        source.onmessage = (event) => {
+            if (token !== activeJobToken) {
+                source.close();
+                return;
+            }
+
+            let job;
+            try {
+                job = JSON.parse(event.data);
+            } catch {
+                return;
+            }
+
+            const status = job?.status ?? "unknown";
+            if (status === "succeeded") {
+                const images = job?.result?.outputs;
+                gallery.setImages(Array.isArray(images) ? images : []);
+                source.close();
+            } else if (status === "failed" || status === "canceled") {
+                gallery.setImages([]);
+                source.close();
+            }
+        };
+
+        source.onerror = () => {
+            if (token !== activeJobToken) {
+                source.close();
+                return;
+            }
+            source.close();
+        };
     } catch (error) {
         console.warn("Failed to generate SD1.5 images:", error);
         gallery.setImages([]);

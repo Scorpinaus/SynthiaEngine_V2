@@ -1,6 +1,7 @@
 import torch
 import logging
 import math
+from pathlib import Path
 from PIL import ImageFilter, Image
 
 from diffusers import (
@@ -84,6 +85,7 @@ def apply_hires_fix(
     lora_adapters: list[object] | None = None,
     prompt_embeds: torch.Tensor | None = None,
     negative_prompt_embeds: torch.Tensor | None = None,
+    lora_scale: float | None = None,
 ) -> Image.Image:
     if hires_scale <= 1.0:
         return image
@@ -109,6 +111,7 @@ def apply_hires_fix(
             clip_skip=clip_skip,
             prompt_embeds=prompt_embeds,
             negative_prompt_embeds=negative_prompt_embeds,
+            cross_attention_kwargs={"scale": lora_scale} if lora_scale is not None else None,
         ).images[0]
     finally:
         if adapter_names and hasattr(pipe, "unload_lora_weights"):
@@ -128,6 +131,99 @@ def _apply_lora_adapters(
         validate=validate,
     )
     return adapter_names
+
+@torch.inference_mode()
+def run_sd15_hires_fix(
+    *,
+    images: list[Image.Image],
+    prompt: str,
+    negative_prompt: str,
+    steps: int,
+    cfg: float,
+    seed: int | None,
+    scheduler: str,
+    model: str | None,
+    clip_skip: int,
+    hires_scale: float,
+    hires_strength: float = 0.35,
+    lora_adapters: list[object] | None = None,
+    weighting_policy: str = "diffusers-like",
+    lora_scale: float | None = None,
+    output_dir: Path | None = None,
+    batch_id: str | None = None,
+) -> list[str]:
+    if hires_scale <= 1.0:
+        raise ValueError("hires_scale must be > 1.0 for sd15.hires_fix")
+    if not images:
+        return []
+
+    if seed is None or seed == 0:
+        base_seed = torch.randint(0, 2**31, (1,)).item()
+    else:
+        base_seed = int(seed)
+
+    if batch_id is None:
+        batch_id = make_batch_id()
+    batch_output_dir = output_dir or get_batch_output_dir(OUTPUT_DIR, batch_id)
+
+    pipe = load_img2img_pipeline(model)
+    pipe.scheduler = create_scheduler(scheduler, pipe)
+    adapter_names = _apply_lora_adapters(pipe, lora_adapters, validate=False)
+
+    prompt_embeds, negative_prompt_embeds, use_prompt_embeds = build_prompt_embeddings(
+        pipe,
+        prompt,
+        negative_prompt,
+        clip_skip=clip_skip,
+        lora_scale=lora_scale,
+        weighting_policy=weighting_policy,
+    )
+
+    relpaths: list[str] = []
+    try:
+        for idx, image in enumerate(images):
+            current_seed = base_seed + idx
+            generator = torch.Generator(device="cuda").manual_seed(current_seed)
+
+            upscaled = _upscale_image(image, hires_scale)
+            out_image = pipe(
+                prompt=None if use_prompt_embeds else prompt,
+                negative_prompt=None if use_prompt_embeds else negative_prompt,
+                image=upscaled,
+                strength=hires_strength,
+                num_inference_steps=steps,
+                guidance_scale=cfg,
+                generator=generator,
+                clip_skip=clip_skip,
+                prompt_embeds=prompt_embeds if use_prompt_embeds else None,
+                negative_prompt_embeds=negative_prompt_embeds if use_prompt_embeds else None,
+                cross_attention_kwargs={"scale": lora_scale} if lora_scale is not None else None,
+            ).images[0]
+
+            filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
+            pnginfo = build_png_metadata(
+                {
+                    "mode": "hires_fix",
+                    "prompt": prompt,
+                    "negative_prompt": negative_prompt,
+                    "steps": steps,
+                    "cfg": cfg,
+                    "seed": current_seed,
+                    "scheduler": scheduler,
+                    "model": model,
+                    "clip_skip": clip_skip,
+                    "hires_scale": hires_scale,
+                    "hires_strength": hires_strength,
+                    "batch_id": batch_id,
+                }
+            )
+            out_image.save(filename, pnginfo=pnginfo)
+            relpaths.append(build_batch_output_relpath(batch_id, filename.name))
+    finally:
+        if adapter_names and hasattr(pipe, "unload_lora_weights"):
+            pipe.unload_lora_weights()
+
+    return relpaths
 
 ## Load pipelines
 
@@ -361,24 +457,27 @@ def generate_images(
     hires_enabled: bool = False,
     weighting_policy: str = "diffusers-like",
     batch_id: str | None = None,
+    lora_scale: float | None = None,
 ):
+    # 1. Check and set seed number(if not present, set random seed)
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
         base_seed = torch.randint(0, 2**31, (1,)).item()
     else:
         base_seed = seed
+    
+    # 2. Set batch_id for output folder
     if batch_id is None:
         batch_id = make_batch_id()
-
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
+    filenames = []
     
+    # 3. Load pipeline and chosen scheduler
     pipe = load_pipeline(model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
-    logger.info(
-        "Generate: model=%s seed=%s scheduler=%s steps=%s cfg=%s size=%sx%s num_images=%s",
-        model, base_seed, scheduler, steps, cfg, width, height, num_images,)
-        
-    filenames = []
+    logger.info("Generate: model=%s seed=%s scheduler=%s steps=%s cfg=%s size=%sx%s num_images=%s", model, base_seed, scheduler, steps, cfg, width, height, num_images,)
+    
+    # 4. Apply lora to pipeline and generate lora coverage report
     adapter_names, lora_coverage = apply_lora_adapters_with_validation(
         pipe,
         lora_adapters,
@@ -391,11 +490,9 @@ def generate_images(
 
     arch_layers = None
     if config.PIPELINE_LAYER_LOGGING_ENABLED:
-        arch_layers = collect_pipeline_layers(
-            pipe,
-            leaf_only=config.PIPELINE_LAYER_LOGGING_LEAF_ONLY,
-        )
+        arch_layers = collect_pipeline_layers(pipe, leaf_only=config.PIPELINE_LAYER_LOGGING_LEAF_ONLY,)
 
+    # 5. Build prompt embeddings
     prompt_embeds = None
     negative_prompt_embeds = None
     use_prompt_embeds = False
@@ -405,15 +502,19 @@ def generate_images(
             pipe,
             prompt,
             negative_prompt,
+            clip_skip=clip_skip,
+            lora_scale=lora_scale,
             weighting_policy=weighting_policy,
         )
         prompt_embeds_ready = True
 
+    # 6. Loop around image generation per image
     try:
         for i in range(num_images):
             current_seed = base_seed + i
             generator = torch.Generator(device="cuda").manual_seed(current_seed)
 
+            # Capture used layers during rendering
             if config.PIPELINE_LAYER_LOGGING_ENABLED and i == 0:
                 with capture_runtime_used_layers(
                     pipe,
@@ -423,9 +524,13 @@ def generate_images(
                         pipe,
                         prompt,
                         negative_prompt,
+                        clip_skip=clip_skip,
+                        lora_scale=lora_scale,
                         weighting_policy=weighting_policy,
                     )
                     prompt_embeds_ready = True
+                    
+                    # Generate image
                     image = pipe(
                         prompt=None if use_prompt_embeds else prompt,
                         negative_prompt=None if use_prompt_embeds else negative_prompt,
@@ -437,8 +542,10 @@ def generate_images(
                         clip_skip=clip_skip,
                         prompt_embeds=prompt_embeds if use_prompt_embeds else None,
                         negative_prompt_embeds=negative_prompt_embeds if use_prompt_embeds else None,
+                        cross_attention_kwargs={"scale": lora_scale} if lora_scale is not None else None,
                     ).images[0]
 
+                # Log layers to report
                 append_layers_report(
                     output_dir=batch_output_dir,
                     batch_id=batch_id,
@@ -451,14 +558,18 @@ def generate_images(
                     runtime_name_to_call_count=(name_to_calls if config.PIPELINE_LAYER_LOGGING_CAPTURE_INPUTS else None),
                 )
             else:
+                # If prompt embeds not present, generate them
                 if not prompt_embeds_ready:
                     prompt_embeds, negative_prompt_embeds, use_prompt_embeds = build_prompt_embeddings(
                         pipe,
                         prompt,
                         negative_prompt,
+                        clip_skip=clip_skip,
+                        lora_scale=lora_scale,
                         weighting_policy=weighting_policy,
                     )
                     prompt_embeds_ready = True
+                # Generate image
                 image = pipe(
                     prompt=None if use_prompt_embeds else prompt,
                     negative_prompt=None if use_prompt_embeds else negative_prompt,
@@ -470,25 +581,10 @@ def generate_images(
                     clip_skip=clip_skip,
                     prompt_embeds=prompt_embeds if use_prompt_embeds else None,
                     negative_prompt_embeds=negative_prompt_embeds if use_prompt_embeds else None,
+                    cross_attention_kwargs={"scale": lora_scale} if lora_scale is not None else None,
                 ).images[0]
 
-            if hires_enabled:
-                image = apply_hires_fix(
-                    image=image,
-                    prompt=prompt,
-                    negative_prompt=negative_prompt,
-                    steps=steps,
-                    cfg=cfg,
-                    seed=current_seed,
-                    scheduler=scheduler,
-                    model=model,
-                    clip_skip=clip_skip,
-                    hires_scale=hires_scale,
-                    lora_adapters=lora_adapters,
-                    prompt_embeds=prompt_embeds if use_prompt_embeds else None,
-                    negative_prompt_embeds=negative_prompt_embeds if use_prompt_embeds else None,
-                )
-
+            # Generates filename, image metadata and saves it to image
             filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
             pnginfo = build_png_metadata({
                 "mode": "txt2img",
@@ -511,9 +607,10 @@ def generate_images(
 
             filenames.append(build_batch_output_relpath(batch_id, filename.name))
     finally:
+        # Unload lora_weights at the end
         if adapter_names and hasattr(pipe, "unload_lora_weights"):
             pipe.unload_lora_weights()
-
+    # Return list of filenames
     return filenames
 
 @torch.inference_mode()

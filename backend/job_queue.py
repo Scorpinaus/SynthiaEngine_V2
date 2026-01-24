@@ -10,6 +10,7 @@ from typing import Any
 from sqlalchemy import select, update
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.exc import OperationalError
 
 from backend.job_db import JobDbConfig, create_job_engine, create_sessionmaker
 from backend.job_models import Base, Job, utcnow
@@ -23,6 +24,12 @@ class JobNotFoundError(Exception):
     pass
 
 
+class IdempotencyConflictError(Exception):
+    def __init__(self, key: str) -> None:
+        super().__init__(key)
+        self.key = key
+
+
 @dataclass(frozen=True)
 class JobQueueConfig:
     db_url: str = "sqlite:///outputs/jobs.sqlite3"
@@ -30,25 +37,83 @@ class JobQueueConfig:
     requeue_running_on_startup: bool = True
 
 
+def _sqlite_column_exists(engine: Engine, *, table: str, column: str) -> bool:
+    try:
+        with engine.connect() as conn:
+            rows = conn.exec_driver_sql(f"PRAGMA table_info({table})").fetchall()
+    except Exception:
+        return False
+    return any(str(row[1]) == column for row in rows)
+
+
+def _sqlite_table_exists(engine: Engine, *, table: str) -> bool:
+    try:
+        with engine.connect() as conn:
+            row = conn.exec_driver_sql(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
+                (table,),
+            ).fetchone()
+            return row is not None
+    except Exception:
+        return False
+
+
+def _sqlite_ensure_idempotency_schema(engine: Engine) -> None:
+    if not str(engine.url).startswith("sqlite:"):
+        return
+    if not _sqlite_table_exists(engine, table="jobs"):
+        return
+    if _sqlite_column_exists(engine, table="jobs", column="idempotency_key"):
+        return
+
+    with engine.begin() as conn:
+        conn.exec_driver_sql("ALTER TABLE jobs ADD COLUMN idempotency_key VARCHAR(128)")
+        conn.exec_driver_sql(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_jobs_idempotency_key "
+            "ON jobs(idempotency_key) WHERE idempotency_key IS NOT NULL"
+        )
+
+
 def init_job_db(engine: Engine) -> None:
+    try:
+        _sqlite_ensure_idempotency_schema(engine)
+    except OperationalError as exc:
+        logger.warning("Failed to ensure idempotency schema: %s", exc)
     Base.metadata.create_all(engine)
 
 
-def enqueue_job(SessionLocal: sessionmaker, *, kind: str, payload: dict[str, Any]) -> Job:
+def enqueue_job(
+    SessionLocal: sessionmaker,
+    *,
+    kind: str,
+    payload: dict[str, Any],
+    idempotency_key: str | None = None,
+) -> tuple[Job, bool]:
     now = utcnow()
-    job = Job(
-        id=str(uuid.uuid4()),
-        kind=kind,
-        status="queued",
-        payload=payload,
-        created_at=now,
-        updated_at=now,
-    )
     with SessionLocal() as session:
+        if idempotency_key:
+            existing = session.execute(
+                select(Job).where(Job.idempotency_key == idempotency_key).limit(1)
+            ).scalar_one_or_none()
+            if existing is not None:
+                existing_payload = dict(existing.payload or {})
+                if existing.kind != kind or existing_payload != payload:
+                    raise IdempotencyConflictError(idempotency_key)
+                return existing, False
+
+        job = Job(
+            id=str(uuid.uuid4()),
+            idempotency_key=idempotency_key,
+            kind=kind,
+            status="queued",
+            payload=payload,
+            created_at=now,
+            updated_at=now,
+        )
         session.add(job)
         session.commit()
         session.refresh(job)
-        return job
+        return job, True
 
 
 def get_job(SessionLocal: sessionmaker, job_id: str) -> Job:
@@ -140,7 +205,26 @@ def _mark_job_succeeded(session: Session, job_id: str, result: dict[str, Any]) -
     session.commit()
 
 
-def execute_job(kind: str, payload: dict[str, Any]) -> dict[str, Any]:
+def update_job_partial_result(SessionLocal: sessionmaker, job_id: str, patch: dict[str, Any]) -> None:
+    now = utcnow()
+    with SessionLocal() as session:
+        job = session.get(Job, job_id)
+        if job is None:
+            return
+        current = dict(job.result or {})
+        current.update(patch)
+        job.result = current
+        job.updated_at = now
+        session.commit()
+
+
+def execute_job(
+    *,
+    job_id: str,
+    kind: str,
+    payload: dict[str, Any],
+    SessionLocal: sessionmaker,
+) -> dict[str, Any]:
     if kind == "noop":
         return {"ok": True}
 
@@ -148,6 +232,14 @@ def execute_job(kind: str, payload: dict[str, Any]) -> dict[str, Any]:
         from backend.sdxl_pipeline import run_sdxl_text2img
 
         return run_sdxl_text2img(payload)
+
+    if kind == "workflow":
+        from backend.workflow import WorkflowContext, execute_workflow
+
+        def _progress(patch: dict[str, Any]) -> None:
+            update_job_partial_result(SessionLocal, job_id, {"progress": patch})
+
+        return execute_workflow(payload, ctx=WorkflowContext(update_progress=_progress))
 
     raise ValueError(f"Unsupported job kind: {kind}")
 
@@ -187,7 +279,12 @@ class JobWorker:
             logger.info("Running job id=%s kind=%s", job.id, job.kind)
             try:
                 with EXECUTION_LOCK:
-                    result = execute_job(job.kind, dict(job.payload or {}))
+                    result = execute_job(
+                        job_id=job.id,
+                        kind=job.kind,
+                        payload=dict(job.payload or {}),
+                        SessionLocal=self._SessionLocal,
+                    )
                 with self._SessionLocal() as session:
                     _mark_job_succeeded(session, job.id, result)
             except Exception as exc:

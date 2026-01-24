@@ -60,9 +60,15 @@ function closeActiveEventSource() {
 }
 
 async function submitJob(kind, payload) {
+    const idempotencyKey = typeof crypto?.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `idemp_${Date.now()}_${Math.random().toString(16).slice(2)}`;
     const res = await fetch(`${API_BASE}/api/jobs`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": idempotencyKey,
+        },
         body: JSON.stringify({ kind, payload }),
     });
 

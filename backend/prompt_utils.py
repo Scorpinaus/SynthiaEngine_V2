@@ -106,6 +106,8 @@ def build_prompt_embeddings(
     pipe,
     prompt: str,
     negative_prompt: str | None,
+    clip_skip: int | None = None,
+    lora_scale: float | None = None,
     normalize_weights: bool = NORMALIZE_PROMPT_WEIGHTS,
     weighting_policy: WeightingPolicy | str = WeightingPolicy.DIFFUSERS_LIKE,
 ) -> tuple[torch.Tensor | None, torch.Tensor | None, bool]:
@@ -118,6 +120,7 @@ def build_prompt_embeddings(
 
     max_chunk = max(1, tokenizer.model_max_length - 2)
     needs_embeddings = (
+        lora_scale is not None,
         prompt_tokens.has_weights
         or negative_tokens.has_weights
         or len(prompt_tokens.tokens) > max_chunk
@@ -127,26 +130,65 @@ def build_prompt_embeddings(
     if not needs_embeddings:
         return None, None, False
 
-    prompt_embeds = _encode_tokens(
-        text_encoder,
-        tokenizer,
-        prompt_tokens.tokens,
-        prompt_tokens.weights,
-        device,
-        max_chunk,
-        normalize_weights,
-        weighting_policy,
-    )
-    negative_prompt_embeds = _encode_tokens(
-        text_encoder,
-        tokenizer,
-        negative_tokens.tokens,
-        negative_tokens.weights,
-        device,
-        max_chunk,
-        normalize_weights,
-        weighting_policy,
-    )
+    scaled = False
+    use_peft = False
+    try:
+        if lora_scale is not None:
+            try:
+                from diffusers.utils import USE_PEFT_BACKEND
+
+                use_peft = bool(USE_PEFT_BACKEND)
+            except Exception:
+                use_peft = False
+
+            if use_peft:
+                try:
+                    from diffusers.utils.peft_utils import scale_lora_layers
+
+                    scale_lora_layers(text_encoder, lora_scale)
+                    scaled = True
+                except Exception:
+                    scaled = False
+            else:
+                # Best-effort for non-PEFT LoRA. Diffusers doesn't "unscale" in this case.
+                try:
+                    from diffusers.models.lora import adjust_lora_scale_text_encoder
+
+                    adjust_lora_scale_text_encoder(text_encoder, lora_scale)
+                except Exception:
+                    pass
+
+        prompt_embeds = _encode_tokens(
+            text_encoder,
+            tokenizer,
+            prompt_tokens.tokens,
+            prompt_tokens.weights,
+            device,
+            max_chunk,
+            clip_skip,
+            normalize_weights,
+            weighting_policy,
+        )
+        negative_prompt_embeds = _encode_tokens(
+            text_encoder,
+            tokenizer,
+            negative_tokens.tokens,
+            negative_tokens.weights,
+            device,
+            max_chunk,
+            clip_skip,
+            normalize_weights,
+            weighting_policy,
+        )
+    finally:
+        if lora_scale is not None and scaled and use_peft:
+            try:
+                from diffusers.utils.peft_utils import unscale_lora_layers
+
+                unscale_lora_layers(text_encoder, lora_scale)
+            except Exception:
+                pass
+
     if prompt_embeds.shape[1] != negative_prompt_embeds.shape[1]:
         target_length = max(prompt_embeds.shape[1], negative_prompt_embeds.shape[1])
         prompt_embeds = _pad_embeddings(prompt_embeds, target_length)
@@ -158,12 +200,16 @@ def build_prompt_embeddings_diffusers(
     pipe,
     prompt: str,
     negative_prompt: str | None,
+    clip_skip: int | None = None,
+    lora_scale: float | None = None,
     normalize_weights: bool = NORMALIZE_PROMPT_WEIGHTS,
 ) -> tuple[torch.Tensor | None, torch.Tensor | None, bool]:
     return build_prompt_embeddings(
         pipe,
         prompt,
         negative_prompt,
+        clip_skip=clip_skip,
+        lora_scale=lora_scale,
         normalize_weights=normalize_weights,
         weighting_policy=WeightingPolicy.DIFFUSERS_LIKE,
     )
@@ -173,12 +219,16 @@ def build_prompt_embeddings_a1111(
     pipe,
     prompt: str,
     negative_prompt: str | None,
+    clip_skip: int | None = None,
+    lora_scale: float | None = None,
     normalize_weights: bool = NORMALIZE_PROMPT_WEIGHTS,
 ) -> tuple[torch.Tensor | None, torch.Tensor | None, bool]:
     return build_prompt_embeddings(
         pipe,
         prompt,
         negative_prompt,
+        clip_skip=clip_skip,
+        lora_scale=lora_scale,
         normalize_weights=normalize_weights,
         weighting_policy=WeightingPolicy.A1111_LIKE,
     )
@@ -188,12 +238,16 @@ def build_prompt_embeddings_comfyui(
     pipe,
     prompt: str,
     negative_prompt: str | None,
+    clip_skip: int | None = None,
+    lora_scale: float | None = None,
     normalize_weights: bool = NORMALIZE_PROMPT_WEIGHTS,
 ) -> tuple[torch.Tensor | None, torch.Tensor | None, bool]:
     return build_prompt_embeddings(
         pipe,
         prompt,
         negative_prompt,
+        clip_skip=clip_skip,
+        lora_scale=lora_scale,
         normalize_weights=normalize_weights,
         weighting_policy=WeightingPolicy.COMFYUI_LIKE,
     )
@@ -206,6 +260,7 @@ def _encode_tokens(
     weights: list[float],
     device: torch.device,
     chunk_size: int,
+    clip_skip: int | None,
     normalize_weights: bool,
     weighting_policy: WeightingPolicy | str,
 ) -> torch.Tensor:
@@ -218,6 +273,7 @@ def _encode_tokens(
             weights=weights,
             device=device,
             chunk_size=chunk_size,
+            clip_skip=clip_skip,
             normalize_weights=normalize_weights,
         )
     if policy is WeightingPolicy.A1111_LIKE:
@@ -228,6 +284,7 @@ def _encode_tokens(
             weights=weights,
             device=device,
             chunk_size=chunk_size,
+            clip_skip=clip_skip,
             normalize_weights=normalize_weights,
         )
     if policy is WeightingPolicy.COMFYUI_LIKE:
@@ -238,8 +295,56 @@ def _encode_tokens(
             weights=weights,
             device=device,
             chunk_size=chunk_size,
+            clip_skip=clip_skip,
         )
     raise ValueError(f"Unknown weighting_policy: {weighting_policy!r}")
+
+
+def _encode_text_encoder(
+    *,
+    text_encoder,
+    input_ids: torch.Tensor,
+    attention_mask: torch.Tensor | None,
+    clip_skip: int | None,
+) -> torch.Tensor:
+    if clip_skip is None:
+        return text_encoder(input_ids, attention_mask=attention_mask)[0]
+
+    outputs = text_encoder(input_ids, attention_mask=attention_mask, output_hidden_states=True)
+    hidden_states = outputs[-1]
+    selected = hidden_states[-(clip_skip + 1)]
+    final_ln = getattr(getattr(text_encoder, "text_model", None), "final_layer_norm", None)
+    if final_ln is not None:
+        selected = final_ln(selected)
+    return selected
+
+
+def _build_padded_chunk_input(
+    *,
+    tokenizer,
+    chunk_tokens: list[int],
+    chunk_weights: list[float],
+    max_length: int,
+) -> tuple[torch.Tensor, torch.Tensor | None]:
+    bos = tokenizer.bos_token_id
+    eos = tokenizer.eos_token_id
+    if bos is None or eos is None:
+        raise ValueError("Tokenizer is missing BOS/EOS token IDs.")
+
+    # Pad with EOS to match CLIP max length (A1111-style).
+    chunk_tokens = chunk_tokens[: max(0, max_length - 2)]
+    input_ids = [bos] + chunk_tokens
+    input_ids.extend([eos] * (max_length - len(input_ids)))
+    input_ids_tensor = torch.tensor([input_ids])
+
+    if not chunk_weights:
+        return input_ids_tensor, None
+
+    chunk_weights = chunk_weights[: max(0, max_length - 2)]
+    weight_values = [1.0] + chunk_weights
+    weight_values.extend([1.0] * (max_length - len(weight_values)))
+    weight_tensor = torch.tensor(weight_values)
+    return input_ids_tensor, weight_tensor
 
 
 def _chunk_tokens_and_weights(
@@ -263,31 +368,41 @@ def _encode_tokens_diffusers_like(
     weights: list[float],
     device: torch.device,
     chunk_size: int,
+    clip_skip: int | None,
     normalize_weights: bool,
 ) -> torch.Tensor:
-    bos = tokenizer.bos_token_id
-    eos = tokenizer.eos_token_id
-    if bos is None or eos is None:
-        raise ValueError("Tokenizer is missing BOS/EOS token IDs.")
-
     if not tokens:
         tokens = []
         weights = []
 
+    max_length = tokenizer.model_max_length
     chunks = _chunk_tokens_and_weights(tokens, weights, chunk_size)
     weighted_chunks: list[torch.Tensor] = []
     total_count = 0
     before_sumsq: torch.Tensor | None = None
     after_sumsq: torch.Tensor | None = None
     for chunk_tokens, chunk_weights in chunks:
-        input_ids = [bos] + chunk_tokens + [eos]
-        input_ids_tensor = torch.tensor([input_ids], device=device)
-        chunk_embeds = text_encoder(input_ids_tensor)[0]
+        input_ids_tensor, weight_tensor = _build_padded_chunk_input(
+            tokenizer=tokenizer,
+            chunk_tokens=chunk_tokens,
+            chunk_weights=chunk_weights,
+            max_length=max_length,
+        )
+        input_ids_tensor = input_ids_tensor.to(device=device)
+
+        use_mask = bool(getattr(getattr(text_encoder, "config", None), "use_attention_mask", False))
+        attention_mask = torch.ones_like(input_ids_tensor) if use_mask else None
+
+        chunk_embeds = _encode_text_encoder(
+            text_encoder=text_encoder,
+            input_ids=input_ids_tensor,
+            attention_mask=attention_mask,
+            clip_skip=clip_skip,
+        )
         weighted = chunk_embeds
 
-        if chunk_weights:
-            weight_values = [1.0] + chunk_weights + [1.0]
-            weight_tensor = torch.tensor(weight_values, device=device, dtype=chunk_embeds.dtype)
+        if weight_tensor is not None:
+            weight_tensor = weight_tensor.to(device=device, dtype=chunk_embeds.dtype)
             weighted = chunk_embeds * weight_tensor.unsqueeze(-1)
 
         weighted_chunks.append(weighted)
@@ -319,28 +434,38 @@ def _encode_tokens_a1111_like(
     weights: list[float],
     device: torch.device,
     chunk_size: int,
+    clip_skip: int | None,
     normalize_weights: bool,
 ) -> torch.Tensor:
-    bos = tokenizer.bos_token_id
-    eos = tokenizer.eos_token_id
-    if bos is None or eos is None:
-        raise ValueError("Tokenizer is missing BOS/EOS token IDs.")
-
     if not tokens:
         tokens = []
         weights = []
 
+    max_length = tokenizer.model_max_length
     chunks = _chunk_tokens_and_weights(tokens, weights, chunk_size)
     weighted_chunks: list[torch.Tensor] = []
     for chunk_tokens, chunk_weights in chunks:
-        input_ids = [bos] + chunk_tokens + [eos]
-        input_ids_tensor = torch.tensor([input_ids], device=device)
-        chunk_embeds = text_encoder(input_ids_tensor)[0]
+        input_ids_tensor, weight_tensor = _build_padded_chunk_input(
+            tokenizer=tokenizer,
+            chunk_tokens=chunk_tokens,
+            chunk_weights=chunk_weights,
+            max_length=max_length,
+        )
+        input_ids_tensor = input_ids_tensor.to(device=device)
+
+        use_mask = bool(getattr(getattr(text_encoder, "config", None), "use_attention_mask", False))
+        attention_mask = torch.ones_like(input_ids_tensor) if use_mask else None
+
+        chunk_embeds = _encode_text_encoder(
+            text_encoder=text_encoder,
+            input_ids=input_ids_tensor,
+            attention_mask=attention_mask,
+            clip_skip=clip_skip,
+        )
         weighted = chunk_embeds
 
-        if chunk_weights:
-            weight_values = [1.0] + chunk_weights + [1.0]
-            weight_tensor = torch.tensor(weight_values, device=device, dtype=chunk_embeds.dtype)
+        if weight_tensor is not None:
+            weight_tensor = weight_tensor.to(device=device, dtype=chunk_embeds.dtype)
             weighted = chunk_embeds * weight_tensor.unsqueeze(-1)
 
             if normalize_weights:
@@ -363,34 +488,49 @@ def _encode_tokens_comfyui_like(
     weights: list[float],
     device: torch.device,
     chunk_size: int,
+    clip_skip: int | None,
 ) -> torch.Tensor:
-    bos = tokenizer.bos_token_id
-    eos = tokenizer.eos_token_id
-    if bos is None or eos is None:
-        raise ValueError("Tokenizer is missing BOS/EOS token IDs.")
-
     if not tokens:
         tokens = []
         weights = []
 
+    max_length = tokenizer.model_max_length
     chunks = _chunk_tokens_and_weights(tokens, weights, chunk_size)
     weighted_chunks: list[torch.Tensor] = []
     empty_embeds_cache: dict[int, torch.Tensor] = {}
     for chunk_tokens, chunk_weights in chunks:
-        input_ids = [bos] + chunk_tokens + [eos]
-        input_ids_tensor = torch.tensor([input_ids], device=device)
-        chunk_embeds = text_encoder(input_ids_tensor)[0]
+        input_ids_tensor, weight_tensor = _build_padded_chunk_input(
+            tokenizer=tokenizer,
+            chunk_tokens=chunk_tokens,
+            chunk_weights=chunk_weights,
+            max_length=max_length,
+        )
+        input_ids_tensor = input_ids_tensor.to(device=device)
+
+        use_mask = bool(getattr(getattr(text_encoder, "config", None), "use_attention_mask", False))
+        attention_mask = torch.ones_like(input_ids_tensor) if use_mask else None
+
+        chunk_embeds = _encode_text_encoder(
+            text_encoder=text_encoder,
+            input_ids=input_ids_tensor,
+            attention_mask=attention_mask,
+            clip_skip=clip_skip,
+        )
         weighted = chunk_embeds
 
-        if chunk_weights:
-            weight_values = [1.0] + chunk_weights + [1.0]
-            weight_tensor = torch.tensor(weight_values, device=device, dtype=chunk_embeds.dtype)
-            seq_len = len(input_ids)
+        if weight_tensor is not None:
+            weight_tensor = weight_tensor.to(device=device, dtype=chunk_embeds.dtype)
+            seq_len = input_ids_tensor.shape[1]
             empty_embeds = empty_embeds_cache.get(seq_len)
             if empty_embeds is None:
-                empty_ids = [bos] + [eos] * (seq_len - 1)
-                empty_ids_tensor = torch.tensor([empty_ids], device=device)
-                empty_embeds = text_encoder(empty_ids_tensor)[0]
+                empty_ids_tensor = input_ids_tensor.clone()
+                empty_ids_tensor[:, 1:] = tokenizer.eos_token_id
+                empty_embeds = _encode_text_encoder(
+                    text_encoder=text_encoder,
+                    input_ids=empty_ids_tensor,
+                    attention_mask=attention_mask,
+                    clip_skip=clip_skip,
+                )
                 empty_embeds_cache[seq_len] = empty_embeds
             weighted = (chunk_embeds - empty_embeds) * weight_tensor.unsqueeze(-1) + empty_embeds
 

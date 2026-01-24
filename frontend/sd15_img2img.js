@@ -6,6 +6,53 @@ const gallery = createGalleryViewer({
 
 gallery.render();
 
+let activeJobToken = 0;
+let activeEventSource = null;
+
+function closeActiveEventSource() {
+    if (activeEventSource) {
+        activeEventSource.close();
+        activeEventSource = null;
+    }
+}
+
+function makeIdempotencyKey() {
+    if (typeof crypto?.randomUUID === "function") {
+        return crypto.randomUUID();
+    }
+    return `idemp_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
+async function uploadArtifact(blobOrFile, filename = "upload.png") {
+    const formData = new FormData();
+    formData.append("file", blobOrFile, filename);
+    const res = await fetch(`${API_BASE}/api/artifacts`, {
+        method: "POST",
+        body: formData,
+    });
+    if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Artifact upload failed (${res.status}): ${errorText}`);
+    }
+    return await res.json();
+}
+
+async function submitWorkflow(payload, idempotencyKey) {
+    const res = await fetch(`${API_BASE}/api/jobs`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify({ kind: "workflow", payload }),
+    });
+    if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Job submit failed (${res.status}): ${errorText}`);
+    }
+    return await res.json();
+}
+
 async function loadModels() {
     const select = document.getElementById("model_select");
     select.innerHTML = "";
@@ -43,6 +90,9 @@ loadModels();
 window.LoraPanel?.init({ apiBase: API_BASE, family: "sd15" });
 
 async function generateImg2Img() {
+    const token = ++activeJobToken;
+    closeActiveEventSource();
+
     const initialImageInput = document.getElementById("initial_image");
     const initialFile = initialImageInput.files[0];
 
@@ -67,29 +117,83 @@ async function generateImg2Img() {
     const clip_skip = Number(document.getElementById("clip_skip").value);
     const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
 
-    const formData = new FormData();
-    formData.append("initial_image", initialFile);
-    formData.append("prompt", prompt);
-    formData.append("negative_prompt", negative_prompt);
-    formData.append("steps", steps.toString());
-    formData.append("cfg", cfg.toString());
-    formData.append("scheduler", scheduler);
-    formData.append("seed", seed === null ? "" : seed.toString());
-    formData.append("width", width.toString());
-    formData.append("height", height.toString());
-    formData.append("strength", strength.toString());
-    formData.append("num_images", num_images.toString());
-    formData.append("model", model);
-    formData.append("clip_skip", clip_skip);
-    if (loraAdapters.length > 0) {
-        formData.append("lora_adapters", JSON.stringify(loraAdapters));
+    const idempotencyKey = makeIdempotencyKey();
+
+    try {
+        const uploaded = await uploadArtifact(initialFile, initialFile.name || "initial.png");
+
+        const taskInputs = {
+            initial_image: `@artifact:${uploaded.artifact_id}`,
+            prompt,
+            negative_prompt,
+            steps,
+            cfg,
+            scheduler,
+            seed,
+            width,
+            height,
+            strength,
+            num_images,
+            model,
+            clip_skip,
+        };
+        if (loraAdapters.length > 0) {
+            taskInputs.lora_adapters = loraAdapters;
+        }
+
+        const workflowPayload = {
+            tasks: [
+                {
+                    id: "img2img",
+                    type: "sd15.img2img",
+                    inputs: taskInputs,
+                },
+            ],
+            return: "@img2img.images",
+        };
+
+        const createdJob = await submitWorkflow(workflowPayload, idempotencyKey);
+        const jobId = createdJob?.id;
+        if (!jobId) {
+            throw new Error("Job submit did not return an id.");
+        }
+
+        const source = new EventSource(`${API_BASE}/api/jobs/${jobId}/events`);
+        activeEventSource = source;
+
+        source.onmessage = (event) => {
+            if (token !== activeJobToken) {
+                source.close();
+                return;
+            }
+
+            let job;
+            try {
+                job = JSON.parse(event.data);
+            } catch {
+                return;
+            }
+
+            const status = job?.status ?? "unknown";
+            if (status === "succeeded") {
+                const images = job?.result?.outputs;
+                gallery.setImages(Array.isArray(images) ? images : []);
+                source.close();
+            } else if (status === "failed" || status === "canceled") {
+                gallery.setImages([]);
+                source.close();
+            }
+        };
+
+        source.onerror = () => {
+            if (token !== activeJobToken) {
+                source.close();
+                return;
+            }
+            source.close();
+        };
+    } catch (error) {
+        console.warn("Failed to run img2img job:", error);
+        gallery.setImages([]);
     }
-
-    const res = await fetch(`${API_BASE}/generate-img2img`, {
-        method: "POST",
-        body: formData,
-    });
-
-    const data = await res.json();
-    gallery.setImages(Array.isArray(data.images) ? data.images : []);
 }

@@ -20,6 +20,7 @@ class Job(Base):
     __tablename__ = "jobs"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     kind: Mapped[str] = mapped_column(String(64), index=True)
     status: Mapped[str] = mapped_column(String(16), index=True)
 
@@ -39,4 +40,12 @@ Index(
     unique=True,
     sqlite_where=(Job.status == "running"),
     postgresql_where=(Job.status == "running"),
+)
+
+Index(
+    "uq_jobs_idempotency_key",
+    Job.idempotency_key,
+    unique=True,
+    sqlite_where=(Job.idempotency_key.is_not(None)),
+    postgresql_where=(Job.idempotency_key.is_not(None)),
 )

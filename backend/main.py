@@ -52,10 +52,13 @@ from backend.job_queue import (
     JobQueueConfig,
     cancel_job,
     create_job_queue,
+    IdempotencyConflictError,
     enqueue_job,
     get_job,
     list_jobs,
 )
+
+from backend.workflow import save_artifact_png
 
 app = FastAPI(title="SynthiaEngine API")
 logger = logging.getLogger(__name__)
@@ -71,7 +74,7 @@ app.add_middleware(
 
 app.mount("/outputs", StaticFiles(directory=OUTPUT_DIR), name="outputs")
 
-ALLOWED_JOB_KINDS = {"noop", "sdxl_text2img"}
+ALLOWED_JOB_KINDS = {"noop", "sdxl_text2img", "workflow"}
 
 ## BaseModel references
 class LoraAdapterRequest(BaseModel):
@@ -97,6 +100,7 @@ class GenerateRequest(BaseModel):
     hires_enabled: bool = False
     hires_scale: float = 1.0
     weighting_policy: str = "diffusers-like"
+    lora_scale: float | None = None
 
 
 class SdxlGenerateRequest(BaseModel):
@@ -198,10 +202,12 @@ class ModelAnalysisResponse(BaseModel):
 class JobCreateRequest(BaseModel):
     kind: str
     payload: dict[str, object] = Field(default_factory=dict)
+    idempotency_key: str | None = None
 
 
 class JobResponse(BaseModel):
     id: str
+    idempotency_key: str | None = None
     kind: str
     status: str
     payload: dict[str, object]
@@ -216,6 +222,7 @@ class JobResponse(BaseModel):
 def _serialize_job(job) -> JobResponse:
     return JobResponse(
         id=job.id,
+        idempotency_key=getattr(job, "idempotency_key", None),
         kind=job.kind,
         status=job.status,
         payload=dict(job.payload or {}),
@@ -293,12 +300,28 @@ async def health_check():
 
 
 @app.post("/api/jobs", response_model=JobResponse, status_code=201)
-async def submit_job(req: JobCreateRequest):
+async def submit_job(req: JobCreateRequest, response: Response, request: Request):
     if req.kind not in ALLOWED_JOB_KINDS:
         raise HTTPException(status_code=400, detail=f"Unsupported job kind: {req.kind}")
 
     sessionmaker = _get_job_sessionmaker()
-    job = enqueue_job(sessionmaker, kind=req.kind, payload=dict(req.payload))
+    header_key = request.headers.get("Idempotency-Key")
+    idempotency_key = req.idempotency_key or (header_key.strip() if header_key else None)
+    try:
+        job, created = enqueue_job(
+            sessionmaker,
+            kind=req.kind,
+            payload=dict(req.payload),
+            idempotency_key=idempotency_key,
+        )
+    except IdempotencyConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="Idempotency key already used with a different request.",
+        ) from exc
+
+    if idempotency_key and not created:
+        response.status_code = 200
     return _serialize_job(job)
 
 
@@ -339,6 +362,7 @@ async def stream_job_events(job_id: str):
 
     async def event_generator():
         last_status = None
+        last_updated_at = None
         while True:
             try:
                 job = get_job(sessionmaker, job_id)
@@ -350,9 +374,11 @@ async def stream_job_events(job_id: str):
             job_response = _serialize_job(job)
             payload = job_response.model_dump()
             status = payload.get("status")
-            if status != last_status:
+            updated_at = payload.get("updated_at")
+            if status != last_status or updated_at != last_updated_at:
                 yield f"data: {json.dumps(payload)}\n\n"
                 last_status = status
+                last_updated_at = updated_at
 
             if status in {"succeeded", "failed", "canceled"}:
                 break
@@ -364,6 +390,27 @@ async def stream_job_events(job_id: str):
         "Connection": "keep-alive",
     }
     return StreamingResponse(event_generator(), media_type="text/event-stream", headers=headers)
+
+
+class ArtifactResponse(BaseModel):
+    artifact_id: str
+    url: str
+    path: str
+
+
+@app.post("/api/artifacts", response_model=ArtifactResponse, status_code=201)
+async def upload_artifact(file: UploadFile = File(...)):
+    file_bytes = await file.read()
+    try:
+        image = Image.open(BytesIO(file_bytes))
+        image.load()
+        if image.mode == "P":
+            image = image.convert("RGBA")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid image file.") from exc
+
+    artifact = save_artifact_png(image, prefix="a")
+    return ArtifactResponse(**artifact)
 
 
 @app.get("/models", response_model=list[ModelRegistryEntry])
@@ -590,6 +637,7 @@ async def generate(req: GenerateRequest, request: Request):
         hires_enabled=req.hires_enabled,
         hires_scale=req.hires_scale,
         weighting_policy=req.weighting_policy,
+        lora_scale=req.lora_scale,
     )
 
     return {
