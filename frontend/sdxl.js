@@ -69,7 +69,10 @@ async function submitJob(kind, payload) {
             "Content-Type": "application/json",
             "Idempotency-Key": idempotencyKey,
         },
-        body: JSON.stringify({ kind, payload }),
+        body: JSON.stringify({
+            kind: "workflow",
+            payload: { tasks: [{ id: "t1", type: kind, inputs: payload }], return: "@t1.images" },
+        }),
     });
 
     if (!res.ok) {
@@ -119,7 +122,7 @@ async function generate() {
 
     try {
         setJobUiState(true, "Submitting job...");
-        const createdJob = await submitJob("sdxl_text2img", payload);
+        const createdJob = await submitJob("sdxl.text2img", payload);
         const jobId = createdJob?.id;
         if (!jobId) {
             throw new Error("Job submit did not return an id.");
@@ -150,7 +153,7 @@ async function generate() {
             } else if (status === "running") {
                 setJobUiState(true, `Running (job ${jobId})`);
             } else if (status === "succeeded") {
-                const images = job?.result?.images;
+                const images = job?.result?.outputs;
                 gallery.setImages(Array.isArray(images) ? images : []);
                 setJobUiState(false, `Done (job ${jobId})`);
                 source.close();

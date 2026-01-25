@@ -6,6 +6,53 @@ const gallery = createGalleryViewer({
 
 gallery.render();
 
+let activeJobToken = 0;
+let activeEventSource = null;
+
+function closeActiveEventSource() {
+    if (activeEventSource) {
+        activeEventSource.close();
+        activeEventSource = null;
+    }
+}
+
+function makeIdempotencyKey() {
+    if (typeof crypto?.randomUUID === "function") {
+        return crypto.randomUUID();
+    }
+    return `idemp_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
+async function uploadArtifact(blobOrFile, filename = "upload.png") {
+    const formData = new FormData();
+    formData.append("file", blobOrFile, filename);
+    const res = await fetch(`${API_BASE}/api/artifacts`, {
+        method: "POST",
+        body: formData,
+    });
+    if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Artifact upload failed (${res.status}): ${errorText}`);
+    }
+    return await res.json();
+}
+
+async function submitWorkflow(payload, idempotencyKey) {
+    const res = await fetch(`${API_BASE}/api/jobs`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify({ kind: "workflow", payload }),
+    });
+    if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Job submit failed (${res.status}): ${errorText}`);
+    }
+    return await res.json();
+}
+
 const baseCanvas = document.getElementById("base_canvas");
 const maskCanvas = document.getElementById("mask_canvas");
 const canvasStack = document.querySelector(".canvas-stack");
@@ -330,6 +377,9 @@ async function generateBlurMask() {
 }
 
 async function generateSdxlInpaint() {
+    const token = ++activeJobToken;
+    closeActiveEventSource();
+
     if (!baseImageFile) {
         alert("Please upload an initial image.");
         return;
@@ -354,28 +404,81 @@ async function generateSdxlInpaint() {
     const paddingMaskCrop = Number(document.getElementById("padding_mask_crop").value);
     const clip_skip = Number(document.getElementById("clip_skip").value);
 
-    const formData = new FormData();
-    formData.append("initial_image", baseImageFile);
-    formData.append("mask_image", activeMaskBlob, "mask.png");
-    formData.append("prompt", prompt);
-    formData.append("negative_prompt", negative_prompt);
-    formData.append("steps", steps.toString());
-    formData.append("guidance_scale", guidanceScale.toString());
-    formData.append("scheduler", scheduler);
-    formData.append("seed", seed === null ? "" : seed.toString());
-    formData.append("num_images", num_images.toString());
-    formData.append("model", model);
-    formData.append("strength", strength);
-    formData.append("padding_mask_crop", paddingMaskCrop);
-    formData.append("clip_skip", clip_skip);
+    try {
+        const [uploadedBase, uploadedMask] = await Promise.all([
+            uploadArtifact(baseImageFile, baseImageFile.name || "initial.png"),
+            uploadArtifact(activeMaskBlob, "mask.png"),
+        ]);
 
-    const res = await fetch(`${API_BASE}/api/sdxl/inpaint`, {
-        method: "POST",
-        body: formData,
-    });
+        const workflowPayload = {
+            tasks: [
+                {
+                    id: "t1",
+                    type: "sdxl.inpaint",
+                    inputs: {
+                        initial_image: `@artifact:${uploadedBase.artifact_id}`,
+                        mask_image: `@artifact:${uploadedMask.artifact_id}`,
+                        prompt,
+                        negative_prompt,
+                        steps,
+                        guidance_scale: guidanceScale,
+                        scheduler,
+                        seed,
+                        num_images,
+                        model,
+                        strength,
+                        padding_mask_crop: paddingMaskCrop,
+                        clip_skip,
+                    },
+                },
+            ],
+            return: "@t1.images",
+        };
 
-    const data = await res.json();
-    gallery.setImages(Array.isArray(data.images) ? data.images : []);
+        const createdJob = await submitWorkflow(workflowPayload, makeIdempotencyKey());
+        const jobId = createdJob?.id;
+        if (!jobId) {
+            throw new Error("Job submit did not return an id.");
+        }
+
+        const source = new EventSource(`${API_BASE}/api/jobs/${jobId}/events`);
+        activeEventSource = source;
+
+        source.onmessage = (event) => {
+            if (token !== activeJobToken) {
+                source.close();
+                return;
+            }
+
+            let job;
+            try {
+                job = JSON.parse(event.data);
+            } catch {
+                return;
+            }
+
+            const status = job?.status ?? "unknown";
+            if (status === "succeeded") {
+                const images = job?.result?.outputs;
+                gallery.setImages(Array.isArray(images) ? images : []);
+                source.close();
+            } else if (status === "failed" || status === "canceled") {
+                gallery.setImages([]);
+                source.close();
+            }
+        };
+
+        source.onerror = () => {
+            if (token !== activeJobToken) {
+                source.close();
+                return;
+            }
+            source.close();
+        };
+    } catch (error) {
+        console.warn("Failed to run SDXL inpaint job:", error);
+        gallery.setImages([]);
+    }
 }
 
 window.generateSdxlInpaint = generateSdxlInpaint;

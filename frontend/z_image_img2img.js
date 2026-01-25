@@ -6,6 +6,53 @@ const gallery = createGalleryViewer({
 
 gallery.render();
 
+let activeJobToken = 0;
+let activeEventSource = null;
+
+function closeActiveEventSource() {
+    if (activeEventSource) {
+        activeEventSource.close();
+        activeEventSource = null;
+    }
+}
+
+function makeIdempotencyKey() {
+    if (typeof crypto?.randomUUID === "function") {
+        return crypto.randomUUID();
+    }
+    return `idemp_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
+async function uploadArtifact(blobOrFile, filename = "upload.png") {
+    const formData = new FormData();
+    formData.append("file", blobOrFile, filename);
+    const res = await fetch(`${API_BASE}/api/artifacts`, {
+        method: "POST",
+        body: formData,
+    });
+    if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Artifact upload failed (${res.status}): ${errorText}`);
+    }
+    return await res.json();
+}
+
+async function submitWorkflow(payload, idempotencyKey) {
+    const res = await fetch(`${API_BASE}/api/jobs`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify({ kind: "workflow", payload }),
+    });
+    if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Job submit failed (${res.status}): ${errorText}`);
+    }
+    return await res.json();
+}
+
 async function loadModels() {
     const select = document.getElementById("model_select");
     select.innerHTML = "";
@@ -41,6 +88,9 @@ async function loadModels() {
 loadModels();
 
 async function generateZImageImg2Img() {
+    const token = ++activeJobToken;
+    closeActiveEventSource();
+
     const prompt = document.getElementById("prompt").value;
     const steps = Number(document.getElementById("steps").value);
     const guidance_scale = Number(document.getElementById("cfg").value);
@@ -61,25 +111,74 @@ async function generateZImageImg2Img() {
         return;
     }
 
-    const formData = new FormData();
-    formData.append("initial_image", initialImageInput.files[0]);
-    formData.append("prompt", prompt);
-    formData.append("negative_prompt", negative_prompt);
-    formData.append("steps", String(steps));
-    formData.append("guidance_scale", String(guidance_scale));
-    formData.append("scheduler", scheduler);
-    formData.append("width", String(width));
-    formData.append("height", String(height));
-    formData.append("seed", seed === null ? "" : String(seed));
-    formData.append("num_images", String(num_images));
-    formData.append("model", model);
-    formData.append("strength", String(strength));
+    try {
+        const initialFile = initialImageInput.files[0];
+        const uploaded = await uploadArtifact(initialFile, initialFile.name || "initial.png");
 
-    const res = await fetch(`${API_BASE}/api/z-image/img2img`, {
-        method: "POST",
-        body: formData,
-    });
+        const workflowPayload = {
+            tasks: [
+                {
+                    id: "t1",
+                    type: "z-image.img2img",
+                    inputs: {
+                        initial_image: `@artifact:${uploaded.artifact_id}`,
+                        prompt,
+                        negative_prompt,
+                        steps,
+                        guidance_scale,
+                        scheduler,
+                        width,
+                        height,
+                        seed,
+                        num_images,
+                        model,
+                        strength,
+                    },
+                },
+            ],
+            return: "@t1.images",
+        };
 
-    const data = await res.json();
-    gallery.setImages(Array.isArray(data.images) ? data.images : []);
+        const createdJob = await submitWorkflow(workflowPayload, makeIdempotencyKey());
+        const jobId = createdJob?.id;
+        if (!jobId) {
+            throw new Error("Job submit did not return an id.");
+        }
+
+        const source = new EventSource(`${API_BASE}/api/jobs/${jobId}/events`);
+        activeEventSource = source;
+
+        source.onmessage = (event) => {
+            if (token !== activeJobToken) {
+                source.close();
+                return;
+            }
+            let job;
+            try {
+                job = JSON.parse(event.data);
+            } catch {
+                return;
+            }
+            const status = job?.status ?? "unknown";
+            if (status === "succeeded") {
+                const images = job?.result?.outputs;
+                gallery.setImages(Array.isArray(images) ? images : []);
+                source.close();
+            } else if (status === "failed" || status === "canceled") {
+                gallery.setImages([]);
+                source.close();
+            }
+        };
+
+        source.onerror = () => {
+            if (token !== activeJobToken) {
+                source.close();
+                return;
+            }
+            source.close();
+        };
+    } catch (error) {
+        console.warn("Failed to run Z-Image img2img job:", error);
+        gallery.setImages([]);
+    }
 }

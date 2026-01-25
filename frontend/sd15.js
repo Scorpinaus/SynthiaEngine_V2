@@ -16,6 +16,13 @@ function closeActiveEventSource() {
     }
 }
 
+const generateButton = document.getElementById("generate-button");
+if (generateButton) {
+    generateButton.addEventListener("click", () => {
+        generate();
+    });
+}
+
 function makeIdempotencyKey() {
     if (typeof crypto?.randomUUID === "function") {
         return crypto.randomUUID();

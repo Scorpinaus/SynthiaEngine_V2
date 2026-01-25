@@ -1,3 +1,4 @@
+## Imports
 import logging
 import re
 import shutil
@@ -7,12 +8,13 @@ from io import BytesIO
 import json
 import asyncio
 from pathlib import Path
+from typing import Any, Literal
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from PIL import Image
+from PIL import Image, ImageFilter
 from pydantic import BaseModel, Field
 
 from backend.config import DEFAULTS, OUTPUT_DIR
@@ -28,29 +30,11 @@ from backend.lora_registry import (
     LoraRegistryEntry,
     add_lora,
 )
-from backend.sd15_pipeline import (
-    create_blur_mask,
-    generate_images,
-    generate_images_img2img,
-    generate_images_inpaint,
-    generate_images_controlnet,
-)
-from backend.flux_pipeline import run_flux_img2img, run_flux_inpaint, run_flux_text2img
-from backend.qwen_image_pipeline import (
-    run_qwen_image_img2img,
-    run_qwen_image_inpaint,
-    run_qwen_image_text2img,
-)
-from backend.sdxl_pipeline import (
-    run_sdxl_img2img,
-    run_sdxl_inpaint,
-    run_sdxl_text2img,
-)
-from backend.z_image_pipeline import run_z_image_img2img, run_z_image_text2img
 from backend.job_queue import (
     JobNotFoundError,
     JobQueueConfig,
     cancel_job,
+    request_cancel_job,
     create_job_queue,
     IdempotencyConflictError,
     enqueue_job,
@@ -58,7 +42,7 @@ from backend.job_queue import (
     list_jobs,
 )
 
-from backend.workflow import save_artifact_png
+from backend.workflow import TASK_REGISTRY, WorkflowRequest, WorkflowTask, save_artifact_png
 
 app = FastAPI(title="SynthiaEngine API")
 logger = logging.getLogger(__name__)
@@ -74,91 +58,9 @@ app.add_middleware(
 
 app.mount("/outputs", StaticFiles(directory=OUTPUT_DIR), name="outputs")
 
-ALLOWED_JOB_KINDS = {"noop", "sdxl_text2img", "workflow"}
+ALLOWED_JOB_KINDS = {"workflow"}
 
 ## BaseModel references
-class LoraAdapterRequest(BaseModel):
-    lora_id: int
-    strength: float = 1.0
-
-
-class GenerateRequest(BaseModel):
-    prompt: str
-    negative_prompt: str | None = DEFAULTS["negative_prompt"]
-    steps: int = DEFAULTS["steps"]
-    cfg: float = DEFAULTS["cfg"]
-    width: int = DEFAULTS["width"]
-    height: int = DEFAULTS["height"]
-    seed: int | None = None
-    scheduler: str = "euler"
-    num_images: int = 1
-    model: str | None = None
-    clip_skip: int = 1
-    controlnet_active: bool = False
-    controlnet_model: str = DEFAULTS["controlnet_model"]
-    lora_adapters: list[LoraAdapterRequest] = []
-    hires_enabled: bool = False
-    hires_scale: float = 1.0
-    weighting_policy: str = "diffusers-like"
-    lora_scale: float | None = None
-
-
-class SdxlGenerateRequest(BaseModel):
-    prompt: str
-    negative_prompt: str | None = DEFAULTS["negative_prompt"]
-    steps: int = DEFAULTS["steps"]
-    guidance_scale: float = DEFAULTS["cfg"]
-    width: int = DEFAULTS["width"]
-    height: int = DEFAULTS["height"]
-    seed: int | None = None
-    scheduler: str = "euler"
-    num_images: int = 1
-    model: str | None = None
-    clip_skip: int = 1
-    hires_enabled: bool = False
-    hires_scale: float = 1.0
-
-
-class ZImageGenerateRequest(BaseModel):
-    prompt: str
-    negative_prompt: str | None = DEFAULTS["negative_prompt"]
-    steps: int = DEFAULTS["steps"]
-    guidance_scale: float = DEFAULTS["cfg"]
-    width: int = 1024
-    height: int = 1024
-    seed: int | None = None
-    scheduler: str = "euler"
-    num_images: int = 1
-    model: str | None = None
-
-
-class FluxGenerateRequest(BaseModel):
-    prompt: str
-    negative_prompt: str | None = DEFAULTS["negative_prompt"]
-    steps: int = DEFAULTS["steps"]
-    guidance_scale: float = DEFAULTS["cfg"]
-    width: int = 1024
-    height: int = 1024
-    seed: int | None = None
-    scheduler: str = "euler"
-    num_images: int = 1
-    model: str | None = None
-
-
-class QwenImageGenerateRequest(BaseModel):
-    prompt: str
-    negative_prompt: str | None = DEFAULTS["negative_prompt"]
-    steps: int = 30
-    true_cfg_scale: float = 4.0
-    guidance_scale: float = DEFAULTS["cfg"]
-    width: int = 1024
-    height: int = 1024
-    seed: int | None = None
-    scheduler: str = "euler"
-    num_images: int = 1
-    model: str | None = None
-
-
 class ModelCreateRequest(BaseModel):
     name: str
     family: str
@@ -199,15 +101,19 @@ class ModelAnalysisResponse(BaseModel):
     rows: list[ModelLayerRow]
 
 
-class JobCreateRequest(BaseModel):
-    kind: str
-    payload: dict[str, object] = Field(default_factory=dict)
+class WorkflowJobCreateRequest(BaseModel):
+    kind: Literal["workflow"]
+    payload: WorkflowRequest
     idempotency_key: str | None = None
+
+
+JobCreateRequest = WorkflowJobCreateRequest
 
 
 class JobResponse(BaseModel):
     id: str
     idempotency_key: str | None = None
+    cancel_requested: bool | None = None
     kind: str
     status: str
     payload: dict[str, object]
@@ -219,10 +125,20 @@ class JobResponse(BaseModel):
     finished_at: str | None = None
 
 
+class WorkflowTaskTypesResponse(BaseModel):
+    task_types: list[str]
+
+
+class WorkflowSchemaResponse(BaseModel):
+    workflow_request_schema: dict[str, Any]
+    workflow_task_schema: dict[str, Any]
+
+
 def _serialize_job(job) -> JobResponse:
     return JobResponse(
         id=job.id,
         idempotency_key=getattr(job, "idempotency_key", None),
+        cancel_requested=getattr(job, "cancel_requested", None),
         kind=job.kind,
         status=job.status,
         payload=dict(job.payload or {}),
@@ -273,27 +189,6 @@ def _extract_png_metadata(path: Path) -> dict[str, str]:
         return {}
 
 
-def _parse_lora_adapters(raw_value: str | None) -> list[LoraAdapterRequest]:
-    if not raw_value:
-        return []
-
-    try:
-        payload = json.loads(raw_value)
-    except json.JSONDecodeError as exc:
-        raise HTTPException(status_code=400, detail="Invalid LoRA adapter payload.") from exc
-
-    if not isinstance(payload, list):
-        raise HTTPException(status_code=400, detail="LoRA adapter payload must be a list.")
-
-    adapters: list[LoraAdapterRequest] = []
-    for entry in payload:
-        if not isinstance(entry, dict):
-            raise HTTPException(status_code=400, detail="LoRA adapter entry must be an object.")
-        adapters.append(LoraAdapterRequest(**entry))
-
-    return adapters
-
-
 @app.get("/health")
 async def health_check():
     return {"status": "ok"}
@@ -307,11 +202,12 @@ async def submit_job(req: JobCreateRequest, response: Response, request: Request
     sessionmaker = _get_job_sessionmaker()
     header_key = request.headers.get("Idempotency-Key")
     idempotency_key = req.idempotency_key or (header_key.strip() if header_key else None)
+    payload = req.payload.model_dump(by_alias=True)
     try:
         job, created = enqueue_job(
             sessionmaker,
             kind=req.kind,
-            payload=dict(req.payload),
+            payload=payload,
             idempotency_key=idempotency_key,
         )
     except IdempotencyConflictError as exc:
@@ -346,7 +242,7 @@ async def fetch_jobs(limit: int = 50):
 async def cancel_queued_job(job_id: str):
     sessionmaker = _get_job_sessionmaker()
     try:
-        job = cancel_job(sessionmaker, job_id)
+        job = request_cancel_job(sessionmaker, job_id)
     except JobNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Job not found.") from exc
     return _serialize_job(job)
@@ -390,6 +286,19 @@ async def stream_job_events(job_id: str):
         "Connection": "keep-alive",
     }
     return StreamingResponse(event_generator(), media_type="text/event-stream", headers=headers)
+
+
+@app.get("/api/workflow/task-types", response_model=WorkflowTaskTypesResponse)
+async def list_workflow_task_types():
+    return WorkflowTaskTypesResponse(task_types=sorted(TASK_REGISTRY.keys()))
+
+
+@app.get("/api/workflow/schema", response_model=WorkflowSchemaResponse)
+async def get_workflow_schema():
+    return WorkflowSchemaResponse(
+        workflow_request_schema=WorkflowRequest.model_json_schema(by_alias=True),
+        workflow_task_schema=WorkflowTask.model_json_schema(by_alias=True),
+    )
 
 
 class ArtifactResponse(BaseModel):
@@ -592,555 +501,14 @@ async def list_history():
 
     records.sort(key=lambda item: item.get("timestamp", 0), reverse=True)
     return records
-
-def remap_img2img_strength(strength:float, min_strength = 0.0, gamma: float=0.5) -> float:
-    clamped = max(0.0, min(1.0, strength))
-    if min_strength <= 0.0:
-        # remapped = clamped
-        remapped = clamped ** gamma
-    else:
-        normalized = max(0.0, min(1.0, (clamped - min_strength) / (1.0 - min_strength)))
-        # remapped = min_strength + normalized * (1.0 - min_strength)
-        remapped = min_strength + (normalized**gamma) * (1.0 - min_strength)        
-    return max(0.0, min(1.0, remapped))
-
-## SD1.5
-
-@app.post("/generate")
-async def generate(req: GenerateRequest, request: Request):
-    # logger.info("Request JSON: %s", await request.json())
-    # logger.info("Parsed seed: %s", req.seed)
-    if req.controlnet_active:
-        raise HTTPException(
-            status_code=400,
-            detail="ControlNet active requires /api/controlnet/text2img with an image.",
-        )
-    if req.hires_enabled and req.hires_scale < 1.0:
-        raise HTTPException(
-            status_code=400,
-            detail="Hi-res scale must be at least 1.0.",
-        )
-    
-    filenames = generate_images(
-        prompt=req.prompt,
-        negative_prompt=req.negative_prompt,
-        steps=req.steps,
-        cfg=req.cfg,
-        width=req.width,
-        height=req.height,
-        seed=req.seed,
-        scheduler=req.scheduler,
-        model=req.model,
-        num_images = req.num_images,
-        clip_skip = req.clip_skip,
-        lora_adapters=req.lora_adapters,
-        hires_enabled=req.hires_enabled,
-        hires_scale=req.hires_scale,
-        weighting_policy=req.weighting_policy,
-        lora_scale=req.lora_scale,
-    )
-
-    return {
-        "images": [f"/outputs/{name}" for name in filenames]
-    }
-
-
-@app.post("/api/controlnet/text2img")
-async def generate_controlnet_text2img(
-    control_image: UploadFile = File(...),
-    prompt: str = Form(...),
-    negative_prompt: str = Form(DEFAULTS["negative_prompt"]),
-    steps: int = Form(DEFAULTS["steps"]),
-    cfg: float = Form(DEFAULTS["cfg"]),
-    width: int = Form(DEFAULTS["width"]),
-    height: int = Form(DEFAULTS["height"]),
-    seed: int | None = Form(None),
-    scheduler: str = Form("euler"),
-    num_images: int = Form(1),
-    model: str | None = Form(None),
-    clip_skip: int = Form(1),
-    controlnet_model: str = Form(DEFAULTS["controlnet_model"]),
-):
-    image_bytes = await control_image.read()
-    try:
-        controlnet_image = Image.open(BytesIO(image_bytes)).convert("RGB")
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail="Invalid control image file.") from exc
-
-    controlnet_image = controlnet_image.resize((width, height))
-    filenames = generate_images_controlnet(
-        prompt=prompt,
-        negative_prompt=negative_prompt,
-        steps=steps,
-        cfg=cfg,
-        width=width,
-        height=height,
-        seed=seed,
-        scheduler=scheduler,
-        model=model,
-        num_images=num_images,
-        clip_skip=clip_skip,
-        controlnet_model=controlnet_model,
-        control_image=controlnet_image,
-    )
-
-    return {
-        "images": [f"/outputs/{name}" for name in filenames]
-    }
-    
-@app.post("/generate-img2img")
-async def generate_img2img(
-    initial_image: UploadFile = File(...),
-    strength: float = Form(0.75),
-    prompt: str = Form(...),
-    negative_prompt: str = Form(DEFAULTS["negative_prompt"]),
-    steps: int = Form(DEFAULTS["steps"]),
-    cfg: float = Form(DEFAULTS["cfg"]),
-    width: int = Form(DEFAULTS["width"]),
-    height: int = Form(DEFAULTS["height"]),
-    seed: int | None = Form(None),
-    scheduler: str = Form("euler"),
-    num_images: int = Form(1),
-    model: str | None = Form(None),
-    clip_skip: int = Form(1),
-    lora_adapters: str | None = Form(None),
-):
-    if not 0 <= strength <= 1:
-        raise HTTPException(status_code=400, detail="Strength must be between 0 and 1.")
-
-    image_bytes = await initial_image.read()
-    try:
-        init_image = Image.open(BytesIO(image_bytes)).convert("RGB")
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail="Invalid image file.") from exc
-
-    remapped_strength = remap_img2img_strength(strength)
-    init_image = init_image.resize((width, height))
-    parsed_lora_adapters = _parse_lora_adapters(lora_adapters)
-
-    filenames = generate_images_img2img(
-        initial_image=init_image,
-        strength=remapped_strength,
-        prompt=prompt,
-        negative_prompt=negative_prompt,
-        steps=steps,
-        cfg=cfg,
-        width=width,
-        height=height,
-        seed=seed,
-        scheduler=scheduler,
-        model=model,
-        num_images=num_images,
-        clip_skip=clip_skip,
-        lora_adapters=parsed_lora_adapters,
-    )
-
-    return {
-        "images": [f"/outputs/{name}" for name in filenames]
-    }
-
-
-@app.post("/generate-inpaint")
-async def generate_inpaint(
-    initial_image: UploadFile = File(...),
-    mask_image: UploadFile = File(...),
-    prompt: str = Form(...),
-    negative_prompt: str = Form(DEFAULTS["negative_prompt"]),
-    steps: int = Form(DEFAULTS["steps"]),
-    cfg: float = Form(DEFAULTS["cfg"]),
-    seed: int | None = Form(None),
-    scheduler: str = Form("euler"),
-    num_images: int = Form(1),
-    model: str | None = Form(None),
-    strength: float = Form(0.5),
-    padding_mask_crop: int = Form(32),
-    clip_skip: int = Form(1)    
-):
-    image_bytes = await initial_image.read()
-    mask_bytes = await mask_image.read()
-    try:
-        init_image = Image.open(BytesIO(image_bytes)).convert("RGB")
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail="Invalid initial image file.") from exc
-
-    try:
-        mask = Image.open(BytesIO(mask_bytes)).convert("L")
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail="Invalid mask image file.") from exc
-
-    if mask.size != init_image.size:
-        mask = mask.resize(init_image.size, resample=Image.NEAREST)
-    remapped_strength = remap_img2img_strength(strength)
-
-    filenames = generate_images_inpaint(
-        initial_image=init_image,
-        mask_image=mask,
-        prompt=prompt,
-        negative_prompt=negative_prompt,
-        steps=steps,
-        cfg=cfg,
-        seed=seed,
-        scheduler=scheduler,
-        model=model,
-        num_images=num_images,
-        strength=remapped_strength,
-        padding_mask_crop = padding_mask_crop,
-        clip_skip=clip_skip
-    )
-
-    return {
-        "images": [f"/outputs/{name}" for name in filenames]
-    }
-
-## SDXL endpoints
-
-@app.post("/api/sdxl/text2img")
-async def generate_sdxl_text2img(req: SdxlGenerateRequest, request: Request):
-    # logger.info("SDXL request JSON: %s", await request.json())
-    # logger.info("Parsed SDXL seed: %s", req.seed)
-    if req.hires_enabled and req.hires_scale < 1.0:
-        raise HTTPException(
-            status_code=400,
-            detail="Hi-res scale must be at least 1.0.",
-        )
-
-    return run_sdxl_text2img(req.model_dump())
-
-@app.post("/api/sdxl/img2img")
-async def generate_sdxl_img2img(
-    initial_image: UploadFile = File(...),
-    strength: float = Form(0.75),
-    prompt: str = Form(...),
-    negative_prompt: str = Form(DEFAULTS["negative_prompt"]),
-    steps: int = Form(DEFAULTS["steps"]),
-    guidance_scale: float = Form(DEFAULTS["cfg"]),
-    width: int = Form(1024),
-    height: int = Form(1024),
-    seed: int | None = Form(None),
-    scheduler: str = Form("euler"),
-    num_images: int = Form(1),
-    model: str | None = Form(None),
-    clip_skip: int = Form(1),
-):
-    if not 0 <= strength <= 1:
-        raise HTTPException(status_code=400, detail="Strength must be between 0 and 1.")
-
-    image_bytes = await initial_image.read()
-    try:
-        init_image = Image.open(BytesIO(image_bytes)).convert("RGB")
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail="Invalid image file.") from exc
-
-    init_image = init_image.resize((width, height))
-    remapped_strength = remap_img2img_strength(strength)
-    return run_sdxl_img2img(
-        initial_image=init_image,
-        strength=remapped_strength,
-        prompt=prompt,
-        negative_prompt=negative_prompt,
-        steps=steps,
-        guidance_scale=guidance_scale,
-        width=width,
-        height=height,
-        seed=seed,
-        scheduler=scheduler,
-        model=model,
-        num_images=num_images,
-        clip_skip=clip_skip,
-    )
-
-
-@app.post("/api/sdxl/inpaint")
-async def generate_sdxl_inpaint(
-    initial_image: UploadFile = File(...),
-    mask_image: UploadFile = File(...),
-    strength: float = Form(0.5),
-    prompt: str = Form(...),
-    negative_prompt: str = Form(DEFAULTS["negative_prompt"]),
-    steps: int = Form(DEFAULTS["steps"]),
-    guidance_scale: float = Form(DEFAULTS["cfg"]),
-    seed: int | None = Form(None),
-    scheduler: str = Form("euler"),
-    num_images: int = Form(1),
-    model: str | None = Form(None),
-    padding_mask_crop: int = Form(32),
-    clip_skip: int = Form(1),
-):
-    if not 0 <= strength <= 1:
-        raise HTTPException(status_code=400, detail="Strength must be between 0 and 1.")
-
-    image_bytes = await initial_image.read()
-    mask_bytes = await mask_image.read()
-    try:
-        init_image = Image.open(BytesIO(image_bytes)).convert("RGB")
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail="Invalid initial image file.") from exc
-
-    try:
-        mask = Image.open(BytesIO(mask_bytes)).convert("L")
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail="Invalid mask image file.") from exc
-
-
-    remapped_strength = remap_img2img_strength(strength)
-    if mask.size != init_image.size:
-        mask = mask.resize(init_image.size, resample=Image.NEAREST)
-    return run_sdxl_inpaint(
-        initial_image=init_image,
-        mask_image=mask,
-        strength=remapped_strength,
-        prompt=prompt,
-        negative_prompt=negative_prompt,
-        steps=steps,
-        guidance_scale=guidance_scale,
-        seed=seed,
-        scheduler=scheduler,
-        model=model,
-        num_images=num_images,
-        padding_mask_crop=padding_mask_crop,
-        clip_skip=clip_skip,
-    )
-    
-## Z-Image Endpoints
-@app.post("/api/z-image/text2img")
-async def generate_z_image_text2img(req: ZImageGenerateRequest, request: Request):
-    # logger.info("Z-Image request JSON: %s", await request.json())
-    # logger.info("Parsed Z-Image seed: %s", req.seed)
-    return run_z_image_text2img(req.model_dump())
-
-
-@app.post("/api/z-image/img2img")
-async def generate_z_image_img2img(
-    initial_image: UploadFile = File(...),
-    strength: float = Form(0.75),
-    prompt: str = Form(...),
-    negative_prompt: str = Form(DEFAULTS["negative_prompt"]),
-    steps: int = Form(DEFAULTS["steps"]),
-    guidance_scale: float = Form(DEFAULTS["cfg"]),
-    width: int = Form(1024),
-    height: int = Form(1024),
-    seed: int | None = Form(None),
-    scheduler: str = Form("euler"),
-    num_images: int = Form(1),
-    model: str | None = Form(None),
-):
-    if not 0 <= strength <= 1:
-        raise HTTPException(status_code=400, detail="Strength must be between 0 and 1.")
-
-    image_bytes = await initial_image.read()
-    try:
-        init_image = Image.open(BytesIO(image_bytes)).convert("RGB")
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail="Invalid image file.") from exc
-    remapped_strength = remap_img2img_strength(strength)
-    init_image = init_image.resize((width, height))
-    return run_z_image_img2img(
-        initial_image=init_image,
-        strength=remapped_strength,
-        prompt=prompt,
-        negative_prompt=negative_prompt,
-        steps=steps,
-        guidance_scale=guidance_scale,
-        width=width,
-        height=height,
-        seed=seed,
-        scheduler=scheduler,
-        model=model,
-        num_images=num_images,
-    )
-
-## Qwen-Image Endpoints
-@app.post("/api/qwen-image/text2img")
-async def generate_qwen_image_text2img(req: QwenImageGenerateRequest, request: Request):
-    return run_qwen_image_text2img(req.model_dump())
-
-
-@app.post("/api/qwen-image/img2img")
-async def generate_qwen_image_img2img(
-    initial_image: UploadFile = File(...),
-    strength: float = Form(0.75),
-    prompt: str = Form(...),
-    negative_prompt: str = Form(DEFAULTS["negative_prompt"]),
-    steps: int = Form(30),
-    true_cfg_scale: float = Form(4.0),
-    guidance_scale: float = Form(DEFAULTS["cfg"]),
-    width: int = Form(1024),
-    height: int = Form(1024),
-    seed: int | None = Form(None),
-    scheduler: str = Form("euler"),
-    num_images: int = Form(1),
-    model: str | None = Form(None),
-):
-    if not 0 <= strength <= 1:
-        raise HTTPException(status_code=400, detail="Strength must be between 0 and 1.")
-
-    image_bytes = await initial_image.read()
-    try:
-        init_image = Image.open(BytesIO(image_bytes)).convert("RGB")
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail="Invalid image file.") from exc
-
-    init_image = init_image.resize((width, height))
-    remapped_strength = remap_img2img_strength(strength)
-    return run_qwen_image_img2img(
-        initial_image=init_image,
-        strength=remapped_strength,
-        prompt=prompt,
-        negative_prompt=negative_prompt,
-        steps=steps,
-        true_cfg_scale=true_cfg_scale,
-        guidance_scale=guidance_scale,
-        width=width,
-        height=height,
-        seed=seed,
-        scheduler=scheduler,
-        model=model,
-        num_images=num_images,
-    )
-
-
-@app.post("/api/qwen-image/inpaint")
-async def generate_qwen_image_inpaint(
-    initial_image: UploadFile = File(...),
-    mask_image: UploadFile = File(...),
-    strength: float = Form(0.5),
-    prompt: str = Form(...),
-    negative_prompt: str = Form(DEFAULTS["negative_prompt"]),
-    steps: int = Form(30),
-    true_cfg_scale: float = Form(4.0),
-    guidance_scale: float = Form(DEFAULTS["cfg"]),
-    seed: int | None = Form(None),
-    scheduler: str = Form("euler"),
-    num_images: int = Form(1),
-    model: str | None = Form(None),
-):
-    if not 0 <= strength <= 1:
-        raise HTTPException(status_code=400, detail="Strength must be between 0 and 1.")
-
-    image_bytes = await initial_image.read()
-    mask_bytes = await mask_image.read()
-    try:
-        init_image = Image.open(BytesIO(image_bytes)).convert("RGB")
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail="Invalid initial image file.") from exc
-
-    try:
-        mask = Image.open(BytesIO(mask_bytes)).convert("L")
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail="Invalid mask image file.") from exc
-
-    if mask.size != init_image.size:
-        mask = mask.resize(init_image.size, resample=Image.NEAREST)
-    return run_qwen_image_inpaint(
-        initial_image=init_image,
-        mask_image=mask,
-        strength=strength,
-        prompt=prompt,
-        negative_prompt=negative_prompt,
-        steps=steps,
-        true_cfg_scale=true_cfg_scale,
-        guidance_scale=guidance_scale,
-        seed=seed,
-        scheduler=scheduler,
-        model=model,
-        num_images=num_images,
-    )
-
-## Flux Endpoints
-@app.post("/api/flux/text2img")
-async def generate_flux_text2img(req: FluxGenerateRequest, request: Request):
-    # logger.info("Flux request JSON: %s", await request.json())
-    # logger.info("Parsed Flux seed: %s", req.seed)
-    return run_flux_text2img(req.model_dump())
-
-
-@app.post("/api/flux/img2img")
-async def generate_flux_img2img(
-    initial_image: UploadFile = File(...),
-    strength: float = Form(0.75),
-    prompt: str = Form(...),
-    negative_prompt: str = Form(DEFAULTS["negative_prompt"]),
-    steps: int = Form(DEFAULTS["steps"]),
-    guidance_scale: float = Form(DEFAULTS["cfg"]),
-    width: int = Form(1024),
-    height: int = Form(1024),
-    seed: int | None = Form(None),
-    scheduler: str = Form("euler"),
-    num_images: int = Form(1),
-    model: str | None = Form(None),
-):
-    if not 0 <= strength <= 1:
-        raise HTTPException(status_code=400, detail="Strength must be between 0 and 1.")
-
-    image_bytes = await initial_image.read()
-    try:
-        init_image = Image.open(BytesIO(image_bytes)).convert("RGB")
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail="Invalid image file.") from exc
-
-    init_image = init_image.resize((width, height))
-    return run_flux_img2img(
-        initial_image=init_image,
-        strength=strength,
-        prompt=prompt,
-        negative_prompt=negative_prompt,
-        steps=steps,
-        guidance_scale=guidance_scale,
-        width=width,
-        height=height,
-        seed=seed,
-        scheduler=scheduler,
-        model=model,
-        num_images=num_images,
-    )
-
-
-@app.post("/api/flux/inpaint")
-async def generate_flux_inpaint(
-    initial_image: UploadFile = File(...),
-    mask_image: UploadFile = File(...),
-    strength: float = Form(0.5),
-    prompt: str = Form(...),
-    negative_prompt: str = Form(DEFAULTS["negative_prompt"]),
-    steps: int = Form(DEFAULTS["steps"]),
-    guidance_scale: float = Form(DEFAULTS["cfg"]),
-    seed: int | None = Form(None),
-    scheduler: str = Form("euler"),
-    num_images: int = Form(1),
-    model: str | None = Form(None),
-):
-    if not 0 <= strength <= 1:
-        raise HTTPException(status_code=400, detail="Strength must be between 0 and 1.")
-
-    image_bytes = await initial_image.read()
-    mask_bytes = await mask_image.read()
-    try:
-        init_image = Image.open(BytesIO(image_bytes)).convert("RGB")
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail="Invalid initial image file.") from exc
-
-    try:
-        mask = Image.open(BytesIO(mask_bytes)).convert("L")
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail="Invalid mask image file.") from exc
-
-    if mask.size != init_image.size:
-        mask = mask.resize(init_image.size, resample=Image.NEAREST)
-    return run_flux_inpaint(
-        initial_image=init_image,
-        mask_image=mask,
-        strength=strength,
-        prompt=prompt,
-        negative_prompt=negative_prompt,
-        steps=steps,
-        guidance_scale=guidance_scale,
-        seed=seed,
-        scheduler=scheduler,
-        model=model,
-        num_images=num_images,
-    )
-
 ## Inpainting related endpoints
+
+def _create_blur_mask(mask_image: Image.Image, blur_factor: int) -> Image.Image:
+    blur_factor = max(0, min(int(blur_factor), 128))
+    if blur_factor == 0:
+        return mask_image
+    return mask_image.filter(ImageFilter.GaussianBlur(radius=blur_factor))
+
 
 @app.post("/create-blur-mask")
 async def create_blur_mask_endpoint(
@@ -1153,7 +521,7 @@ async def create_blur_mask_endpoint(
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Invalid mask image file.") from exc
 
-    blurred_mask = create_blur_mask(mask, blur_factor)
+    blurred_mask = _create_blur_mask(mask, blur_factor)
     output = BytesIO()
     blurred_mask.save(output, format="PNG")
     return Response(content=output.getvalue(), media_type="image/png")

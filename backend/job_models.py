@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import DateTime, Index, String, Text
+from sqlalchemy import Boolean, DateTime, Index, String, Text
 from sqlalchemy.types import JSON
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -21,6 +21,7 @@ class Job(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     idempotency_key: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
     kind: Mapped[str] = mapped_column(String(64), index=True)
     status: Mapped[str] = mapped_column(String(16), index=True)
 

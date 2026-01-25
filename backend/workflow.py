@@ -4,7 +4,7 @@ import json
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 from PIL import Image
 from pydantic import BaseModel, Field
@@ -22,20 +22,46 @@ from backend.sd15_pipeline import (
 )
 
 
+TaskType = Literal[
+    "sd15.text2img",
+    "sd15.img2img",
+    "sd15.inpaint",
+    "sd15.controlnet.text2img",
+    "sd15.hires_fix",
+    "controlnet.preprocess",
+    "sdxl.text2img",
+    "sdxl.img2img",
+    "sdxl.inpaint",
+    "flux.text2img",
+    "flux.img2img",
+    "flux.inpaint",
+    "qwen-image.text2img",
+    "qwen-image.img2img",
+    "qwen-image.inpaint",
+    "z-image.text2img",
+    "z-image.img2img",
+]
+
+
 class WorkflowTask(BaseModel):
-    id: str
-    type: str
+    id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    type: TaskType
     inputs: dict[str, Any] = Field(default_factory=dict)
 
 
 class WorkflowRequest(BaseModel):
-    tasks: list[WorkflowTask]
+    tasks: list[WorkflowTask] = Field(max_length=64)
     return_value: Any | None = Field(default=None, alias="return")
 
 
 @dataclass(frozen=True)
 class WorkflowContext:
     update_progress: Callable[[dict[str, Any]], None] | None = None
+    should_cancel: Callable[[], bool] | None = None
+
+
+class WorkflowCanceled(Exception):
+    pass
 
 
 def _artifact_dir() -> Path:
@@ -52,6 +78,57 @@ def _validate_artifact_id(value: str) -> str:
     if not _ARTIFACT_ID_RE.match(artifact_id):
         raise ValueError("Invalid artifact_id")
     return artifact_id
+
+
+def collect_artifact_ids(value: Any) -> set[str]:
+    out: set[str] = set()
+
+    def _walk(node: Any) -> None:
+        if isinstance(node, str):
+            if node.startswith("@artifact:"):
+                try:
+                    out.add(_validate_artifact_id(node.removeprefix("@artifact:")))
+                except ValueError:
+                    pass
+            return
+
+        if isinstance(node, dict):
+            artifact_id = node.get("artifact_id")
+            if isinstance(artifact_id, str):
+                try:
+                    out.add(_validate_artifact_id(artifact_id))
+                except ValueError:
+                    pass
+            for v in node.values():
+                _walk(v)
+            return
+
+        if isinstance(node, list):
+            for item in node:
+                _walk(item)
+            return
+
+    _walk(value)
+    return out
+
+
+def cleanup_artifacts(artifact_ids: set[str]) -> None:
+    if not artifact_ids:
+        return
+    artifacts_dir = _artifact_dir().resolve()
+    for artifact_id in artifact_ids:
+        try:
+            safe_id = _validate_artifact_id(artifact_id)
+        except ValueError:
+            continue
+        path = (artifacts_dir / f"{safe_id}.png").resolve()
+        if not str(path).startswith(str(artifacts_dir)):
+            continue
+        try:
+            path.unlink(missing_ok=True)
+        except Exception:
+            # Best-effort cleanup; job success shouldn't depend on deletion.
+            pass
 
 
 def save_artifact_png(image: Image.Image, *, prefix: str = "a") -> dict[str, str]:
@@ -275,6 +352,264 @@ def _sd15_hires_fix(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, 
     )
     return {"batch_id": batch_id, "images": [f"/outputs/{p}" for p in relpaths]}
 
+def _sdxl_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
+    from backend.sdxl_pipeline import run_sdxl_text2img
+
+    result = run_sdxl_text2img(dict(inputs))
+    if not isinstance(result, dict):
+        raise ValueError("sdxl.text2img must return an object")
+    return result
+
+
+def _sdxl_img2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
+    from backend.sdxl_pipeline import run_sdxl_img2img
+
+    initial_image = _open_image_ref(inputs["initial_image"]).convert("RGB")
+    width = int(inputs.get("width") or 1024)
+    height = int(inputs.get("height") or 1024)
+    initial_image = initial_image.resize((width, height))
+
+    strength = float(inputs.get("strength") or 0.75)
+    if not 0.0 <= strength <= 1.0:
+        raise ValueError("strength must be between 0 and 1")
+    strength = _remap_img2img_strength(strength)
+
+    result = run_sdxl_img2img(
+        initial_image=initial_image,
+        strength=strength,
+        prompt=str(inputs["prompt"]),
+        negative_prompt=str(inputs.get("negative_prompt") or ""),
+        steps=int(inputs.get("steps") or 20),
+        guidance_scale=float(inputs.get("guidance_scale") or inputs.get("cfg") or 7.5),
+        width=width,
+        height=height,
+        seed=inputs.get("seed"),
+        scheduler=str(inputs.get("scheduler") or "euler"),
+        model=inputs.get("model"),
+        num_images=int(inputs.get("num_images") or 1),
+        clip_skip=int(inputs.get("clip_skip") or 1),
+    )
+    if not isinstance(result, dict):
+        raise ValueError("sdxl.img2img must return an object")
+    return result
+
+
+def _sdxl_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
+    from backend.sdxl_pipeline import run_sdxl_inpaint
+
+    initial_image = _open_image_ref(inputs["initial_image"]).convert("RGB")
+    mask_image = _open_image_ref(inputs["mask_image"]).convert("L")
+    if mask_image.size != initial_image.size:
+        mask_image = mask_image.resize(initial_image.size, resample=Image.NEAREST)
+
+    strength = float(inputs.get("strength") or 0.5)
+    if not 0.0 <= strength <= 1.0:
+        raise ValueError("strength must be between 0 and 1")
+    strength = _remap_img2img_strength(strength)
+
+    result = run_sdxl_inpaint(
+        initial_image=initial_image,
+        mask_image=mask_image,
+        strength=strength,
+        prompt=str(inputs["prompt"]),
+        negative_prompt=str(inputs.get("negative_prompt") or ""),
+        steps=int(inputs.get("steps") or 20),
+        guidance_scale=float(inputs.get("guidance_scale") or inputs.get("cfg") or 7.5),
+        seed=inputs.get("seed"),
+        scheduler=str(inputs.get("scheduler") or "euler"),
+        model=inputs.get("model"),
+        num_images=int(inputs.get("num_images") or 1),
+        padding_mask_crop=int(inputs.get("padding_mask_crop") or 32),
+        clip_skip=int(inputs.get("clip_skip") or 1),
+    )
+    if not isinstance(result, dict):
+        raise ValueError("sdxl.inpaint must return an object")
+    return result
+
+
+def _flux_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
+    from backend.flux_pipeline import run_flux_text2img
+
+    result = run_flux_text2img(dict(inputs))
+    if not isinstance(result, dict):
+        raise ValueError("flux.text2img must return an object")
+    return result
+
+
+def _flux_img2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
+    from backend.flux_pipeline import run_flux_img2img
+
+    initial_image = _open_image_ref(inputs["initial_image"]).convert("RGB")
+    width = int(inputs.get("width") or 1024)
+    height = int(inputs.get("height") or 1024)
+    initial_image = initial_image.resize((width, height))
+
+    strength = float(inputs.get("strength") or 0.75)
+    if not 0.0 <= strength <= 1.0:
+        raise ValueError("strength must be between 0 and 1")
+
+    result = run_flux_img2img(
+        initial_image=initial_image,
+        strength=strength,
+        prompt=str(inputs["prompt"]),
+        negative_prompt=str(inputs.get("negative_prompt") or ""),
+        steps=int(inputs.get("steps") or 20),
+        guidance_scale=float(inputs.get("guidance_scale") or 0.0),
+        width=width,
+        height=height,
+        seed=inputs.get("seed"),
+        scheduler=str(inputs.get("scheduler") or "euler"),
+        model=inputs.get("model"),
+        num_images=int(inputs.get("num_images") or 1),
+    )
+    if not isinstance(result, dict):
+        raise ValueError("flux.img2img must return an object")
+    return result
+
+
+def _flux_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
+    from backend.flux_pipeline import run_flux_inpaint
+
+    initial_image = _open_image_ref(inputs["initial_image"]).convert("RGB")
+    mask_image = _open_image_ref(inputs["mask_image"]).convert("L")
+    if mask_image.size != initial_image.size:
+        mask_image = mask_image.resize(initial_image.size, resample=Image.NEAREST)
+
+    strength = float(inputs.get("strength") or 0.5)
+    if not 0.0 <= strength <= 1.0:
+        raise ValueError("strength must be between 0 and 1")
+
+    result = run_flux_inpaint(
+        initial_image=initial_image,
+        mask_image=mask_image,
+        strength=strength,
+        prompt=str(inputs["prompt"]),
+        negative_prompt=str(inputs.get("negative_prompt") or ""),
+        steps=int(inputs.get("steps") or 20),
+        guidance_scale=float(inputs.get("guidance_scale") or 0.0),
+        seed=inputs.get("seed"),
+        scheduler=str(inputs.get("scheduler") or "euler"),
+        model=inputs.get("model"),
+        num_images=int(inputs.get("num_images") or 1),
+    )
+    if not isinstance(result, dict):
+        raise ValueError("flux.inpaint must return an object")
+    return result
+
+
+def _qwen_image_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
+    from backend.qwen_image_pipeline import run_qwen_image_text2img
+
+    result = run_qwen_image_text2img(dict(inputs))
+    if not isinstance(result, dict):
+        raise ValueError("qwen-image.text2img must return an object")
+    return result
+
+
+def _qwen_image_img2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
+    from backend.qwen_image_pipeline import run_qwen_image_img2img
+
+    initial_image = _open_image_ref(inputs["initial_image"]).convert("RGB")
+    width = int(inputs.get("width") or 1024)
+    height = int(inputs.get("height") or 1024)
+    initial_image = initial_image.resize((width, height))
+
+    strength = float(inputs.get("strength") or 0.75)
+    if not 0.0 <= strength <= 1.0:
+        raise ValueError("strength must be between 0 and 1")
+    strength = _remap_img2img_strength(strength)
+
+    result = run_qwen_image_img2img(
+        initial_image=initial_image,
+        strength=strength,
+        prompt=str(inputs["prompt"]),
+        negative_prompt=str(inputs.get("negative_prompt") or ""),
+        steps=int(inputs.get("steps") or 30),
+        true_cfg_scale=float(inputs.get("true_cfg_scale") or 4.0),
+        guidance_scale=float(inputs.get("guidance_scale") or 7.5),
+        width=width,
+        height=height,
+        seed=inputs.get("seed"),
+        scheduler=str(inputs.get("scheduler") or "euler"),
+        model=inputs.get("model"),
+        num_images=int(inputs.get("num_images") or 1),
+    )
+    if not isinstance(result, dict):
+        raise ValueError("qwen-image.img2img must return an object")
+    return result
+
+
+def _qwen_image_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
+    from backend.qwen_image_pipeline import run_qwen_image_inpaint
+
+    initial_image = _open_image_ref(inputs["initial_image"]).convert("RGB")
+    mask_image = _open_image_ref(inputs["mask_image"]).convert("L")
+    if mask_image.size != initial_image.size:
+        mask_image = mask_image.resize(initial_image.size, resample=Image.NEAREST)
+
+    strength = float(inputs.get("strength") or 0.5)
+    if not 0.0 <= strength <= 1.0:
+        raise ValueError("strength must be between 0 and 1")
+
+    result = run_qwen_image_inpaint(
+        initial_image=initial_image,
+        mask_image=mask_image,
+        strength=strength,
+        prompt=str(inputs["prompt"]),
+        negative_prompt=str(inputs.get("negative_prompt") or ""),
+        steps=int(inputs.get("steps") or 30),
+        true_cfg_scale=float(inputs.get("true_cfg_scale") or 4.0),
+        guidance_scale=float(inputs.get("guidance_scale") or 7.5),
+        seed=inputs.get("seed"),
+        scheduler=str(inputs.get("scheduler") or "euler"),
+        model=inputs.get("model"),
+        num_images=int(inputs.get("num_images") or 1),
+    )
+    if not isinstance(result, dict):
+        raise ValueError("qwen-image.inpaint must return an object")
+    return result
+
+
+def _z_image_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
+    from backend.z_image_pipeline import run_z_image_text2img
+
+    result = run_z_image_text2img(dict(inputs))
+    if not isinstance(result, dict):
+        raise ValueError("z-image.text2img must return an object")
+    return result
+
+
+def _z_image_img2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
+    from backend.z_image_pipeline import run_z_image_img2img
+
+    initial_image = _open_image_ref(inputs["initial_image"]).convert("RGB")
+    width = int(inputs.get("width") or 1024)
+    height = int(inputs.get("height") or 1024)
+    initial_image = initial_image.resize((width, height))
+
+    strength = float(inputs.get("strength") or 0.75)
+    if not 0.0 <= strength <= 1.0:
+        raise ValueError("strength must be between 0 and 1")
+    strength = _remap_img2img_strength(strength)
+
+    result = run_z_image_img2img(
+        initial_image=initial_image,
+        strength=strength,
+        prompt=str(inputs["prompt"]),
+        negative_prompt=str(inputs.get("negative_prompt") or ""),
+        steps=int(inputs.get("steps") or 8),
+        guidance_scale=float(inputs.get("guidance_scale") or 0.0),
+        width=width,
+        height=height,
+        seed=inputs.get("seed"),
+        scheduler=str(inputs.get("scheduler") or "euler"),
+        model=inputs.get("model"),
+        num_images=int(inputs.get("num_images") or 1),
+    )
+    if not isinstance(result, dict):
+        raise ValueError("z-image.img2img must return an object")
+    return result
+
 
 TASK_REGISTRY: dict[str, Callable[[dict[str, Any], WorkflowContext], dict[str, Any]]] = {
     "sd15.text2img": _sd15_text2img,
@@ -283,6 +618,17 @@ TASK_REGISTRY: dict[str, Callable[[dict[str, Any], WorkflowContext], dict[str, A
     "sd15.controlnet.text2img": _sd15_controlnet_text2img,
     "sd15.hires_fix": _sd15_hires_fix,
     "controlnet.preprocess": _controlnet_preprocess,
+    "sdxl.text2img": _sdxl_text2img,
+    "sdxl.img2img": _sdxl_img2img,
+    "sdxl.inpaint": _sdxl_inpaint,
+    "flux.text2img": _flux_text2img,
+    "flux.img2img": _flux_img2img,
+    "flux.inpaint": _flux_inpaint,
+    "qwen-image.text2img": _qwen_image_text2img,
+    "qwen-image.img2img": _qwen_image_img2img,
+    "qwen-image.inpaint": _qwen_image_inpaint,
+    "z-image.text2img": _z_image_text2img,
+    "z-image.img2img": _z_image_img2img,
 }
 
 
@@ -291,43 +637,51 @@ def execute_workflow(payload: dict[str, Any], *, ctx: WorkflowContext | None = N
     context = ctx or WorkflowContext()
 
     task_results: dict[str, dict[str, Any]] = {}
-    for idx, task in enumerate(wf.tasks):
-        if task.id in task_results:
-            raise ValueError(f"Duplicate task id: {task.id}")
+    created_artifacts: set[str] = set()
+    try:
+        for idx, task in enumerate(wf.tasks):
+            if context.should_cancel and context.should_cancel():
+                raise WorkflowCanceled("Cancel requested")
+            if task.id in task_results:
+                raise ValueError(f"Duplicate task id: {task.id}")
 
-        resolved_inputs = _resolve_refs(task.inputs, task_results)
-        handler = TASK_REGISTRY.get(task.type)
-        if handler is None:
-            raise ValueError(f"Unsupported task type: {task.type}")
+            resolved_inputs = _resolve_refs(task.inputs, task_results)
+            handler = TASK_REGISTRY.get(task.type)
+            if handler is None:
+                raise ValueError(f"Unsupported task type: {task.type}")
 
-        if context.update_progress:
-            context.update_progress(
-                {
-                    "current_task": task.id,
-                    "current_task_index": idx,
-                    "total_tasks": len(wf.tasks),
-                    "phase": "running",
-                }
-            )
+            if context.update_progress:
+                context.update_progress(
+                    {
+                        "current_task": task.id,
+                        "current_task_index": idx,
+                        "total_tasks": len(wf.tasks),
+                        "phase": "running",
+                    }
+                )
 
-        result = handler(resolved_inputs, context)
-        if not isinstance(result, dict):
-            raise ValueError(f"Task {task.id} must return an object")
-        task_results[task.id] = result
+            result = handler(resolved_inputs, context)
+            if not isinstance(result, dict):
+                raise ValueError(f"Task {task.id} must return an object")
+            created_artifacts |= collect_artifact_ids(result)
+            task_results[task.id] = result
 
-        if context.update_progress:
-            context.update_progress(
-                {
-                    "current_task": task.id,
-                    "current_task_index": idx,
-                    "total_tasks": len(wf.tasks),
-                    "phase": "completed_task",
-                }
-            )
+            if context.update_progress:
+                context.update_progress(
+                    {
+                        "current_task": task.id,
+                        "current_task_index": idx,
+                        "total_tasks": len(wf.tasks),
+                        "phase": "completed_task",
+                    }
+                )
+    except Exception as exc:
+        setattr(exc, "_workflow_created_artifacts", created_artifacts)
+        raise
 
     if wf.return_value is None:
         final_value: Any = task_results[wf.tasks[-1].id] if wf.tasks else {}
     else:
         final_value = _resolve_refs(wf.return_value, task_results)
 
-    return {"outputs": final_value, "tasks": task_results}
+    return {"outputs": final_value, "tasks": task_results, "created_artifacts": sorted(created_artifacts)}

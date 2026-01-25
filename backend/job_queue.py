@@ -63,23 +63,34 @@ def _sqlite_ensure_idempotency_schema(engine: Engine) -> None:
         return
     if not _sqlite_table_exists(engine, table="jobs"):
         return
-    if _sqlite_column_exists(engine, table="jobs", column="idempotency_key"):
-        return
-
     with engine.begin() as conn:
-        conn.exec_driver_sql("ALTER TABLE jobs ADD COLUMN idempotency_key VARCHAR(128)")
+        if not _sqlite_column_exists(engine, table="jobs", column="idempotency_key"):
+            conn.exec_driver_sql("ALTER TABLE jobs ADD COLUMN idempotency_key VARCHAR(128)")
         conn.exec_driver_sql(
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_jobs_idempotency_key "
             "ON jobs(idempotency_key) WHERE idempotency_key IS NOT NULL"
         )
 
 
+def _sqlite_ensure_cancel_schema(engine: Engine) -> None:
+    if not str(engine.url).startswith("sqlite:"):
+        return
+    if not _sqlite_table_exists(engine, table="jobs"):
+        return
+
+    with engine.begin() as conn:
+        if not _sqlite_column_exists(engine, table="jobs", column="cancel_requested"):
+            conn.exec_driver_sql("ALTER TABLE jobs ADD COLUMN cancel_requested BOOLEAN NOT NULL DEFAULT 0")
+        conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_jobs_cancel_requested ON jobs(cancel_requested)")
+
+
 def init_job_db(engine: Engine) -> None:
+    Base.metadata.create_all(engine)
     try:
         _sqlite_ensure_idempotency_schema(engine)
+        _sqlite_ensure_cancel_schema(engine)
     except OperationalError as exc:
-        logger.warning("Failed to ensure idempotency schema: %s", exc)
-    Base.metadata.create_all(engine)
+        logger.warning("Failed to ensure sqlite schema: %s", exc)
 
 
 def enqueue_job(
@@ -146,6 +157,32 @@ def cancel_job(SessionLocal: sessionmaker, job_id: str) -> Job:
         return job
 
 
+def request_cancel_job(SessionLocal: sessionmaker, job_id: str) -> Job:
+    now = utcnow()
+    with SessionLocal() as session:
+        job = session.get(Job, job_id)
+        if job is None:
+            raise JobNotFoundError(job_id)
+
+        if job.status in {"succeeded", "failed", "canceled"}:
+            return job
+
+        job.cancel_requested = True
+        job.updated_at = now
+        if job.status == "queued":
+            job.status = "canceled"
+            job.finished_at = now
+        session.commit()
+        session.refresh(job)
+        return job
+
+
+def is_cancel_requested(SessionLocal: sessionmaker, job_id: str) -> bool:
+    with SessionLocal() as session:
+        job = session.get(Job, job_id)
+        return bool(getattr(job, "cancel_requested", False)) if job is not None else False
+
+
 def requeue_running_jobs(SessionLocal: sessionmaker) -> None:
     now = utcnow()
     with SessionLocal() as session:
@@ -195,6 +232,16 @@ def _mark_job_failed(session: Session, job_id: str, message: str) -> None:
     session.commit()
 
 
+def _mark_job_canceled(session: Session, job_id: str) -> None:
+    now = utcnow()
+    session.execute(
+        update(Job)
+        .where(Job.id == job_id)
+        .values(status="canceled", error=None, updated_at=now, finished_at=now)
+    )
+    session.commit()
+
+
 def _mark_job_succeeded(session: Session, job_id: str, result: dict[str, Any]) -> None:
     now = utcnow()
     session.execute(
@@ -228,18 +275,34 @@ def execute_job(
     if kind == "noop":
         return {"ok": True}
 
-    if kind == "sdxl_text2img":
-        from backend.sdxl_pipeline import run_sdxl_text2img
-
-        return run_sdxl_text2img(payload)
-
     if kind == "workflow":
-        from backend.workflow import WorkflowContext, execute_workflow
+        from backend.workflow import WorkflowCanceled, WorkflowContext, cleanup_artifacts, collect_artifact_ids, execute_workflow
 
         def _progress(patch: dict[str, Any]) -> None:
             update_job_partial_result(SessionLocal, job_id, {"progress": patch})
 
-        return execute_workflow(payload, ctx=WorkflowContext(update_progress=_progress))
+        artifacts_to_cleanup = collect_artifact_ids(payload)
+        try:
+            result = execute_workflow(
+                payload,
+                ctx=WorkflowContext(
+                    update_progress=_progress,
+                    should_cancel=lambda: is_cancel_requested(SessionLocal, job_id),
+                ),
+            )
+            created = result.pop("created_artifacts", None)
+            if isinstance(created, list):
+                artifacts_to_cleanup |= set(str(x) for x in created)
+            return result
+        except WorkflowCanceled:
+            raise
+        except Exception as exc:
+            created = getattr(exc, "_workflow_created_artifacts", None)
+            if isinstance(created, set):
+                artifacts_to_cleanup |= set(str(x) for x in created)
+            raise
+        finally:
+            cleanup_artifacts(artifacts_to_cleanup)
 
     raise ValueError(f"Unsupported job kind: {kind}")
 
@@ -264,6 +327,8 @@ class JobWorker:
             self._thread.join(timeout=timeout_s)
 
     def _run_loop(self) -> None:
+        from backend.workflow import WorkflowCanceled
+
         init_job_db(self._engine)
         if self._config.requeue_running_on_startup:
             requeue_running_jobs(self._SessionLocal)
@@ -278,6 +343,10 @@ class JobWorker:
 
             logger.info("Running job id=%s kind=%s", job.id, job.kind)
             try:
+                if getattr(job, "cancel_requested", False):
+                    with self._SessionLocal() as session:
+                        _mark_job_canceled(session, job.id)
+                    continue
                 with EXECUTION_LOCK:
                     result = execute_job(
                         job_id=job.id,
@@ -287,6 +356,10 @@ class JobWorker:
                     )
                 with self._SessionLocal() as session:
                     _mark_job_succeeded(session, job.id, result)
+            except WorkflowCanceled:
+                logger.info("Job canceled id=%s kind=%s", job.id, job.kind)
+                with self._SessionLocal() as session:
+                    _mark_job_canceled(session, job.id)
             except Exception as exc:
                 logger.exception("Job failed id=%s kind=%s", job.id, job.kind)
                 with self._SessionLocal() as session:

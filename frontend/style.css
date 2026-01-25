@@ -275,6 +275,28 @@ button {
     font-size: 12px;
 }
 
+.job-card-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.job-cancel-btn {
+    border: 1px solid #e1dbd2;
+    background: #ffffff;
+    color: #6b645c;
+    border-radius: 10px;
+    padding: 6px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.job-cancel-btn:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
 .history-panel {
     background: #fdfbf7;
     border: 1px solid #e1dbd2;

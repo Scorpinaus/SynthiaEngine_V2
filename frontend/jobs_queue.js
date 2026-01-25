@@ -54,13 +54,60 @@
         jobs.forEach((job) => {
             const item = document.createElement("li");
             item.className = "job-card";
+
             const id = document.createElement("div");
             id.textContent = `${job.kind} (${job.id})`;
             const meta = document.createElement("span");
             const created = job.created_at ? new Date(job.created_at).toLocaleTimeString() : "unknown";
-            meta.textContent = `Status: ${job.status} - Created: ${created}`;
+            const cancelRequested = Boolean(job.cancel_requested);
+            const cancelSuffix = cancelRequested ? " (cancel pending)" : "";
+            meta.textContent = `Status: ${job.status}${cancelSuffix} - Created: ${created}`;
             item.appendChild(id);
             item.appendChild(meta);
+
+            const canCancel =
+                job &&
+                typeof job.id === "string" &&
+                ["queued", "running"].includes(job.status) &&
+                !cancelRequested;
+
+            const showCancelPending =
+                job &&
+                typeof job.id === "string" &&
+                ["queued", "running"].includes(job.status) &&
+                cancelRequested;
+
+            if (canCancel || showCancelPending) {
+                const actions = document.createElement("div");
+                actions.className = "job-card-actions";
+
+                const cancelBtn = document.createElement("button");
+                cancelBtn.type = "button";
+                cancelBtn.className = "job-cancel-btn";
+                cancelBtn.textContent = showCancelPending ? "Cancel pending" : "Cancel";
+                cancelBtn.disabled = Boolean(showCancelPending);
+                cancelBtn.addEventListener("click", async () => {
+                    cancelBtn.disabled = true;
+                    cancelBtn.textContent = "Canceling...";
+                    try {
+                        const res = await fetch(`${API_BASE}/api/jobs/${job.id}/cancel`, {
+                            method: "POST",
+                        });
+                        if (!res.ok) {
+                            const errorText = await res.text();
+                            throw new Error(`Cancel failed (${res.status}): ${errorText}`);
+                        }
+                        await refreshJobQueue();
+                    } catch (error) {
+                        console.warn("Failed to cancel job:", error);
+                        cancelBtn.disabled = false;
+                        cancelBtn.textContent = "Cancel";
+                    }
+                });
+
+                actions.appendChild(cancelBtn);
+                item.appendChild(actions);
+            }
             container.appendChild(item);
         });
     }
