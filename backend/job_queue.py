@@ -272,9 +272,6 @@ def execute_job(
     payload: dict[str, Any],
     SessionLocal: sessionmaker,
 ) -> dict[str, Any]:
-    if kind == "noop":
-        return {"ok": True}
-
     if kind == "workflow":
         from backend.workflow import WorkflowCanceled, WorkflowContext, cleanup_artifacts, collect_artifact_ids, execute_workflow
 

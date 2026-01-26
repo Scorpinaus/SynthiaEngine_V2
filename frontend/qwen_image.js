@@ -16,31 +16,6 @@ function closeActiveEventSource() {
     }
 }
 
-function makeIdempotencyKey() {
-    if (typeof crypto?.randomUUID === "function") {
-        return crypto.randomUUID();
-    }
-    return `idemp_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-}
-
-async function submitWorkflow(payload, idempotencyKey) {
-    const res = await fetch(`${API_BASE}/api/jobs`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "Idempotency-Key": idempotencyKey,
-        },
-        body: JSON.stringify({ kind: "workflow", payload }),
-    });
-
-    if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error(`Job submit failed (${res.status}): ${errorText}`);
-    }
-
-    return await res.json();
-}
-
 async function loadModels() {
     const select = document.getElementById("model_select");
     select.innerHTML = "";
@@ -74,24 +49,41 @@ async function loadModels() {
 }
 
 loadModels();
+if (window.WorkflowCatalog?.load) {
+    void window.WorkflowCatalog
+        .load(API_BASE)
+        .then(() => {
+            window.WorkflowCatalog.applyDefaultsToForm("qwen-image.text2img", {
+                steps: "steps",
+                true_cfg: "true_cfg_scale",
+                cfg: "guidance_scale",
+                width: "width",
+                height: "height",
+                num_images: "num_images",
+            });
+        })
+        .catch(() => {});
+}
 
 async function generate() {
     const token = ++activeJobToken;
     closeActiveEventSource();
 
-    const prompt = document.getElementById("prompt").value;
-    const steps = Number(document.getElementById("steps").value);
-    const true_cfg_scale = Number(document.getElementById("true_cfg").value);
-    const guidance_scale = Number(document.getElementById("cfg").value);
-    const scheduler = document.getElementById("scheduler")?.value ?? "euler";
-    const seedValue = document.getElementById("seed").value;
-    const seedNumber = seedValue === "" ? null : Number(seedValue);
-    const seed = Number.isFinite(seedNumber) ? seedNumber : null;
-    const negative_prompt = document.getElementById("negative_prompt").value;
-    const width = Number(document.getElementById("width").value);
-    const height = Number(document.getElementById("height").value);
-    const model = document.getElementById("model_select").value;
-    const num_images = Number(document.getElementById("num_images").value);
+    const catalog = window.WorkflowCatalog?.load ? await window.WorkflowCatalog.load(API_BASE) : null;
+    const defaults = catalog?.tasks?.["qwen-image.text2img"]?.input_defaults ?? {};
+
+    const prompt = WorkflowClient.readTextValue("prompt", defaults.prompt ?? "");
+    const negative_prompt = WorkflowClient.readTextValue("negative_prompt", defaults.negative_prompt ?? "");
+    const steps = WorkflowClient.readNumberValue("steps", defaults.steps ?? 30, { integer: true });
+    const true_cfg_scale = WorkflowClient.readNumberValue("true_cfg", defaults.true_cfg_scale ?? 4.0);
+    const guidance_scale = WorkflowClient.readNumberValue("cfg", defaults.guidance_scale ?? 7.5);
+    const scheduler = WorkflowClient.readTextValue("scheduler", defaults.scheduler ?? "euler");
+    const seed = WorkflowClient.readSeedValue("seed");
+    const width = WorkflowClient.readNumberValue("width", defaults.width ?? 1024, { integer: true });
+    const height = WorkflowClient.readNumberValue("height", defaults.height ?? 1024, { integer: true });
+    const modelRaw = document.getElementById("model_select")?.value ?? "";
+    const model = modelRaw ? modelRaw : (defaults.model ?? null);
+    const num_images = WorkflowClient.readNumberValue("num_images", defaults.num_images ?? 1, { integer: true });
 
     const payload = {
         prompt,
@@ -113,45 +105,31 @@ async function generate() {
             tasks: [{ id: "t1", type: "qwen-image.text2img", inputs: payload }],
             return: "@t1.images",
         };
-        const createdJob = await submitWorkflow(workflowPayload, makeIdempotencyKey());
+        const idempotencyKey = WorkflowClient.makeIdempotencyKey();
+        const createdJob = await WorkflowClient.submitWorkflow(API_BASE, workflowPayload, idempotencyKey);
         const jobId = createdJob?.id;
         if (!jobId) {
             throw new Error("Job submit did not return an id.");
         }
 
-        const source = new EventSource(`${API_BASE}/api/jobs/${jobId}/events`);
-        activeEventSource = source;
-
-        source.onmessage = (event) => {
-            if (token !== activeJobToken) {
-                source.close();
-                return;
-            }
-            let job;
-            try {
-                job = JSON.parse(event.data);
-            } catch {
-                return;
-            }
-
-            const status = job?.status ?? "unknown";
-            if (status === "succeeded") {
-                const images = job?.result?.outputs;
-                gallery.setImages(Array.isArray(images) ? images : []);
-                source.close();
-            } else if (status === "failed" || status === "canceled") {
+        activeEventSource = WorkflowClient.watchJob(API_BASE, jobId, {
+            isStale: () => token !== activeJobToken,
+            onDone: (job) => {
+                const status = job?.status ?? "unknown";
+                if (status === "succeeded") {
+                    const images = job?.result?.outputs;
+                    gallery.setImages(Array.isArray(images) ? images : []);
+                } else {
+                    gallery.setImages([]);
+                }
+            },
+            onError: () => {
+                if (token !== activeJobToken) {
+                    return;
+                }
                 gallery.setImages([]);
-                source.close();
-            }
-        };
-
-        source.onerror = () => {
-            if (token !== activeJobToken) {
-                source.close();
-                return;
-            }
-            source.close();
-        };
+            },
+        });
     } catch (error) {
         console.warn("Failed to generate Qwen-Image images:", error);
         gallery.setImages([]);

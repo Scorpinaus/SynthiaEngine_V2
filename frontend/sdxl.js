@@ -42,6 +42,21 @@ async function loadModels() {
 }
 
 loadModels();
+if (window.WorkflowCatalog?.load) {
+    void window.WorkflowCatalog
+        .load(API_BASE)
+        .then(() => {
+            window.WorkflowCatalog.applyDefaultsToForm("sdxl.text2img", {
+                steps: "steps",
+                cfg: "guidance_scale",
+                width: "width",
+                height: "height",
+                num_images: "num_images",
+                clip_skip: "clip_skip",
+            });
+        })
+        .catch(() => {});
+}
 
 function setJobUiState(isBusy, message) {
     const button = document.getElementById("generate_button");
@@ -59,49 +74,27 @@ function closeActiveEventSource() {
     }
 }
 
-async function submitJob(kind, payload) {
-    const idempotencyKey = typeof crypto?.randomUUID === "function"
-        ? crypto.randomUUID()
-        : `idemp_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-    const res = await fetch(`${API_BASE}/api/jobs`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "Idempotency-Key": idempotencyKey,
-        },
-        body: JSON.stringify({
-            kind: "workflow",
-            payload: { tasks: [{ id: "t1", type: kind, inputs: payload }], return: "@t1.images" },
-        }),
-    });
-
-    if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error(`Job submit failed (${res.status}): ${errorText}`);
-    }
-
-    return await res.json();
-}
-
 async function generate() {
     const token = ++activeJobToken;
     closeActiveEventSource();
-    const prompt = document.getElementById("prompt").value;
-    const steps = Number(document.getElementById("steps").value);
-    const guidance_scale = Number(document.getElementById("cfg").value);
-    const scheduler = document.getElementById("scheduler")?.value ?? "euler";
-    const seedValue = document.getElementById("seed").value;
-    const seedNumber = seedValue === "" ? null : Number(seedValue);
-    const seed = Number.isFinite(seedNumber) ? seedNumber : null;
-    const negative_prompt = document.getElementById("negative_prompt").value;
-    const width = Number(document.getElementById("width").value);
-    const height = Number(document.getElementById("height").value);
-    const model = document.getElementById("model_select").value;
-    const num_images = Number(document.getElementById("num_images").value);
-    const clip_skip = Number(document.getElementById("clip_skip").value);
+
+    const catalog = window.WorkflowCatalog?.load ? await window.WorkflowCatalog.load(API_BASE) : null;
+    const defaults = catalog?.tasks?.["sdxl.text2img"]?.input_defaults ?? {};
+
+    const prompt = WorkflowClient.readTextValue("prompt", defaults.prompt ?? "");
+    const negative_prompt = WorkflowClient.readTextValue("negative_prompt", defaults.negative_prompt ?? "");
+    const steps = WorkflowClient.readNumberValue("steps", defaults.steps ?? 20, { integer: true });
+    const guidance_scale = WorkflowClient.readNumberValue("cfg", defaults.guidance_scale ?? 7.5);
+    const scheduler = WorkflowClient.readTextValue("scheduler", defaults.scheduler ?? "euler");
+    const seed = WorkflowClient.readSeedValue("seed");
+    const width = WorkflowClient.readNumberValue("width", defaults.width ?? 1024, { integer: true });
+    const height = WorkflowClient.readNumberValue("height", defaults.height ?? 1024, { integer: true });
+    const modelRaw = document.getElementById("model_select")?.value ?? "";
+    const model = modelRaw ? modelRaw : (defaults.model ?? null);
+    const num_images = WorkflowClient.readNumberValue("num_images", defaults.num_images ?? 1, { integer: true });
+    const clip_skip = WorkflowClient.readNumberValue("clip_skip", defaults.clip_skip ?? 1, { integer: true });
     const hires_enabled = Boolean(document.getElementById("hires_enabled")?.checked);
-    const hiresScaleInput = Number(document.getElementById("hires_scale").value);
-    const hires_scale = Number.isFinite(hiresScaleInput) ? hiresScaleInput : 1.0;
+    const hires_scale = WorkflowClient.readNumberValue("hires_scale", defaults.hires_scale ?? 1.0);
 
     const payload = {
         prompt,
@@ -122,7 +115,12 @@ async function generate() {
 
     try {
         setJobUiState(true, "Submitting job...");
-        const createdJob = await submitJob("sdxl.text2img", payload);
+        const workflowPayload = {
+            tasks: [{ id: "t1", type: "sdxl.text2img", inputs: payload }],
+            return: "@t1.images",
+        };
+        const idempotencyKey = WorkflowClient.makeIdempotencyKey();
+        const createdJob = await WorkflowClient.submitWorkflow(API_BASE, workflowPayload, idempotencyKey);
         const jobId = createdJob?.id;
         if (!jobId) {
             throw new Error("Job submit did not return an id.");
@@ -130,56 +128,43 @@ async function generate() {
 
         setJobUiState(true, `Queued (job ${jobId})`);
 
-        const source = new EventSource(`${API_BASE}/api/jobs/${jobId}/events`);
-        activeEventSource = source;
-
-        source.onmessage = (event) => {
-            if (token !== activeJobToken) {
-                source.close();
-                return;
-            }
-
-            let job;
-            try {
-                job = JSON.parse(event.data);
-            } catch (parseError) {
-                console.warn("Failed to parse job event:", parseError);
-                return;
-            }
-
-            const status = job?.status ?? "unknown";
-            if (status === "queued") {
-                setJobUiState(true, `Queued (job ${jobId})`);
-            } else if (status === "running") {
-                setJobUiState(true, `Running (job ${jobId})`);
-            } else if (status === "succeeded") {
-                const images = job?.result?.outputs;
-                gallery.setImages(Array.isArray(images) ? images : []);
-                setJobUiState(false, `Done (job ${jobId})`);
-                source.close();
-            } else if (status === "failed") {
-                const err = job?.error ?? "Unknown error.";
-                setJobUiState(false, `Failed (job ${jobId})`);
-                gallery.setImages([]);
-                source.close();
-                console.warn("Job failed:", err);
-            } else if (status === "canceled") {
-                setJobUiState(false, `Canceled (job ${jobId})`);
-                gallery.setImages([]);
-                source.close();
-            } else {
-                setJobUiState(true, `Status: ${status} (job ${jobId})`);
-            }
-        };
-
-        source.onerror = () => {
-            if (token !== activeJobToken) {
-                source.close();
-                return;
-            }
-            setJobUiState(false, "Job update stream lost.");
-            source.close();
-        };
+        activeEventSource = WorkflowClient.watchJob(API_BASE, jobId, {
+            isStale: () => token !== activeJobToken,
+            onUpdate: (job) => {
+                const status = job?.status ?? "unknown";
+                if (status === "queued") {
+                    setJobUiState(true, `Queued (job ${jobId})`);
+                } else if (status === "running") {
+                    setJobUiState(true, `Running (job ${jobId})`);
+                } else {
+                    setJobUiState(true, `Status: ${status} (job ${jobId})`);
+                }
+            },
+            onDone: (job) => {
+                const status = job?.status ?? "unknown";
+                if (status === "succeeded") {
+                    const images = job?.result?.outputs;
+                    gallery.setImages(Array.isArray(images) ? images : []);
+                    setJobUiState(false, `Done (job ${jobId})`);
+                } else if (status === "failed") {
+                    const err = job?.error ?? "Unknown error.";
+                    setJobUiState(false, `Failed (job ${jobId})`);
+                    gallery.setImages([]);
+                    console.warn("Job failed:", err);
+                } else if (status === "canceled") {
+                    setJobUiState(false, `Canceled (job ${jobId})`);
+                    gallery.setImages([]);
+                } else {
+                    setJobUiState(false, `Done (job ${jobId})`);
+                }
+            },
+            onError: () => {
+                if (token !== activeJobToken) {
+                    return;
+                }
+                setJobUiState(false, "Job update stream lost.");
+            },
+        });
     } catch (error) {
         console.warn("Failed to generate SDXL images:", error);
         gallery.setImages([]);

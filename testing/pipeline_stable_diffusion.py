@@ -692,9 +692,11 @@ class StableDiffusionPipeline(
         # For classifier free guidance, we need to do two forward passes.
         # Here we concatenate the unconditional and text embeddings into a single batch
         # to avoid doing two forward passes
-        if self.do_classifier_free_guidance:
-            prompt_embeds = torch.cat([negative_prompt_embeds, prompt_embeds])
+        # if self.do_classifier_free_guidance:
+        #     prompt_embeds = torch.cat([negative_prompt_embeds, prompt_embeds])
+        # Sequential CFG: keep embeddings separate to avoid 2x batch size.
 
+        negative_image_embeds = None
         if ip_adapter_image is not None or ip_adapter_image_embeds is not None:
             image_embeds = self.prepare_ip_adapter_image_embeds(
                 ip_adapter_image,
@@ -703,6 +705,15 @@ class StableDiffusionPipeline(
                 batch_size * num_images_per_prompt,
                 self.do_classifier_free_guidance,
             )
+            if self.do_classifier_free_guidance:
+                # Sequential CFG: split concatenated IP-Adapter embeds into uncond/text.
+                negative_image_embeds = []
+                image_embeds_text = []
+                for single_image_embeds in image_embeds:
+                    single_negative_image_embeds, single_image_embeds = single_image_embeds.chunk(2)
+                    negative_image_embeds.append(single_negative_image_embeds)
+                    image_embeds_text.append(single_image_embeds)
+                image_embeds = image_embeds_text
             _log_mem("after_ip_adapter_embeds")
 
         # 4. Prepare timesteps
@@ -729,11 +740,17 @@ class StableDiffusionPipeline(
         extra_step_kwargs = self.prepare_extra_step_kwargs(generator, eta)
 
         # 6.1 Add image embeds for IP-Adapter
-        added_cond_kwargs = (
-            {"image_embeds": image_embeds}
-            if (ip_adapter_image is not None or ip_adapter_image_embeds is not None)
-            else None
-        )
+        # added_cond_kwargs = (
+        #     {"image_embeds": image_embeds}
+        #     if (ip_adapter_image is not None or ip_adapter_image_embeds is not None)
+        #     else None
+        # )
+        added_cond_kwargs = None
+        added_uncond_kwargs = None
+        if ip_adapter_image is not None or ip_adapter_image_embeds is not None:
+            added_cond_kwargs = {"image_embeds": image_embeds}
+            if self.do_classifier_free_guidance:
+                added_uncond_kwargs = {"image_embeds": negative_image_embeds}
 
         # 6.2 Optionally get Guidance Scale Embedding
         timestep_cond = None
@@ -753,25 +770,61 @@ class StableDiffusionPipeline(
                     continue
 
                 # expand the latents if we are doing classifier free guidance
-                latent_model_input = torch.cat([latents] * 2) if self.do_classifier_free_guidance else latents
+                # latent_model_input = torch.cat([latents] * 2) if self.do_classifier_free_guidance else latents
+                # if hasattr(self.scheduler, "scale_model_input"):
+                #     latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
+                #
+                # # predict the noise residual
+                # noise_pred = self.unet(
+                #     latent_model_input,
+                #     t,
+                #     encoder_hidden_states=prompt_embeds,
+                #     timestep_cond=timestep_cond,
+                #     cross_attention_kwargs=self.cross_attention_kwargs,
+                #     added_cond_kwargs=added_cond_kwargs,
+                #     return_dict=False,
+                # )[0]
+                #
+                # # perform guidance
+                # if self.do_classifier_free_guidance:
+                #     noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
+                #     noise_pred = noise_pred_uncond + self.guidance_scale * (noise_pred_text - noise_pred_uncond)
+
+                # Sequential CFG (no batch doubling).
+                latent_model_input = latents
                 if hasattr(self.scheduler, "scale_model_input"):
                     latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
 
-                # predict the noise residual
-                noise_pred = self.unet(
-                    latent_model_input,
-                    t,
-                    encoder_hidden_states=prompt_embeds,
-                    timestep_cond=timestep_cond,
-                    cross_attention_kwargs=self.cross_attention_kwargs,
-                    added_cond_kwargs=added_cond_kwargs,
-                    return_dict=False,
-                )[0]
-
-                # perform guidance
                 if self.do_classifier_free_guidance:
-                    noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
+                    noise_pred_uncond = self.unet(
+                        latent_model_input,
+                        t,
+                        encoder_hidden_states=negative_prompt_embeds,
+                        timestep_cond=timestep_cond,
+                        cross_attention_kwargs=self.cross_attention_kwargs,
+                        added_cond_kwargs=added_uncond_kwargs,
+                        return_dict=False,
+                    )[0]
+                    noise_pred_text = self.unet(
+                        latent_model_input,
+                        t,
+                        encoder_hidden_states=prompt_embeds,
+                        timestep_cond=timestep_cond,
+                        cross_attention_kwargs=self.cross_attention_kwargs,
+                        added_cond_kwargs=added_cond_kwargs,
+                        return_dict=False,
+                    )[0]
                     noise_pred = noise_pred_uncond + self.guidance_scale * (noise_pred_text - noise_pred_uncond)
+                else:
+                    noise_pred = self.unet(
+                        latent_model_input,
+                        t,
+                        encoder_hidden_states=prompt_embeds,
+                        timestep_cond=timestep_cond,
+                        cross_attention_kwargs=self.cross_attention_kwargs,
+                        added_cond_kwargs=added_cond_kwargs,
+                        return_dict=False,
+                    )[0]
 
                 if self.do_classifier_free_guidance and self.guidance_rescale > 0.0:
                     # Based on 3.4. in https://huggingface.co/papers/2305.08891

@@ -1,14 +1,33 @@
+/**
+ * SD1.5 inpainting UI wiring.
+ *
+ * Responsibilities:
+ * - Load an initial image and render it into a canvas.
+ * - Let the user paint an inpainting mask (white = inpaint, black = keep).
+ * - Optionally blur mask edges using a backend helper endpoint.
+ * - Upload base+mask artifacts, submit an `sd15.inpaint` workflow job,
+ *   and stream status updates via SSE into the gallery.
+ *
+ * This file assumes `API_BASE` and `createGalleryViewer()` are provided globally
+ * (typically by the hosting HTML page).
+ */
+
+// Gallery viewer for displaying generated outputs (with light cache-busting).
 const gallery = createGalleryViewer({
     buildImageUrl: (path, idx, stamp) => {
         return API_BASE + path + `?t=${stamp}_${idx}`;
     },
 });
 
-gallery.render();
-
+// Token incremented per generateInpaint() call to ignore stale SSE events from prior jobs.
 let activeJobToken = 0;
+// Currently active SSE connection (closed on new generation).
 let activeEventSource = null;
 
+/**
+ * Close any active SSE connection and clear the local reference.
+ * Safe to call multiple times.
+ */
 function closeActiveEventSource() {
     if (activeEventSource) {
         activeEventSource.close();
@@ -16,43 +35,7 @@ function closeActiveEventSource() {
     }
 }
 
-function makeIdempotencyKey() {
-    if (typeof crypto?.randomUUID === "function") {
-        return crypto.randomUUID();
-    }
-    return `idemp_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-}
-
-async function uploadArtifact(blobOrFile, filename = "upload.png") {
-    const formData = new FormData();
-    formData.append("file", blobOrFile, filename);
-    const res = await fetch(`${API_BASE}/api/artifacts`, {
-        method: "POST",
-        body: formData,
-    });
-    if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error(`Artifact upload failed (${res.status}): ${errorText}`);
-    }
-    return await res.json();
-}
-
-async function submitWorkflow(payload, idempotencyKey) {
-    const res = await fetch(`${API_BASE}/api/jobs`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "Idempotency-Key": idempotencyKey,
-        },
-        body: JSON.stringify({ kind: "workflow", payload }),
-    });
-    if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error(`Job submit failed (${res.status}): ${errorText}`);
-    }
-    return await res.json();
-}
-
+// DOM references (expected to exist in the hosting HTML).
 const baseCanvas = document.getElementById("base_canvas");
 const maskCanvas = document.getElementById("mask_canvas");
 const canvasStack = document.querySelector(".canvas-stack");
@@ -71,6 +54,7 @@ const maskBlurButton = document.getElementById("mask_blur");
 const blurFactorInput = document.getElementById("blur_factor");
 const blurToggle = document.getElementById("blur_toggle");
 
+// Current inpainting session state.
 let baseImageFile = null;
 let baseImage = null;
 let isDrawing = false;
@@ -78,30 +62,31 @@ let maskBlob = null;
 let maskDataUrl = null;
 let blurMaskBlob = null;
 let blurMaskDataUrl = null;
+// Scale factor from image pixels -> on-screen canvas CSS pixels (fit-to-view + zoom).
 let displayScale = 1;
 
+// 2D contexts: base shows the uploaded image; mask stores the editable mask.
 const baseContext = baseCanvas.getContext("2d");
 const maskContext = maskCanvas.getContext("2d");
 
+/**
+ * Update the brush size label to mirror the current slider value.
+ */
 function updateBrushLabel() {
     brushValue.textContent = brushSizeInput.value;
 }
 
-updateBrushLabel();
-brushSizeInput.addEventListener("input", updateBrushLabel);
-
+/**
+ * Update the zoom label to mirror the current slider value.
+ */
 function updateZoomLabel() {
     zoomValue.textContent = zoomInput.value;
 }
 
-updateZoomLabel();
-zoomInput.addEventListener("input", () => {
-    updateZoomLabel();
-    if (baseImage) {
-        resizeCanvasDisplay(baseImage);
-    }
-});
-
+/**
+ * Populate the SD1.5 model dropdown from the backend model registry.
+ * Falls back to a sane default if the request fails.
+ */
 async function loadModels() {
     const select = document.getElementById("model_select");
     select.innerHTML = "";
@@ -134,14 +119,157 @@ async function loadModels() {
     }
 }
 
-loadModels();
+let didInitSd15InpaintingPage = false;
 
+/**
+ * Initialize page-level UI integrations.
+ *
+ * Centralizes one-time setup calls to keep the global scope tidy.
+ */
+function initSd15InpaintingPage() {
+    if (didInitSd15InpaintingPage) {
+        return;
+    }
+    didInitSd15InpaintingPage = true;
+
+    // Render the gallery shell immediately (images will be set after a job completes).
+    gallery.render();
+
+    updateBrushLabel();
+    brushSizeInput.addEventListener("input", updateBrushLabel);
+
+    updateZoomLabel();
+    zoomInput.addEventListener("input", () => {
+        updateZoomLabel();
+        if (baseImage) {
+            // Recompute the on-screen canvas size when zoom changes.
+            resizeCanvasDisplay(baseImage);
+        }
+    });
+ 
+    void loadModels();
+    if (window.WorkflowCatalog?.load) {
+        void window.WorkflowCatalog
+            .load(API_BASE)
+            .then(() => {
+                window.WorkflowCatalog.applyDefaultsToForm("sd15.inpaint", {
+                    steps: "steps",
+                    cfg: "cfg",
+                    strength: "strength",
+                    num_images: "num_images",
+                    padding_mask_crop: "padding_mask_crop",
+                    clip_skip: "clip_skip",
+                });
+            })
+            .catch(() => {});
+    }
+ 
+    // When a new base image is selected, reset mask state and render it on the canvases.
+    initialImageInput.addEventListener("change", () => {
+        const file = initialImageInput.files[0];
+        if (!file) {
+            return;
+        }
+
+        baseImageFile = file;
+        // Reset any previously created masks/blurred masks for the new base image.
+        maskBlob = null;
+        maskDataUrl = null;
+        blurMaskBlob = null;
+        blurMaskDataUrl = null;
+        blurToggle.checked = false;
+        maskPreview.removeAttribute("src");
+        maskPreviewPanel.classList.add("hidden");
+        updateBlurControls();
+
+        // Decode the local image file for immediate on-canvas editing (no upload yet).
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const img = new Image();
+            img.onload = () => {
+                baseImage = img;
+                resizeCanvasDisplay(img);
+                // Open the editor by default to encourage the "upload -> mask -> generate" flow.
+                openMaskEditor();
+            };
+            img.src = event.target.result;
+        };
+        reader.readAsDataURL(file);
+    });
+
+    maskCanvas.addEventListener("pointerdown", (event) => {
+        if (!baseImageFile) {
+            return;
+        }
+        isDrawing = true;
+        // Capture the pointer so we keep drawing even if the pointer leaves the element.
+        maskCanvas.setPointerCapture(event.pointerId);
+        drawAt(getCanvasPosition(event));
+    });
+
+    maskCanvas.addEventListener("pointermove", (event) => {
+        if (!isDrawing) {
+            return;
+        }
+        drawAt(getCanvasPosition(event));
+    });
+
+    maskCanvas.addEventListener("pointerup", () => {
+        // End the stroke.
+        isDrawing = false;
+    });
+
+    maskCanvas.addEventListener("pointerleave", () => {
+        // Defensive: stop drawing if the pointer leaves unexpectedly.
+        isDrawing = false;
+    });
+
+    // Expose actions for HTML `onclick` bindings (keeps markup simple).
+    window.clearMask = clearMask;
+    window.openMaskEditor = openMaskEditor;
+    window.closeMaskEditor = closeMaskEditor;
+    window.saveMask = saveMask;
+    window.toggleMaskPreview = toggleMaskPreview;
+    window.generateInpaint = generateInpaint;
+    window.generateBlurMask = generateBlurMask;
+
+    blurToggle.addEventListener("change", updateMaskPreview);
+
+    // Ensure controls are in a consistent state on first render.
+    updateBlurControls();
+}
+
+/**
+ * Run an initializer once the DOM is ready (or immediately if already ready).
+ *
+ * @param {() => void} initFn
+ */
+function runWhenDomReady(initFn) {
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", initFn, { once: true });
+        return;
+    }
+    initFn();
+}
+
+runWhenDomReady(initSd15InpaintingPage);
+
+/**
+ * Resize both canvases to match the image's pixel dimensions and update their
+ * CSS sizes to fit the viewport (plus user zoom).
+ *
+ * The base canvas is re-rendered from the image, and the mask is reset.
+ *
+ * @param {HTMLImageElement} image
+ */
 function resizeCanvasDisplay(image) {
     baseCanvas.width = image.width;
     baseCanvas.height = image.height;
     maskCanvas.width = image.width;
     maskCanvas.height = image.height;
 
+    // Compute a "fit-to-view" scale based on container width and a max viewport height,
+    // then apply the user-provided zoom multiplier.
     const availableWidth =
         canvasStack.parentElement?.clientWidth || canvasStack.clientWidth || image.width;
     const maxHeight = Math.round(window.innerHeight * 0.7);
@@ -165,40 +293,22 @@ function resizeCanvasDisplay(image) {
     maskCanvas.style.width = `${displayWidth}px`;
     maskCanvas.style.height = `${displayHeight}px`;
 
+    // Redraw base and reset mask to a full black image (meaning "keep original").
     baseContext.clearRect(0, 0, baseCanvas.width, baseCanvas.height);
     baseContext.drawImage(image, 0, 0);
     clearMask();
     imageInfo.textContent = `Image size: ${image.width} × ${image.height} (${Math.round(displayScale * 100)}% view)`;
 }
 
-initialImageInput.addEventListener("change", () => {
-    const file = initialImageInput.files[0];
-    if (!file) {
-        return;
-    }
-
-    baseImageFile = file;
-    maskBlob = null;
-    maskDataUrl = null;
-    blurMaskBlob = null;
-    blurMaskDataUrl = null;
-    blurToggle.checked = false;
-    maskPreview.removeAttribute("src");
-    maskPreviewPanel.classList.add("hidden");
-    updateBlurControls();
-    const reader = new FileReader();
-    reader.onload = (event) => {
-        const img = new Image();
-        img.onload = () => {
-            baseImage = img;
-            resizeCanvasDisplay(img);
-            openMaskEditor();
-        };
-        img.src = event.target.result;
-    };
-    reader.readAsDataURL(file);
-});
-
+/**
+ * Convert a pointer event's viewport coordinates into mask-canvas pixel coordinates.
+ *
+ * This accounts for the canvas being displayed at a CSS-scaled size while its
+ * drawing buffer remains at the original image resolution.
+ *
+ * @param {PointerEvent} event
+ * @returns {{x: number, y: number}}
+ */
 function getCanvasPosition(event) {
     const rect = maskCanvas.getBoundingClientRect();
     const scaleX = maskCanvas.width / rect.width;
@@ -209,6 +319,15 @@ function getCanvasPosition(event) {
     };
 }
 
+/**
+ * Draw a circular dab at a given position on the mask canvas.
+ *
+ * Mask convention:
+ * - white  = inpaint this area
+ * - black  = keep original
+ *
+ * @param {{x: number, y: number}} position
+ */
 function drawAt(position) {
     const brushSize = Number(brushSizeInput.value);
     const color = eraseToggle.checked ? "#000000" : "#ffffff";
@@ -218,30 +337,9 @@ function drawAt(position) {
     maskContext.fill();
 }
 
-maskCanvas.addEventListener("pointerdown", (event) => {
-    if (!baseImageFile) {
-        return;
-    }
-    isDrawing = true;
-    maskCanvas.setPointerCapture(event.pointerId);
-    drawAt(getCanvasPosition(event));
-});
-
-maskCanvas.addEventListener("pointermove", (event) => {
-    if (!isDrawing) {
-        return;
-    }
-    drawAt(getCanvasPosition(event));
-});
-
-maskCanvas.addEventListener("pointerup", () => {
-    isDrawing = false;
-});
-
-maskCanvas.addEventListener("pointerleave", () => {
-    isDrawing = false;
-});
-
+/**
+ * Reset the mask canvas to solid black and clear any derived mask state.
+ */
 function clearMask() {
     if (!maskContext) {
         return;
@@ -257,6 +355,9 @@ function clearMask() {
     updateBlurControls();
 }
 
+/**
+ * Show the mask editor modal/panel.
+ */
 function openMaskEditor() {
     if (!baseImageFile) {
         alert("Please upload an initial image first.");
@@ -265,10 +366,16 @@ function openMaskEditor() {
     maskModal.classList.remove("hidden");
 }
 
+/**
+ * Hide the mask editor modal/panel.
+ */
 function closeMaskEditor() {
     maskModal.classList.add("hidden");
 }
 
+/**
+ * Toggle visibility of the mask preview panel.
+ */
 function toggleMaskPreview() {
     if (maskPreviewPanel.classList.contains("hidden")) {
         maskPreviewPanel.classList.remove("hidden");
@@ -277,6 +384,10 @@ function toggleMaskPreview() {
     }
 }
 
+/**
+ * Persist the current mask into both a Blob (for upload) and a Data URL (for preview).
+ * Also clears any previous blurred-mask result, since it's no longer valid.
+ */
 async function saveMask() {
     maskBlob = await getMaskBlob();
     if (!maskBlob) {
@@ -293,12 +404,11 @@ async function saveMask() {
     closeMaskEditor();
 }
 
-window.clearMask = clearMask;
-window.openMaskEditor = openMaskEditor;
-window.closeMaskEditor = closeMaskEditor;
-window.saveMask = saveMask;
-window.toggleMaskPreview = toggleMaskPreview;
-
+/**
+ * Create a PNG Blob of the current mask canvas.
+ *
+ * @returns {Promise<Blob|null>}
+ */
 function getMaskBlob() {
     return new Promise((resolve) => {
         maskCanvas.toBlob((blob) => {
@@ -307,6 +417,10 @@ function getMaskBlob() {
     });
 }
 
+/**
+ * Update the preview image to show either the blurred mask (if enabled) or the
+ * raw saved mask.
+ */
 function updateMaskPreview() {
     if (blurToggle.checked && blurMaskDataUrl) {
         maskPreview.src = blurMaskDataUrl;
@@ -319,6 +433,10 @@ function updateMaskPreview() {
     maskPreview.removeAttribute("src");
 }
 
+/**
+ * Enable/disable blur controls based on whether a saved mask exists and whether
+ * a blurred mask has been generated.
+ */
 function updateBlurControls() {
     const hasMask = Boolean(maskBlob);
     maskBlurButton.disabled = !hasMask;
@@ -333,6 +451,12 @@ function updateBlurControls() {
     updateMaskPreview();
 }
 
+/**
+ * Request a blurred version of the saved mask from the backend.
+ *
+ * The backend applies a Gaussian blur to soften edges, which can help avoid
+ * harsh seams in the final inpaint result.
+ */
 async function generateBlurMask() {
     if (!maskBlob) {
         alert("Please create and save a mask before blurring.");
@@ -344,6 +468,7 @@ async function generateBlurMask() {
         return;
     }
 
+    // Prevent repeated clicks while the request is in-flight.
     maskBlurButton.disabled = true;
     maskBlurButton.textContent = "Blurring...";
     try {
@@ -361,6 +486,7 @@ async function generateBlurMask() {
 
         const blob = await res.blob();
         blurMaskBlob = blob;
+        // Convert to a Data URL for preview/download without uploading it anywhere.
         blurMaskDataUrl = await new Promise((resolve) => {
             const reader = new FileReader();
             reader.onload = () => resolve(reader.result);
@@ -376,6 +502,12 @@ async function generateBlurMask() {
     }
 }
 
+/**
+ * Upload base+mask artifacts, submit an inpaint job, and stream results into the gallery.
+ *
+ * Uses the blurred mask if the toggle is enabled and a blurred mask is available;
+ * otherwise uses the raw saved mask.
+ */
 async function generateInpaint() {
     const token = ++activeJobToken;
     closeActiveEventSource();
@@ -390,26 +522,40 @@ async function generateInpaint() {
         return;
     }
 
-    const prompt = document.getElementById("prompt").value;
-    const steps = Number(document.getElementById("steps").value);
-    const cfg = Number(document.getElementById("cfg").value);
-    const scheduler = document.getElementById("scheduler").value;
-    const seedValue = document.getElementById("seed").value;
-    const seedNumber = seedValue === "" ? null : Number(seedValue);
-    const seed = Number.isFinite(seedNumber) ? seedNumber : null;
-    const negative_prompt = document.getElementById("negative_prompt").value;
-    const num_images = Number(document.getElementById("num_images").value);
-    const model = document.getElementById("model_select").value;
-    const strength = Number(document.getElementById("strength").value);
-    const paddingMaskCrop = Number(document.getElementById("padding_mask_crop").value);
-    const clip_skip = Number(document.getElementById("clip_skip").value);
+    const catalog = window.WorkflowCatalog?.load ? await window.WorkflowCatalog.load(API_BASE) : null;
+    const defaults = catalog?.tasks?.["sd15.inpaint"]?.input_defaults ?? {};
 
-    const idempotencyKey = makeIdempotencyKey();
+    const prompt = WorkflowClient.readTextValue("prompt", "");
+    const negative_prompt = WorkflowClient.readTextValue(
+        "negative_prompt",
+        defaults.negative_prompt ?? ""
+    );
+    const steps = WorkflowClient.readNumberValue("steps", defaults.steps ?? 20, { integer: true });
+    const cfg = WorkflowClient.readNumberValue("cfg", defaults.cfg ?? 7.5);
+    const scheduler = WorkflowClient.readTextValue("scheduler", defaults.scheduler ?? "euler");
+    const seed = WorkflowClient.readSeedValue("seed");
+    const num_images = WorkflowClient.readNumberValue("num_images", defaults.num_images ?? 1, {
+        integer: true,
+    });
+    const modelRaw = document.getElementById("model_select")?.value ?? "";
+    const model = modelRaw ? modelRaw : (defaults.model ?? null);
+    const strength = WorkflowClient.readNumberValue("strength", defaults.strength ?? 0.5);
+    const paddingMaskCrop = WorkflowClient.readNumberValue(
+        "padding_mask_crop",
+        defaults.padding_mask_crop ?? 32,
+        { integer: true }
+    );
+    const clip_skip = WorkflowClient.readNumberValue("clip_skip", defaults.clip_skip ?? 1, {
+        integer: true,
+    });
+
+    const idempotencyKey = WorkflowClient.makeIdempotencyKey();
 
     try {
+        // Upload base and mask concurrently to reduce overall latency.
         const [uploadedBase, uploadedMask] = await Promise.all([
-            uploadArtifact(baseImageFile, baseImageFile.name || "initial.png"),
-            uploadArtifact(activeMaskBlob, "mask.png"),
+            WorkflowClient.uploadArtifact(API_BASE, baseImageFile, baseImageFile.name || "initial.png"),
+            WorkflowClient.uploadArtifact(API_BASE, activeMaskBlob, "mask.png"),
         ]);
 
         const workflowPayload = {
@@ -437,53 +583,33 @@ async function generateInpaint() {
             return: "@inpaint.images",
         };
 
-        const createdJob = await submitWorkflow(workflowPayload, idempotencyKey);
+        const createdJob = await WorkflowClient.submitWorkflow(API_BASE, workflowPayload, idempotencyKey);
         const jobId = createdJob?.id;
         if (!jobId) {
             throw new Error("Job submit did not return an id.");
         }
 
-        const source = new EventSource(`${API_BASE}/api/jobs/${jobId}/events`);
-        activeEventSource = source;
-
-        source.onmessage = (event) => {
-            if (token !== activeJobToken) {
-                source.close();
-                return;
-            }
-
-            let job;
-            try {
-                job = JSON.parse(event.data);
-            } catch {
-                return;
-            }
-
-            const status = job?.status ?? "unknown";
-            if (status === "succeeded") {
-                const images = job?.result?.outputs;
-                gallery.setImages(Array.isArray(images) ? images : []);
-                source.close();
-            } else if (status === "failed" || status === "canceled") {
+        activeEventSource = WorkflowClient.watchJob(API_BASE, jobId, {
+            isStale: () => token !== activeJobToken,
+            onDone: (job) => {
+                const status = job?.status ?? "unknown";
+                if (status === "succeeded") {
+                    const images = job?.result?.outputs;
+                    gallery.setImages(Array.isArray(images) ? images : []);
+                } else {
+                    gallery.setImages([]);
+                }
+            },
+            onError: () => {
+                if (token !== activeJobToken) {
+                    return;
+                }
                 gallery.setImages([]);
-                source.close();
-            }
-        };
-
-        source.onerror = () => {
-            if (token !== activeJobToken) {
-                source.close();
-                return;
-            }
-            source.close();
-        };
+            },
+        });
     } catch (error) {
         console.warn("Failed to run inpaint job:", error);
         gallery.setImages([]);
     }
 }
 
-window.generateInpaint = generateInpaint;
-window.generateBlurMask = generateBlurMask;
-blurToggle.addEventListener("change", updateMaskPreview);
-updateBlurControls();

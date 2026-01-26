@@ -1,4 +1,14 @@
-## Imports
+"""
+SynthiaEngine FastAPI application.
+
+This module defines the HTTP API surface for:
+- Job submission/status and server-sent event (SSE) polling for updates.
+- Artifact upload and static serving from the `OUTPUT_DIR` directory.
+- Lightweight registries for models, LoRAs, and ControlNet preprocessors.
+
+Keep business logic in the `backend/*` modules; handlers here should remain thin
+and focused on validation, serialization, and HTTP concerns.
+"""
 import logging
 import re
 import shutil
@@ -24,7 +34,11 @@ from backend.controlnet_preprocessor_registry import (
     ControlNetPreprocessorModelEntry,
 )
 from backend.model_analysis import SUPPORTED_EXTS, analyze_model_file
-from backend.model_registry import MODEL_REGISTRY, ModelRegistryEntry, save_model_registry
+from backend.model_registry import (
+    ModelRegistryEntry,
+    create_model_entry,
+    list_model_entries,
+)
 from backend.lora_registry import (
     LORA_REGISTRY,
     LoraRegistryEntry,
@@ -42,7 +56,13 @@ from backend.job_queue import (
     list_jobs,
 )
 
-from backend.workflow import TASK_REGISTRY, WorkflowRequest, WorkflowTask, save_artifact_png
+from backend.workflow import (
+    TASK_REGISTRY,
+    WorkflowRequest,
+    WorkflowTask,
+    build_workflow_catalog,
+    save_artifact_png,
+)
 
 app = FastAPI(title="SynthiaEngine API")
 logger = logging.getLogger(__name__)
@@ -62,6 +82,8 @@ ALLOWED_JOB_KINDS = {"workflow"}
 
 ## BaseModel references
 class ModelCreateRequest(BaseModel):
+    """Request payload used to register a new model in the local registry."""
+
     name: str
     family: str
     model_type: str
@@ -72,6 +94,8 @@ class ModelCreateRequest(BaseModel):
 
 
 class LoraCreateRequest(BaseModel):
+    """Request payload used to register a new LoRA entry in the local registry."""
+
     lora_id: int
     lora_model_family: str
     lora_type: str
@@ -81,6 +105,8 @@ class LoraCreateRequest(BaseModel):
 
 
 class ControlNetPreprocessorInfo(BaseModel):
+    """Serializable info about a ControlNet preprocessor implementation."""
+
     id: str
     name: str
     description: str
@@ -88,12 +114,16 @@ class ControlNetPreprocessorInfo(BaseModel):
 
 
 class ModelLayerRow(BaseModel):
+    """Single row in the model-layer analysis response."""
+
     key: str
     shape: str
     dtype: str
 
 
 class ModelAnalysisResponse(BaseModel):
+    """Response for model analysis endpoint (list of layers/weights)."""
+
     file_name: str
     loader: str
     total: int
@@ -102,6 +132,8 @@ class ModelAnalysisResponse(BaseModel):
 
 
 class WorkflowJobCreateRequest(BaseModel):
+    """Job creation request for workflow execution."""
+
     kind: Literal["workflow"]
     payload: WorkflowRequest
     idempotency_key: str | None = None
@@ -111,6 +143,8 @@ JobCreateRequest = WorkflowJobCreateRequest
 
 
 class JobResponse(BaseModel):
+    """Normalized, API-friendly job representation."""
+
     id: str
     idempotency_key: str | None = None
     cancel_requested: bool | None = None
@@ -126,15 +160,36 @@ class JobResponse(BaseModel):
 
 
 class WorkflowTaskTypesResponse(BaseModel):
+    """Response payload listing workflow task type identifiers."""
+
     task_types: list[str]
 
 
 class WorkflowSchemaResponse(BaseModel):
+    """Response payload exposing the JSON schema for workflow requests/tasks."""
+
     workflow_request_schema: dict[str, Any]
     workflow_task_schema: dict[str, Any]
 
 
+class WorkflowCatalogTask(BaseModel):
+    """A single task type entry in the workflow catalog."""
+
+    input_schema: dict[str, Any]
+    input_defaults: dict[str, Any]
+    output_schema: dict[str, Any] | None = None
+    ui_hints: dict[str, Any] | None = None
+
+
+class WorkflowCatalogResponse(BaseModel):
+    """Response payload exposing per-task input schemas/defaults for workflow builders."""
+
+    version: str
+    tasks: dict[str, WorkflowCatalogTask]
+
+
 def _serialize_job(job) -> JobResponse:
+    """Convert a queue job object into the public `JobResponse` format."""
     return JobResponse(
         id=job.id,
         idempotency_key=getattr(job, "idempotency_key", None),
@@ -152,6 +207,7 @@ def _serialize_job(job) -> JobResponse:
 
 
 def _get_job_sessionmaker():
+    """Return the SQLAlchemy sessionmaker stored on app state (or 503)."""
     sessionmaker = getattr(app.state, "job_sessionmaker", None)
     if sessionmaker is None:
         raise HTTPException(status_code=503, detail="Job queue not initialized.")
@@ -160,6 +216,7 @@ def _get_job_sessionmaker():
 
 @app.on_event("startup")
 def _startup_job_queue() -> None:
+    """Initialize the job queue and start the background worker thread."""
     engine, sessionmaker, worker = create_job_queue(JobQueueConfig())
     worker.start()
     app.state.job_engine = engine
@@ -169,12 +226,14 @@ def _startup_job_queue() -> None:
 
 @app.on_event("shutdown")
 def _shutdown_job_queue() -> None:
+    """Stop the background job worker (best effort)."""
     worker = getattr(app.state, "job_worker", None)
     if worker is not None:
         worker.stop()
 
 
 def _extract_png_metadata(path: Path) -> dict[str, str]:
+    """Extract embedded PNG text metadata in a safe, best-effort way."""
     try:
         with Image.open(path) as image:
             metadata: dict[str, str] = {}
@@ -191,17 +250,29 @@ def _extract_png_metadata(path: Path) -> dict[str, str]:
 
 @app.get("/health")
 async def health_check():
+    """Basic liveness endpoint used by deployment/health checks."""
     return {"status": "ok"}
 
 
 @app.post("/api/jobs", response_model=JobResponse, status_code=201)
 async def submit_job(req: JobCreateRequest, response: Response, request: Request):
+    """
+    Enqueue a new job.
+
+    Supports idempotent submissions via:
+    - request body `idempotency_key`, or
+    - `Idempotency-Key` HTTP header.
+
+    If the idempotency key is present and the job already exists, this returns
+    HTTP 200 with the existing job instead of creating a new one.
+    """
     if req.kind not in ALLOWED_JOB_KINDS:
         raise HTTPException(status_code=400, detail=f"Unsupported job kind: {req.kind}")
 
     sessionmaker = _get_job_sessionmaker()
     header_key = request.headers.get("Idempotency-Key")
     idempotency_key = req.idempotency_key or (header_key.strip() if header_key else None)
+    # Normalize payload into JSON-serializable primitives for storage/transport.
     payload = req.payload.model_dump(by_alias=True)
     try:
         job, created = enqueue_job(
@@ -223,6 +294,7 @@ async def submit_job(req: JobCreateRequest, response: Response, request: Request
 
 @app.get("/api/jobs/{job_id}", response_model=JobResponse)
 async def fetch_job(job_id: str):
+    """Fetch a single job by id."""
     sessionmaker = _get_job_sessionmaker()
     try:
         job = get_job(sessionmaker, job_id)
@@ -233,6 +305,7 @@ async def fetch_job(job_id: str):
 
 @app.get("/api/jobs", response_model=list[JobResponse])
 async def fetch_jobs(limit: int = 50):
+    """List recent jobs, bounded by a small server-side maximum."""
     sessionmaker = _get_job_sessionmaker()
     jobs = list_jobs(sessionmaker, limit=max(1, min(500, int(limit))))
     return [_serialize_job(job) for job in jobs]
@@ -240,6 +313,7 @@ async def fetch_jobs(limit: int = 50):
 
 @app.post("/api/jobs/{job_id}/cancel", response_model=JobResponse)
 async def cancel_queued_job(job_id: str):
+    """Request cancellation of a queued/running job (best effort)."""
     sessionmaker = _get_job_sessionmaker()
     try:
         job = request_cancel_job(sessionmaker, job_id)
@@ -250,6 +324,13 @@ async def cancel_queued_job(job_id: str):
 
 @app.get("/api/jobs/{job_id}/events")
 async def stream_job_events(job_id: str):
+    """
+    Stream job status updates as Server-Sent Events (SSE).
+
+    This implementation polls the job record periodically and emits a new event
+    when the status/updated_at changes. It stops once the job reaches a terminal
+    state or disappears.
+    """
     sessionmaker = _get_job_sessionmaker()
     try:
         get_job(sessionmaker, job_id)
@@ -257,12 +338,14 @@ async def stream_job_events(job_id: str):
         raise HTTPException(status_code=404, detail="Job not found.") from exc
 
     async def event_generator():
+        """Yield SSE `data:` frames containing the serialized job payload."""
         last_status = None
         last_updated_at = None
         while True:
             try:
                 job = get_job(sessionmaker, job_id)
             except JobNotFoundError:
+                # If the job disappears mid-stream, send a final error frame.
                 payload = {"error": "Job not found.", "status": "missing"}
                 yield f"data: {json.dumps(payload)}\n\n"
                 break
@@ -272,16 +355,20 @@ async def stream_job_events(job_id: str):
             status = payload.get("status")
             updated_at = payload.get("updated_at")
             if status != last_status or updated_at != last_updated_at:
+                # Only emit when something meaningful changes to reduce spam.
                 yield f"data: {json.dumps(payload)}\n\n"
                 last_status = status
                 last_updated_at = updated_at
 
             if status in {"succeeded", "failed", "canceled"}:
+                # Terminal states: end the stream cleanly.
                 break
 
+            # Polling interval for SSE consumers. Kept simple by design.
             await asyncio.sleep(1.0)
 
     headers = {
+        # SSE best practices: prevent buffering and keep the connection open.
         "Cache-Control": "no-cache",
         "Connection": "keep-alive",
     }
@@ -290,18 +377,33 @@ async def stream_job_events(job_id: str):
 
 @app.get("/api/workflow/task-types", response_model=WorkflowTaskTypesResponse)
 async def list_workflow_task_types():
+    """Return the set of registered workflow task type keys."""
     return WorkflowTaskTypesResponse(task_types=sorted(TASK_REGISTRY.keys()))
 
 
 @app.get("/api/workflow/schema", response_model=WorkflowSchemaResponse)
 async def get_workflow_schema():
+    """Expose workflow request/task JSON schemas for UI validation."""
     return WorkflowSchemaResponse(
         workflow_request_schema=WorkflowRequest.model_json_schema(by_alias=True),
         workflow_task_schema=WorkflowTask.model_json_schema(by_alias=True),
     )
 
 
+@app.get("/api/workflow/catalog", response_model=WorkflowCatalogResponse)
+async def get_workflow_catalog():
+    """
+    Return the workflow task catalog.
+
+    Each task entry includes an input JSON Schema and a best-effort `input_defaults`
+    dict so UIs can build/validate workflows without hardcoding values.
+    """
+    return WorkflowCatalogResponse(**build_workflow_catalog())
+
+
 class ArtifactResponse(BaseModel):
+    """Response payload describing a stored artifact in `OUTPUT_DIR`."""
+
     artifact_id: str
     url: str
     path: str
@@ -309,11 +411,14 @@ class ArtifactResponse(BaseModel):
 
 @app.post("/api/artifacts", response_model=ArtifactResponse, status_code=201)
 async def upload_artifact(file: UploadFile = File(...)):
+    """Upload an image artifact and persist it under `OUTPUT_DIR`."""
     file_bytes = await file.read()
     try:
         image = Image.open(BytesIO(file_bytes))
+        # Force decode early to catch truncated/invalid image streams.
         image.load()
         if image.mode == "P":
+            # Palette images don't carry alpha in a convenient way for later steps.
             image = image.convert("RGBA")
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Invalid image file.") from exc
@@ -324,13 +429,21 @@ async def upload_artifact(file: UploadFile = File(...)):
 
 @app.get("/models", response_model=list[ModelRegistryEntry])
 async def list_models(family: str | None = None):
+    """
+    List registered models.
+
+    If `family` is provided, it is matched loosely (case-insensitive), with a few
+    common aliases mapped to friendlier patterns (e.g., "sd15", "sd1.5").
+    """
+    entries = list_model_entries()
     if not family:
-        return MODEL_REGISTRY
+        return entries
 
     family_value = family.strip().lower()
     if not family_value:
-        return MODEL_REGISTRY
+        return entries
 
+    # Map common UI aliases to a more permissive regex to improve recall.
     if family_value in {"sd15", "sd1.5"}:
         pattern = re.compile(r"sd[\s_-]*1\.?5|sd15", re.IGNORECASE)
     elif family_value == "sdxl":
@@ -344,11 +457,12 @@ async def list_models(family: str | None = None):
     else:
         pattern = re.compile(re.escape(family_value), re.IGNORECASE)
 
-    return [entry for entry in MODEL_REGISTRY if pattern.search(entry.family)]
+    return [entry for entry in entries if pattern.search(entry.family)]
 
 
 @app.get("/lora-models", response_model=list[LoraRegistryEntry])
 async def list_lora_models(family: str | None = None):
+    """List registered LoRAs, optionally filtered by exact family (case-insensitive)."""
     if not family:
         return LORA_REGISTRY
 
@@ -365,6 +479,7 @@ async def list_lora_models(family: str | None = None):
 
 @app.post("/lora-models", response_model=LoraRegistryEntry)
 async def create_lora_model(req: LoraCreateRequest):
+    """Create a new LoRA registry entry."""
     try:
         entry = LoraRegistryEntry(**req.dict())
         return add_lora(entry)
@@ -374,6 +489,7 @@ async def create_lora_model(req: LoraCreateRequest):
 
 @app.get("/api/controlnet/preprocessors", response_model=list[ControlNetPreprocessorInfo])
 async def list_controlnet_preprocessors():
+    """Return available ControlNet preprocessors and their default params."""
     preprocessors = list_preprocessors()
     return [
         ControlNetPreprocessorInfo(
@@ -390,6 +506,7 @@ async def list_controlnet_preprocessors():
     response_model=list[ControlNetPreprocessorModelEntry],
 )
 async def list_controlnet_preprocessor_models():
+    """Return the list of ControlNet model entries (for UI selection)."""
     return CONTROLNET_PREPROCESSOR_REGISTRY
 
 
@@ -401,6 +518,13 @@ async def run_controlnet_preprocessor(
     low_threshold: int | None = Form(None),
     high_threshold: int | None = Form(None),
 ):
+    """
+    Run a ControlNet preprocessor over an uploaded image and return a PNG.
+
+    `params` is expected to be a JSON object encoded as a string. For
+    convenience, threshold form fields override corresponding JSON keys when
+    provided.
+    """
     image_bytes = await image.read()
     try:
         source_image = Image.open(BytesIO(image_bytes)).convert("RGB")
@@ -420,6 +544,7 @@ async def run_controlnet_preprocessor(
         except json.JSONDecodeError as exc:
             raise HTTPException(status_code=400, detail="Invalid params JSON.") from exc
 
+    # Allow simple threshold overrides without requiring clients to build JSON.
     if low_threshold is not None:
         parsed_params["low_threshold"] = low_threshold
     if high_threshold is not None:
@@ -436,6 +561,12 @@ async def analyze_model_layers(
     file: UploadFile = File(...),
     limit: int | None = Form(None),
 ):
+    """
+    Analyze an uploaded model file and return a (possibly limited) layer list.
+
+    The upload stream is copied to a temporary file to support loader APIs that
+    require a filesystem path. The temporary file is always cleaned up.
+    """
     filename = file.filename or "uploaded_model"
     suffix = Path(filename).suffix.lower()
     if suffix not in SUPPORTED_EXTS:
@@ -454,6 +585,7 @@ async def analyze_model_layers(
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     finally:
+        # Ensure we don't leak disk usage for failed analyses.
         if temp_path and temp_path.exists():
             temp_path.unlink(missing_ok=True)
 
@@ -468,21 +600,22 @@ async def analyze_model_layers(
 
 @app.post("/models", response_model=ModelRegistryEntry, status_code=201)
 async def create_model(req: ModelCreateRequest):
-    if any(entry.name == req.name for entry in MODEL_REGISTRY):
-        raise HTTPException(status_code=409, detail="Model name already exists.")
-
-    entry = ModelRegistryEntry(**req.dict())
-    MODEL_REGISTRY.append(entry)
-    save_model_registry(MODEL_REGISTRY)
-    return entry
+    """Create a new model registry entry, enforcing unique names."""
+    try:
+        entry = ModelRegistryEntry(**req.dict())
+        return create_model_entry(entry)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.get("/history")
 async def list_history():
+    """List generated images from `OUTPUT_DIR` along with embedded metadata."""
     if not OUTPUT_DIR.exists():
         return []
 
     records: list[dict[str, object]] = []
+    # Walk the outputs folder to produce a lightweight generation history feed.
     for image_path in OUTPUT_DIR.rglob("*.png"):
         stat = image_path.stat()
         timestamp = stat.st_mtime
@@ -504,6 +637,7 @@ async def list_history():
 ## Inpainting related endpoints
 
 def _create_blur_mask(mask_image: Image.Image, blur_factor: int) -> Image.Image:
+    """Apply a configurable Gaussian blur to a mask image (clamped)."""
     blur_factor = max(0, min(int(blur_factor), 128))
     if blur_factor == 0:
         return mask_image
@@ -515,6 +649,7 @@ async def create_blur_mask_endpoint(
     mask_image: UploadFile = File(...),
     blur_factor: int = Form(8),
 ):
+    """Generate a blurred version of a grayscale mask (used for inpainting)."""
     mask_bytes = await mask_image.read()
     try:
         mask = Image.open(BytesIO(mask_bytes)).convert("L")
@@ -525,5 +660,3 @@ async def create_blur_mask_endpoint(
     output = BytesIO()
     blurred_mask.save(output, format="PNG")
     return Response(content=output.getvalue(), media_type="image/png")
-
-

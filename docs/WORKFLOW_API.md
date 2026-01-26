@@ -10,7 +10,7 @@ This project uses a **single workflow job API** for all generation (SD1.5, SDXL,
 
 - Form field: `file` (image)
 - Returns: `artifact_id` + `url` + `path`
-- Artifact lifecycle: **ephemeral** — artifacts are deleted automatically when the workflow finishes (success/fail/canceled).
+- Artifact lifecycle: **ephemeral** -- artifacts are deleted automatically when the workflow finishes (success/fail/canceled).
 
 Response (201):
 ```json
@@ -46,8 +46,8 @@ Body:
 
 Idempotency:
 - If `Idempotency-Key` (or `idempotency_key` field) is provided:
-  - Same key + same request → returns the existing job (HTTP 200).
-- Same key + different request → HTTP 409.
+  - Same key + same request -> returns the existing job (HTTP 200).
+- Same key + different request -> HTTP 409.
 
 ### Fetch job status / results
 
@@ -67,7 +67,7 @@ Cancellation semantics:
 
 ### Stream job status (SSE)
 
-`GET /api/jobs/{job_id}/events` → `text/event-stream`
+`GET /api/jobs/{job_id}/events` -> `text/event-stream`
 
 - Emits JSON job snapshots when `status` or `updated_at` changes.
 - Stops when job is terminal: `succeeded`, `failed`, `canceled`.
@@ -92,6 +92,29 @@ Response:
   "workflow_task_schema": { /* JSON Schema */ }
 }
 ```
+
+### Fetch workflow task catalog (recommended for builders)
+
+`GET /api/workflow/catalog`
+
+Response:
+```json
+{
+  "version": "v2",
+  "tasks": {
+    "sd15.text2img": {
+      "input_schema": { /* JSON Schema for inputs */ },
+      "input_defaults": { /* defaults for optional fields */ },
+      "output_schema": { /* JSON Schema for task outputs */ },
+      "ui_hints": { /* optional UI metadata */ }
+    }
+  }
+}
+```
+
+Notes:
+- `ui_hints` is best-effort metadata for workflow builders (labels, widgets, suggested min/max, option lists, etc.).
+- `output_schema` describes the per-task result object stored under `result.tasks[taskId]`.
 
 ## Job object
 
@@ -153,7 +176,7 @@ If `"return"` is omitted, `outputs` becomes the **last task's result object** (o
 
 Rules:
 - `id` must be unique within the workflow.
-- `id` must match `^[A-Za-z0-9_-]+$` (max 64 chars). Don’t use `.` because `@taskId.key` uses `.` as a separator.
+- `id` must match `^[A-Za-z0-9_-]+$` (max 64 chars). Don't use `.` because `@taskId.key` uses `.` as a separator.
 - Tasks run strictly in order.
 
 ## Reference syntax in inputs / return
@@ -170,7 +193,7 @@ References are resolved at runtime:
 
 Resolution behavior:
 - References can appear anywhere inside `inputs` objects/arrays.
-- Unknown task ids → error.
+- Unknown task ids -> error.
 
 ## Supported task types (current)
 

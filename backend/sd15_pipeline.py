@@ -1,3 +1,16 @@
+"""
+Stable Diffusion 1.5 (SD1.5) pipeline helpers.
+
+This module is responsible for:
+- Loading Diffusers pipelines for txt2img, img2img, inpaint, and ControlNet.
+- Running inference (CUDA / fp16) and writing PNG outputs + embedded metadata.
+- Optional LoRA adapter application and pipeline-layer logging/diagnostics.
+
+The functions here are used by workflow tasks (e.g. `sd15.text2img`), so they
+aim to be deterministic (seeded) and side-effectful only in well-defined ways
+(writing files under `OUTPUT_DIR`).
+"""
+
 import torch
 import logging
 import math
@@ -42,6 +55,7 @@ configure_logging()
 ## Helper functions
 
 def create_blur_mask(mask_image, blur_factor: int):
+    """Return a blurred copy of a mask image with blur strength clamped to [0, 128]."""
     blur_factor = max(0, min(blur_factor, 128))
     if blur_factor == 0:
         return mask_image
@@ -49,6 +63,7 @@ def create_blur_mask(mask_image, blur_factor: int):
 
 
 def _resource_metadata(bound_args):
+    """Build a small metadata dict for resource logging from bound call arguments."""
     return {
         "batch_id": bound_args.arguments.get("batch_id"),
         "model": bound_args.arguments.get("model"),
@@ -57,12 +72,14 @@ def _resource_metadata(bound_args):
 
 
 def _snap_dimension(value: int, multiple: int = 8) -> int:
+    """Round a dimension up to the next multiple (SD models commonly prefer multiples of 8)."""
     if multiple <= 0:
         return value
     return max(multiple, int(math.ceil(value / multiple)) * multiple)
 
 
 def _upscale_image(image: Image.Image, scale: float) -> Image.Image:
+    """Upscale an image by `scale` using Lanczos, snapping size to SD-friendly dimensions."""
     if scale <= 1.0:
         return image
     target_width = _snap_dimension(int(round(image.width * scale)))
@@ -87,6 +104,13 @@ def apply_hires_fix(
     negative_prompt_embeds: torch.Tensor | None = None,
     lora_scale: float | None = None,
 ) -> Image.Image:
+    """
+    Run a "hires fix" pass: upscale the image, then refine with img2img.
+
+    This is used both standalone and as a second stage in txt2img flows. The
+    function accepts optional precomputed prompt embeddings for performance and
+    consistency with various weighting policies.
+    """
     if hires_scale <= 1.0:
         return image
 
@@ -124,6 +148,7 @@ def _apply_lora_adapters(
     *,
     validate: bool = False,
 ) -> list[str]:
+    """Apply requested LoRA adapters to a pipeline, returning adapter names loaded."""
     adapter_names, _ = apply_lora_adapters_with_validation(
         pipe,
         lora_adapters,
@@ -152,6 +177,12 @@ def run_sd15_hires_fix(
     output_dir: Path | None = None,
     batch_id: str | None = None,
 ) -> list[str]:
+    """
+    Apply hires-fix to a list of images and persist results under a batch directory.
+
+    The output filenames are returned as paths relative to the `OUTPUT_DIR` mount
+    so the frontend can display them via `/outputs/...`.
+    """
     if hires_scale <= 1.0:
         raise ValueError("hires_scale must be > 1.0 for sd15.hires_fix")
     if not images:
@@ -182,6 +213,7 @@ def run_sd15_hires_fix(
     relpaths: list[str] = []
     try:
         for idx, image in enumerate(images):
+            # Offset the seed per image to make batch outputs deterministic and distinct.
             current_seed = base_seed + idx
             generator = torch.Generator(device="cuda").manual_seed(current_seed)
 
@@ -201,6 +233,7 @@ def run_sd15_hires_fix(
             ).images[0]
 
             filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
+            # Store prompt/settings inside the PNG for later reproduction/debugging.
             pnginfo = build_png_metadata(
                 {
                     "mode": "hires_fix",
@@ -228,6 +261,13 @@ def run_sd15_hires_fix(
 ## Load pipelines
 
 def load_pipeline(model_name: str | None):
+    """
+    Load the base txt2img Stable Diffusion pipeline.
+
+    `model_name` is resolved via the model registry and can point to:
+    - a Diffusers directory, or
+    - a single-file checkpoint.
+    """
     entry = get_model_entry(model_name)
 
     source = resolve_model_source(entry)
@@ -247,11 +287,13 @@ def load_pipeline(model_name: str | None):
     else:
         raise ValueError(f"Unsupported model type: {entry.model_type}")
 
+    # Run on CUDA in fp16 for performance. Safety checker is disabled by design here.
     pipe.to("cuda")
     return pipe
 
 
 def load_img2img_pipeline(model_name: str | None):
+    """Load the SD1.5 img2img pipeline for the configured model."""
     entry = get_model_entry(model_name)
 
     source = resolve_model_source(entry)
@@ -276,6 +318,7 @@ def load_img2img_pipeline(model_name: str | None):
 
 
 def load_inpaint_pipeline(model_name: str | None):
+    """Load the SD1.5 inpainting pipeline for the configured model."""
     entry = get_model_entry(model_name)
 
     source = resolve_model_source(entry)
@@ -300,6 +343,11 @@ def load_inpaint_pipeline(model_name: str | None):
 
 
 def load_controlnet_pipeline(model_name: str | None, controlnet_model: str):
+    """
+    Load a ControlNet-enabled SD1.5 pipeline.
+
+    Note: `controlnet_model` is expected to be a Diffusers ControlNet model id/path.
+    """
     entry = get_model_entry(model_name)
 
     source = resolve_model_source(entry)
@@ -347,6 +395,11 @@ def generate_images_controlnet(
     control_image: Image.Image,
     batch_id: str | None = None,
 ) -> list[str]:
+    """
+    Generate images with SD1.5 + ControlNet conditioning and write outputs to disk.
+
+    Returns a list of output paths relative to the batch directory.
+    """
     if not batch_id:
         batch_id = make_batch_id()
 
@@ -356,6 +409,7 @@ def generate_images_controlnet(
     pipe.enable_xformers_memory_efficient_attention()
 
     if clip_skip > 1:
+        # Diffusers exposes clip-skip by effectively reducing the text encoder depth.
         pipe.text_encoder.config.num_hidden_layers = (
             pipe.text_encoder.config.num_hidden_layers - (clip_skip - 1)
         )
@@ -369,6 +423,7 @@ def generate_images_controlnet(
     name_to_type = None
 
     if config.PIPELINE_LAYER_LOGGING_ENABLED:
+        # Optionally capture which layers run (useful for debugging pipeline variants).
         arch_layers = collect_pipeline_layers(
             pipe,
             leaf_only=config.PIPELINE_LAYER_LOGGING_LEAF_ONLY,
@@ -416,6 +471,7 @@ def generate_images_controlnet(
             runtime_name_to_call_count=(name_to_calls if config.PIPELINE_LAYER_LOGGING_CAPTURE_INPUTS else None),
         )
 
+    # Embed settings into PNG metadata for reproducibility/debugging.
     metadata = {
         "prompt": prompt,
         "negative_prompt": negative_prompt,
@@ -459,6 +515,12 @@ def generate_images(
     batch_id: str | None = None,
     lora_scale: float | None = None,
 ):
+    """
+    Generate SD1.5 txt2img images (optionally with LoRA and optional hires-fix stage).
+
+    This function writes PNGs to a batch directory and returns their relative paths.
+    Layer logging and LoRA coverage reporting are optional diagnostics.
+    """
     # 1. Check and set seed number(if not present, set random seed)
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
@@ -511,6 +573,7 @@ def generate_images(
     # 6. Loop around image generation per image
     try:
         for i in range(num_images):
+            # Offset seed per image so batches are deterministic and distinct.
             current_seed = base_seed + i
             generator = torch.Generator(device="cuda").manual_seed(current_seed)
 
@@ -529,7 +592,7 @@ def generate_images(
                         weighting_policy=weighting_policy,
                     )
                     prompt_embeds_ready = True
-                    
+                     
                     # Generate image
                     image = pipe(
                         prompt=None if use_prompt_embeds else prompt,
@@ -584,7 +647,7 @@ def generate_images(
                     cross_attention_kwargs={"scale": lora_scale} if lora_scale is not None else None,
                 ).images[0]
 
-            # Generates filename, image metadata and saves it to image
+            # Write the PNG and embed all inputs/settings for later inspection.
             filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
             pnginfo = build_png_metadata({
                 "mode": "txt2img",
@@ -631,6 +694,12 @@ def generate_images_img2img(
     lora_adapters: list[object] | None = None,
     batch_id: str | None = None,
 ):
+    """
+    Generate SD1.5 img2img outputs from an initial image.
+
+    The initial image is assumed to be already resized/normalized by the caller.
+    Outputs are written to the batch directory and returned as relative paths.
+    """
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
         base_seed = torch.randint(0, 2**31, (1,)).item()
@@ -661,6 +730,7 @@ def generate_images_img2img(
 
     try:
         for i in range(num_images):
+            # Offset seed per image so batches are deterministic and distinct.
             current_seed = base_seed + i
             generator = torch.Generator(device="cuda").manual_seed(current_seed)
 
@@ -750,6 +820,11 @@ def generate_images_inpaint(
     clip_skip: int,
     batch_id: str | None = None,
 ):
+    """
+    Generate SD1.5 inpaint outputs from an initial image and a mask.
+
+    Outputs are written to the batch directory and returned as relative paths.
+    """
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
         base_seed = torch.randint(0, 2**31, (1,)).item()
@@ -772,6 +847,7 @@ def generate_images_inpaint(
     filenames = []
 
     for i in range(num_images):
+        # Offset seed per image so batches are deterministic and distinct.
         current_seed = base_seed + i
         generator = torch.Generator(device="cuda").manual_seed(current_seed)
 
@@ -822,6 +898,7 @@ def generate_images_inpaint(
             ).images[0]
 
         filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
+        # Embed all settings into the PNG for later reproduction/debugging.
         pnginfo = build_png_metadata({
             "mode": "inpaint",
             "prompt": prompt,

@@ -16,43 +16,6 @@ function closeActiveEventSource() {
     }
 }
 
-function makeIdempotencyKey() {
-    if (typeof crypto?.randomUUID === "function") {
-        return crypto.randomUUID();
-    }
-    return `idemp_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-}
-
-async function uploadArtifact(blobOrFile, filename = "upload.png") {
-    const formData = new FormData();
-    formData.append("file", blobOrFile, filename);
-    const res = await fetch(`${API_BASE}/api/artifacts`, {
-        method: "POST",
-        body: formData,
-    });
-    if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error(`Artifact upload failed (${res.status}): ${errorText}`);
-    }
-    return await res.json();
-}
-
-async function submitWorkflow(payload, idempotencyKey) {
-    const res = await fetch(`${API_BASE}/api/jobs`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "Idempotency-Key": idempotencyKey,
-        },
-        body: JSON.stringify({ kind: "workflow", payload }),
-    });
-    if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error(`Job submit failed (${res.status}): ${errorText}`);
-    }
-    return await res.json();
-}
-
 const baseCanvas = document.getElementById("base_canvas");
 const maskCanvas = document.getElementById("mask_canvas");
 const canvasStack = document.querySelector(".canvas-stack");
@@ -135,6 +98,19 @@ async function loadModels() {
 }
 
 loadModels();
+if (window.WorkflowCatalog?.load) {
+    void window.WorkflowCatalog
+        .load(API_BASE)
+        .then(() => {
+            window.WorkflowCatalog.applyDefaultsToForm("flux.inpaint", {
+                steps: "steps",
+                guidance_scale: "guidance_scale",
+                strength: "strength",
+                num_images: "num_images",
+            });
+        })
+        .catch(() => {});
+}
 
 function resizeCanvasDisplay(image) {
     baseCanvas.width = image.width;
@@ -390,22 +366,27 @@ async function generateFluxInpaint() {
         return;
     }
 
-    const prompt = document.getElementById("prompt").value;
-    const steps = Number(document.getElementById("steps").value);
-    const guidanceScale = Number(document.getElementById("guidance_scale").value);
-    const scheduler = document.getElementById("scheduler")?.value ?? "euler";
-    const seedValue = document.getElementById("seed").value;
-    const seedNumber = seedValue === "" ? null : Number(seedValue);
-    const seed = Number.isFinite(seedNumber) ? seedNumber : null;
-    const negative_prompt = document.getElementById("negative_prompt").value;
-    const num_images = Number(document.getElementById("num_images").value);
-    const model = document.getElementById("model_select").value;
-    const strength = Number(document.getElementById("strength").value);
+    const catalog = window.WorkflowCatalog?.load ? await window.WorkflowCatalog.load(API_BASE) : null;
+    const defaults = catalog?.tasks?.["flux.inpaint"]?.input_defaults ?? {};
+
+    const prompt = WorkflowClient.readTextValue("prompt", defaults.prompt ?? "");
+    const negative_prompt = WorkflowClient.readTextValue("negative_prompt", defaults.negative_prompt ?? "");
+    const steps = WorkflowClient.readNumberValue("steps", defaults.steps ?? 20, { integer: true });
+    const guidanceScale = WorkflowClient.readNumberValue(
+        "guidance_scale",
+        defaults.guidance_scale ?? 0.0,
+    );
+    const scheduler = WorkflowClient.readTextValue("scheduler", defaults.scheduler ?? "euler");
+    const seed = WorkflowClient.readSeedValue("seed");
+    const num_images = WorkflowClient.readNumberValue("num_images", defaults.num_images ?? 1, { integer: true });
+    const modelRaw = document.getElementById("model_select")?.value ?? "";
+    const model = modelRaw ? modelRaw : (defaults.model ?? null);
+    const strength = WorkflowClient.readNumberValue("strength", defaults.strength ?? 0.5);
 
     try {
         const [uploadedBase, uploadedMask] = await Promise.all([
-            uploadArtifact(baseImageFile, baseImageFile.name || "initial.png"),
-            uploadArtifact(activeMaskBlob, "mask.png"),
+            WorkflowClient.uploadArtifact(API_BASE, baseImageFile, baseImageFile.name || "initial.png"),
+            WorkflowClient.uploadArtifact(API_BASE, activeMaskBlob, "mask.png"),
         ]);
 
         const workflowPayload = {
@@ -431,44 +412,31 @@ async function generateFluxInpaint() {
             return: "@t1.images",
         };
 
-        const createdJob = await submitWorkflow(workflowPayload, makeIdempotencyKey());
+        const idempotencyKey = WorkflowClient.makeIdempotencyKey();
+        const createdJob = await WorkflowClient.submitWorkflow(API_BASE, workflowPayload, idempotencyKey);
         const jobId = createdJob?.id;
         if (!jobId) {
             throw new Error("Job submit did not return an id.");
         }
 
-        const source = new EventSource(`${API_BASE}/api/jobs/${jobId}/events`);
-        activeEventSource = source;
-
-        source.onmessage = (event) => {
-            if (token !== activeJobToken) {
-                source.close();
-                return;
-            }
-            let job;
-            try {
-                job = JSON.parse(event.data);
-            } catch {
-                return;
-            }
-            const status = job?.status ?? "unknown";
-            if (status === "succeeded") {
-                const images = job?.result?.outputs;
-                gallery.setImages(Array.isArray(images) ? images : []);
-                source.close();
-            } else if (status === "failed" || status === "canceled") {
+        activeEventSource = WorkflowClient.watchJob(API_BASE, jobId, {
+            isStale: () => token !== activeJobToken,
+            onDone: (job) => {
+                const status = job?.status ?? "unknown";
+                if (status === "succeeded") {
+                    const images = job?.result?.outputs;
+                    gallery.setImages(Array.isArray(images) ? images : []);
+                } else {
+                    gallery.setImages([]);
+                }
+            },
+            onError: () => {
+                if (token !== activeJobToken) {
+                    return;
+                }
                 gallery.setImages([]);
-                source.close();
-            }
-        };
-
-        source.onerror = () => {
-            if (token !== activeJobToken) {
-                source.close();
-                return;
-            }
-            source.close();
-        };
+            },
+        });
     } catch (error) {
         console.warn("Failed to run Flux inpaint job:", error);
         gallery.setImages([]);
