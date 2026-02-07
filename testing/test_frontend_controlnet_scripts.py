@@ -18,6 +18,20 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertLess(sd15_html.index(panel_tag), sd15_html.index(sd15_tag))
         self.assertLess(sd15_html.index(preprocessor_tag), sd15_html.index(sd15_tag))
 
+    def test_sd15_img2img_page_includes_controlnet_scripts_before_img2img(self):
+        sd15_img2img_html = (ROOT / "frontend" / "sd15_img2img.html").read_text(encoding="utf-8")
+        panel_tag = '<script src="controlnet_panel.js?v=2"></script>'
+        preprocessor_tag = '<script src="controlnet_preprocessor.js?v=3"></script>'
+        img2img_tag = '<script src="sd15_img2img.js?v=3"></script>'
+
+        self.assertIn(panel_tag, sd15_img2img_html)
+        self.assertIn(preprocessor_tag, sd15_img2img_html)
+        self.assertIn(img2img_tag, sd15_img2img_html)
+        self.assertLess(sd15_img2img_html.index(panel_tag), sd15_img2img_html.index(img2img_tag))
+        self.assertLess(
+            sd15_img2img_html.index(preprocessor_tag), sd15_img2img_html.index(img2img_tag)
+        )
+
     def test_controlnet_panel_script_exposes_expected_api(self):
         panel_js = (ROOT / "frontend" / "controlnet_panel.js").read_text(encoding="utf-8")
         self.assertIn("window.ControlNetPanel", panel_js)
@@ -35,6 +49,14 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("ensurePreprocessorLayoutStructure", preprocessor_js)
         self.assertIn("gridTemplateColumns", preprocessor_js)
         self.assertIn("window.innerWidth <= 700", preprocessor_js)
+
+    def test_sd15_img2img_script_consumes_controlnet_state(self):
+        img2img_js = (ROOT / "frontend" / "sd15_img2img.js").read_text(encoding="utf-8")
+        self.assertIn("window.ControlNetPanel?.getState?.()", img2img_js)
+        self.assertIn("window.ControlNetPreprocessor.init()", img2img_js)
+        self.assertIn("controlnetEnabled", img2img_js)
+        self.assertIn("control_images", img2img_js)
+        self.assertIn("controlnet_models", img2img_js)
 
     def test_preprocessor_modal_has_two_column_layout_hooks(self):
         preprocessor_html = (ROOT / "frontend" / "controlnet_preprocessor.html").read_text(

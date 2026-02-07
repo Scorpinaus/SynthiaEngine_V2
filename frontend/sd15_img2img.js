@@ -33,6 +33,10 @@ function closeActiveEventSource() {
     }
 }
 
+function getControlNetState() {
+    return window.ControlNetPanel?.getState?.() ?? null;
+}
+
 /**
  * Populate the SD1.5 model dropdown from the backend model registry.
  * Falls back to a sane default if the request fails.
@@ -87,9 +91,18 @@ function initSd15Img2ImgPage() {
                     strength: "strength",
                     num_images: "num_images",
                     clip_skip: "clip_skip",
+                    controlnet_conditioning_scale: "controlnet_conditioning_scale",
+                    control_guidance_start: "control_guidance_start",
+                    control_guidance_end: "control_guidance_end",
+                    controlnet_compat_mode: "controlnet_compat_mode",
                 });
             })
             .catch(() => {});
+    }
+    if (window.ControlNetPreprocessor?.init) {
+        window.ControlNetPreprocessor.init().catch((error) => {
+            console.warn("ControlNet init failed:", error);
+        });
     }
     // Optional LoRA panel integration (only active if that script is present on the page).
     window.LoraPanel?.init({ apiBase: API_BASE, family: "sd15" });
@@ -109,6 +122,8 @@ initSd15Img2ImgPage();
 async function generateImg2Img() {
     const token = ++activeJobToken;
     closeActiveEventSource();
+    const controlnetState = getControlNetState();
+    const controlnetEnabled = Boolean(document.getElementById("controlnet-enabled")?.checked);
 
     const initialImageInput = document.getElementById("initial_image");
     const initialFile = initialImageInput.files[0];
@@ -141,6 +156,23 @@ async function generateImg2Img() {
     const clip_skip = WorkflowClient.readNumberValue("clip_skip", defaults.clip_skip ?? 1, {
         integer: true,
     });
+    const controlnet_conditioning_scale = WorkflowClient.readNumberValue(
+        "controlnet_conditioning_scale",
+        defaults.controlnet_conditioning_scale ?? 1.0
+    );
+    const control_guidance_start = WorkflowClient.readNumberValue(
+        "control_guidance_start",
+        defaults.control_guidance_start ?? 0.0
+    );
+    const control_guidance_end = WorkflowClient.readNumberValue(
+        "control_guidance_end",
+        defaults.control_guidance_end ?? 1.0
+    );
+    const controlnet_guess_mode = Boolean(document.getElementById("controlnet_guess_mode")?.checked);
+    const controlnet_compat_mode = WorkflowClient.readTextValue(
+        "controlnet_compat_mode",
+        defaults.controlnet_compat_mode ?? "warn"
+    );
     const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
 
     const idempotencyKey = WorkflowClient.makeIdempotencyKey();
@@ -168,6 +200,69 @@ async function generateImg2Img() {
             model,
             clip_skip,
         };
+        if (controlnetEnabled) {
+            const controlItems = Array.isArray(controlnetState?.controlItems)
+                ? controlnetState.controlItems
+                : [];
+            if (controlItems.length === 0 && !controlnetState?.previewBlob) {
+                throw new Error("ControlNet enabled but no preprocessor output image is ready.");
+            }
+            const effectiveItems =
+                controlItems.length > 0
+                    ? controlItems
+                    : [
+                        {
+                            previewBlob: controlnetState.previewBlob,
+                            preprocessorId: controlnetState.preprocessorId ?? null,
+                            modelId: "lllyasviel/control_v11p_sd15_canny",
+                            conditioningScale: controlnet_conditioning_scale,
+                        },
+                    ];
+            const uploadedArtifacts = await Promise.all(
+                effectiveItems.map((item, idx) =>
+                    WorkflowClient.uploadArtifact(
+                        API_BASE,
+                        item.previewBlob,
+                        `controlnet_${idx + 1}.png`
+                    )
+                )
+            );
+            const controlImages = uploadedArtifacts.map(
+                (controlUploaded) => `@artifact:${controlUploaded.artifact_id}`
+            );
+            const controlnetModels = effectiveItems.map(
+                (item) => item.modelId || "lllyasviel/control_v11p_sd15_canny"
+            );
+            const controlnetScales = effectiveItems.map((item) => {
+                const parsed = Number(item.conditioningScale);
+                return Number.isFinite(parsed) ? parsed : controlnet_conditioning_scale;
+            });
+            const controlnetPreprocessorIds = effectiveItems.map(
+                (item) => item.preprocessorId || null
+            );
+            const hasAllPreprocessorIds = controlnetPreprocessorIds.every(
+                (value) => typeof value === "string" && value.length > 0
+            );
+
+            taskInputs.control_image = controlImages[0];
+            taskInputs.controlnet_model = controlnetModels[0];
+            taskInputs.controlnet_conditioning_scale = controlnetScales[0];
+            taskInputs.controlnet_guess_mode = controlnet_guess_mode;
+            taskInputs.control_guidance_start = control_guidance_start;
+            taskInputs.control_guidance_end = control_guidance_end;
+            taskInputs.controlnet_compat_mode = controlnet_compat_mode;
+            if (hasAllPreprocessorIds) {
+                taskInputs.controlnet_preprocessor_id = controlnetPreprocessorIds[0];
+            }
+            if (effectiveItems.length > 1) {
+                taskInputs.control_images = controlImages.slice(1);
+                taskInputs.controlnet_models = controlnetModels;
+                taskInputs.controlnet_conditioning_scales = controlnetScales;
+                if (hasAllPreprocessorIds) {
+                    taskInputs.controlnet_preprocessor_ids = controlnetPreprocessorIds;
+                }
+            }
+        }
         if (loraAdapters.length > 0) {
             taskInputs.lora_adapters = loraAdapters;
         }
@@ -196,6 +291,14 @@ async function generateImg2Img() {
                 if (status === "succeeded") {
                     const images = job?.result?.outputs;
                     gallery.setImages(Array.isArray(images) ? images : []);
+                    const warnings = job?.result?.tasks?.img2img?.warnings;
+                    if (Array.isArray(warnings) && warnings.length > 0) {
+                        console.warn("ControlNet warnings:", warnings);
+                        const statusNode = document.getElementById("controlnet-status");
+                        if (statusNode) {
+                            statusNode.textContent = warnings.join(" ");
+                        }
+                    }
                 } else {
                     gallery.setImages([]);
                 }

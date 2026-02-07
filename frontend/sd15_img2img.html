@@ -35,6 +35,8 @@
                     <textarea id="negative_prompt" class="textarea-small" placeholder="Optional negative prompt..."></textarea>
                 </label>
 
+                <div id="controlnet-panel-root"></div>
+
                 <label class="field">
                     <span>Initial Image</span>
                     <input id="initial_image" type="file" accept="image/*" />
@@ -86,6 +88,9 @@
                 </label>
 
                 <button class="primary" onclick="generateImg2Img()">Generate</button>
+                <div class="controlnet-active-flag is-hidden" id="controlnet-active-flag">
+                    ControlNet Active
+                </div>
             </section>
 
             <section class="gallery-panel">
@@ -110,6 +115,8 @@
         </div>
     </div>
 
+    <div id="controlnet-preprocessor-root"></div>
+
     <script src="api_config.js?v=1"></script>
     <script src="header.js?v=1"></script>
     <script src="nav_bar.js?v=2"></script>
@@ -119,7 +126,9 @@
     <script src="jobs_queue.js?v=2"></script>
     <script src="workflow_client.js?v=1"></script>
     <script src="workflow_catalog.js?v=1"></script>
-    <script src="sd15_img2img.js?v=2"></script>
+    <script src="controlnet_panel.js?v=2"></script>
+    <script src="controlnet_preprocessor.js?v=3"></script>
+    <script src="sd15_img2img.js?v=3"></script>
 </body>
 
 </html>
