@@ -9,6 +9,13 @@ from diffusers import (EulerDiscreteScheduler,
 
 
 class FlowMatchHeunDiscreteSchedulerWithMu(FlowMatchHeunDiscreteScheduler):
+    """FlowMatch Heun scheduler variant that supports `mu` via Euler timesteps.
+
+    The upstream Heun scheduler does not expose `mu` in `set_timesteps`. This
+    subclass builds an Euler FlowMatch schedule (which supports `mu`) and then
+    expands it into a two-stage Heun schedule by repeating intermediate steps.
+    """
+
     def set_timesteps(
         self,
         num_inference_steps: int,
@@ -18,6 +25,16 @@ class FlowMatchHeunDiscreteSchedulerWithMu(FlowMatchHeunDiscreteScheduler):
         timesteps=None,
         **kwargs,
     ):
+        """Set inference timesteps and sigmas, including optional FlowMatch `mu`.
+
+        Args:
+            num_inference_steps (int): Number of denoising steps.
+            device: Target device for stored timestep/sigma tensors.
+            sigmas: Optional custom sigma schedule.
+            mu: Optional FlowMatch shift parameter passed through Euler setup.
+            timesteps: Optional custom timesteps.
+            **kwargs: Additional unused keyword arguments for compatibility.
+        """
         euler_scheduler = FlowMatchEulerDiscreteScheduler.from_config(self.config)
         scheduler_kwargs = {}
         if sigmas is not None:
@@ -47,6 +64,18 @@ class FlowMatchHeunDiscreteSchedulerWithMu(FlowMatchHeunDiscreteScheduler):
         self.sample = None
 
 def create_scheduler(name: str, pipe):
+    """Create a scheduler instance from a normalized scheduler name.
+
+    Args:
+        name (str): Scheduler identifier (case-insensitive).
+        pipe: Diffusers pipeline containing the base scheduler config.
+
+    Returns:
+        A configured Diffusers scheduler instance.
+
+    Raises:
+        ValueError: If `name` does not match a supported scheduler.
+    """
     name = name.lower()
     
     if name == "ddim":

@@ -518,6 +518,14 @@ class StableDiffusionPipeline(
         self._cross_attention_kwargs = cross_attention_kwargs
         self._interrupt = False
 
+        # Normalized Attention Guidance (NAG) runs *inside* cross-attention and needs the 2-branch
+        # (negative/unconditional + positive/conditional) batch even when outer CFG is disabled.
+        nag_enabled = bool(self.cross_attention_kwargs and self.cross_attention_kwargs.get("nag_enabled", False))
+        if nag_enabled and guidance_scale != 1.0:
+            logger.warning("NAG is enabled; ignoring outer CFG (guidance_scale=%.3f).", float(guidance_scale))
+        if nag_enabled and guidance_rescale not in (0.0, None):
+            logger.warning("NAG is enabled; ignoring guidance_rescale (%.3f).", float(guidance_rescale))
+
         # 2. Define call parameters
         if prompt is not None and isinstance(prompt, str):
             batch_size = 1
@@ -676,11 +684,16 @@ class StableDiffusionPipeline(
             self.cross_attention_kwargs.get("scale", None) if self.cross_attention_kwargs is not None else None
         )
 
+        # Outer CFG is intentionally disabled when NAG is enabled.
+        do_cfg = self.do_classifier_free_guidance and not nag_enabled
+        # NAG still needs the negative/unconditional conditioning for its internal guidance.
+        need_negative = do_cfg or nag_enabled
+
         prompt_embeds, negative_prompt_embeds = self.encode_prompt(
             prompt,
             device,
             num_images_per_prompt,
-            self.do_classifier_free_guidance,
+            need_negative,
             negative_prompt,
             prompt_embeds=prompt_embeds,
             negative_prompt_embeds=negative_prompt_embeds,
@@ -696,6 +709,10 @@ class StableDiffusionPipeline(
         #     prompt_embeds = torch.cat([negative_prompt_embeds, prompt_embeds])
         # Sequential CFG: keep embeddings separate to avoid 2x batch size.
 
+        prompt_embeds_cat = None
+        if nag_enabled:
+            prompt_embeds_cat = torch.cat([negative_prompt_embeds, prompt_embeds], dim=0)
+
         negative_image_embeds = None
         if ip_adapter_image is not None or ip_adapter_image_embeds is not None:
             image_embeds = self.prepare_ip_adapter_image_embeds(
@@ -703,9 +720,9 @@ class StableDiffusionPipeline(
                 ip_adapter_image_embeds,
                 device,
                 batch_size * num_images_per_prompt,
-                self.do_classifier_free_guidance,
+                need_negative,
             )
-            if self.do_classifier_free_guidance:
+            if do_cfg:
                 # Sequential CFG: split concatenated IP-Adapter embeds into uncond/text.
                 negative_image_embeds = []
                 image_embeds_text = []
@@ -749,13 +766,19 @@ class StableDiffusionPipeline(
         added_uncond_kwargs = None
         if ip_adapter_image is not None or ip_adapter_image_embeds is not None:
             added_cond_kwargs = {"image_embeds": image_embeds}
-            if self.do_classifier_free_guidance:
+            if do_cfg:
                 added_uncond_kwargs = {"image_embeds": negative_image_embeds}
+            elif nag_enabled:
+                # Batched NAG: `image_embeds` already contains both branches (as returned by
+                # `prepare_ip_adapter_image_embeds(..., do_classifier_free_guidance=True)`).
+                added_uncond_kwargs = None
 
         # 6.2 Optionally get Guidance Scale Embedding
         timestep_cond = None
         if self.unet.config.time_cond_proj_dim is not None:
-            guidance_scale_tensor = torch.tensor(self.guidance_scale - 1).repeat(batch_size * num_images_per_prompt)
+            # NAG replaces outer CFG, so use "no guidance" for the guidance embedding.
+            gs = 0.0 if nag_enabled else (self.guidance_scale - 1)
+            guidance_scale_tensor = torch.tensor(gs).repeat(batch_size * num_images_per_prompt)
             timestep_cond = self.get_guidance_scale_embedding(
                 guidance_scale_tensor, embedding_dim=self.unet.config.time_cond_proj_dim
             ).to(device=device, dtype=latents.dtype)
@@ -790,12 +813,28 @@ class StableDiffusionPipeline(
                 #     noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
                 #     noise_pred = noise_pred_uncond + self.guidance_scale * (noise_pred_text - noise_pred_uncond)
 
-                # Sequential CFG (no batch doubling).
-                latent_model_input = latents
+                if nag_enabled:
+                    # NAG needs both branches in the same batch so each cross-attention call can see (Z-, Z+).
+                    latent_model_input = torch.cat([latents] * 2, dim=0)
+                else:
+                    # Sequential CFG (no batch doubling).
+                    latent_model_input = latents
                 if hasattr(self.scheduler, "scale_model_input"):
                     latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
 
-                if self.do_classifier_free_guidance:
+                if nag_enabled:
+                    noise_pred = self.unet(
+                        latent_model_input,
+                        t,
+                        encoder_hidden_states=prompt_embeds_cat,
+                        timestep_cond=timestep_cond,
+                        cross_attention_kwargs=self.cross_attention_kwargs,
+                        added_cond_kwargs=added_cond_kwargs,
+                        return_dict=False,
+                    )[0]
+                    noise_pred_uncond, noise_pred_text = noise_pred.chunk(2, dim=0)
+                    noise_pred = noise_pred_text
+                elif do_cfg:
                     noise_pred_uncond = self.unet(
                         latent_model_input,
                         t,
@@ -826,7 +865,7 @@ class StableDiffusionPipeline(
                         return_dict=False,
                     )[0]
 
-                if self.do_classifier_free_guidance and self.guidance_rescale > 0.0:
+                if do_cfg and self.guidance_rescale > 0.0:
                     # Based on 3.4. in https://huggingface.co/papers/2305.08891
                     noise_pred = rescale_noise_cfg(noise_pred, noise_pred_text, guidance_rescale=self.guidance_rescale)
 
@@ -842,6 +881,8 @@ class StableDiffusionPipeline(
                     latents = callback_outputs.pop("latents", latents)
                     prompt_embeds = callback_outputs.pop("prompt_embeds", prompt_embeds)
                     negative_prompt_embeds = callback_outputs.pop("negative_prompt_embeds", negative_prompt_embeds)
+                    if nag_enabled:
+                        prompt_embeds_cat = torch.cat([negative_prompt_embeds, prompt_embeds], dim=0)
 
                 # call the callback, if provided
                 if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0):

@@ -55,7 +55,16 @@ configure_logging()
 ## Helper functions
 
 def create_blur_mask(mask_image, blur_factor: int):
-    """Return a blurred copy of a mask image with blur strength clamped to [0, 128]."""
+    """
+    Return a blurred copy of `mask_image` with a bounded Gaussian blur radius.
+
+    Args:
+        mask_image: PIL image used as an inpaint mask.
+        blur_factor: Requested blur radius. Values are clamped to ``[0, 128]``.
+
+    Returns:
+        The original image when blur is ``0``; otherwise a blurred copy.
+    """
     blur_factor = max(0, min(blur_factor, 128))
     if blur_factor == 0:
         return mask_image
@@ -63,7 +72,11 @@ def create_blur_mask(mask_image, blur_factor: int):
 
 
 def _resource_metadata(bound_args):
-    """Build a small metadata dict for resource logging from bound call arguments."""
+    """
+    Build resource-logging metadata from a function's bound arguments.
+
+    This keeps the logging payload small and consistent across generation calls.
+    """
     return {
         "batch_id": bound_args.arguments.get("batch_id"),
         "model": bound_args.arguments.get("model"),
@@ -105,11 +118,27 @@ def apply_hires_fix(
     lora_scale: float | None = None,
 ) -> Image.Image:
     """
-    Run a "hires fix" pass: upscale the image, then refine with img2img.
+    Run a hires-fix pass by upscaling, then refining with SD1.5 img2img.
 
-    This is used both standalone and as a second stage in txt2img flows. The
-    function accepts optional precomputed prompt embeddings for performance and
-    consistency with various weighting policies.
+    Args:
+        image: Input image to refine.
+        prompt: Positive prompt text.
+        negative_prompt: Negative prompt text.
+        steps: Number of denoising steps for img2img refinement.
+        cfg: Classifier-free guidance scale.
+        seed: Optional seed for deterministic output.
+        scheduler: Scheduler identifier used by ``create_scheduler``.
+        model: Optional model registry key.
+        clip_skip: CLIP skip value passed to Diffusers.
+        hires_scale: Upscale factor. Values ``<= 1.0`` skip hires-fix.
+        hires_strength: Img2img strength used during refinement.
+        lora_adapters: Optional LoRA adapter specs.
+        prompt_embeds: Optional precomputed positive prompt embeddings.
+        negative_prompt_embeds: Optional precomputed negative prompt embeddings.
+        lora_scale: Optional LoRA cross-attention scale.
+
+    Returns:
+        Refined image. If ``hires_scale <= 1.0``, returns input image unchanged.
     """
     if hires_scale <= 1.0:
         return image
@@ -148,7 +177,12 @@ def _apply_lora_adapters(
     *,
     validate: bool = False,
 ) -> list[str]:
-    """Apply requested LoRA adapters to a pipeline, returning adapter names loaded."""
+    """
+    Apply requested LoRA adapters to a pipeline.
+
+    Returns:
+        A list of adapter names actually loaded into the pipeline.
+    """
     adapter_names, _ = apply_lora_adapters_with_validation(
         pipe,
         lora_adapters,
@@ -178,10 +212,31 @@ def run_sd15_hires_fix(
     batch_id: str | None = None,
 ) -> list[str]:
     """
-    Apply hires-fix to a list of images and persist results under a batch directory.
+    Apply SD1.5 hires-fix to each input image and write PNGs to disk.
 
-    The output filenames are returned as paths relative to the `OUTPUT_DIR` mount
-    so the frontend can display them via `/outputs/...`.
+    Args:
+        images: Source images to upscale/refine.
+        prompt: Positive prompt text.
+        negative_prompt: Negative prompt text.
+        steps: Number of denoising steps.
+        cfg: Classifier-free guidance scale.
+        seed: Optional base seed. ``None`` or ``0`` selects a random base seed.
+        scheduler: Scheduler name.
+        model: Optional model registry key.
+        clip_skip: CLIP skip value.
+        hires_scale: Upscale factor. Must be ``> 1.0``.
+        hires_strength: Img2img strength for refinement.
+        lora_adapters: Optional LoRA adapter specs.
+        weighting_policy: Prompt-weighting policy for embedding construction.
+        lora_scale: Optional LoRA cross-attention scale.
+        output_dir: Optional output root. Defaults to batch folder under ``OUTPUT_DIR``.
+        batch_id: Optional batch identifier.
+
+    Returns:
+        List of output PNG paths relative to ``OUTPUT_DIR``.
+
+    Raises:
+        ValueError: If ``hires_scale <= 1.0``.
     """
     if hires_scale <= 1.0:
         raise ValueError("hires_scale must be > 1.0 for sd15.hires_fix")
@@ -260,18 +315,21 @@ def run_sd15_hires_fix(
 
 ## Load pipelines
 
-def load_pipeline(model_name: str | None):
+def load_text2img_pipeline(model_name: str | None):
     """
-    Load the base txt2img Stable Diffusion pipeline.
+    Load the base SD1.5 txt2img pipeline on CUDA fp16.
 
-    `model_name` is resolved via the model registry and can point to:
-    - a Diffusers directory, or
-    - a single-file checkpoint.
+    ``model_name`` is resolved via the model registry and may point to a
+    Diffusers directory model or a single-file checkpoint.
+
+    Side effects:
+        Moves the pipeline to GPU (``cuda``) and disables the safety checker.
     """
     entry = get_model_entry(model_name)
 
     source = resolve_model_source(entry)
     logger.info("URL: %s", source)
+    
     if entry.model_type == "diffusers":
         pipe = StableDiffusionPipeline.from_pretrained(
             source,
@@ -293,7 +351,12 @@ def load_pipeline(model_name: str | None):
 
 
 def load_img2img_pipeline(model_name: str | None):
-    """Load the SD1.5 img2img pipeline for the configured model."""
+    """
+    Load the SD1.5 img2img pipeline on CUDA fp16.
+
+    Side effects:
+        Moves the pipeline to GPU (``cuda``) and disables the safety checker.
+    """
     entry = get_model_entry(model_name)
 
     source = resolve_model_source(entry)
@@ -318,7 +381,12 @@ def load_img2img_pipeline(model_name: str | None):
 
 
 def load_inpaint_pipeline(model_name: str | None):
-    """Load the SD1.5 inpainting pipeline for the configured model."""
+    """
+    Load the SD1.5 inpainting pipeline on CUDA fp16.
+
+    Side effects:
+        Moves the pipeline to GPU (``cuda``) and disables the safety checker.
+    """
     entry = get_model_entry(model_name)
 
     source = resolve_model_source(entry)
@@ -344,9 +412,14 @@ def load_inpaint_pipeline(model_name: str | None):
 
 def load_controlnet_pipeline(model_name: str | None, controlnet_model: str):
     """
-    Load a ControlNet-enabled SD1.5 pipeline.
+    Load a ControlNet-enabled SD1.5 pipeline on CUDA fp16.
 
-    Note: `controlnet_model` is expected to be a Diffusers ControlNet model id/path.
+    Args:
+        model_name: Optional base model registry key.
+        controlnet_model: Diffusers ControlNet model id/path.
+
+    Side effects:
+        Loads both base and ControlNet weights and moves the pipeline to GPU.
     """
     entry = get_model_entry(model_name)
 
@@ -396,9 +469,13 @@ def generate_images_controlnet(
     batch_id: str | None = None,
 ) -> list[str]:
     """
-    Generate images with SD1.5 + ControlNet conditioning and write outputs to disk.
+    Generate SD1.5 + ControlNet images and write PNG outputs to disk.
 
-    Returns a list of output paths relative to the batch directory.
+    This function optionally captures pipeline layer-usage diagnostics based on
+    runtime configuration and embeds generation settings into PNG metadata.
+
+    Returns:
+        Output PNG paths relative to ``OUTPUT_DIR``.
     """
     if not batch_id:
         batch_id = make_batch_id()
@@ -516,10 +593,17 @@ def generate_images(
     lora_scale: float | None = None,
 ):
     """
-    Generate SD1.5 txt2img images (optionally with LoRA and optional hires-fix stage).
+    Generate SD1.5 txt2img images, write PNG outputs, and return relative paths.
 
-    This function writes PNGs to a batch directory and returns their relative paths.
-    Layer logging and LoRA coverage reporting are optional diagnostics.
+    Features:
+        - Optional LoRA adapter loading with coverage report output.
+        - Optional prompt embedding path for prompt-weighting/clip-skip policies.
+        - Optional runtime layer logging on the first generated image.
+        - Embedded PNG metadata for reproducibility.
+
+    Notes:
+        ``hires_enabled``/``hires_scale`` are currently recorded in metadata for
+        downstream usage; this function itself performs txt2img generation only.
     """
     # 1. Check and set seed number(if not present, set random seed)
     logger.info("seed=%s", seed)
@@ -695,10 +779,27 @@ def generate_images_img2img(
     batch_id: str | None = None,
 ):
     """
-    Generate SD1.5 img2img outputs from an initial image.
+    Generate SD1.5 img2img outputs from an initial image and write PNG files.
 
-    The initial image is assumed to be already resized/normalized by the caller.
-    Outputs are written to the batch directory and returned as relative paths.
+    Args:
+        initial_image: Source image for img2img.
+        strength: Img2img denoise strength.
+        prompt: Positive prompt text.
+        negative_prompt: Negative prompt text.
+        steps: Number of denoising steps.
+        cfg: Classifier-free guidance scale.
+        width: Requested width (used for logging/compatibility).
+        height: Requested height (used for logging/compatibility).
+        seed: Base seed; ``None``/``0`` selects a random base seed.
+        scheduler: Scheduler name.
+        model: Optional model registry key.
+        num_images: Number of images to generate.
+        clip_skip: CLIP skip value.
+        lora_adapters: Optional LoRA adapter specs.
+        batch_id: Optional batch identifier.
+
+    Returns:
+        Output PNG paths relative to ``OUTPUT_DIR``.
     """
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
@@ -821,9 +922,13 @@ def generate_images_inpaint(
     batch_id: str | None = None,
 ):
     """
-    Generate SD1.5 inpaint outputs from an initial image and a mask.
+    Generate SD1.5 inpaint outputs from an initial image and mask.
 
-    Outputs are written to the batch directory and returned as relative paths.
+    This function writes PNG files to the batch directory, stores generation
+    settings in PNG metadata, and optionally captures layer-usage diagnostics.
+
+    Returns:
+        Output PNG paths relative to ``OUTPUT_DIR``.
     """
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:

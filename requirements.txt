@@ -17,4 +17,3 @@ protobuf >=6.33.2
 accelerate>=1.2.1
 safetensors>=0.4.5
 peft>=0.13.2
--e ./controlnet_aux

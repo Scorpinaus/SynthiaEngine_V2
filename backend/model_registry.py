@@ -10,7 +10,7 @@ from sqlalchemy import Integer, String, Text, create_engine, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
-from backend.config import OUTPUT_DIR
+from backend.config import DATABASE_DIR, OUTPUT_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,14 @@ class ModelRegistryRow(Base):
 
 
 REGISTRY_JSON_PATH = Path(__file__).with_name("model_registry.json")
-REGISTRY_DB_PATH = OUTPUT_DIR / "model_registry.sqlite3"
+REGISTRY_DB_PATH = DATABASE_DIR / "model_registry.sqlite3"
+LEGACY_REGISTRY_DB_PATH = OUTPUT_DIR / "model_registry.sqlite3"
+if not REGISTRY_DB_PATH.exists() and LEGACY_REGISTRY_DB_PATH.exists():
+    try:
+        REGISTRY_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        LEGACY_REGISTRY_DB_PATH.replace(REGISTRY_DB_PATH)
+    except Exception:
+        pass
 REGISTRY_DB_URL = f"sqlite:///{REGISTRY_DB_PATH.as_posix()}"
 
 _ENGINE = create_engine(

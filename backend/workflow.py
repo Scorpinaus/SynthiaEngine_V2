@@ -22,7 +22,8 @@ from backend.sd15_pipeline import (
     run_sd15_hires_fix,
 )
 
-
+# Canonical set of task identifiers accepted by workflow validation/dispatch.
+# Keeping this as a Literal enables static type checking and autocomplete.
 TaskType = Literal[
     "sd15.text2img",
     "sd15.img2img",
@@ -45,6 +46,8 @@ TaskType = Literal[
 
 
 class ArtifactRef(BaseModel):
+    # Schema for artifact references used in workflow inputs/outputs; enforces
+    # the API artifact id format (`a|p` prefix + 32 lowercase hex characters).
     artifact_id: str = Field(
         ...,
         description="Artifact id returned by POST /api/artifacts.",

@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.exc import OperationalError
 
 from backend.job_db import JobDbConfig, create_job_engine, create_sessionmaker
+from backend.job_db import DEFAULT_JOB_DB_URL
 from backend.job_models import Base, Job, utcnow
 
 logger = logging.getLogger(__name__)
@@ -32,7 +33,7 @@ class IdempotencyConflictError(Exception):
 
 @dataclass(frozen=True)
 class JobQueueConfig:
-    db_url: str = "sqlite:///outputs/jobs.sqlite3"
+    db_url: str = DEFAULT_JOB_DB_URL
     poll_interval_s: float = 0.5
     requeue_running_on_startup: bool = True
 
