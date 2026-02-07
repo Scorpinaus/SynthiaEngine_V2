@@ -41,9 +41,14 @@
                     <option value="off">Off</option>
                 </select>
             </label>
-            <div class="controlnet-panel-preview is-hidden" id="controlnet-panel-preview-wrap">
-                <span>Control Image Preview</span>
-                <img id="controlnet-panel-preview" alt="ControlNet control preview" />
+            <div class="controlnet-viewer-controls">
+                <button type="button" class="secondary" id="controlnet-prev">Prev</button>
+                <span id="controlnet-count">0 / 0</span>
+                <button type="button" class="secondary" id="controlnet-next">Next</button>
+            </div>
+            <div class="controlnet-items" id="controlnet-items"></div>
+            <div class="controlnet-items-empty" id="controlnet-items-empty">
+                No ControlNet images added yet.
             </div>
         </div>
         <button class="secondary" id="open-preprocessors" type="button">Open Preprocessors</button>

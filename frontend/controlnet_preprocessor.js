@@ -231,13 +231,24 @@
         }
 
         const blob = await res.blob();
-        if (state.previewUrl) {
-            // Avoid leaking object URLs when users iterate on preprocess settings.
-            URL.revokeObjectURL(state.previewUrl);
-        }
-        state.previewUrl = URL.createObjectURL(blob);
+        const previewUrl = URL.createObjectURL(blob);
+        state.previewUrl = previewUrl;
         state.previewBlob = blob;
         state.preprocessorId = selectedId;
+        const defaultScaleInput = document.getElementById("controlnet_conditioning_scale");
+        const defaultScale = Number(defaultScaleInput?.value ?? 1.0);
+        const definition = state.preprocessors.get(selectedId);
+        const recommendedModel =
+            definition?.recommended_sd15_control_models?.[0] ??
+            definition?.legacy_aliases?.[0] ??
+            "lllyasviel/control_v11p_sd15_canny";
+        panelApi.addControlItem({
+            previewBlob: blob,
+            previewUrl,
+            preprocessorId: selectedId,
+            modelId: recommendedModel,
+            conditioningScale: defaultScale,
+        });
         if (preview) {
             preview.src = state.previewUrl;
         }
@@ -264,12 +275,21 @@
         const enabledToggle = document.getElementById("controlnet-enabled");
         const select = document.getElementById("preprocessor-select");
         const fileInput = document.getElementById("preprocessor-image");
+        const itemsContainer = document.getElementById("controlnet-items");
+        const prevButton = document.getElementById("controlnet-prev");
+        const nextButton = document.getElementById("controlnet-next");
 
         toggleButton?.addEventListener("click", panelApi?.togglePanel);
         openButton?.addEventListener("click", openPreprocessorModal);
         closeButton?.addEventListener("click", closePreprocessorModal);
         overlay?.addEventListener("click", closePreprocessorModal);
         applyButton?.addEventListener("click", applyPreprocessor);
+        prevButton?.addEventListener("click", () => {
+            panelApi?.showPrevControlItem?.();
+        });
+        nextButton?.addEventListener("click", () => {
+            panelApi?.showNextControlItem?.();
+        });
         enabledToggle?.addEventListener("change", () => {
             panelApi?.updateIndicator();
             panelApi?.updateActiveFlag();
@@ -286,8 +306,42 @@
             updateDownloadLinkState(false);
             panelApi?.updateActiveFlag();
         });
+        itemsContainer?.addEventListener("click", (event) => {
+            const target = event.target;
+            if (!(target instanceof HTMLElement)) {
+                return;
+            }
+            const removeId = Number(target.getAttribute("data-remove-id"));
+            if (!Number.isFinite(removeId)) {
+                return;
+            }
+            panelApi?.removeControlItem(removeId);
+            panelApi?.updateIndicator();
+            panelApi?.updateActiveFlag();
+        });
+        itemsContainer?.addEventListener("change", (event) => {
+            const target = event.target;
+            if (!(target instanceof HTMLInputElement) && !(target instanceof HTMLSelectElement)) {
+                return;
+            }
+
+            const modelId = Number(target.getAttribute("data-model-id"));
+            if (Number.isFinite(modelId) && target instanceof HTMLSelectElement) {
+                panelApi?.updateControlItem(modelId, { modelId: target.value });
+                return;
+            }
+
+            const scaleId = Number(target.getAttribute("data-scale-id"));
+            if (Number.isFinite(scaleId) && target instanceof HTMLInputElement) {
+                const scale = Number(target.value);
+                if (Number.isFinite(scale)) {
+                    panelApi?.updateControlItem(scaleId, { conditioningScale: scale });
+                }
+            }
+        });
 
         loadPreprocessors();
+        panelApi?.renderControlItems?.();
         panelApi?.updateIndicator();
         panelApi?.updateActiveFlag();
         updateDownloadLinkState(false);

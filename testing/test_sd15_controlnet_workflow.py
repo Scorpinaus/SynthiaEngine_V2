@@ -136,6 +136,103 @@ class Sd15ControlNetWorkflowPlumbingTests(unittest.TestCase):
                     _ctx=None,
                 )
 
+    def test_multi_controlnet_passes_list_kwargs_and_warns_for_perf(self):
+        captured = {}
+
+        def _fake_generate_images_controlnet(**kwargs):
+            captured.update(kwargs)
+            return ["batch/out.png"]
+
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+                with patch(
+                    "backend.workflow.generate_images_controlnet",
+                    side_effect=_fake_generate_images_controlnet,
+                ):
+                    result = _sd15_controlnet_text2img(
+                        {
+                            "control_image": {
+                                "artifact_id": "a0123456789abcdef0123456789abcdef"
+                            },
+                            "prompt": "test prompt",
+                            "controlnet_models": [
+                                "lllyasviel/control_v11p_sd15_canny",
+                                "lllyasviel/control_v11f1p_sd15_depth",
+                            ],
+                            "controlnet_preprocessor_ids": ["canny", "midas-depth"],
+                            "controlnet_conditioning_scales": [1.0, 0.7],
+                        },
+                        _ctx=None,
+                    )
+
+        self.assertIsInstance(captured["controlnet_model"], list)
+        self.assertEqual(len(captured["controlnet_model"]), 2)
+        self.assertIsInstance(captured["control_image"], list)
+        self.assertEqual(len(captured["control_image"]), 2)
+        self.assertEqual(captured["controlnet_conditioning_scale"], [1.0, 0.7])
+        self.assertIn("warnings", result)
+        self.assertTrue(any("VRAM use" in warning for warning in result["warnings"]))
+
+    def test_multi_controlnet_scale_list_must_align(self):
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with self.assertRaisesRegex(
+                ValueError, "controlnet_conditioning_scales length must match"
+            ):
+                _sd15_controlnet_text2img(
+                    {
+                        "control_image": {
+                            "artifact_id": "a0123456789abcdef0123456789abcdef"
+                        },
+                        "prompt": "test prompt",
+                        "controlnet_models": [
+                            "lllyasviel/control_v11p_sd15_canny",
+                            "lllyasviel/control_v11f1p_sd15_depth",
+                        ],
+                        "controlnet_conditioning_scales": [1.0],
+                    },
+                    _ctx=None,
+                )
+
+    def test_multi_controlnet_model_count_guardrail(self):
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with self.assertRaisesRegex(
+                ValueError, "At most 2 ControlNet models are supported"
+            ):
+                _sd15_controlnet_text2img(
+                    {
+                        "control_image": {
+                            "artifact_id": "a0123456789abcdef0123456789abcdef"
+                        },
+                        "prompt": "test prompt",
+                        "controlnet_models": [
+                            "lllyasviel/control_v11p_sd15_canny",
+                            "lllyasviel/control_v11f1p_sd15_depth",
+                            "lllyasviel/control_v11p_sd15_openpose",
+                        ],
+                    },
+                    _ctx=None,
+                )
+
+    def test_multi_controlnet_scale_range_validation(self):
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with self.assertRaisesRegex(
+                ValueError, "controlnet conditioning scales must be within \\[0, 2\\]"
+            ):
+                _sd15_controlnet_text2img(
+                    {
+                        "control_image": {
+                            "artifact_id": "a0123456789abcdef0123456789abcdef"
+                        },
+                        "prompt": "test prompt",
+                        "controlnet_models": [
+                            "lllyasviel/control_v11p_sd15_canny",
+                            "lllyasviel/control_v11f1p_sd15_depth",
+                        ],
+                        "controlnet_conditioning_scales": [1.0, 2.5],
+                    },
+                    _ctx=None,
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

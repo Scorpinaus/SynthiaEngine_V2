@@ -410,13 +410,13 @@ def load_inpaint_pipeline(model_name: str | None):
     return inpaint_pipe
 
 
-def load_controlnet_pipeline(model_name: str | None, controlnet_model: str):
+def load_controlnet_pipeline(model_name: str | None, controlnet_model: str | list[str]):
     """
     Load a ControlNet-enabled SD1.5 pipeline on CUDA fp16.
 
     Args:
         model_name: Optional base model registry key.
-        controlnet_model: Diffusers ControlNet model id/path.
+        controlnet_model: Diffusers ControlNet model id/path or list of ids/paths.
 
     Side effects:
         Loads both base and ControlNet weights and moves the pipeline to GPU.
@@ -425,10 +425,17 @@ def load_controlnet_pipeline(model_name: str | None, controlnet_model: str):
 
     source = resolve_model_source(entry)
     logger.info("Base model: %s", source)
-    controlnet = ControlNetModel.from_pretrained(
-        controlnet_model,
-        torch_dtype=torch.float16,
-    )
+    controlnet: ControlNetModel | list[ControlNetModel]
+    if isinstance(controlnet_model, list):
+        controlnet = [
+            ControlNetModel.from_pretrained(model_id, torch_dtype=torch.float16)
+            for model_id in controlnet_model
+        ]
+    else:
+        controlnet = ControlNetModel.from_pretrained(
+            controlnet_model,
+            torch_dtype=torch.float16,
+        )
 
     if entry.model_type == "diffusers":
         pipe = StableDiffusionControlNetPipeline.from_pretrained(
@@ -464,9 +471,9 @@ def generate_images_controlnet(
     model: str | None,
     num_images: int,
     clip_skip: int,
-    controlnet_model: str,
-    control_image: Image.Image,
-    controlnet_conditioning_scale: float = 1.0,
+    controlnet_model: str | list[str],
+    control_image: Image.Image | list[Image.Image],
+    controlnet_conditioning_scale: float | list[float] = 1.0,
     controlnet_guess_mode: bool = False,
     control_guidance_start: float = 0.0,
     control_guidance_end: float = 1.0,
@@ -578,6 +585,10 @@ def generate_images_controlnet(
         "control_guidance_end": control_guidance_end,
         "batch_id": batch_id,
     }
+    if isinstance(controlnet_model, list):
+        metadata["controlnet_models"] = controlnet_model
+    if isinstance(controlnet_conditioning_scale, list):
+        metadata["controlnet_conditioning_scales"] = controlnet_conditioning_scale
     png_info = build_png_metadata(metadata)
 
     filenames = []

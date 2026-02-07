@@ -228,17 +228,50 @@ async function generate() {
         const tasks = [];
 
         if (controlnetEnabled) {
-            if (!controlnetState?.previewBlob) {
+            const controlItems = Array.isArray(controlnetState?.controlItems)
+                ? controlnetState.controlItems
+                : [];
+            if (controlItems.length === 0 && !controlnetState?.previewBlob) {
                 throw new Error("ControlNet enabled but no preprocessor output image is ready.");
             }
-            // ControlNet tasks reference a stored artifact for the control image input.
-            const uploaded = await WorkflowClient.uploadArtifact(
-                API_BASE,
-                controlnetState.previewBlob,
-                "controlnet.png"
+            const effectiveItems =
+                controlItems.length > 0
+                    ? controlItems
+                    : [
+                        {
+                            previewBlob: controlnetState.previewBlob,
+                            preprocessorId: controlnetState.preprocessorId ?? null,
+                            modelId: "lllyasviel/control_v11p_sd15_canny",
+                            conditioningScale: controlnet_conditioning_scale,
+                        },
+                    ];
+            const uploadedArtifacts = await Promise.all(
+                effectiveItems.map((item, idx) =>
+                    WorkflowClient.uploadArtifact(
+                        API_BASE,
+                        item.previewBlob,
+                        `controlnet_${idx + 1}.png`
+                    )
+                )
+            );
+            const controlImages = uploadedArtifacts.map(
+                (uploaded) => `@artifact:${uploaded.artifact_id}`
+            );
+            const controlnetModels = effectiveItems.map(
+                (item) => item.modelId || "lllyasviel/control_v11p_sd15_canny"
+            );
+            const controlnetScales = effectiveItems.map((item) => {
+                const parsed = Number(item.conditioningScale);
+                return Number.isFinite(parsed) ? parsed : controlnet_conditioning_scale;
+            });
+            const controlnetPreprocessorIds = effectiveItems.map(
+                (item) => item.preprocessorId || null
+            );
+            const hasAllPreprocessorIds = controlnetPreprocessorIds.every(
+                (value) => typeof value === "string" && value.length > 0
             );
             const inputs = {
-                control_image: `@artifact:${uploaded.artifact_id}`,
+                control_image: controlImages[0],
                 prompt,
                 negative_prompt,
                 steps,
@@ -257,8 +290,19 @@ async function generate() {
                 control_guidance_end,
                 controlnet_compat_mode,
             };
-            if (controlnetState?.preprocessorId) {
-                inputs.controlnet_preprocessor_id = controlnetState.preprocessorId;
+            if (effectiveItems.length > 1) {
+                inputs.control_images = controlImages;
+                inputs.controlnet_models = controlnetModels;
+                inputs.controlnet_conditioning_scales = controlnetScales;
+                if (hasAllPreprocessorIds) {
+                    inputs.controlnet_preprocessor_ids = controlnetPreprocessorIds;
+                }
+            } else {
+                inputs.controlnet_model = controlnetModels[0];
+                inputs.controlnet_conditioning_scale = controlnetScales[0];
+                if (hasAllPreprocessorIds) {
+                    inputs.controlnet_preprocessor_id = controlnetPreprocessorIds[0];
+                }
             }
             if (loraAdapters.length > 0) {
                 inputs.lora_adapters = loraAdapters;
@@ -325,6 +369,14 @@ async function generate() {
                 if (status === "succeeded") {
                     const images = job?.result?.outputs;
                     gallery.setImages(Array.isArray(images) ? images : []);
+                    const warnings = job?.result?.tasks?.t1?.warnings;
+                    if (Array.isArray(warnings) && warnings.length > 0) {
+                        console.warn("ControlNet warnings:", warnings);
+                        const statusNode = document.getElementById("controlnet-status");
+                        if (statusNode) {
+                            statusNode.textContent = warnings.join(" ");
+                        }
+                    }
                 } else {
                     gallery.setImages([]);
                 }

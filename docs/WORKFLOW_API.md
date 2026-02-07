@@ -276,19 +276,25 @@ Task inputs/outputs are task-specific. As a convention, image-generating tasks r
 
 `sd15.controlnet.text2img` extra input notes:
 - `controlnet_conditioning_scale`: float in `[0, 2]` (default `1.0`)
+- `controlnet_conditioning_scales`: optional list form for multi-ControlNet; length must match model/image list length
 - `controlnet_guess_mode`: boolean (default `false`)
 - `control_guidance_start`: float in `[0, 1]` (default `0.0`)
 - `control_guidance_end`: float in `[0, 1]` (default `1.0`)
 - `control_guidance_start` must be `<= control_guidance_end`
 - `controlnet_model`: defaults to `lllyasviel/control_v11p_sd15_canny` (SD1.5 v1.1 family)
+- `controlnet_models`: optional list form for multi-ControlNet (backward-compatible with `controlnet_model`)
+- `control_images`: optional list form for multi-ControlNet (backward-compatible with `control_image`)
 - `controlnet_preprocessor_id`: optional preprocessor id used for compatibility checks
+- `controlnet_preprocessor_ids`: optional list form for multi-ControlNet compatibility checks
 - `controlnet_compat_mode`: `"warn"` (default), `"error"`, or `"off"`
   - `warn`: continue generation and add a warning in task result when pairing is mismatched
   - `error`: fail task when pairing is mismatched
   - `off`: skip compatibility check
+- Guardrail: up to `2` ControlNet models per task; more than `1` emits a VRAM/perf warning.
+- List alignment: when list forms are provided, list lengths must align with the resolved ControlNet count.
 
 `sd15.controlnet.text2img` output notes:
-- May include `warnings: string[]` when compatibility mode is `warn` and mismatch is detected.
+- May include `warnings: string[]` (compatibility mismatch warnings and/or VRAM/perf warnings).
 
 ## Example: img2img workflow (artifact input)
 
