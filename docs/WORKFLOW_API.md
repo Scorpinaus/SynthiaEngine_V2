@@ -172,6 +172,7 @@ Frontend note (SD1.5 page):
 - `frontend/controlnet_preprocessor.html` is loaded by `frontend/controlnet_preprocessor.js`.
 - `frontend/sd15.js` consumes shared ControlNet state via `window.ControlNetPanel.getState()`.
 - `frontend/sd15_img2img.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()`.
+- `frontend/sd15_inpainting.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()`.
 - `frontend/controlnet_panel.html` groups ControlNet runtime knobs (`controlnet_conditioning_scale`, `controlnet_guess_mode`, `control_guidance_start`, `control_guidance_end`).
 - The preprocessor modal layout uses a two-column split (`settings` + `preview`) and caps preview height to viewport.
 - `frontend/controlnet_preprocessor.js` applies a runtime layout fallback so stale cached modal markup is upgraded in-place.
@@ -307,6 +308,18 @@ Task inputs/outputs are task-specific. As a convention, image-generating tasks r
 - Guardrail: up to `2` ControlNet models per task; more than `1` emits a VRAM/perf warning.
 
 `sd15.img2img` optional ControlNet output notes:
+- May include `warnings: string[]` when compatibility/perf warnings are produced.
+
+`sd15.inpaint` optional ControlNet input notes:
+- Existing `sd15.inpaint` payloads remain valid without any ControlNet fields.
+- To enable ControlNet, provide `control_image` (single) or `control_image` + `control_images` (multi).
+- `controlnet_model` defaults to `lllyasviel/control_v11p_sd15_canny`.
+- `controlnet_models`, `controlnet_conditioning_scales`, `controlnet_preprocessor_ids` are optional list forms and must align to resolved ControlNet count.
+- Runtime controls mirror text2img/img2img: `controlnet_conditioning_scale`, `controlnet_guess_mode`, `control_guidance_start`, `control_guidance_end`, `controlnet_compat_mode`.
+- `control_guidance_start` must be `<= control_guidance_end`.
+- Guardrail: up to `2` ControlNet models per task; more than `1` emits a VRAM/perf warning.
+
+`sd15.inpaint` optional ControlNet output notes:
 - May include `warnings: string[]` when compatibility/perf warnings are produced.
 
 ## Example: img2img workflow (artifact input)

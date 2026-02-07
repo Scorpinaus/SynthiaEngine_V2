@@ -32,6 +32,20 @@ class FrontendControlNetScriptTests(unittest.TestCase):
             sd15_img2img_html.index(preprocessor_tag), sd15_img2img_html.index(img2img_tag)
         )
 
+    def test_sd15_inpaint_page_includes_controlnet_scripts_before_inpaint(self):
+        sd15_inpaint_html = (ROOT / "frontend" / "sd15_inpainting.html").read_text(encoding="utf-8")
+        panel_tag = '<script src="controlnet_panel.js?v=2"></script>'
+        preprocessor_tag = '<script src="controlnet_preprocessor.js?v=3"></script>'
+        inpaint_tag = '<script src="sd15_inpainting.js?v=3"></script>'
+
+        self.assertIn(panel_tag, sd15_inpaint_html)
+        self.assertIn(preprocessor_tag, sd15_inpaint_html)
+        self.assertIn(inpaint_tag, sd15_inpaint_html)
+        self.assertLess(sd15_inpaint_html.index(panel_tag), sd15_inpaint_html.index(inpaint_tag))
+        self.assertLess(
+            sd15_inpaint_html.index(preprocessor_tag), sd15_inpaint_html.index(inpaint_tag)
+        )
+
     def test_controlnet_panel_script_exposes_expected_api(self):
         panel_js = (ROOT / "frontend" / "controlnet_panel.js").read_text(encoding="utf-8")
         self.assertIn("window.ControlNetPanel", panel_js)
@@ -57,6 +71,14 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("controlnetEnabled", img2img_js)
         self.assertIn("control_images", img2img_js)
         self.assertIn("controlnet_models", img2img_js)
+
+    def test_sd15_inpaint_script_consumes_controlnet_state(self):
+        inpaint_js = (ROOT / "frontend" / "sd15_inpainting.js").read_text(encoding="utf-8")
+        self.assertIn("window.ControlNetPanel?.getState?.()", inpaint_js)
+        self.assertIn("window.ControlNetPreprocessor.init()", inpaint_js)
+        self.assertIn("controlnetEnabled", inpaint_js)
+        self.assertIn("control_images", inpaint_js)
+        self.assertIn("controlnet_models", inpaint_js)
 
     def test_preprocessor_modal_has_two_column_layout_hooks(self):
         preprocessor_html = (ROOT / "frontend" / "controlnet_preprocessor.html").read_text(

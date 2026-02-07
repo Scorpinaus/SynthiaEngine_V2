@@ -23,6 +23,7 @@ from diffusers import (
     StableDiffusionInpaintPipeline,
     StableDiffusionControlNetPipeline,
     StableDiffusionControlNetImg2ImgPipeline,
+    StableDiffusionControlNetInpaintPipeline,
     ControlNetModel,
 )
 
@@ -99,6 +100,52 @@ def _upscale_image(image: Image.Image, scale: float) -> Image.Image:
     target_width = _snap_dimension(int(round(image.width * scale)))
     target_height = _snap_dimension(int(round(image.height * scale)))
     return image.resize((target_width, target_height), resample=Image.LANCZOS)
+
+
+def _resize_control_image_to_target(
+    control_image: Image.Image | list[Image.Image],
+    *,
+    target_width: int,
+    target_height: int,
+) -> Image.Image | list[Image.Image]:
+    """Resize ControlNet image(s) to exactly match the rendered output size."""
+
+    def _resize_single(image: Image.Image, index: int | None = None) -> Image.Image:
+        source_width, source_height = image.size
+        if source_width == target_width and source_height == target_height:
+            return image
+
+        if source_width != target_width and source_height != target_height:
+            resize_case = "resize_width_and_height"
+        elif source_height != target_height:
+            resize_case = "resize_height_only"
+        else:
+            resize_case = "resize_width_only"
+
+        if index is None:
+            logger.info(
+                "Resizing ControlNet control_image (%s): %sx%s -> %sx%s",
+                resize_case,
+                source_width,
+                source_height,
+                target_width,
+                target_height,
+            )
+        else:
+            logger.info(
+                "Resizing ControlNet control_image[%s] (%s): %sx%s -> %sx%s",
+                index,
+                resize_case,
+                source_width,
+                source_height,
+                target_width,
+                target_height,
+            )
+        return image.resize((target_width, target_height), resample=Image.LANCZOS)
+
+    if isinstance(control_image, list):
+        return [_resize_single(image, index=i) for i, image in enumerate(control_image)]
+    return _resize_single(control_image)
 
 
 def apply_hires_fix(
@@ -505,6 +552,54 @@ def load_controlnet_img2img_pipeline(model_name: str | None, controlnet_model: s
     pipe.to("cuda")
     return pipe
 
+
+def load_controlnet_inpaint_pipeline(model_name: str | None, controlnet_model: str | list[str]):
+    """
+    Load a ControlNet-enabled SD1.5 inpaint pipeline on CUDA fp16.
+
+    Args:
+        model_name: Optional base model registry key.
+        controlnet_model: Diffusers ControlNet model id/path or list of ids/paths.
+
+    Side effects:
+        Loads both base and ControlNet weights and moves the pipeline to GPU.
+    """
+    entry = get_model_entry(model_name)
+
+    source = resolve_model_source(entry)
+    logger.info("Base model: %s", source)
+    controlnet: ControlNetModel | list[ControlNetModel]
+    if isinstance(controlnet_model, list):
+        controlnet = [
+            ControlNetModel.from_pretrained(model_id, torch_dtype=torch.float16)
+            for model_id in controlnet_model
+        ]
+    else:
+        controlnet = ControlNetModel.from_pretrained(
+            controlnet_model,
+            torch_dtype=torch.float16,
+        )
+
+    if entry.model_type == "diffusers":
+        pipe = StableDiffusionControlNetInpaintPipeline.from_pretrained(
+            source,
+            controlnet=controlnet,
+            torch_dtype=torch.float16,
+            safety_checker=None,
+        )
+    elif entry.model_type == "single-file":
+        pipe = StableDiffusionControlNetInpaintPipeline.from_single_file(
+            source,
+            controlnet=controlnet,
+            torch_dtype=torch.float16,
+            safety_checker=None,
+        )
+    else:
+        raise ValueError(f"Unsupported model type: {entry.model_type}")
+
+    pipe.to("cuda")
+    return pipe
+
 ## Generate and render images
 
 def generate_images_controlnet(
@@ -538,6 +633,12 @@ def generate_images_controlnet(
     """
     if not batch_id:
         batch_id = make_batch_id()
+
+    control_image = _resize_control_image_to_target(
+        control_image,
+        target_width=width,
+        target_height=height,
+    )
 
     pipe = load_controlnet_pipeline(model, controlnet_model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
@@ -686,6 +787,12 @@ def generate_images_img2img_controlnet(
         batch_id = make_batch_id()
 
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
+    image_width, image_height = initial_image.size
+    control_image = _resize_control_image_to_target(
+        control_image,
+        target_width=image_width,
+        target_height=image_height,
+    )
 
     pipe = load_controlnet_img2img_pipeline(model, controlnet_model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
@@ -727,7 +834,6 @@ def generate_images_img2img_controlnet(
             ).images[0]
 
             filename = batch_output_dir / f"{batch_id}_controlnet_{current_seed}.png"
-            image_width, image_height = initial_image.size
             metadata = {
                 "mode": "img2img_controlnet",
                 "prompt": prompt,
@@ -809,7 +915,7 @@ def generate_images(
     filenames = []
     
     # 3. Load pipeline and chosen scheduler
-    pipe = load_pipeline(model)
+    pipe = load_text2img_pipeline(model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
     logger.info("Generate: model=%s seed=%s scheduler=%s steps=%s cfg=%s size=%sx%s num_images=%s", model, base_seed, scheduler, steps, cfg, width, height, num_images,)
     
@@ -1210,6 +1316,126 @@ def generate_images_inpaint(
             "clip_skip": clip_skip,
             "batch_id": batch_id,
         })
+        image.save(filename, pnginfo=pnginfo)
+        logger.info("Image %s saved to %s", i, filename.name)
+
+        filenames.append(build_batch_output_relpath(batch_id, filename.name))
+
+    return filenames
+
+
+@torch.inference_mode()
+def generate_images_inpaint_controlnet(
+    initial_image: Image.Image,
+    mask_image: Image.Image,
+    prompt: str,
+    negative_prompt: str,
+    steps: int,
+    cfg: float,
+    seed: int,
+    scheduler: str,
+    model: str | None,
+    num_images: int,
+    strength: float,
+    padding_mask_crop: int,
+    clip_skip: int,
+    controlnet_model: str | list[str],
+    control_image: Image.Image | list[Image.Image],
+    controlnet_conditioning_scale: float | list[float] = 1.0,
+    controlnet_guess_mode: bool = False,
+    control_guidance_start: float = 0.0,
+    control_guidance_end: float = 1.0,
+    batch_id: str | None = None,
+) -> list[str]:
+    """
+    Generate SD1.5 inpaint + ControlNet outputs and write PNG files.
+
+    Returns:
+        Output PNG paths relative to ``OUTPUT_DIR``.
+    """
+    logger.info("seed=%s", seed)
+    if seed is None or seed == 0:
+        base_seed = torch.randint(0, 2**31, (1,)).item()
+    else:
+        base_seed = seed
+    if batch_id is None:
+        batch_id = make_batch_id()
+
+    batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
+    width, height = initial_image.size
+    control_image = _resize_control_image_to_target(
+        control_image,
+        target_width=width,
+        target_height=height,
+    )
+
+    pipe = load_controlnet_inpaint_pipeline(model, controlnet_model)
+    pipe.scheduler = create_scheduler(scheduler, pipe)
+    logger.info(
+        "ControlNet Inpaint: model=%s seed=%s scheduler=%s steps=%s cfg=%s size=%sx%s num_images=%s strength=%s padding_mask_crop=%s",
+        model,
+        base_seed,
+        scheduler,
+        steps,
+        cfg,
+        width,
+        height,
+        num_images,
+        strength,
+        padding_mask_crop,
+    )
+
+    filenames = []
+
+    for i in range(num_images):
+        current_seed = base_seed + i
+        generator = torch.Generator(device="cuda").manual_seed(current_seed)
+
+        image = pipe(
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            image=initial_image,
+            mask_image=mask_image,
+            control_image=control_image,
+            num_inference_steps=steps,
+            guidance_scale=cfg,
+            generator=generator,
+            strength=strength,
+            padding_mask_crop=padding_mask_crop,
+            clip_skip=clip_skip,
+            controlnet_conditioning_scale=controlnet_conditioning_scale,
+            guess_mode=controlnet_guess_mode,
+            control_guidance_start=control_guidance_start,
+            control_guidance_end=control_guidance_end,
+        ).images[0]
+
+        filename = batch_output_dir / f"{batch_id}_controlnet_{current_seed}.png"
+        metadata = {
+            "mode": "inpaint_controlnet",
+            "prompt": prompt,
+            "negative_prompt": negative_prompt,
+            "steps": steps,
+            "cfg": cfg,
+            "width": width,
+            "height": height,
+            "seed": current_seed,
+            "scheduler": scheduler,
+            "model": model,
+            "strength": strength,
+            "padding_mask_crop": padding_mask_crop,
+            "clip_skip": clip_skip,
+            "controlnet_model": controlnet_model,
+            "controlnet_conditioning_scale": controlnet_conditioning_scale,
+            "controlnet_guess_mode": controlnet_guess_mode,
+            "control_guidance_start": control_guidance_start,
+            "control_guidance_end": control_guidance_end,
+            "batch_id": batch_id,
+        }
+        if isinstance(controlnet_model, list):
+            metadata["controlnet_models"] = controlnet_model
+        if isinstance(controlnet_conditioning_scale, list):
+            metadata["controlnet_conditioning_scales"] = controlnet_conditioning_scale
+        pnginfo = build_png_metadata(metadata)
         image.save(filename, pnginfo=pnginfo)
         logger.info("Image %s saved to %s", i, filename.name)
 
