@@ -171,6 +171,7 @@ Frontend note (SD1.5 page):
 - `frontend/controlnet_panel.html` is loaded by `frontend/controlnet_panel.js`.
 - `frontend/controlnet_preprocessor.html` is loaded by `frontend/controlnet_preprocessor.js`.
 - `frontend/sd15.js` consumes shared ControlNet state via `window.ControlNetPanel.getState()`.
+- `frontend/controlnet_panel.html` groups ControlNet runtime knobs (`controlnet_conditioning_scale`, `controlnet_guess_mode`, `control_guidance_start`, `control_guidance_end`).
 - The preprocessor modal layout uses a two-column split (`settings` + `preview`) and caps preview height to viewport.
 - `frontend/controlnet_preprocessor.js` applies a runtime layout fallback so stale cached modal markup is upgraded in-place.
 - ControlNet HTML fragments are fetched with `cache: "no-store"` to avoid stale modal/panel assets.
@@ -272,6 +273,13 @@ Task inputs/outputs are task-specific. As a convention, image-generating tasks r
 - `image`: image reference
 - `preprocessor_id`: string id
 - `params`: object only (not JSON string in workflow payload)
+
+`sd15.controlnet.text2img` extra input notes:
+- `controlnet_conditioning_scale`: float in `[0, 2]` (default `1.0`)
+- `controlnet_guess_mode`: boolean (default `false`)
+- `control_guidance_start`: float in `[0, 1]` (default `0.0`)
+- `control_guidance_end`: float in `[0, 1]` (default `1.0`)
+- `control_guidance_start` must be `<= control_guidance_end`
 
 ## Example: img2img workflow (artifact input)
 

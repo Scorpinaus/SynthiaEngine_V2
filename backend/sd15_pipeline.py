@@ -466,6 +466,10 @@ def generate_images_controlnet(
     clip_skip: int,
     controlnet_model: str,
     control_image: Image.Image,
+    controlnet_conditioning_scale: float = 1.0,
+    controlnet_guess_mode: bool = False,
+    control_guidance_start: float = 0.0,
+    control_guidance_end: float = 1.0,
     batch_id: str | None = None,
 ) -> list[str]:
     """
@@ -519,6 +523,10 @@ def generate_images_controlnet(
                 image=control_image,
                 num_images_per_prompt=num_images,
                 generator=generator,
+                controlnet_conditioning_scale=controlnet_conditioning_scale,
+                guess_mode=controlnet_guess_mode,
+                control_guidance_start=control_guidance_start,
+                control_guidance_end=control_guidance_end,
             )
     else:
         results = pipe(
@@ -531,6 +539,10 @@ def generate_images_controlnet(
             image=control_image,
             num_images_per_prompt=num_images,
             generator=generator,
+            controlnet_conditioning_scale=controlnet_conditioning_scale,
+            guess_mode=controlnet_guess_mode,
+            control_guidance_start=control_guidance_start,
+            control_guidance_end=control_guidance_end,
         )
 
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
@@ -560,6 +572,10 @@ def generate_images_controlnet(
         "scheduler": scheduler,
         "model": model,
         "controlnet_model": controlnet_model,
+        "controlnet_conditioning_scale": controlnet_conditioning_scale,
+        "controlnet_guess_mode": controlnet_guess_mode,
+        "control_guidance_start": control_guidance_start,
+        "control_guidance_end": control_guidance_end,
         "batch_id": batch_id,
     }
     png_info = build_png_metadata(metadata)

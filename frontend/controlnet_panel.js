@@ -22,6 +22,7 @@
                 ? "ControlNet preprocessor ready for SD1.5."
                 : "No preprocessor applied.";
         }
+        updatePreview();
     }
 
     function updateActiveFlag() {
@@ -33,6 +34,21 @@
         const isActive = Boolean(enabledToggle?.checked && state.previewUrl);
         flag.classList.toggle("is-hidden", !isActive);
         flag.style.display = isActive ? "inline-flex" : "none";
+    }
+
+    function updatePreview() {
+        const previewWrap = document.getElementById("controlnet-panel-preview-wrap");
+        const previewImage = document.getElementById("controlnet-panel-preview");
+        if (!previewWrap || !previewImage) {
+            return;
+        }
+        const hasPreview = Boolean(state.previewUrl);
+        previewWrap.classList.toggle("is-hidden", !hasPreview);
+        if (hasPreview) {
+            previewImage.src = state.previewUrl;
+        } else {
+            previewImage.removeAttribute("src");
+        }
     }
 
     function togglePanel() {
@@ -65,6 +81,7 @@
         getState,
         updateIndicator,
         updateActiveFlag,
+        updatePreview,
         togglePanel,
         loadPanel,
     };

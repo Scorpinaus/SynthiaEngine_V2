@@ -113,6 +113,9 @@ function initSd15Page() {
                     height: "height",
                     num_images: "num_images",
                     clip_skip: "clip_skip",
+                    controlnet_conditioning_scale: "controlnet_conditioning_scale",
+                    control_guidance_start: "control_guidance_start",
+                    control_guidance_end: "control_guidance_end",
                 });
                 window.WorkflowCatalog.applyDefaultsToForm("sd15.hires_fix", {
                     hires_scale: "hires_scale",
@@ -199,6 +202,19 @@ async function generate() {
         "weighting_policy",
         primaryDefaults.weighting_policy ?? "diffusers-like"
     );
+    const controlnet_conditioning_scale = WorkflowClient.readNumberValue(
+        "controlnet_conditioning_scale",
+        primaryDefaults.controlnet_conditioning_scale ?? 1.0
+    );
+    const control_guidance_start = WorkflowClient.readNumberValue(
+        "control_guidance_start",
+        primaryDefaults.control_guidance_start ?? 0.0
+    );
+    const control_guidance_end = WorkflowClient.readNumberValue(
+        "control_guidance_end",
+        primaryDefaults.control_guidance_end ?? 1.0
+    );
+    const controlnet_guess_mode = Boolean(document.getElementById("controlnet_guess_mode")?.checked);
     const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
 
     const idempotencyKey = WorkflowClient.makeIdempotencyKey();
@@ -230,6 +246,10 @@ async function generate() {
                 num_images,
                 clip_skip,
                 weighting_policy,
+                controlnet_conditioning_scale,
+                controlnet_guess_mode,
+                control_guidance_start,
+                control_guidance_end,
             };
             if (loraAdapters.length > 0) {
                 inputs.lora_adapters = loraAdapters;

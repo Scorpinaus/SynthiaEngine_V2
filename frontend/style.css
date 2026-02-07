@@ -480,9 +480,45 @@ button {
     display: grid;
 }
 
+.controlnet-enable-row {
+    display: flex;
+    justify-content: center;
+}
+.controlnet-enable-row .field-inline {
+    white-space: nowrap;
+    flex-wrap: nowrap;
+}
+
 .controlnet-status {
     font-size: 13px;
     color: #6b645c;
+}
+.controlnet-settings {
+    display: grid;
+    gap: 10px;
+}
+
+.controlnet-settings-title {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #6b645c;
+}
+
+.controlnet-panel-preview {
+    display: grid;
+    gap: 6px;
+    font-size: 12px;
+    color: #6b645c;
+}
+
+.controlnet-panel-preview img {
+    width: 100%;
+    max-height: 180px;
+    object-fit: contain;
+    border-radius: 10px;
+    border: 1px solid #e3ddd4;
+    background: #f7f3ed;
 }
 
 .lora-panel {

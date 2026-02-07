@@ -146,6 +146,10 @@ class Sd15ControlNetText2ImgInputs(BaseModel):
     num_images: int = 1
     clip_skip: int = 1
     controlnet_model: str = "lllyasviel/sd-controlnet-canny"
+    controlnet_conditioning_scale: float = Field(default=1.0, ge=0.0, le=2.0)
+    controlnet_guess_mode: bool = False
+    control_guidance_start: float = Field(default=0.0, ge=0.0, le=1.0)
+    control_guidance_end: float = Field(default=1.0, ge=0.0, le=1.0)
     lora_adapters: Any | None = None
     batch_id: str | None = None
 
@@ -484,6 +488,9 @@ def _build_task_ui_hints(task_type: str, model_cls: type[BaseModel]) -> dict[str
         "hires_scale": {"min": 1, "max": 4, "step": 0.05},
         "hires_strength": {"min": 0, "max": 1, "step": 0.01},
         "lora_scale": {"min": 0, "max": 2, "step": 0.05},
+        "controlnet_conditioning_scale": {"min": 0, "max": 2, "step": 0.05},
+        "control_guidance_start": {"min": 0, "max": 1, "step": 0.01},
+        "control_guidance_end": {"min": 0, "max": 1, "step": 0.01},
         "seed": {"min": 0, "max": 2**31 - 1, "step": 1, "integer": True},
     }
 
@@ -819,6 +826,10 @@ def _sd15_controlnet_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> 
     width = int(inputs.get("width") or 512)
     height = int(inputs.get("height") or 512)
     control_image = control_image.resize((width, height))
+    control_guidance_start = float(inputs.get("control_guidance_start", 0.0))
+    control_guidance_end = float(inputs.get("control_guidance_end", 1.0))
+    if control_guidance_start > control_guidance_end:
+        raise ValueError("control_guidance_start must be <= control_guidance_end")
     batch_id = str(inputs.get("batch_id") or make_batch_id())
 
     filenames = generate_images_controlnet(
@@ -833,8 +844,14 @@ def _sd15_controlnet_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> 
         model=inputs.get("model"),
         num_images=int(inputs.get("num_images") or 1),
         clip_skip=int(inputs.get("clip_skip") or 1),
-        controlnet_image=control_image,
+        control_image=control_image,
         controlnet_model=str(inputs.get("controlnet_model") or "lllyasviel/sd-controlnet-canny"),
+        controlnet_conditioning_scale=float(
+            inputs.get("controlnet_conditioning_scale", 1.0)
+        ),
+        controlnet_guess_mode=bool(inputs.get("controlnet_guess_mode", False)),
+        control_guidance_start=control_guidance_start,
+        control_guidance_end=control_guidance_end,
         batch_id=batch_id,
     )
     return {"batch_id": batch_id, "images": [f"/outputs/{name}" for name in filenames]}
