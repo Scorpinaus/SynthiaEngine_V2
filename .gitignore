@@ -1,6 +1,9 @@
 .venv/
 outputs/
+database/
 .tmp-sd-embed/
 backend/model_registry.json
 __pycache__/
 *.pyc
+!database/.gitkeep
+AGENTS.md
