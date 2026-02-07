@@ -7,3 +7,5 @@ __pycache__/
 *.pyc
 !database/.gitkeep
 AGENTS.md
+.vscode/
+.pytest_cache/
