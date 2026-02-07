@@ -116,6 +116,67 @@ Notes:
 - `ui_hints` is best-effort metadata for workflow builders (labels, widgets, suggested min/max, option lists, etc.).
 - `output_schema` describes the per-task result object stored under `result.tasks[taskId]`.
 
+### List ControlNet preprocessors (for SD1.5 ControlNet setup)
+
+`GET /api/controlnet/preprocessors`
+
+Returns available preprocessors plus typed parameter schema and SD1.5 model compatibility hints.
+
+Response item shape:
+```json
+{
+  "id": "canny",
+  "name": "Canny",
+  "description": "Detects edges...",
+  "defaults": {
+    "low_threshold": 100,
+    "high_threshold": 200
+  },
+  "param_schema": {
+    "low_threshold": {
+      "type": "int",
+      "description": "Lower Canny threshold.",
+      "minimum": 0,
+      "maximum": 255
+    },
+    "high_threshold": {
+      "type": "int",
+      "description": "Upper Canny threshold.",
+      "minimum": 0,
+      "maximum": 255
+    }
+  },
+  "recommended_sd15_control_models": ["lllyasviel/control_v11p_sd15_canny"],
+  "legacy_aliases": ["lllyasviel/sd-controlnet-canny"]
+}
+```
+
+### Run a ControlNet preprocessor
+
+`POST /api/controlnet/preprocess` (multipart/form-data)
+
+Form fields:
+- `image`: uploaded image file (required)
+- `preprocessor_id`: preprocessor id from `GET /api/controlnet/preprocessors` (required)
+- `params`: JSON object string of preprocessor params (optional)
+- `low_threshold` / `high_threshold`: convenience overrides for canny-compatible flows (optional)
+
+Validation behavior:
+- `params` must decode to a JSON object.
+- Unknown param keys are rejected.
+- Param values are type-coerced/validated against `param_schema` bounds.
+- Returns `400` with an actionable message for invalid params.
+
+Frontend note (SD1.5 page):
+- `frontend/controlnet_panel.html` is loaded by `frontend/controlnet_panel.js`.
+- `frontend/controlnet_preprocessor.html` is loaded by `frontend/controlnet_preprocessor.js`.
+- `frontend/sd15.js` consumes shared ControlNet state via `window.ControlNetPanel.getState()`.
+- The preprocessor modal layout uses a two-column split (`settings` + `preview`) and caps preview height to viewport.
+- `frontend/controlnet_preprocessor.js` applies a runtime layout fallback so stale cached modal markup is upgraded in-place.
+- ControlNet HTML fragments are fetched with `cache: "no-store"` to avoid stale modal/panel assets.
+- `frontend/controlnet_preprocessor.html` also carries inline layout styles as a last-resort cache-resistant fallback.
+- The preprocessor modal collapses to one column only on narrow screens (`<=700px`).
+
 ## Job object
 
 Job `status` values:
@@ -206,6 +267,11 @@ Resolution behavior:
 
 Task inputs/outputs are task-specific. As a convention, image-generating tasks return:
 - `images`: list of `"/outputs/..."` URLs
+
+`controlnet.preprocess` input notes:
+- `image`: image reference
+- `preprocessor_id`: string id
+- `params`: object only (not JSON string in workflow payload)
 
 ## Example: img2img workflow (artifact input)
 

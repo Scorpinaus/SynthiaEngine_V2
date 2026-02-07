@@ -5,30 +5,39 @@
             <h2 id="preprocessor-title">ControlNet Preprocessors (SD1.5)</h2>
             <button class="secondary" id="close-preprocessors" type="button">Close</button>
         </div>
-        <div class="modal-body">
-            <label class="field">
-                <span>Preprocessor</span>
-                <select id="preprocessor-select"></select>
-            </label>
-            <p class="preprocessor-description" id="preprocessor-description"></p>
-            <label class="field">
-                <span>Input Image</span>
-                <input id="preprocessor-image" type="file" accept="image/*" />
-            </label>
-            <div class="field-row" id="canny-thresholds">
+        <div
+            class="modal-body preprocessor-layout"
+            style="display: grid; grid-template-columns: minmax(280px, 360px) minmax(0, 1fr); gap: 16px; align-items: start;"
+        >
+            <div class="preprocessor-settings" style="display: grid; gap: 12px; align-content: start;">
                 <label class="field">
-                    <span>Low Threshold</span>
-                    <input id="preprocessor-low-threshold" type="number" min="0" max="255" value="100" />
+                    <span>Preprocessor</span>
+                    <select id="preprocessor-select"></select>
                 </label>
+                <p class="preprocessor-description" id="preprocessor-description"></p>
                 <label class="field">
-                    <span>High Threshold</span>
-                    <input id="preprocessor-high-threshold" type="number" min="0" max="255" value="200" />
+                    <span>Input Image</span>
+                    <input id="preprocessor-image" type="file" accept="image/*" />
                 </label>
+                <div class="field-row" id="canny-thresholds">
+                    <label class="field">
+                        <span>Low Threshold</span>
+                        <input id="preprocessor-low-threshold" type="number" min="0" max="255" value="100" />
+                    </label>
+                    <label class="field">
+                        <span>High Threshold</span>
+                        <input id="preprocessor-high-threshold" type="number" min="0" max="255" value="200" />
+                    </label>
+                </div>
+                <button class="primary" id="apply-preprocessor" type="button">Apply Preprocessor</button>
             </div>
-            <button class="primary" id="apply-preprocessor" type="button">Apply Preprocessor</button>
-            <div class="preprocessor-preview">
+            <div class="preprocessor-preview preprocessor-preview-panel" style="min-height: 0;">
                 <span>Preview</span>
-                <img id="preprocessor-preview" alt="Preprocessor output preview" />
+                <img
+                    id="preprocessor-preview"
+                    alt="Preprocessor output preview"
+                    style="max-height: calc(94vh - 220px); min-height: 240px;"
+                />
                 <a
                     id="download-control-image"
                     class="secondary controlnet-download is-disabled"

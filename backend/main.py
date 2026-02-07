@@ -111,6 +111,9 @@ class ControlNetPreprocessorInfo(BaseModel):
     name: str
     description: str
     defaults: dict[str, object]
+    param_schema: dict[str, dict[str, object]] = Field(default_factory=dict)
+    recommended_sd15_control_models: list[str] = Field(default_factory=list)
+    legacy_aliases: list[str] = Field(default_factory=list)
 
 
 class ModelLayerRow(BaseModel):
@@ -491,15 +494,32 @@ async def create_lora_model(req: LoraCreateRequest):
 async def list_controlnet_preprocessors():
     """Return available ControlNet preprocessors and their default params."""
     preprocessors = list_preprocessors()
-    return [
-        ControlNetPreprocessorInfo(
-            id=preprocessor.id,
-            name=preprocessor.name,
-            description=preprocessor.description,
-            defaults=preprocessor.defaults,
+    registry_by_id = {entry.id: entry for entry in CONTROLNET_PREPROCESSOR_REGISTRY}
+    infos: list[ControlNetPreprocessorInfo] = []
+    for preprocessor in preprocessors:
+        registry_entry = registry_by_id.get(preprocessor.id)
+        infos.append(
+            ControlNetPreprocessorInfo(
+                id=preprocessor.id,
+                name=preprocessor.name,
+                description=preprocessor.description,
+                defaults=preprocessor.defaults,
+                param_schema={
+                    key: {
+                        "type": spec.type,
+                        "description": spec.description,
+                        "minimum": spec.minimum,
+                        "maximum": spec.maximum,
+                    }
+                    for key, spec in preprocessor.param_schema.items()
+                },
+                recommended_sd15_control_models=(
+                    registry_entry.recommended_sd15_control_models if registry_entry else []
+                ),
+                legacy_aliases=(registry_entry.legacy_aliases if registry_entry else []),
+            )
         )
-        for preprocessor in preprocessors
-    ]
+    return infos
 
 
 @app.get("/api/controlnet/preprocessor-models",
@@ -550,7 +570,21 @@ async def run_controlnet_preprocessor(
     if high_threshold is not None:
         parsed_params["high_threshold"] = high_threshold
 
-    processed = preprocessor.process(source_image, parsed_params)
+    try:
+        processed = preprocessor.process(source_image, parsed_params)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        message = str(exc)
+        if "controlnet-aux is required" in message:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "ControlNet preprocessors dependency is missing. "
+                    "Install `controlnet-aux` and restart the backend."
+                ),
+            ) from exc
+        raise HTTPException(status_code=500, detail=message) from exc
     output = BytesIO()
     processed.save(output, format="PNG")
     return Response(content=output.getvalue(), media_type="image/png")

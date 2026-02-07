@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ControlNetPreprocessorModelEntry(BaseModel):
@@ -11,6 +11,8 @@ class ControlNetPreprocessorModelEntry(BaseModel):
     repo_id: str | None = None
     revision: str | None = None
     local_path: str | None = None
+    recommended_sd15_control_models: list[str] = Field(default_factory=list)
+    legacy_aliases: list[str] = Field(default_factory=list)
 
 
 REGISTRY_PATH = Path(__file__).with_name("controlnet_preprocessor_registry.json")

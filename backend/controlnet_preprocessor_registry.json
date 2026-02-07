@@ -5,7 +5,13 @@
         "description": "Canny edge detector via controlnet-aux.",
         "repo_id": null,
         "revision": null,
-        "local_path": null
+        "local_path": null,
+        "recommended_sd15_control_models": [
+            "lllyasviel/control_v11p_sd15_canny"
+        ],
+        "legacy_aliases": [
+            "lllyasviel/sd-controlnet-canny"
+        ]
     },
     {
         "id": "hed",
@@ -13,7 +19,13 @@
         "description": "Holistically-nested edge detection via controlnet-aux.",
         "repo_id": null,
         "revision": null,
-        "local_path": null
+        "local_path": null,
+        "recommended_sd15_control_models": [
+            "lllyasviel/control_v11p_sd15_softedge"
+        ],
+        "legacy_aliases": [
+            "lllyasviel/sd-controlnet-hed"
+        ]
     },
     {
         "id": "midas-depth",
@@ -21,7 +33,13 @@
         "description": "Depth estimation via MiDaS (controlnet-aux).",
         "repo_id": null,
         "revision": null,
-        "local_path": null
+        "local_path": null,
+        "recommended_sd15_control_models": [
+            "lllyasviel/control_v11f1p_sd15_depth"
+        ],
+        "legacy_aliases": [
+            "lllyasviel/sd-controlnet-depth"
+        ]
     },
     {
         "id": "openpose",
@@ -29,7 +47,13 @@
         "description": "Pose detection via OpenPose (controlnet-aux).",
         "repo_id": null,
         "revision": null,
-        "local_path": null
+        "local_path": null,
+        "recommended_sd15_control_models": [
+            "lllyasviel/control_v11p_sd15_openpose"
+        ],
+        "legacy_aliases": [
+            "lllyasviel/sd-controlnet-openpose"
+        ]
     },
     {
         "id": "mlsd",
@@ -37,7 +61,13 @@
         "description": "Line detection via MLSD (controlnet-aux).",
         "repo_id": null,
         "revision": null,
-        "local_path": null
+        "local_path": null,
+        "recommended_sd15_control_models": [
+            "lllyasviel/control_v11p_sd15_mlsd"
+        ],
+        "legacy_aliases": [
+            "lllyasviel/sd-controlnet-mlsd"
+        ]
     },
     {
         "id": "lineart",
@@ -45,7 +75,13 @@
         "description": "Lineart extraction via controlnet-aux.",
         "repo_id": null,
         "revision": null,
-        "local_path": null
+        "local_path": null,
+        "recommended_sd15_control_models": [
+            "lllyasviel/control_v11p_sd15_lineart"
+        ],
+        "legacy_aliases": [
+            "lllyasviel/sd-controlnet-lineart"
+        ]
     },
     {
         "id": "lineart-anime",
@@ -53,7 +89,13 @@
         "description": "Anime lineart extraction via controlnet-aux.",
         "repo_id": null,
         "revision": null,
-        "local_path": null
+        "local_path": null,
+        "recommended_sd15_control_models": [
+            "lllyasviel/control_v11p_sd15s2_lineart_anime"
+        ],
+        "legacy_aliases": [
+            "lllyasviel/sd-controlnet-lineart-anime"
+        ]
     },
     {
         "id": "pidinet",
@@ -61,7 +103,13 @@
         "description": "PiDiNet edge detector via controlnet-aux.",
         "repo_id": null,
         "revision": null,
-        "local_path": null
+        "local_path": null,
+        "recommended_sd15_control_models": [
+            "lllyasviel/control_v11p_sd15_softedge"
+        ],
+        "legacy_aliases": [
+            "lllyasviel/sd-controlnet-scribble"
+        ]
     },
     {
         "id": "normal-bae",
@@ -69,6 +117,12 @@
         "description": "Surface normals via NormalBae (controlnet-aux).",
         "repo_id": null,
         "revision": null,
-        "local_path": null
+        "local_path": null,
+        "recommended_sd15_control_models": [
+            "lllyasviel/control_v11p_sd15_normalbae"
+        ],
+        "legacy_aliases": [
+            "lllyasviel/sd-controlnet-normal"
+        ]
     }
 ]

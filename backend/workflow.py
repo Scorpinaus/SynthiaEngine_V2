@@ -846,8 +846,6 @@ def _controlnet_preprocess(inputs: dict[str, Any], _ctx: WorkflowContext) -> dic
     preprocessor = get_preprocessor(preprocessor_id)
 
     params = inputs.get("params") or {}
-    if isinstance(params, str):
-        params = json.loads(params)
     if not isinstance(params, dict):
         raise ValueError("params must be an object")
 
@@ -855,7 +853,10 @@ def _controlnet_preprocess(inputs: dict[str, Any], _ctx: WorkflowContext) -> dic
         if inputs.get(key) is not None:
             params[key] = inputs[key]
 
-    processed = preprocessor.process(source, params)
+    try:
+        processed = preprocessor.process(source, params)
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
     artifact = save_artifact_png(processed, prefix="p")
     return {"artifact": artifact}
 

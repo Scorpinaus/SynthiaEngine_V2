@@ -659,6 +659,42 @@ button {
     display: none;
 }
 
+#preprocessor-modal .modal-content {
+    width: min(94vw, 1100px);
+    max-height: 94vh;
+}
+
+#preprocessor-modal .preprocessor-layout {
+    grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+}
+
+#preprocessor-modal .preprocessor-settings {
+    display: grid;
+    gap: 12px;
+    align-content: start;
+}
+
+#preprocessor-modal .preprocessor-preview-panel {
+    min-height: 0;
+}
+
+#preprocessor-modal .preprocessor-preview-panel img {
+    max-height: calc(94vh - 220px);
+    min-height: 240px;
+}
+
+@media (max-width: 700px) {
+    #preprocessor-modal .preprocessor-layout {
+        grid-template-columns: 1fr;
+    }
+
+    #preprocessor-modal .preprocessor-preview-panel img {
+        max-height: 55vh;
+    }
+}
+
 .history-meta-row dd {
     margin: 0;
     word-break: break-word;
