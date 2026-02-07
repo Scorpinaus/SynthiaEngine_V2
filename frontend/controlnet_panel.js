@@ -3,6 +3,7 @@
         previewUrl: null,
         previewBlob: null,
         preprocessors: new Map(),
+        preprocessorId: null,
     };
 
     function getState() {

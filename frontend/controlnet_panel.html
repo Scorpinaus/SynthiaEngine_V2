@@ -33,6 +33,14 @@
                     <input id="control_guidance_end" type="number" value="1.0" step="0.01" min="0" max="1" />
                 </label>
             </div>
+            <label class="field">
+                <span>Compatibility Mode</span>
+                <select id="controlnet_compat_mode">
+                    <option value="warn" selected>Warn</option>
+                    <option value="error">Error</option>
+                    <option value="off">Off</option>
+                </select>
+            </label>
             <div class="controlnet-panel-preview is-hidden" id="controlnet-panel-preview-wrap">
                 <span>Control Image Preview</span>
                 <img id="controlnet-panel-preview" alt="ControlNet control preview" />

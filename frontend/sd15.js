@@ -116,6 +116,7 @@ function initSd15Page() {
                     controlnet_conditioning_scale: "controlnet_conditioning_scale",
                     control_guidance_start: "control_guidance_start",
                     control_guidance_end: "control_guidance_end",
+                    controlnet_compat_mode: "controlnet_compat_mode",
                 });
                 window.WorkflowCatalog.applyDefaultsToForm("sd15.hires_fix", {
                     hires_scale: "hires_scale",
@@ -215,6 +216,10 @@ async function generate() {
         primaryDefaults.control_guidance_end ?? 1.0
     );
     const controlnet_guess_mode = Boolean(document.getElementById("controlnet_guess_mode")?.checked);
+    const controlnet_compat_mode = WorkflowClient.readTextValue(
+        "controlnet_compat_mode",
+        primaryDefaults.controlnet_compat_mode ?? "warn"
+    );
     const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
 
     const idempotencyKey = WorkflowClient.makeIdempotencyKey();
@@ -250,7 +255,11 @@ async function generate() {
                 controlnet_guess_mode,
                 control_guidance_start,
                 control_guidance_end,
+                controlnet_compat_mode,
             };
+            if (controlnetState?.preprocessorId) {
+                inputs.controlnet_preprocessor_id = controlnetState.preprocessorId;
+            }
             if (loraAdapters.length > 0) {
                 inputs.lora_adapters = loraAdapters;
             }

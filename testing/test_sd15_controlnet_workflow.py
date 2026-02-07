@@ -24,6 +24,13 @@ class Sd15ControlNetInputValidationTests(unittest.TestCase):
                 control_guidance_end=1.5,
             )
 
+    def test_default_controlnet_model_uses_sd15_v11(self):
+        inputs = Sd15ControlNetText2ImgInputs(
+            control_image={"artifact_id": "a0123456789abcdef0123456789abcdef"},
+            prompt="test",
+        )
+        self.assertEqual(inputs.controlnet_model, "lllyasviel/control_v11p_sd15_canny")
+
 
 class Sd15ControlNetWorkflowPlumbingTests(unittest.TestCase):
     def test_controlnet_task_passes_expected_pipeline_kwargs(self):
@@ -85,6 +92,46 @@ class Sd15ControlNetWorkflowPlumbingTests(unittest.TestCase):
                         "prompt": "test prompt",
                         "control_guidance_start": 0.8,
                         "control_guidance_end": 0.2,
+                    },
+                    _ctx=None,
+                )
+
+    def test_warn_mode_returns_warning_on_mismatch(self):
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+                with patch(
+                    "backend.workflow.generate_images_controlnet",
+                    return_value=["batch/out.png"],
+                ):
+                    result = _sd15_controlnet_text2img(
+                        {
+                            "control_image": {
+                                "artifact_id": "a0123456789abcdef0123456789abcdef"
+                            },
+                            "prompt": "test prompt",
+                            "controlnet_model": "lllyasviel/control_v11p_sd15_openpose",
+                            "controlnet_preprocessor_id": "canny",
+                            "controlnet_compat_mode": "warn",
+                        },
+                        _ctx=None,
+                    )
+        self.assertIn("warnings", result)
+        self.assertGreaterEqual(len(result["warnings"]), 1)
+
+    def test_error_mode_rejects_mismatch(self):
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with self.assertRaisesRegex(
+                ValueError, "ControlNet model/preprocessor pairing mismatch"
+            ):
+                _sd15_controlnet_text2img(
+                    {
+                        "control_image": {
+                            "artifact_id": "a0123456789abcdef0123456789abcdef"
+                        },
+                        "prompt": "test prompt",
+                        "controlnet_model": "lllyasviel/control_v11p_sd15_openpose",
+                        "controlnet_preprocessor_id": "canny",
+                        "controlnet_compat_mode": "error",
                     },
                     _ctx=None,
                 )

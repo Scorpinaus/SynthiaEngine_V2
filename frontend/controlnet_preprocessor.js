@@ -237,6 +237,7 @@
         }
         state.previewUrl = URL.createObjectURL(blob);
         state.previewBlob = blob;
+        state.preprocessorId = selectedId;
         if (preview) {
             preview.src = state.previewUrl;
         }
@@ -280,6 +281,7 @@
         fileInput?.addEventListener("change", () => {
             if (state) {
                 state.previewBlob = null;
+                state.preprocessorId = null;
             }
             updateDownloadLinkState(false);
             panelApi?.updateActiveFlag();

@@ -280,6 +280,15 @@ Task inputs/outputs are task-specific. As a convention, image-generating tasks r
 - `control_guidance_start`: float in `[0, 1]` (default `0.0`)
 - `control_guidance_end`: float in `[0, 1]` (default `1.0`)
 - `control_guidance_start` must be `<= control_guidance_end`
+- `controlnet_model`: defaults to `lllyasviel/control_v11p_sd15_canny` (SD1.5 v1.1 family)
+- `controlnet_preprocessor_id`: optional preprocessor id used for compatibility checks
+- `controlnet_compat_mode`: `"warn"` (default), `"error"`, or `"off"`
+  - `warn`: continue generation and add a warning in task result when pairing is mismatched
+  - `error`: fail task when pairing is mismatched
+  - `off`: skip compatibility check
+
+`sd15.controlnet.text2img` output notes:
+- May include `warnings: string[]` when compatibility mode is `warn` and mismatch is detected.
 
 ## Example: img2img workflow (artifact input)
 

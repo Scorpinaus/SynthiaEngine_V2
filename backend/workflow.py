@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,6 +13,7 @@ import re
 from pydantic_core import PydanticUndefined
 
 from backend.config import OUTPUT_DIR
+from backend.controlnet_preprocessor_registry import CONTROLNET_PREPROCESSOR_REGISTRY
 from backend.controlnet_preprocessors import get_preprocessor
 from backend.pipeline_utils import get_batch_output_dir, make_batch_id
 from backend.sd15_pipeline import (
@@ -21,6 +23,14 @@ from backend.sd15_pipeline import (
     generate_images_inpaint,
     run_sd15_hires_fix,
 )
+
+logger = logging.getLogger(__name__)
+
+_CONTROLNET_PREPROCESSOR_REGISTRY_BY_ID = {
+    entry.id: entry for entry in CONTROLNET_PREPROCESSOR_REGISTRY
+}
+
+_DEFAULT_SD15_CONTROLNET_MODEL = "lllyasviel/control_v11p_sd15_canny"
 
 # Canonical set of task identifiers accepted by workflow validation/dispatch.
 # Keeping this as a Literal enables static type checking and autocomplete.
@@ -145,7 +155,9 @@ class Sd15ControlNetText2ImgInputs(BaseModel):
     model: str | None = None
     num_images: int = 1
     clip_skip: int = 1
-    controlnet_model: str = "lllyasviel/sd-controlnet-canny"
+    controlnet_model: str = _DEFAULT_SD15_CONTROLNET_MODEL
+    controlnet_preprocessor_id: str | None = None
+    controlnet_compat_mode: Literal["warn", "error", "off"] = "warn"
     controlnet_conditioning_scale: float = Field(default=1.0, ge=0.0, le=2.0)
     controlnet_guess_mode: bool = False
     control_guidance_start: float = Field(default=0.0, ge=0.0, le=1.0)
@@ -364,6 +376,15 @@ class ImagesWithBatchOutput(BaseModel):
     )
 
 
+class Sd15ControlNetText2ImgOutput(ImagesWithBatchOutput):
+    """SD1.5 ControlNet output with optional compatibility warnings."""
+
+    warnings: list[str] | None = Field(
+        default=None,
+        description="Optional non-fatal compatibility warnings.",
+    )
+
+
 class ControlNetPreprocessOutput(BaseModel):
     """Output of controlnet.preprocess (produces a new artifact)."""
 
@@ -395,7 +416,7 @@ TASK_OUTPUT_MODELS: dict[str, type[BaseModel]] = {
     "sd15.text2img": ImagesWithBatchOutput,
     "sd15.img2img": ImagesWithBatchOutput,
     "sd15.inpaint": ImagesWithBatchOutput,
-    "sd15.controlnet.text2img": ImagesWithBatchOutput,
+    "sd15.controlnet.text2img": Sd15ControlNetText2ImgOutput,
     "sd15.hires_fix": ImagesWithBatchOutput,
     "controlnet.preprocess": ControlNetPreprocessOutput,
     "sdxl.text2img": ImagesOutput,
@@ -537,11 +558,13 @@ def _build_task_ui_hints(task_type: str, model_cls: type[BaseModel]) -> dict[str
             else:
                 hint.update(widget="text")
 
-        if field_name == "preprocessor_id":
+        if field_name in {"preprocessor_id", "controlnet_preprocessor_id"}:
             hint.update(
                 widget="select",
                 source={"type": "controlnet_preprocessors", "endpoint": "/api/controlnet/preprocessors"},
             )
+        if field_name == "controlnet_compat_mode":
+            hint.update(widget="select", options=["warn", "error", "off"])
 
         if field_name == "lora_adapters":
             hint.update(
@@ -830,6 +853,43 @@ def _sd15_controlnet_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> 
     control_guidance_end = float(inputs.get("control_guidance_end", 1.0))
     if control_guidance_start > control_guidance_end:
         raise ValueError("control_guidance_start must be <= control_guidance_end")
+    controlnet_model = str(
+        inputs.get("controlnet_model") or _DEFAULT_SD15_CONTROLNET_MODEL
+    )
+    controlnet_preprocessor_id_raw = inputs.get("controlnet_preprocessor_id")
+    controlnet_preprocessor_id = (
+        str(controlnet_preprocessor_id_raw)
+        if controlnet_preprocessor_id_raw is not None
+        else None
+    )
+    controlnet_compat_mode = str(inputs.get("controlnet_compat_mode") or "warn").lower()
+    warnings: list[str] = []
+    if controlnet_compat_mode != "off" and controlnet_preprocessor_id:
+        entry = _CONTROLNET_PREPROCESSOR_REGISTRY_BY_ID.get(controlnet_preprocessor_id)
+        if entry is None:
+            message = (
+                f"Unknown controlnet_preprocessor_id '{controlnet_preprocessor_id}'. "
+                "Compatibility check could not be applied."
+            )
+            if controlnet_compat_mode == "error":
+                raise ValueError(message)
+            warnings.append(message)
+            logger.warning(message)
+        else:
+            compatible_models = set(entry.recommended_sd15_control_models) | set(
+                entry.legacy_aliases
+            )
+            if compatible_models and controlnet_model not in compatible_models:
+                message = (
+                    "ControlNet model/preprocessor pairing mismatch: "
+                    f"preprocessor '{controlnet_preprocessor_id}' with model "
+                    f"'{controlnet_model}'. Recommended models: "
+                    f"{', '.join(entry.recommended_sd15_control_models)}."
+                )
+                if controlnet_compat_mode == "error":
+                    raise ValueError(message)
+                warnings.append(message)
+                logger.warning(message)
     batch_id = str(inputs.get("batch_id") or make_batch_id())
 
     filenames = generate_images_controlnet(
@@ -845,7 +905,7 @@ def _sd15_controlnet_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> 
         num_images=int(inputs.get("num_images") or 1),
         clip_skip=int(inputs.get("clip_skip") or 1),
         control_image=control_image,
-        controlnet_model=str(inputs.get("controlnet_model") or "lllyasviel/sd-controlnet-canny"),
+        controlnet_model=controlnet_model,
         controlnet_conditioning_scale=float(
             inputs.get("controlnet_conditioning_scale", 1.0)
         ),
@@ -854,7 +914,13 @@ def _sd15_controlnet_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> 
         control_guidance_end=control_guidance_end,
         batch_id=batch_id,
     )
-    return {"batch_id": batch_id, "images": [f"/outputs/{name}" for name in filenames]}
+    result: dict[str, Any] = {
+        "batch_id": batch_id,
+        "images": [f"/outputs/{name}" for name in filenames],
+    }
+    if warnings:
+        result["warnings"] = warnings
+    return result
 
 
 def _controlnet_preprocess(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
