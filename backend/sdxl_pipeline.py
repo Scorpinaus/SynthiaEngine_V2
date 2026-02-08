@@ -4,7 +4,11 @@ from pathlib import Path
 import torch
 from PIL import Image
 from diffusers import (
+    ControlNetModel,
     StableDiffusionXLImg2ImgPipeline,
+    StableDiffusionXLControlNetInpaintPipeline,
+    StableDiffusionXLControlNetImg2ImgPipeline,
+    StableDiffusionXLControlNetPipeline,
     StableDiffusionXLPipeline,
     StableDiffusionXLInpaintPipeline,
 )
@@ -27,7 +31,7 @@ configure_logging()
 
 
 def _get_pipe_device(
-    pipe: StableDiffusionXLPipeline | StableDiffusionXLImg2ImgPipeline | StableDiffusionXLInpaintPipeline,
+    pipe: StableDiffusionXLPipeline | StableDiffusionXLImg2ImgPipeline | StableDiffusionXLInpaintPipeline | StableDiffusionXLControlNetPipeline | StableDiffusionXLControlNetImg2ImgPipeline | StableDiffusionXLControlNetInpaintPipeline,
 ) -> torch.device | str:
     return getattr(pipe, "_execution_device", None) or pipe.device
 
@@ -151,6 +155,22 @@ def save_sdxl_image(
     return build_batch_output_relpath(batch_id, filename.name)
 
 
+def _resize_control_image_to_target(
+    control_image: Image.Image | list[Image.Image],
+    *,
+    target_width: int,
+    target_height: int,
+) -> Image.Image | list[Image.Image]:
+    def _resize_single(image: Image.Image) -> Image.Image:
+        if image.size == (target_width, target_height):
+            return image
+        return image.resize((target_width, target_height), resample=Image.LANCZOS)
+
+    if isinstance(control_image, list):
+        return [_resize_single(image) for image in control_image]
+    return _resize_single(control_image)
+
+
 def load_sdxl_pipeline(model_name: str | None) -> StableDiffusionXLPipeline:
     entry = get_model_entry(model_name)
 
@@ -166,6 +186,48 @@ def load_sdxl_pipeline(model_name: str | None) -> StableDiffusionXLPipeline:
     elif entry.model_type == "single-file":
         pipe = StableDiffusionXLPipeline.from_single_file(
             source,
+            torch_dtype=torch.float16,
+            safety_checker=None,
+        )
+    else:
+        raise ValueError(f"Unsupported model type: {entry.model_type}")
+
+    pipe.to("cuda")
+    return pipe
+
+
+def load_sdxl_controlnet_pipeline(
+    model_name: str | None,
+    controlnet_model: str | list[str],
+) -> StableDiffusionXLControlNetPipeline:
+    entry = get_model_entry(model_name)
+
+    source = resolve_model_source(entry)
+    logger.info("SDXL ControlNet model source: %s", source)
+
+    controlnet: ControlNetModel | list[ControlNetModel]
+    if isinstance(controlnet_model, list):
+        controlnet = [
+            ControlNetModel.from_pretrained(model_id, torch_dtype=torch.float16)
+            for model_id in controlnet_model
+        ]
+    else:
+        controlnet = ControlNetModel.from_pretrained(
+            controlnet_model,
+            torch_dtype=torch.float16,
+        )
+
+    if entry.model_type == "diffusers":
+        pipe = StableDiffusionXLControlNetPipeline.from_pretrained(
+            source,
+            controlnet=controlnet,
+            torch_dtype=torch.float16,
+            safety_checker=None,
+        )
+    elif entry.model_type == "single-file":
+        pipe = StableDiffusionXLControlNetPipeline.from_single_file(
+            source,
+            controlnet=controlnet,
             torch_dtype=torch.float16,
             safety_checker=None,
         )
@@ -201,6 +263,48 @@ def load_sdxl_img2img_pipeline(model_name: str | None) -> StableDiffusionXLImg2I
     return pipe
 
 
+def load_sdxl_controlnet_img2img_pipeline(
+    model_name: str | None,
+    controlnet_model: str | list[str],
+) -> StableDiffusionXLControlNetImg2ImgPipeline:
+    entry = get_model_entry(model_name)
+
+    source = resolve_model_source(entry)
+    logger.info("SDXL ControlNet img2img model source: %s", source)
+
+    controlnet: ControlNetModel | list[ControlNetModel]
+    if isinstance(controlnet_model, list):
+        controlnet = [
+            ControlNetModel.from_pretrained(model_id, torch_dtype=torch.float16)
+            for model_id in controlnet_model
+        ]
+    else:
+        controlnet = ControlNetModel.from_pretrained(
+            controlnet_model,
+            torch_dtype=torch.float16,
+        )
+
+    if entry.model_type == "diffusers":
+        pipe = StableDiffusionXLControlNetImg2ImgPipeline.from_pretrained(
+            source,
+            controlnet=controlnet,
+            torch_dtype=torch.float16,
+            safety_checker=None,
+        )
+    elif entry.model_type == "single-file":
+        pipe = StableDiffusionXLControlNetImg2ImgPipeline.from_single_file(
+            source,
+            controlnet=controlnet,
+            torch_dtype=torch.float16,
+            safety_checker=None,
+        )
+    else:
+        raise ValueError(f"Unsupported model type: {entry.model_type}")
+
+    pipe.to("cuda")
+    return pipe
+
+
 def load_sdxl_inpaint_pipeline(model_name: str | None) -> StableDiffusionXLInpaintPipeline:
     entry = get_model_entry(model_name)
 
@@ -224,6 +328,249 @@ def load_sdxl_inpaint_pipeline(model_name: str | None) -> StableDiffusionXLInpai
 
     pipe.to("cuda")
     return pipe
+
+
+def load_sdxl_controlnet_inpaint_pipeline(
+    model_name: str | None,
+    controlnet_model: str | list[str],
+) -> StableDiffusionXLControlNetInpaintPipeline:
+    entry = get_model_entry(model_name)
+
+    source = resolve_model_source(entry)
+    logger.info("SDXL ControlNet inpaint model source: %s", source)
+
+    controlnet: ControlNetModel | list[ControlNetModel]
+    if isinstance(controlnet_model, list):
+        controlnet = [
+            ControlNetModel.from_pretrained(model_id, torch_dtype=torch.float16)
+            for model_id in controlnet_model
+        ]
+    else:
+        controlnet = ControlNetModel.from_pretrained(
+            controlnet_model,
+            torch_dtype=torch.float16,
+        )
+
+    if entry.model_type == "diffusers":
+        pipe = StableDiffusionXLControlNetInpaintPipeline.from_pretrained(
+            source,
+            controlnet=controlnet,
+            torch_dtype=torch.float16,
+            safety_checker=None,
+        )
+    elif entry.model_type == "single-file":
+        pipe = StableDiffusionXLControlNetInpaintPipeline.from_single_file(
+            source,
+            controlnet=controlnet,
+            torch_dtype=torch.float16,
+            safety_checker=None,
+        )
+    else:
+        raise ValueError(f"Unsupported model type: {entry.model_type}")
+
+    pipe.to("cuda")
+    return pipe
+
+
+@torch.inference_mode()
+def run_sdxl_controlnet_text2img(
+    *,
+    prompt: str,
+    negative_prompt: str,
+    steps: int,
+    guidance_scale: float,
+    width: int,
+    height: int,
+    seed: int | None,
+    scheduler: str,
+    model: str | None,
+    num_images: int,
+    clip_skip: int,
+    controlnet_model: str | list[str],
+    control_image: Image.Image | list[Image.Image],
+    controlnet_conditioning_scale: float | list[float] = 1.0,
+    controlnet_guess_mode: bool = False,
+    control_guidance_start: float = 0.0,
+    control_guidance_end: float = 1.0,
+) -> dict[str, list[str]]:
+    logger.info("seed=%s", seed)
+    if seed is None or seed == 0:
+        base_seed = torch.randint(0, 2**31, (1,)).item()
+    else:
+        base_seed = int(seed)
+
+    batch_id = make_batch_id()
+    batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
+
+    control_image = _resize_control_image_to_target(
+        control_image,
+        target_width=width,
+        target_height=height,
+    )
+
+    pipe = load_sdxl_controlnet_pipeline(model, controlnet_model)
+    pipe.scheduler = create_scheduler(scheduler, pipe)
+    logger.info(
+        "SDXL ControlNet Generate: model=%s seed=%s steps=%s guidance_scale=%s size=%sx%s num_images=%s",
+        model,
+        base_seed,
+        steps,
+        guidance_scale,
+        width,
+        height,
+        num_images,
+    )
+
+    filenames: list[str] = []
+    for i in range(num_images):
+        current_seed = base_seed + i
+        generator = torch.Generator(device=_get_pipe_device(pipe)).manual_seed(current_seed)
+        image = pipe(
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            num_inference_steps=steps,
+            guidance_scale=guidance_scale,
+            width=width,
+            height=height,
+            generator=generator,
+            clip_skip=clip_skip,
+            image=control_image,
+            controlnet_conditioning_scale=controlnet_conditioning_scale,
+            guess_mode=controlnet_guess_mode,
+            control_guidance_start=control_guidance_start,
+            control_guidance_end=control_guidance_end,
+        ).images[0]
+        relpath = save_sdxl_image(
+            image=image,
+            batch_output_dir=batch_output_dir,
+            batch_id=batch_id,
+            seed=current_seed,
+            metadata={
+                "mode": "txt2img_controlnet",
+                "prompt": prompt,
+                "negative_prompt": negative_prompt,
+                "steps": steps,
+                "guidance_scale": guidance_scale,
+                "width": width,
+                "height": height,
+                "seed": current_seed,
+                "model": model,
+                "clip_skip": clip_skip,
+                "batch_id": batch_id,
+                "controlnet_model": controlnet_model,
+                "controlnet_conditioning_scale": controlnet_conditioning_scale,
+                "controlnet_guess_mode": controlnet_guess_mode,
+                "control_guidance_start": control_guidance_start,
+                "control_guidance_end": control_guidance_end,
+            },
+        )
+        logger.info("Image %s saved to %s", i, Path(relpath).name)
+        filenames.append(relpath)
+
+    return {"images": [f"/outputs/{name}" for name in filenames]}
+
+
+@torch.inference_mode()
+def run_sdxl_img2img_controlnet(
+    *,
+    initial_image: Image.Image,
+    strength: float,
+    prompt: str,
+    negative_prompt: str,
+    steps: int,
+    guidance_scale: float,
+    width: int,
+    height: int,
+    seed: int | None,
+    model: str | None,
+    num_images: int,
+    clip_skip: int,
+    scheduler: str,
+    controlnet_model: str | list[str],
+    control_image: Image.Image | list[Image.Image],
+    controlnet_conditioning_scale: float | list[float] = 1.0,
+    controlnet_guess_mode: bool = False,
+    control_guidance_start: float = 0.0,
+    control_guidance_end: float = 1.0,
+) -> dict[str, list[str]]:
+    logger.info("seed=%s", seed)
+    if seed is None or seed == 0:
+        base_seed = torch.randint(0, 2**31, (1,)).item()
+    else:
+        base_seed = int(seed)
+
+    batch_id = make_batch_id()
+    batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
+
+    image_width, image_height = initial_image.size
+    control_image = _resize_control_image_to_target(
+        control_image,
+        target_width=image_width,
+        target_height=image_height,
+    )
+
+    pipe = load_sdxl_controlnet_img2img_pipeline(model, controlnet_model)
+    pipe.scheduler = create_scheduler(scheduler, pipe)
+    logger.info(
+        "SDXL ControlNet Img2Img: model=%s seed=%s steps=%s guidance_scale=%s size=%sx%s strength=%s num_images=%s",
+        model,
+        base_seed,
+        steps,
+        guidance_scale,
+        width,
+        height,
+        strength,
+        num_images,
+    )
+
+    filenames: list[str] = []
+    for i in range(num_images):
+        current_seed = base_seed + i
+        generator = torch.Generator(device=_get_pipe_device(pipe)).manual_seed(current_seed)
+        image = pipe(
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            image=initial_image,
+            control_image=control_image,
+            strength=strength,
+            num_inference_steps=steps,
+            guidance_scale=guidance_scale,
+            generator=generator,
+            clip_skip=clip_skip,
+            controlnet_conditioning_scale=controlnet_conditioning_scale,
+            guess_mode=controlnet_guess_mode,
+            control_guidance_start=control_guidance_start,
+            control_guidance_end=control_guidance_end,
+        ).images[0]
+        relpath = save_sdxl_image(
+            image=image,
+            batch_output_dir=batch_output_dir,
+            batch_id=batch_id,
+            seed=current_seed,
+            metadata={
+                "mode": "img2img_controlnet",
+                "prompt": prompt,
+                "negative_prompt": negative_prompt,
+                "steps": steps,
+                "guidance_scale": guidance_scale,
+                "width": image_width,
+                "height": image_height,
+                "seed": current_seed,
+                "model": model,
+                "strength": strength,
+                "clip_skip": clip_skip,
+                "batch_id": batch_id,
+                "controlnet_model": controlnet_model,
+                "controlnet_conditioning_scale": controlnet_conditioning_scale,
+                "controlnet_guess_mode": controlnet_guess_mode,
+                "control_guidance_start": control_guidance_start,
+                "control_guidance_end": control_guidance_end,
+            },
+        )
+        logger.info("Image %s saved to %s", i, Path(relpath).name)
+        filenames.append(relpath)
+
+    return {"images": [f"/outputs/{name}" for name in filenames]}
 
 
 @torch.inference_mode()
@@ -474,6 +821,113 @@ def run_sdxl_inpaint(
         )
         logger.info("Image %s saved to %s", i, Path(relpath).name)
 
+        filenames.append(relpath)
+
+    return {"images": [f"/outputs/{name}" for name in filenames]}
+
+
+@torch.inference_mode()
+def run_sdxl_inpaint_controlnet(
+    *,
+    initial_image: Image.Image,
+    mask_image: Image.Image,
+    strength: float,
+    prompt: str,
+    negative_prompt: str,
+    steps: int,
+    guidance_scale: float,
+    seed: int | None,
+    model: str | None,
+    num_images: int,
+    padding_mask_crop: int,
+    clip_skip: int,
+    scheduler: str,
+    controlnet_model: str | list[str],
+    control_image: Image.Image | list[Image.Image],
+    controlnet_conditioning_scale: float | list[float] = 1.0,
+    controlnet_guess_mode: bool = False,
+    control_guidance_start: float = 0.0,
+    control_guidance_end: float = 1.0,
+) -> dict[str, list[str]]:
+    logger.info("seed=%s", seed)
+    if seed is None or seed == 0:
+        base_seed = torch.randint(0, 2**31, (1,)).item()
+    else:
+        base_seed = int(seed)
+
+    batch_id = make_batch_id()
+    batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
+
+    width, height = initial_image.size
+    control_image = _resize_control_image_to_target(
+        control_image,
+        target_width=width,
+        target_height=height,
+    )
+
+    pipe = load_sdxl_controlnet_inpaint_pipeline(model, controlnet_model)
+    pipe.scheduler = create_scheduler(scheduler, pipe)
+    logger.info(
+        "SDXL ControlNet Inpaint: model=%s seed=%s steps=%s guidance_scale=%s size=%sx%s strength=%s num_images=%s padding_mask_crop=%s",
+        model,
+        base_seed,
+        steps,
+        guidance_scale,
+        width,
+        height,
+        strength,
+        num_images,
+        padding_mask_crop,
+    )
+
+    filenames: list[str] = []
+    for i in range(num_images):
+        current_seed = base_seed + i
+        generator = torch.Generator(device=_get_pipe_device(pipe)).manual_seed(current_seed)
+        image = pipe(
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            image=initial_image,
+            mask_image=mask_image,
+            control_image=control_image,
+            strength=strength,
+            num_inference_steps=steps,
+            guidance_scale=guidance_scale,
+            generator=generator,
+            padding_mask_crop=padding_mask_crop,
+            clip_skip=clip_skip,
+            controlnet_conditioning_scale=controlnet_conditioning_scale,
+            guess_mode=controlnet_guess_mode,
+            control_guidance_start=control_guidance_start,
+            control_guidance_end=control_guidance_end,
+        ).images[0]
+        relpath = save_sdxl_image(
+            image=image,
+            batch_output_dir=batch_output_dir,
+            batch_id=batch_id,
+            seed=current_seed,
+            metadata={
+                "mode": "inpaint_controlnet",
+                "prompt": prompt,
+                "negative_prompt": negative_prompt,
+                "steps": steps,
+                "guidance_scale": guidance_scale,
+                "width": width,
+                "height": height,
+                "seed": current_seed,
+                "model": model,
+                "strength": strength,
+                "padding_mask_crop": padding_mask_crop,
+                "clip_skip": clip_skip,
+                "batch_id": batch_id,
+                "controlnet_model": controlnet_model,
+                "controlnet_conditioning_scale": controlnet_conditioning_scale,
+                "controlnet_guess_mode": controlnet_guess_mode,
+                "control_guidance_start": control_guidance_start,
+                "control_guidance_end": control_guidance_end,
+            },
+        )
+        logger.info("Image %s saved to %s", i, Path(relpath).name)
         filenames.append(relpath)
 
     return {"images": [f"/outputs/{name}" for name in filenames]}

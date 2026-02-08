@@ -46,6 +46,42 @@ class FrontendControlNetScriptTests(unittest.TestCase):
             sd15_inpaint_html.index(preprocessor_tag), sd15_inpaint_html.index(inpaint_tag)
         )
 
+    def test_sdxl_page_includes_controlnet_scripts_before_sdxl(self):
+        sdxl_html = (ROOT / "frontend" / "sdxl.html").read_text(encoding="utf-8")
+        panel_tag = '<script src="controlnet_panel.js?v=2"></script>'
+        preprocessor_tag = '<script src="controlnet_preprocessor.js?v=3"></script>'
+        sdxl_tag = '<script src="sdxl.js?v=5"></script>'
+
+        self.assertIn(panel_tag, sdxl_html)
+        self.assertIn(preprocessor_tag, sdxl_html)
+        self.assertIn(sdxl_tag, sdxl_html)
+        self.assertLess(sdxl_html.index(panel_tag), sdxl_html.index(sdxl_tag))
+        self.assertLess(sdxl_html.index(preprocessor_tag), sdxl_html.index(sdxl_tag))
+
+    def test_sdxl_img2img_page_includes_controlnet_scripts_before_sdxl_img2img(self):
+        sdxl_img2img_html = (ROOT / "frontend" / "sdxl_img2img.html").read_text(encoding="utf-8")
+        panel_tag = '<script src="controlnet_panel.js?v=2"></script>'
+        preprocessor_tag = '<script src="controlnet_preprocessor.js?v=3"></script>'
+        sdxl_img2img_tag = '<script src="sdxl_img2img.js?v=3"></script>'
+
+        self.assertIn(panel_tag, sdxl_img2img_html)
+        self.assertIn(preprocessor_tag, sdxl_img2img_html)
+        self.assertIn(sdxl_img2img_tag, sdxl_img2img_html)
+        self.assertLess(sdxl_img2img_html.index(panel_tag), sdxl_img2img_html.index(sdxl_img2img_tag))
+        self.assertLess(sdxl_img2img_html.index(preprocessor_tag), sdxl_img2img_html.index(sdxl_img2img_tag))
+
+    def test_sdxl_inpaint_page_includes_controlnet_scripts_before_sdxl_inpaint(self):
+        sdxl_inpaint_html = (ROOT / "frontend" / "sdxl_inpaint.html").read_text(encoding="utf-8")
+        panel_tag = '<script src="controlnet_panel.js?v=2"></script>'
+        preprocessor_tag = '<script src="controlnet_preprocessor.js?v=3"></script>'
+        sdxl_inpaint_tag = '<script src="sdxl_inpaint.js?v=3"></script>'
+
+        self.assertIn(panel_tag, sdxl_inpaint_html)
+        self.assertIn(preprocessor_tag, sdxl_inpaint_html)
+        self.assertIn(sdxl_inpaint_tag, sdxl_inpaint_html)
+        self.assertLess(sdxl_inpaint_html.index(panel_tag), sdxl_inpaint_html.index(sdxl_inpaint_tag))
+        self.assertLess(sdxl_inpaint_html.index(preprocessor_tag), sdxl_inpaint_html.index(sdxl_inpaint_tag))
+
     def test_controlnet_panel_script_exposes_expected_api(self):
         panel_js = (ROOT / "frontend" / "controlnet_panel.js").read_text(encoding="utf-8")
         self.assertIn("window.ControlNetPanel", panel_js)
@@ -79,6 +115,30 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("controlnetEnabled", inpaint_js)
         self.assertIn("control_images", inpaint_js)
         self.assertIn("controlnet_models", inpaint_js)
+
+    def test_sdxl_script_consumes_controlnet_state(self):
+        sdxl_js = (ROOT / "frontend" / "sdxl.js").read_text(encoding="utf-8")
+        self.assertIn("window.ControlNetPanel?.getState?.()", sdxl_js)
+        self.assertIn("window.ControlNetPreprocessor.init()", sdxl_js)
+        self.assertIn("controlnetEnabled", sdxl_js)
+        self.assertIn("control_images", sdxl_js)
+        self.assertIn("controlnet_models", sdxl_js)
+
+    def test_sdxl_img2img_script_consumes_controlnet_state(self):
+        sdxl_img2img_js = (ROOT / "frontend" / "sdxl_img2img.js").read_text(encoding="utf-8")
+        self.assertIn("window.ControlNetPanel?.getState?.()", sdxl_img2img_js)
+        self.assertIn("window.ControlNetPreprocessor.init()", sdxl_img2img_js)
+        self.assertIn("controlnetEnabled", sdxl_img2img_js)
+        self.assertIn("control_images", sdxl_img2img_js)
+        self.assertIn("controlnet_models", sdxl_img2img_js)
+
+    def test_sdxl_inpaint_script_consumes_controlnet_state(self):
+        sdxl_inpaint_js = (ROOT / "frontend" / "sdxl_inpaint.js").read_text(encoding="utf-8")
+        self.assertIn("window.ControlNetPanel?.getState?.()", sdxl_inpaint_js)
+        self.assertIn("window.ControlNetPreprocessor.init()", sdxl_inpaint_js)
+        self.assertIn("controlnetEnabled", sdxl_inpaint_js)
+        self.assertIn("control_images", sdxl_inpaint_js)
+        self.assertIn("controlnet_models", sdxl_inpaint_js)
 
     def test_preprocessor_modal_has_two_column_layout_hooks(self):
         preprocessor_html = (ROOT / "frontend" / "controlnet_preprocessor.html").read_text(

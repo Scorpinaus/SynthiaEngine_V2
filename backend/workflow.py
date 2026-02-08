@@ -33,6 +33,7 @@ _CONTROLNET_PREPROCESSOR_REGISTRY_BY_ID = {
 }
 
 _DEFAULT_SD15_CONTROLNET_MODEL = "lllyasviel/control_v11p_sd15_canny"
+_DEFAULT_SDXL_CONTROLNET_MODEL = "diffusers/controlnet-canny-sdxl-1.0"
 _MAX_CONTROLNET_MODELS = 2
 
 # Canonical set of task identifiers accepted by workflow validation/dispatch.
@@ -45,6 +46,7 @@ TaskType = Literal[
     "sd15.hires_fix",
     "controlnet.preprocess",
     "sdxl.text2img",
+    "sdxl.controlnet.text2img",
     "sdxl.img2img",
     "sdxl.inpaint",
     "flux.text2img",
@@ -247,6 +249,35 @@ class SdxlText2ImgInputs(BaseModel):
     scheduler: str = "euler"
 
 
+class SdxlControlNetText2ImgInputs(BaseModel):
+    control_image: ImageRef = Field(
+        ...,
+        description='Control image reference: {"artifact_id":"..."} OR "@artifact:..." OR "/outputs/...".',
+    )
+    prompt: str = ""
+    negative_prompt: str = ""
+    steps: int = 20
+    guidance_scale: float = 7.5
+    width: int = 1024
+    height: int = 1024
+    seed: int | None = None
+    model: str | None = None
+    num_images: int = 1
+    clip_skip: int = 1
+    scheduler: str = "euler"
+    controlnet_model: str = _DEFAULT_SDXL_CONTROLNET_MODEL
+    controlnet_models: list[str] | None = None
+    controlnet_preprocessor_id: str | None = None
+    controlnet_preprocessor_ids: list[str] | None = None
+    controlnet_compat_mode: Literal["warn", "error", "off"] = "warn"
+    control_images: list[ImageRef] | None = None
+    controlnet_conditioning_scale: float = Field(default=1.0, ge=0.0, le=2.0)
+    controlnet_conditioning_scales: list[float] | None = None
+    controlnet_guess_mode: bool = False
+    control_guidance_start: float = Field(default=0.0, ge=0.0, le=1.0)
+    control_guidance_end: float = Field(default=1.0, ge=0.0, le=1.0)
+
+
 class SdxlImg2ImgInputs(BaseModel):
     initial_image: ImageRef
     prompt: str
@@ -261,6 +292,21 @@ class SdxlImg2ImgInputs(BaseModel):
     model: str | None = None
     num_images: int = 1
     clip_skip: int = 1
+    control_image: ImageRef | None = Field(
+        default=None,
+        description='Optional ControlNet image reference: {"artifact_id":"..."} OR "@artifact:..." OR "/outputs/...".',
+    )
+    control_images: list[ImageRef] | None = None
+    controlnet_model: str = _DEFAULT_SDXL_CONTROLNET_MODEL
+    controlnet_models: list[str] | None = None
+    controlnet_preprocessor_id: str | None = None
+    controlnet_preprocessor_ids: list[str] | None = None
+    controlnet_compat_mode: Literal["warn", "error", "off"] = "warn"
+    controlnet_conditioning_scale: float = Field(default=1.0, ge=0.0, le=2.0)
+    controlnet_conditioning_scales: list[float] | None = None
+    controlnet_guess_mode: bool = False
+    control_guidance_start: float = Field(default=0.0, ge=0.0, le=1.0)
+    control_guidance_end: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
 class SdxlInpaintInputs(BaseModel):
@@ -277,6 +323,21 @@ class SdxlInpaintInputs(BaseModel):
     num_images: int = 1
     padding_mask_crop: int = 32
     clip_skip: int = 1
+    control_image: ImageRef | None = Field(
+        default=None,
+        description='Optional ControlNet image reference: {"artifact_id":"..."} OR "@artifact:..." OR "/outputs/...".',
+    )
+    control_images: list[ImageRef] | None = None
+    controlnet_model: str = _DEFAULT_SDXL_CONTROLNET_MODEL
+    controlnet_models: list[str] | None = None
+    controlnet_preprocessor_id: str | None = None
+    controlnet_preprocessor_ids: list[str] | None = None
+    controlnet_compat_mode: Literal["warn", "error", "off"] = "warn"
+    controlnet_conditioning_scale: float = Field(default=1.0, ge=0.0, le=2.0)
+    controlnet_conditioning_scales: list[float] | None = None
+    controlnet_guess_mode: bool = False
+    control_guidance_start: float = Field(default=0.0, ge=0.0, le=1.0)
+    control_guidance_end: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
 class FluxText2ImgInputs(BaseModel):
@@ -444,6 +505,33 @@ class ControlNetPreprocessOutput(BaseModel):
     artifact: ArtifactInfo
 
 
+class SdxlControlNetText2ImgOutput(ImagesOutput):
+    """SDXL ControlNet output with optional compatibility warnings."""
+
+    warnings: list[str] | None = Field(
+        default=None,
+        description="Optional non-fatal compatibility warnings.",
+    )
+
+
+class SdxlImg2ImgOutput(ImagesOutput):
+    """SDXL img2img output with optional compatibility warnings."""
+
+    warnings: list[str] | None = Field(
+        default=None,
+        description="Optional non-fatal compatibility warnings.",
+    )
+
+
+class SdxlInpaintOutput(ImagesOutput):
+    """SDXL inpaint output with optional compatibility warnings."""
+
+    warnings: list[str] | None = Field(
+        default=None,
+        description="Optional non-fatal compatibility warnings.",
+    )
+
+
 TASK_INPUT_MODELS: dict[str, type[BaseModel]] = {
     "sd15.text2img": Sd15Text2ImgInputs,
     "sd15.img2img": Sd15Img2ImgInputs,
@@ -452,6 +540,7 @@ TASK_INPUT_MODELS: dict[str, type[BaseModel]] = {
     "sd15.hires_fix": Sd15HiresFixInputs,
     "controlnet.preprocess": ControlNetPreprocessInputs,
     "sdxl.text2img": SdxlText2ImgInputs,
+    "sdxl.controlnet.text2img": SdxlControlNetText2ImgInputs,
     "sdxl.img2img": SdxlImg2ImgInputs,
     "sdxl.inpaint": SdxlInpaintInputs,
     "flux.text2img": FluxText2ImgInputs,
@@ -473,8 +562,9 @@ TASK_OUTPUT_MODELS: dict[str, type[BaseModel]] = {
     "sd15.hires_fix": ImagesWithBatchOutput,
     "controlnet.preprocess": ControlNetPreprocessOutput,
     "sdxl.text2img": ImagesOutput,
-    "sdxl.img2img": ImagesOutput,
-    "sdxl.inpaint": ImagesOutput,
+    "sdxl.controlnet.text2img": SdxlControlNetText2ImgOutput,
+    "sdxl.img2img": SdxlImg2ImgOutput,
+    "sdxl.inpaint": SdxlInpaintOutput,
     "flux.text2img": ImagesOutput,
     "flux.img2img": ImagesOutput,
     "flux.inpaint": ImagesOutput,
@@ -1535,8 +1625,167 @@ def _sdxl_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, A
     return result
 
 
+def _sdxl_controlnet_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
+    from backend.sdxl_pipeline import run_sdxl_controlnet_text2img
+
+    width = int(inputs.get("width") or 1024)
+    height = int(inputs.get("height") or 1024)
+    control_image_single = _open_image_ref(inputs["control_image"]).convert("RGB")
+    control_image_single = control_image_single.resize((width, height))
+    control_guidance_start = float(inputs.get("control_guidance_start", 0.0))
+    control_guidance_end = float(inputs.get("control_guidance_end", 1.0))
+    if control_guidance_start > control_guidance_end:
+        raise ValueError("control_guidance_start must be <= control_guidance_end")
+
+    controlnet_model_single = str(
+        inputs.get("controlnet_model") or _DEFAULT_SDXL_CONTROLNET_MODEL
+    )
+    controlnet_models_raw = inputs.get("controlnet_models")
+    if controlnet_models_raw is not None and not isinstance(controlnet_models_raw, list):
+        raise ValueError("controlnet_models must be a list of model ids")
+    controlnet_models: list[str] = (
+        [str(item) for item in controlnet_models_raw] if controlnet_models_raw else []
+    )
+    if not controlnet_models:
+        controlnet_models = [controlnet_model_single]
+
+    control_images_raw = inputs.get("control_images")
+    if control_images_raw is not None and not isinstance(control_images_raw, list):
+        raise ValueError("control_images must be a list of image references")
+    control_images: list[Image.Image] = []
+    if control_images_raw:
+        control_images = [
+            _open_image_ref(image_ref).convert("RGB").resize((width, height))
+            for image_ref in control_images_raw
+        ]
+    if not control_images:
+        control_images = [control_image_single]
+
+    if len(controlnet_models) > _MAX_CONTROLNET_MODELS:
+        raise ValueError(
+            f"At most {_MAX_CONTROLNET_MODELS} ControlNet models are supported per task."
+        )
+
+    if len(controlnet_models) != len(control_images):
+        if len(controlnet_models) == 1 and len(control_images) > 1:
+            controlnet_models = controlnet_models * len(control_images)
+        elif len(control_images) == 1 and len(controlnet_models) > 1:
+            control_images = control_images * len(controlnet_models)
+        else:
+            raise ValueError("controlnet_models and control_images must have the same length.")
+
+    controlnet_count = len(controlnet_models)
+
+    controlnet_conditioning_scales_raw = inputs.get("controlnet_conditioning_scales")
+    if (
+        controlnet_conditioning_scales_raw is not None
+        and not isinstance(controlnet_conditioning_scales_raw, list)
+    ):
+        raise ValueError("controlnet_conditioning_scales must be a list of numbers")
+    if controlnet_conditioning_scales_raw:
+        controlnet_conditioning_scales = [
+            float(item) for item in controlnet_conditioning_scales_raw
+        ]
+        if len(controlnet_conditioning_scales) != controlnet_count:
+            raise ValueError(
+                "controlnet_conditioning_scales length must match controlnet_models length."
+            )
+    else:
+        controlnet_conditioning_scales = [
+            float(inputs.get("controlnet_conditioning_scale", 1.0))
+        ] * controlnet_count
+    for scale in controlnet_conditioning_scales:
+        if scale < 0.0 or scale > 2.0:
+            raise ValueError("controlnet conditioning scales must be within [0, 2].")
+
+    controlnet_preprocessor_id_raw = inputs.get("controlnet_preprocessor_id")
+    controlnet_preprocessor_id = (
+        str(controlnet_preprocessor_id_raw)
+        if controlnet_preprocessor_id_raw is not None
+        else None
+    )
+    controlnet_preprocessor_ids_raw = inputs.get("controlnet_preprocessor_ids")
+    if (
+        controlnet_preprocessor_ids_raw is not None
+        and not isinstance(controlnet_preprocessor_ids_raw, list)
+    ):
+        raise ValueError("controlnet_preprocessor_ids must be a list of preprocessor ids")
+    if controlnet_preprocessor_ids_raw:
+        controlnet_preprocessor_ids = [
+            str(item) if item is not None else None for item in controlnet_preprocessor_ids_raw
+        ]
+        if len(controlnet_preprocessor_ids) != controlnet_count:
+            raise ValueError(
+                "controlnet_preprocessor_ids length must match controlnet_models length."
+            )
+    else:
+        controlnet_preprocessor_ids = [controlnet_preprocessor_id] * controlnet_count
+
+    controlnet_compat_mode = str(inputs.get("controlnet_compat_mode") or "warn").lower()
+    warnings: list[str] = []
+    if controlnet_count > 1:
+        perf_warning = (
+            f"Using {controlnet_count} ControlNet models may significantly increase VRAM use "
+            "and generation latency."
+        )
+        warnings.append(perf_warning)
+        logger.warning(perf_warning)
+
+    if controlnet_compat_mode != "off":
+        for idx, preprocessor_id in enumerate(controlnet_preprocessor_ids):
+            if not preprocessor_id:
+                continue
+            entry = _CONTROLNET_PREPROCESSOR_REGISTRY_BY_ID.get(preprocessor_id)
+            if entry is None:
+                message = (
+                    f"Unknown controlnet_preprocessor_id '{preprocessor_id}' at index {idx}. "
+                    "Compatibility check could not be applied."
+                )
+                if controlnet_compat_mode == "error":
+                    raise ValueError(message)
+                warnings.append(message)
+                logger.warning(message)
+
+    controlnet_model_arg: str | list[str]
+    control_image_arg: Image.Image | list[Image.Image]
+    controlnet_conditioning_scale_arg: float | list[float]
+    if controlnet_count == 1:
+        controlnet_model_arg = controlnet_models[0]
+        control_image_arg = control_images[0]
+        controlnet_conditioning_scale_arg = controlnet_conditioning_scales[0]
+    else:
+        controlnet_model_arg = controlnet_models
+        control_image_arg = control_images
+        controlnet_conditioning_scale_arg = controlnet_conditioning_scales
+
+    result = run_sdxl_controlnet_text2img(
+        prompt=str(inputs.get("prompt") or ""),
+        negative_prompt=str(inputs.get("negative_prompt") or ""),
+        steps=int(inputs.get("steps") or 20),
+        guidance_scale=float(inputs.get("guidance_scale") or inputs.get("cfg") or 7.5),
+        width=width,
+        height=height,
+        seed=inputs.get("seed"),
+        scheduler=str(inputs.get("scheduler") or "euler"),
+        model=inputs.get("model"),
+        num_images=int(inputs.get("num_images") or 1),
+        clip_skip=int(inputs.get("clip_skip") or 1),
+        controlnet_model=controlnet_model_arg,
+        control_image=control_image_arg,
+        controlnet_conditioning_scale=controlnet_conditioning_scale_arg,
+        controlnet_guess_mode=bool(inputs.get("controlnet_guess_mode", False)),
+        control_guidance_start=control_guidance_start,
+        control_guidance_end=control_guidance_end,
+    )
+    if not isinstance(result, dict):
+        raise ValueError("sdxl.controlnet.text2img must return an object")
+    if warnings:
+        result["warnings"] = warnings
+    return result
+
+
 def _sdxl_img2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
-    from backend.sdxl_pipeline import run_sdxl_img2img
+    from backend.sdxl_pipeline import run_sdxl_img2img, run_sdxl_img2img_controlnet
 
     initial_image = _open_image_ref(inputs["initial_image"]).convert("RGB")
     width = int(inputs.get("width") or 1024)
@@ -1547,6 +1796,185 @@ def _sdxl_img2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, An
     if not 0.0 <= strength <= 1.0:
         raise ValueError("strength must be between 0 and 1")
     strength = _remap_img2img_strength(strength)
+
+    controlnet_requested = any(
+        key in inputs
+        for key in (
+            "control_image",
+            "control_images",
+            "controlnet_model",
+            "controlnet_models",
+            "controlnet_conditioning_scale",
+            "controlnet_conditioning_scales",
+            "controlnet_guess_mode",
+            "control_guidance_start",
+            "control_guidance_end",
+            "controlnet_preprocessor_id",
+            "controlnet_preprocessor_ids",
+            "controlnet_compat_mode",
+        )
+    )
+    if controlnet_requested:
+        control_image_input = inputs.get("control_image")
+        control_images_raw = inputs.get("control_images")
+        if control_images_raw is not None and not isinstance(control_images_raw, list):
+            raise ValueError("control_images must be a list of image references")
+        if control_image_input is None and not control_images_raw:
+            raise ValueError("control_image is required when using ControlNet in sdxl.img2img")
+
+        control_guidance_start = float(inputs.get("control_guidance_start", 0.0))
+        control_guidance_end = float(inputs.get("control_guidance_end", 1.0))
+        if control_guidance_start > control_guidance_end:
+            raise ValueError("control_guidance_start must be <= control_guidance_end")
+
+        controlnet_model_single = str(
+            inputs.get("controlnet_model") or _DEFAULT_SDXL_CONTROLNET_MODEL
+        )
+        controlnet_models_raw = inputs.get("controlnet_models")
+        if controlnet_models_raw is not None and not isinstance(controlnet_models_raw, list):
+            raise ValueError("controlnet_models must be a list of model ids")
+        controlnet_models: list[str] = (
+            [str(item) for item in controlnet_models_raw] if controlnet_models_raw else []
+        )
+        if not controlnet_models:
+            controlnet_models = [controlnet_model_single]
+
+        control_images: list[Image.Image] = []
+        if control_image_input is not None:
+            control_images.append(
+                _open_image_ref(control_image_input).convert("RGB").resize((width, height))
+            )
+        if control_images_raw:
+            control_images.extend(
+                _open_image_ref(image_ref).convert("RGB").resize((width, height))
+                for image_ref in control_images_raw
+            )
+
+        if len(controlnet_models) > _MAX_CONTROLNET_MODELS:
+            raise ValueError(
+                f"At most {_MAX_CONTROLNET_MODELS} ControlNet models are supported per task."
+            )
+
+        if len(controlnet_models) != len(control_images):
+            if len(controlnet_models) == 1 and len(control_images) > 1:
+                controlnet_models = controlnet_models * len(control_images)
+            elif len(control_images) == 1 and len(controlnet_models) > 1:
+                control_images = control_images * len(controlnet_models)
+            else:
+                raise ValueError(
+                    "controlnet_models and control_images must have the same length."
+                )
+
+        controlnet_count = len(controlnet_models)
+        controlnet_conditioning_scales_raw = inputs.get("controlnet_conditioning_scales")
+        if (
+            controlnet_conditioning_scales_raw is not None
+            and not isinstance(controlnet_conditioning_scales_raw, list)
+        ):
+            raise ValueError("controlnet_conditioning_scales must be a list of numbers")
+        if controlnet_conditioning_scales_raw:
+            controlnet_conditioning_scales = [
+                float(item) for item in controlnet_conditioning_scales_raw
+            ]
+            if len(controlnet_conditioning_scales) != controlnet_count:
+                raise ValueError(
+                    "controlnet_conditioning_scales length must match controlnet_models length."
+                )
+        else:
+            controlnet_conditioning_scales = [
+                float(inputs.get("controlnet_conditioning_scale", 1.0))
+            ] * controlnet_count
+        for scale in controlnet_conditioning_scales:
+            if scale < 0.0 or scale > 2.0:
+                raise ValueError("controlnet conditioning scales must be within [0, 2].")
+
+        controlnet_preprocessor_id_raw = inputs.get("controlnet_preprocessor_id")
+        controlnet_preprocessor_id = (
+            str(controlnet_preprocessor_id_raw)
+            if controlnet_preprocessor_id_raw is not None
+            else None
+        )
+        controlnet_preprocessor_ids_raw = inputs.get("controlnet_preprocessor_ids")
+        if (
+            controlnet_preprocessor_ids_raw is not None
+            and not isinstance(controlnet_preprocessor_ids_raw, list)
+        ):
+            raise ValueError("controlnet_preprocessor_ids must be a list of preprocessor ids")
+        if controlnet_preprocessor_ids_raw:
+            controlnet_preprocessor_ids = [
+                str(item) if item is not None else None
+                for item in controlnet_preprocessor_ids_raw
+            ]
+            if len(controlnet_preprocessor_ids) != controlnet_count:
+                raise ValueError(
+                    "controlnet_preprocessor_ids length must match controlnet_models length."
+                )
+        else:
+            controlnet_preprocessor_ids = [controlnet_preprocessor_id] * controlnet_count
+
+        controlnet_compat_mode = str(inputs.get("controlnet_compat_mode") or "warn").lower()
+        warnings: list[str] = []
+        if controlnet_count > 1:
+            perf_warning = (
+                f"Using {controlnet_count} ControlNet models may significantly increase VRAM use "
+                "and generation latency."
+            )
+            warnings.append(perf_warning)
+            logger.warning(perf_warning)
+
+        if controlnet_compat_mode != "off":
+            for idx, preprocessor_id in enumerate(controlnet_preprocessor_ids):
+                if not preprocessor_id:
+                    continue
+                entry = _CONTROLNET_PREPROCESSOR_REGISTRY_BY_ID.get(preprocessor_id)
+                if entry is None:
+                    message = (
+                        f"Unknown controlnet_preprocessor_id '{preprocessor_id}' at index {idx}. "
+                        "Compatibility check could not be applied."
+                    )
+                    if controlnet_compat_mode == "error":
+                        raise ValueError(message)
+                    warnings.append(message)
+                    logger.warning(message)
+
+        controlnet_model_arg: str | list[str]
+        control_image_arg: Image.Image | list[Image.Image]
+        controlnet_conditioning_scale_arg: float | list[float]
+        if controlnet_count == 1:
+            controlnet_model_arg = controlnet_models[0]
+            control_image_arg = control_images[0]
+            controlnet_conditioning_scale_arg = controlnet_conditioning_scales[0]
+        else:
+            controlnet_model_arg = controlnet_models
+            control_image_arg = control_images
+            controlnet_conditioning_scale_arg = controlnet_conditioning_scales
+
+        result = run_sdxl_img2img_controlnet(
+            initial_image=initial_image,
+            strength=strength,
+            prompt=str(inputs["prompt"]),
+            negative_prompt=str(inputs.get("negative_prompt") or ""),
+            steps=int(inputs.get("steps") or 20),
+            guidance_scale=float(inputs.get("guidance_scale") or inputs.get("cfg") or 7.5),
+            width=width,
+            height=height,
+            seed=inputs.get("seed"),
+            scheduler=str(inputs.get("scheduler") or "euler"),
+            model=inputs.get("model"),
+            num_images=int(inputs.get("num_images") or 1),
+            clip_skip=int(inputs.get("clip_skip") or 1),
+            controlnet_model=controlnet_model_arg,
+            control_image=control_image_arg,
+            controlnet_conditioning_scale=controlnet_conditioning_scale_arg,
+            controlnet_guess_mode=bool(inputs.get("controlnet_guess_mode", False)),
+            control_guidance_start=control_guidance_start,
+            control_guidance_end=control_guidance_end,
+        )
+        if not isinstance(result, dict):
+            raise ValueError("sdxl.img2img must return an object")
+        if warnings:
+            result["warnings"] = warnings
+        return result
 
     result = run_sdxl_img2img(
         initial_image=initial_image,
@@ -1569,17 +1997,223 @@ def _sdxl_img2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, An
 
 
 def _sdxl_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
-    from backend.sdxl_pipeline import run_sdxl_inpaint
+    from backend.sdxl_pipeline import run_sdxl_inpaint, run_sdxl_inpaint_controlnet
 
     initial_image = _open_image_ref(inputs["initial_image"]).convert("RGB")
     mask_image = _open_image_ref(inputs["mask_image"]).convert("L")
     if mask_image.size != initial_image.size:
+        controlnet_requested = any(
+            key in inputs
+            for key in (
+                "control_image",
+                "control_images",
+                "controlnet_model",
+                "controlnet_models",
+                "controlnet_conditioning_scale",
+                "controlnet_conditioning_scales",
+                "controlnet_guess_mode",
+                "control_guidance_start",
+                "control_guidance_end",
+                "controlnet_preprocessor_id",
+                "controlnet_preprocessor_ids",
+                "controlnet_compat_mode",
+            )
+        )
+        if controlnet_requested:
+            raise ValueError(
+                "mask_image dimensions must match initial_image dimensions when using ControlNet in sdxl.inpaint"
+            )
         mask_image = mask_image.resize(initial_image.size, resample=Image.NEAREST)
 
     strength = float(inputs.get("strength") or 0.5)
     if not 0.0 <= strength <= 1.0:
         raise ValueError("strength must be between 0 and 1")
     strength = _remap_img2img_strength(strength)
+
+    controlnet_requested = any(
+        key in inputs
+        for key in (
+            "control_image",
+            "control_images",
+            "controlnet_model",
+            "controlnet_models",
+            "controlnet_conditioning_scale",
+            "controlnet_conditioning_scales",
+            "controlnet_guess_mode",
+            "control_guidance_start",
+            "control_guidance_end",
+            "controlnet_preprocessor_id",
+            "controlnet_preprocessor_ids",
+            "controlnet_compat_mode",
+        )
+    )
+    if controlnet_requested:
+        control_image_input = inputs.get("control_image")
+        control_images_raw = inputs.get("control_images")
+        if control_images_raw is not None and not isinstance(control_images_raw, list):
+            raise ValueError("control_images must be a list of image references")
+        if control_image_input is None and not control_images_raw:
+            raise ValueError("control_image is required when using ControlNet in sdxl.inpaint")
+
+        control_guidance_start = float(inputs.get("control_guidance_start", 0.0))
+        control_guidance_end = float(inputs.get("control_guidance_end", 1.0))
+        if control_guidance_start > control_guidance_end:
+            raise ValueError("control_guidance_start must be <= control_guidance_end")
+
+        controlnet_model_single = str(
+            inputs.get("controlnet_model") or _DEFAULT_SDXL_CONTROLNET_MODEL
+        )
+        controlnet_models_raw = inputs.get("controlnet_models")
+        if controlnet_models_raw is not None and not isinstance(controlnet_models_raw, list):
+            raise ValueError("controlnet_models must be a list of model ids")
+        controlnet_models: list[str] = (
+            [str(item) for item in controlnet_models_raw] if controlnet_models_raw else []
+        )
+        if not controlnet_models:
+            controlnet_models = [controlnet_model_single]
+
+        control_images: list[Image.Image] = []
+        if control_image_input is not None:
+            first_control_image = _open_image_ref(control_image_input).convert("RGB")
+            if first_control_image.size != initial_image.size:
+                raise ValueError(
+                    "control_image dimensions must match initial_image dimensions in sdxl.inpaint"
+                )
+            control_images.append(first_control_image)
+        if control_images_raw:
+            for idx, image_ref in enumerate(control_images_raw):
+                image = _open_image_ref(image_ref).convert("RGB")
+                if image.size != initial_image.size:
+                    raise ValueError(
+                        f"control_images[{idx}] dimensions must match initial_image dimensions in sdxl.inpaint"
+                    )
+                control_images.append(image)
+
+        if len(controlnet_models) > _MAX_CONTROLNET_MODELS:
+            raise ValueError(
+                f"At most {_MAX_CONTROLNET_MODELS} ControlNet models are supported per task."
+            )
+
+        if len(controlnet_models) != len(control_images):
+            if len(controlnet_models) == 1 and len(control_images) > 1:
+                controlnet_models = controlnet_models * len(control_images)
+            elif len(control_images) == 1 and len(controlnet_models) > 1:
+                control_images = control_images * len(controlnet_models)
+            else:
+                raise ValueError(
+                    "controlnet_models and control_images must have the same length."
+                )
+
+        controlnet_count = len(controlnet_models)
+        controlnet_conditioning_scales_raw = inputs.get("controlnet_conditioning_scales")
+        if (
+            controlnet_conditioning_scales_raw is not None
+            and not isinstance(controlnet_conditioning_scales_raw, list)
+        ):
+            raise ValueError("controlnet_conditioning_scales must be a list of numbers")
+        if controlnet_conditioning_scales_raw:
+            controlnet_conditioning_scales = [
+                float(item) for item in controlnet_conditioning_scales_raw
+            ]
+            if len(controlnet_conditioning_scales) != controlnet_count:
+                raise ValueError(
+                    "controlnet_conditioning_scales length must match controlnet_models length."
+                )
+        else:
+            controlnet_conditioning_scales = [
+                float(inputs.get("controlnet_conditioning_scale", 1.0))
+            ] * controlnet_count
+        for scale in controlnet_conditioning_scales:
+            if scale < 0.0 or scale > 2.0:
+                raise ValueError("controlnet conditioning scales must be within [0, 2].")
+
+        controlnet_preprocessor_id_raw = inputs.get("controlnet_preprocessor_id")
+        controlnet_preprocessor_id = (
+            str(controlnet_preprocessor_id_raw)
+            if controlnet_preprocessor_id_raw is not None
+            else None
+        )
+        controlnet_preprocessor_ids_raw = inputs.get("controlnet_preprocessor_ids")
+        if (
+            controlnet_preprocessor_ids_raw is not None
+            and not isinstance(controlnet_preprocessor_ids_raw, list)
+        ):
+            raise ValueError("controlnet_preprocessor_ids must be a list of preprocessor ids")
+        if controlnet_preprocessor_ids_raw:
+            controlnet_preprocessor_ids = [
+                str(item) if item is not None else None
+                for item in controlnet_preprocessor_ids_raw
+            ]
+            if len(controlnet_preprocessor_ids) != controlnet_count:
+                raise ValueError(
+                    "controlnet_preprocessor_ids length must match controlnet_models length."
+                )
+        else:
+            controlnet_preprocessor_ids = [controlnet_preprocessor_id] * controlnet_count
+
+        controlnet_compat_mode = str(inputs.get("controlnet_compat_mode") or "warn").lower()
+        warnings: list[str] = []
+        if controlnet_count > 1:
+            perf_warning = (
+                f"Using {controlnet_count} ControlNet models may significantly increase VRAM use "
+                "and generation latency."
+            )
+            warnings.append(perf_warning)
+            logger.warning(perf_warning)
+
+        if controlnet_compat_mode != "off":
+            for idx, preprocessor_id in enumerate(controlnet_preprocessor_ids):
+                if not preprocessor_id:
+                    continue
+                entry = _CONTROLNET_PREPROCESSOR_REGISTRY_BY_ID.get(preprocessor_id)
+                if entry is None:
+                    message = (
+                        f"Unknown controlnet_preprocessor_id '{preprocessor_id}' at index {idx}. "
+                        "Compatibility check could not be applied."
+                    )
+                    if controlnet_compat_mode == "error":
+                        raise ValueError(message)
+                    warnings.append(message)
+                    logger.warning(message)
+
+        controlnet_model_arg: str | list[str]
+        control_image_arg: Image.Image | list[Image.Image]
+        controlnet_conditioning_scale_arg: float | list[float]
+        if controlnet_count == 1:
+            controlnet_model_arg = controlnet_models[0]
+            control_image_arg = control_images[0]
+            controlnet_conditioning_scale_arg = controlnet_conditioning_scales[0]
+        else:
+            controlnet_model_arg = controlnet_models
+            control_image_arg = control_images
+            controlnet_conditioning_scale_arg = controlnet_conditioning_scales
+
+        result = run_sdxl_inpaint_controlnet(
+            initial_image=initial_image,
+            mask_image=mask_image,
+            strength=strength,
+            prompt=str(inputs["prompt"]),
+            negative_prompt=str(inputs.get("negative_prompt") or ""),
+            steps=int(inputs.get("steps") or 20),
+            guidance_scale=float(inputs.get("guidance_scale") or inputs.get("cfg") or 7.5),
+            seed=inputs.get("seed"),
+            scheduler=str(inputs.get("scheduler") or "euler"),
+            model=inputs.get("model"),
+            num_images=int(inputs.get("num_images") or 1),
+            padding_mask_crop=int(inputs.get("padding_mask_crop") or 32),
+            clip_skip=int(inputs.get("clip_skip") or 1),
+            controlnet_model=controlnet_model_arg,
+            control_image=control_image_arg,
+            controlnet_conditioning_scale=controlnet_conditioning_scale_arg,
+            controlnet_guess_mode=bool(inputs.get("controlnet_guess_mode", False)),
+            control_guidance_start=control_guidance_start,
+            control_guidance_end=control_guidance_end,
+        )
+        if not isinstance(result, dict):
+            raise ValueError("sdxl.inpaint must return an object")
+        if warnings:
+            result["warnings"] = warnings
+        return result
 
     result = run_sdxl_inpaint(
         initial_image=initial_image,
@@ -1793,6 +2427,7 @@ TASK_REGISTRY: dict[str, Callable[[dict[str, Any], WorkflowContext], dict[str, A
     "sd15.hires_fix": _sd15_hires_fix,
     "controlnet.preprocess": _controlnet_preprocess,
     "sdxl.text2img": _sdxl_text2img,
+    "sdxl.controlnet.text2img": _sdxl_controlnet_text2img,
     "sdxl.img2img": _sdxl_img2img,
     "sdxl.inpaint": _sdxl_inpaint,
     "flux.text2img": _flux_text2img,

@@ -179,6 +179,9 @@ Frontend note (SD1.5 page):
 - ControlNet HTML fragments are fetched with `cache: "no-store"` to avoid stale modal/panel assets.
 - `frontend/controlnet_preprocessor.html` also carries inline layout styles as a last-resort cache-resistant fallback.
 - The preprocessor modal collapses to one column only on narrow screens (`<=700px`).
+- `frontend/sdxl.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()` for `sdxl.controlnet.text2img`.
+- `frontend/sdxl_img2img.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()` for `sdxl.img2img` optional ControlNet usage.
+- `frontend/sdxl_inpaint.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()` for `sdxl.inpaint` optional ControlNet usage.
 
 ## Job object
 
@@ -262,7 +265,7 @@ Resolution behavior:
 ## Supported task types (current)
 
 - SD1.5: `sd15.text2img`, `sd15.img2img`, `sd15.inpaint`, `sd15.controlnet.text2img`, `sd15.hires_fix`
-- SDXL: `sdxl.text2img`, `sdxl.img2img`, `sdxl.inpaint`
+- SDXL: `sdxl.text2img`, `sdxl.controlnet.text2img`, `sdxl.img2img`, `sdxl.inpaint`
 - Flux: `flux.text2img`, `flux.img2img`, `flux.inpaint`
 - Qwen-Image: `qwen-image.text2img`, `qwen-image.img2img`, `qwen-image.inpaint`
 - Z-Image: `z-image.text2img`, `z-image.img2img`
@@ -320,6 +323,54 @@ Task inputs/outputs are task-specific. As a convention, image-generating tasks r
 - Guardrail: up to `2` ControlNet models per task; more than `1` emits a VRAM/perf warning.
 
 `sd15.inpaint` optional ControlNet output notes:
+- May include `warnings: string[]` when compatibility/perf warnings are produced.
+
+`sdxl.controlnet.text2img` extra input notes:
+- `controlnet_conditioning_scale`: float in `[0, 2]` (default `1.0`)
+- `controlnet_conditioning_scales`: optional list form for multi-ControlNet; length must match model/image list length
+- `controlnet_guess_mode`: boolean (default `false`)
+- `control_guidance_start`: float in `[0, 1]` (default `0.0`)
+- `control_guidance_end`: float in `[0, 1]` (default `1.0`)
+- `control_guidance_start` must be `<= control_guidance_end`
+- `controlnet_model`: defaults to `diffusers/controlnet-canny-sdxl-1.0`
+- `controlnet_models`: optional list form for multi-ControlNet (backward-compatible with `controlnet_model`)
+- `control_images`: optional list form for multi-ControlNet (backward-compatible with `control_image`)
+- `controlnet_preprocessor_id`: optional preprocessor id for compatibility checks
+- `controlnet_preprocessor_ids`: optional list form for multi-ControlNet compatibility checks
+- `controlnet_compat_mode`: `"warn"` (default), `"error"`, or `"off"`
+  - `warn`: continue generation and add a warning in task result when preprocessor id is unknown
+  - `error`: fail task when preprocessor id is unknown
+  - `off`: skip compatibility checks
+- Guardrail: up to `2` ControlNet models per task; more than `1` emits a VRAM/perf warning.
+- List alignment: when list forms are provided, list lengths must align with the resolved ControlNet count.
+
+`sdxl.controlnet.text2img` output notes:
+- May include `warnings: string[]` (for compatibility/perf warnings).
+
+`sdxl.img2img` optional ControlNet input notes:
+- Existing `sdxl.img2img` payloads remain valid without any ControlNet fields.
+- To enable ControlNet, provide `control_image` (single) or `control_image` + `control_images` (multi).
+- `controlnet_model` defaults to `diffusers/controlnet-canny-sdxl-1.0`.
+- `controlnet_models`, `controlnet_conditioning_scales`, `controlnet_preprocessor_ids` are optional list forms and must align to resolved ControlNet count.
+- Runtime controls mirror text2img: `controlnet_conditioning_scale`, `controlnet_guess_mode`, `control_guidance_start`, `control_guidance_end`, `controlnet_compat_mode`.
+- `control_guidance_start` must be `<= control_guidance_end`.
+- Guardrail: up to `2` ControlNet models per task; more than `1` emits a VRAM/perf warning.
+
+`sdxl.img2img` optional ControlNet output notes:
+- May include `warnings: string[]` when compatibility/perf warnings are produced.
+
+`sdxl.inpaint` optional ControlNet input notes:
+- Existing `sdxl.inpaint` payloads remain valid without any ControlNet fields.
+- To enable ControlNet, provide `control_image` (single) or `control_image` + `control_images` (multi).
+- `controlnet_model` defaults to `diffusers/controlnet-canny-sdxl-1.0`.
+- `controlnet_models`, `controlnet_conditioning_scales`, `controlnet_preprocessor_ids` are optional list forms and must align to resolved ControlNet count.
+- Runtime controls mirror text2img/img2img: `controlnet_conditioning_scale`, `controlnet_guess_mode`, `control_guidance_start`, `control_guidance_end`, `controlnet_compat_mode`.
+- `control_guidance_start` must be `<= control_guidance_end`.
+- `mask_image` dimensions must match `initial_image` dimensions when using ControlNet.
+- `control_image`/`control_images[*]` dimensions must match `initial_image` dimensions.
+- Guardrail: up to `2` ControlNet models per task; more than `1` emits a VRAM/perf warning.
+
+`sdxl.inpaint` optional ControlNet output notes:
 - May include `warnings: string[]` when compatibility/perf warnings are produced.
 
 ## Example: img2img workflow (artifact input)
