@@ -1,5 +1,6 @@
 const state = {
     loading: false,
+    deletingName: null,
     error: null,
     models: [],
     search: "",
@@ -78,6 +79,26 @@ function buildCode(text) {
     return code;
 }
 
+function buildActionLink(href, text) {
+    const link = document.createElement("a");
+    link.className = "secondary nav-link";
+    link.href = href;
+    link.textContent = text;
+    return link;
+}
+
+function buildDeleteButton(model) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "secondary";
+    button.textContent = state.deletingName === model.name ? "Deleting..." : "Delete";
+    button.disabled = state.loading || state.deletingName === model.name || !model.name;
+    button.addEventListener("click", () => {
+        handleDeleteModel(model);
+    });
+    return button;
+}
+
 function buildCard(model) {
     const card = document.createElement("article");
     card.className = "model-card";
@@ -114,10 +135,23 @@ function buildCard(model) {
     details.appendChild(buildDetailRow("Model ID", modelIdValue));
     details.appendChild(buildDetailRow("Link", buildLink(model.link)));
 
+    const actions = document.createElement("div");
+    actions.className = "models-actions";
+    if (model.name) {
+        actions.appendChild(
+            buildActionLink(
+                `model_base_edit.html?name=${encodeURIComponent(model.name)}`,
+                "Edit"
+            )
+        );
+    }
+    actions.appendChild(buildDeleteButton(model));
+
     card.appendChild(header);
     card.appendChild(pills);
     card.appendChild(meta);
     card.appendChild(details);
+    card.appendChild(actions);
     return card;
 }
 
@@ -201,7 +235,7 @@ function updateSummary(visibleCount, totalCount) {
 function render() {
     modelsGrid.innerHTML = "";
     refreshButton.textContent = state.loading ? "Refreshing..." : refreshLabel;
-    refreshButton.disabled = state.loading;
+    refreshButton.disabled = state.loading || state.deletingName !== null;
 
     if (state.loading) {
         modelsState.textContent = "Loading model registry...";
@@ -252,6 +286,35 @@ async function fetchModels() {
     } catch (error) {
         setState({ loading: false, error: "Unable to load models. Try again shortly." });
         console.error(error);
+    }
+}
+
+async function handleDeleteModel(model) {
+    if (!model.name) {
+        setState({ error: "Unable to delete: model name is missing." });
+        return;
+    }
+
+    const confirmed = window.confirm(`Delete model '${model.name}'?`);
+    if (!confirmed) {
+        return;
+    }
+
+    setState({ deletingName: model.name, error: null });
+    try {
+        const response = await fetch(`${API_BASE}/models/${encodeURIComponent(model.name)}`, {
+            method: "DELETE",
+        });
+        if (!response.ok) {
+            const errorBody = await response.json().catch(() => ({}));
+            const detail = errorBody.detail || "Unable to delete model.";
+            throw new Error(detail);
+        }
+        setState({ deletingName: null });
+        await fetchModels();
+    } catch (error) {
+        console.error(error);
+        setState({ deletingName: null, error: error.message || "Unable to delete model." });
     }
 }
 

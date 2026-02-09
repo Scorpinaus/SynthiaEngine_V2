@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Edit LoRA Form</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css?v=2" />
+</head>
+
+<body>
+    <div class="app">
+        <div id="header-root"></div>
+
+        <section class="model-form-panel">
+            <div class="model-form-header">
+                <div>
+                    <h2>Edit LoRA Form</h2>
+                    <p>Update an existing LoRA entry.</p>
+                </div>
+                <a class="secondary nav-link" href="lora_models.html">Back to LoRAs</a>
+            </div>
+            <form id="lora-edit-form" class="model-form">
+                <label class="field">
+                    <span>LoRA ID</span>
+                    <input name="lora_id" type="text" readonly />
+                </label>
+                <label class="field">
+                    <span>Name</span>
+                    <input name="name" type="text" placeholder="My style adapter" />
+                </label>
+                <label class="field">
+                    <span>Family</span>
+                    <input name="lora_model_family" type="text" placeholder="sd15" required />
+                </label>
+                <label class="field">
+                    <span>LoRA Type</span>
+                    <input name="lora_type" type="text" placeholder="lora" required />
+                </label>
+                <label class="field">
+                    <span>Location Type</span>
+                    <select name="lora_location" required>
+                        <option value="local">Local</option>
+                        <option value="hub">Hub</option>
+                    </select>
+                </label>
+                <label class="field">
+                    <span>File Path</span>
+                    <input name="file_path" type="text" placeholder="C:\\loras\\style.safetensors" required />
+                </label>
+                <button class="primary" type="submit">Save LoRA</button>
+            </form>
+            <div id="lora-edit-state" class="model-form-state" aria-live="polite"></div>
+        </section>
+    </div>
+
+    <script src="api_config.js?v=1"></script>
+    <script src="header.js?v=1"></script>
+    <script src="nav_bar.js?v=2"></script>
+    <script src="lora_edit.js?v=1"></script>
+</body>
+
+</html>

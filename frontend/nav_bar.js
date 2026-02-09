@@ -20,7 +20,10 @@ const NAV_GROUPS = [
     {
         label: "Models",
         items: [
-            { href: "models.html", label: "Models" },
+            { href: "models.html", label: "Base Models" },
+            { href: "lora_models.html", label: "LoRA Models" },
+            { href: "model_base_add.html", label: "Add Base Model" },
+            { href: "lora_add.html", label: "Add LoRA" },
             { href: "tools_analysis.html", label: "Tools & Analysis" },
         ],
     },

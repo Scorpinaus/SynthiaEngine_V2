@@ -2,6 +2,11 @@
 
 This project uses a **single workflow job API** for all generation (SD1.5, SDXL, Flux, Qwen-Image, Z-Image). Image inputs are uploaded as **artifacts** first, then referenced by `artifact_id` in workflow task inputs.
 
+Registry persistence note:
+- `/lora-models` entries are persisted in `database/lora_registry.sqlite3`.
+- If that SQLite registry is empty and `backend/lora_registry.json` exists, the backend performs a one-time import on startup and skips invalid rows with warning logs.
+- API payload shape for LoRA entries is unchanged.
+
 ## Endpoints
 
 ### Upload an artifact (image input)
@@ -115,6 +120,111 @@ Response:
 Notes:
 - `ui_hints` is best-effort metadata for workflow builders (labels, widgets, suggested min/max, option lists, etc.).
 - `output_schema` describes the per-task result object stored under `result.tasks[taskId]`.
+
+### LoRA registry endpoints
+
+`GET /lora-models`
+- Lists registered LoRA entries.
+- Optional query `family` filters by exact `lora_model_family` (case-insensitive).
+- Response `200`: `LoraRegistryEntry[]`
+
+`LoraRegistryEntry` shape:
+```json
+{
+  "lora_id": 101,
+  "lora_model_family": "sd15",
+  "lora_type": "lora",
+  "lora_location": "local",
+  "file_path": "C:/loras/example.safetensors",
+  "name": "Example"
+}
+```
+
+`POST /lora-models`
+- Creates a LoRA entry.
+- Request/response shape is unchanged:
+```json
+{
+  "lora_id": 101,
+  "lora_model_family": "sd15",
+  "lora_type": "lora",
+  "lora_location": "local",
+  "file_path": "C:/loras/example.safetensors",
+  "name": "Example"
+}
+```
+- Response `200`: created `LoraRegistryEntry`
+- Error `400`: validation/domain error in `{"detail": "<message>"}`.
+- Duplicate id error is deterministic: `LoRA with id <lora_id> already exists.`
+
+`GET /lora-models/{lora_id}`
+- Response `200`: `LoraRegistryEntry`
+- Error `404`: missing id in `{"detail": "LoRA with id <lora_id> not found."}`
+
+`PATCH /lora-models/{lora_id}`
+- Updates editable fields only: `lora_model_family`, `lora_type`, `lora_location`, `file_path`, `name`.
+- `lora_id` is not editable.
+- Request shape:
+```json
+{
+  "lora_model_family": "sdxl",
+  "lora_type": "lycoris",
+  "lora_location": "local",
+  "file_path": "C:/loras/example_v2.safetensors",
+  "name": "Example v2"
+}
+```
+- Response `200`: updated `LoraRegistryEntry`
+- Error `400`: explicit validation/domain error in `{"detail": "<message>"}`.
+- Error `404`: missing id in `{"detail": "LoRA with id <lora_id> not found."}`
+- Error `422`: schema validation failure (for example attempting to patch non-editable `lora_id`).
+
+`DELETE /lora-models/{lora_id}`
+- Deletes one LoRA entry.
+- Returns `204` on success.
+- Error `404`: missing id in `{"detail": "LoRA with id <lora_id> not found."}`
+
+Compatibility guarantees:
+- Existing `GET /lora-models` and `POST /lora-models` consumers are backward-compatible.
+- Existing list/create payload fields and response field names are unchanged.
+- Existing list/create status codes remain unchanged (`200` success, `400` domain/validation error for create).
+
+Frontend note (registry pages):
+- `frontend/models.html` now serves base model listing with edit/delete actions.
+- `frontend/model_base_add.html` serves base model create flow.
+- `frontend/model_base_edit.html` serves base model edit flow via `name` query parameter.
+- `frontend/lora_models.html` provides LoRA list/search/filter plus edit/delete actions.
+- `frontend/lora_add.html` provides LoRA create flow.
+- `frontend/lora_edit.html` provides LoRA edit flow via `lora_id` query parameter.
+
+### Base model registry endpoints
+
+`GET /models`
+- Lists registered base model entries.
+- Optional query `family` applies case-insensitive family matching.
+- Response `200`: `ModelRegistryEntry[]`
+
+`POST /models`
+- Creates a base model entry.
+- Response `201`: created `ModelRegistryEntry`
+- Error `409`: duplicate name in `{"detail": "Model name already exists."}`
+
+`GET /models/{model_name}`
+- Fetches one base model entry by exact `name`.
+- Response `200`: `ModelRegistryEntry`
+- Error `404`: missing name in `{"detail": "Model '<model_name>' not found."}`
+
+`PATCH /models/{model_name}`
+- Updates editable fields: `family`, `model_type`, `location_type`, `model_id`, `version`, `link`.
+- Response `200`: updated `ModelRegistryEntry`
+- Error `400`: explicit validation/domain error in `{"detail": "<message>"}`.
+- Error `404`: missing name in `{"detail": "Model '<model_name>' not found."}`
+- Error `422`: schema validation failure (for example non-editable fields).
+
+`DELETE /models/{model_name}`
+- Deletes one base model entry by exact `name`.
+- Returns `204` on success.
+- Error `404`: missing name in `{"detail": "Model '<model_name>' not found."}`
 
 ### List ControlNet preprocessors (for SD1.5 ControlNet setup)
 

@@ -1,0 +1,39 @@
+from pathlib import Path
+import unittest
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+class FrontendModelRegistryScriptTests(unittest.TestCase):
+    def test_model_edit_page_wires_required_scripts(self):
+        html = (ROOT / "frontend" / "model_base_edit.html").read_text(encoding="utf-8")
+        self.assertIn('<script src="api_config.js?v=1"></script>', html)
+        self.assertIn('<script src="header.js?v=1"></script>', html)
+        self.assertIn('<script src="nav_bar.js?v=2"></script>', html)
+        self.assertIn('<script src="model_edit.js?v=1"></script>', html)
+
+    def test_models_page_keeps_base_add_and_lora_registry_buttons(self):
+        html = (ROOT / "frontend" / "models.html").read_text(encoding="utf-8")
+        self.assertIn('href="model_base_add.html"', html)
+        self.assertIn('href="lora_models.html"', html)
+        self.assertNotIn('href="lora_add.html"', html)
+
+    def test_models_script_uses_edit_and_delete_flows(self):
+        js = (ROOT / "frontend" / "models.js").read_text(encoding="utf-8")
+        self.assertIn("model_base_edit.html?name=", js)
+        self.assertIn("window.confirm(", js)
+        self.assertIn("method: \"DELETE\"", js)
+        self.assertIn("${API_BASE}/models/${encodeURIComponent(model.name)}", js)
+
+    def test_model_edit_script_uses_get_and_patch_endpoints(self):
+        js = (ROOT / "frontend" / "model_edit.js").read_text(encoding="utf-8")
+        self.assertIn("new URLSearchParams(window.location.search)", js)
+        self.assertIn("${API_BASE}/models/${encodeURIComponent(modelName)}", js)
+        self.assertIn("${API_BASE}/models/${encodeURIComponent(currentModelName)}", js)
+        self.assertIn("method: \"PATCH\"", js)
+        self.assertIn("Model entry saved successfully.", js)
+
+
+if __name__ == "__main__":
+    unittest.main()

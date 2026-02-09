@@ -25,7 +25,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageFilter
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from backend.config import DEFAULTS, OUTPUT_DIR
 from backend.controlnet_preprocessors import get_preprocessor, list_preprocessors
@@ -37,12 +37,18 @@ from backend.model_analysis import SUPPORTED_EXTS, analyze_model_file
 from backend.model_registry import (
     ModelRegistryEntry,
     create_model_entry,
+    delete_model_entry,
+    get_model_entry_exact,
     list_model_entries,
+    update_model_entry,
 )
 from backend.lora_registry import (
-    LORA_REGISTRY,
     LoraRegistryEntry,
     add_lora,
+    delete_lora_entry,
+    get_lora_entry,
+    list_lora_entries,
+    update_lora_entry,
 )
 from backend.job_queue import (
     JobNotFoundError,
@@ -93,6 +99,19 @@ class ModelCreateRequest(BaseModel):
     link: str
 
 
+class ModelUpdateRequest(BaseModel):
+    """Request payload used to update editable fields on a model entry."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    family: str | None = None
+    model_type: str | None = None
+    location_type: str | None = None
+    model_id: int | None = None
+    version: str | None = None
+    link: str | None = None
+
+
 class LoraCreateRequest(BaseModel):
     """Request payload used to register a new LoRA entry in the local registry."""
 
@@ -101,6 +120,18 @@ class LoraCreateRequest(BaseModel):
     lora_type: str
     lora_location: str
     file_path: str
+    name: str | None = None
+
+
+class LoraUpdateRequest(BaseModel):
+    """Request payload used to update editable fields on a LoRA entry."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    lora_model_family: str | None = None
+    lora_type: str | None = None
+    lora_location: str | None = None
+    file_path: str | None = None
     name: str | None = None
 
 
@@ -466,16 +497,17 @@ async def list_models(family: str | None = None):
 @app.get("/lora-models", response_model=list[LoraRegistryEntry])
 async def list_lora_models(family: str | None = None):
     """List registered LoRAs, optionally filtered by exact family (case-insensitive)."""
+    entries = list_lora_entries()
     if not family:
-        return LORA_REGISTRY
+        return entries
 
     family_value = family.strip().lower()
     if not family_value:
-        return LORA_REGISTRY
+        return entries
 
     return [
         entry
-        for entry in LORA_REGISTRY
+        for entry in entries
         if entry.lora_model_family.lower() == family_value
     ]
 
@@ -484,10 +516,45 @@ async def list_lora_models(family: str | None = None):
 async def create_lora_model(req: LoraCreateRequest):
     """Create a new LoRA registry entry."""
     try:
-        entry = LoraRegistryEntry(**req.dict())
+        entry = LoraRegistryEntry(**req.model_dump())
         return add_lora(entry)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/lora-models/{lora_id}", response_model=LoraRegistryEntry)
+async def get_lora_model(lora_id: int):
+    """Fetch a single LoRA registry entry by id."""
+    try:
+        return get_lora_entry(lora_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.patch("/lora-models/{lora_id}", response_model=LoraRegistryEntry)
+async def patch_lora_model(lora_id: int, req: LoraUpdateRequest):
+    """Update editable fields for a single LoRA registry entry."""
+    updates = req.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(status_code=400, detail="At least one editable field must be provided.")
+
+    try:
+        return update_lora_entry(lora_id, updates)
+    except ValueError as exc:
+        detail = str(exc)
+        if detail.endswith("not found."):
+            raise HTTPException(status_code=404, detail=detail) from exc
+        raise HTTPException(status_code=400, detail=detail) from exc
+
+
+@app.delete("/lora-models/{lora_id}", status_code=204)
+async def remove_lora_model(lora_id: int):
+    """Delete a single LoRA registry entry by id."""
+    try:
+        delete_lora_entry(lora_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return Response(status_code=204)
 
 
 @app.get("/api/controlnet/preprocessors", response_model=list[ControlNetPreprocessorInfo])
@@ -636,10 +703,47 @@ async def analyze_model_layers(
 async def create_model(req: ModelCreateRequest):
     """Create a new model registry entry, enforcing unique names."""
     try:
-        entry = ModelRegistryEntry(**req.dict())
+        entry = ModelRegistryEntry(**req.model_dump())
         return create_model_entry(entry)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.get("/models/{model_name:path}", response_model=ModelRegistryEntry)
+async def get_model(model_name: str):
+    """Fetch a single model registry entry by exact name."""
+    try:
+        return get_model_entry_exact(model_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.patch("/models/{model_name:path}", response_model=ModelRegistryEntry)
+async def patch_model(model_name: str, req: ModelUpdateRequest):
+    """Update editable fields for a single model registry entry."""
+    updates = req.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(status_code=400, detail="At least one editable field must be provided.")
+
+    try:
+        return update_model_entry(model_name, updates)
+    except ValueError as exc:
+        detail = str(exc)
+        if detail.endswith("not found."):
+            raise HTTPException(status_code=404, detail=detail) from exc
+        if detail == "Model name already exists.":
+            raise HTTPException(status_code=409, detail=detail) from exc
+        raise HTTPException(status_code=400, detail=detail) from exc
+
+
+@app.delete("/models/{model_name:path}", status_code=204)
+async def remove_model(model_name: str):
+    """Delete a single model registry entry by exact name."""
+    try:
+        delete_model_entry(model_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return Response(status_code=204)
 
 
 @app.get("/history")

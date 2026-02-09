@@ -166,6 +166,75 @@ def create_model_entry(entry: ModelRegistryEntry) -> ModelRegistryEntry:
     return _row_to_entry(row)
 
 
+def get_model_entry_exact(model_name: str) -> ModelRegistryEntry:
+    init_model_registry_db()
+    with _SessionLocal() as session:
+        row = (
+            session.execute(select(ModelRegistryRow).where(ModelRegistryRow.name == model_name).limit(1))
+            .scalars()
+            .first()
+        )
+        if row is None:
+            raise ValueError(f"Model '{model_name}' not found.")
+        return _row_to_entry(row)
+
+
+def update_model_entry(model_name: str, updates: dict[str, object]) -> ModelRegistryEntry:
+    if not updates:
+        raise ValueError("At least one editable field must be provided.")
+
+    editable_fields = {"family", "model_type", "location_type", "model_id", "version", "link"}
+    unknown_fields = sorted(field for field in updates.keys() if field not in editable_fields)
+    if unknown_fields:
+        raise ValueError(f"Unknown editable fields: {', '.join(unknown_fields)}.")
+
+    for field_name in ("family", "model_type", "location_type", "version", "link"):
+        if field_name in updates and updates[field_name] is None:
+            raise ValueError(f"Field '{field_name}' cannot be null.")
+    if "model_id" in updates:
+        model_id = updates["model_id"]
+        if model_id is None:
+            raise ValueError("Field 'model_id' cannot be null.")
+        try:
+            updates["model_id"] = int(model_id)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Field 'model_id' must be an integer.") from exc
+
+    init_model_registry_db()
+    with _SessionLocal() as session:
+        row = (
+            session.execute(select(ModelRegistryRow).where(ModelRegistryRow.name == model_name).limit(1))
+            .scalars()
+            .first()
+        )
+        if row is None:
+            raise ValueError(f"Model '{model_name}' not found.")
+
+        for key, value in updates.items():
+            setattr(row, key, value)
+        try:
+            session.commit()
+        except IntegrityError as exc:
+            session.rollback()
+            raise ValueError("Model name already exists.") from exc
+        session.refresh(row)
+    return _row_to_entry(row)
+
+
+def delete_model_entry(model_name: str) -> None:
+    init_model_registry_db()
+    with _SessionLocal() as session:
+        row = (
+            session.execute(select(ModelRegistryRow).where(ModelRegistryRow.name == model_name).limit(1))
+            .scalars()
+            .first()
+        )
+        if row is None:
+            raise ValueError(f"Model '{model_name}' not found.")
+        session.delete(row)
+        session.commit()
+
+
 def get_model_entry(model_name: str | None) -> ModelRegistryEntry:
     init_model_registry_db()
     with _SessionLocal() as session:

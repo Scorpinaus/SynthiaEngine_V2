@@ -1,0 +1,144 @@
+import json
+
+from fastapi.testclient import TestClient
+
+import backend.lora_registry as lora_registry
+from backend.main import app
+
+
+def _reset_lora_registry_paths(tmp_path):
+    if hasattr(lora_registry, "_ENGINE"):
+        lora_registry._ENGINE.dispose()
+
+    lora_registry.REGISTRY_DB_PATH = tmp_path / "lora_registry.sqlite3"
+    lora_registry.REGISTRY_DB_URL = f"sqlite:///{lora_registry.REGISTRY_DB_PATH.as_posix()}"
+    lora_registry.REGISTRY_JSON_PATH = tmp_path / "lora_registry.json"
+    lora_registry.REGISTRY_JSON_PATH.write_text(json.dumps([]), encoding="utf-8")
+
+    lora_registry._ENGINE = lora_registry.create_engine(
+        lora_registry.REGISTRY_DB_URL,
+        future=True,
+        pool_pre_ping=True,
+        connect_args={"check_same_thread": False},
+    )
+    lora_registry._SessionLocal = lora_registry.sessionmaker(
+        bind=lora_registry._ENGINE,
+        autoflush=False,
+        autocommit=False,
+        future=True,
+    )
+    lora_registry.init_lora_registry_db()
+    lora_registry._migrate_json_if_needed()
+    lora_registry.LORA_REGISTRY = lora_registry.load_lora_registry()
+
+
+def test_lora_list_and_create_contract_compatible(tmp_path):
+    _reset_lora_registry_paths(tmp_path)
+    client = TestClient(app)
+
+    payload = {
+        "lora_id": 101,
+        "lora_model_family": "sd15",
+        "lora_type": "lora",
+        "lora_location": "local",
+        "file_path": "C:/loras/a.safetensors",
+        "name": "A",
+    }
+    create_response = client.post("/lora-models", json=payload)
+    assert create_response.status_code == 200
+    assert create_response.json() == payload
+
+    list_response = client.get("/lora-models")
+    assert list_response.status_code == 200
+    assert list_response.json() == [payload]
+
+    filtered_response = client.get("/lora-models?family=sd15")
+    assert filtered_response.status_code == 200
+    assert filtered_response.json() == [payload]
+
+
+def test_lora_detail_endpoint(tmp_path):
+    _reset_lora_registry_paths(tmp_path)
+    client = TestClient(app)
+    client.post(
+        "/lora-models",
+        json={
+            "lora_id": 102,
+            "lora_model_family": "sdxl",
+            "lora_type": "lycoris",
+            "lora_location": "local",
+            "file_path": "C:/loras/b.safetensors",
+            "name": "B",
+        },
+    )
+
+    found = client.get("/lora-models/102")
+    assert found.status_code == 200
+    assert found.json()["lora_id"] == 102
+
+    missing = client.get("/lora-models/9999")
+    assert missing.status_code == 404
+    assert missing.json()["detail"] == "LoRA with id 9999 not found."
+
+
+def test_lora_patch_endpoint(tmp_path):
+    _reset_lora_registry_paths(tmp_path)
+    client = TestClient(app)
+    client.post(
+        "/lora-models",
+        json={
+            "lora_id": 103,
+            "lora_model_family": "sd15",
+            "lora_type": "lora",
+            "lora_location": "local",
+            "file_path": "C:/loras/c.safetensors",
+            "name": "C",
+        },
+    )
+
+    updated = client.patch(
+        "/lora-models/103",
+        json={"file_path": "C:/loras/c-updated.safetensors", "name": None},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["lora_id"] == 103
+    assert updated.json()["file_path"] == "C:/loras/c-updated.safetensors"
+    assert updated.json()["name"] is None
+
+    empty_payload = client.patch("/lora-models/103", json={})
+    assert empty_payload.status_code == 400
+    assert empty_payload.json()["detail"] == "At least one editable field must be provided."
+
+    not_editable = client.patch("/lora-models/103", json={"lora_id": 200})
+    assert not_editable.status_code == 422
+
+    missing = client.patch("/lora-models/9999", json={"name": "X"})
+    assert missing.status_code == 404
+    assert missing.json()["detail"] == "LoRA with id 9999 not found."
+
+
+def test_lora_delete_endpoint(tmp_path):
+    _reset_lora_registry_paths(tmp_path)
+    client = TestClient(app)
+    client.post(
+        "/lora-models",
+        json={
+            "lora_id": 104,
+            "lora_model_family": "sd15",
+            "lora_type": "lora",
+            "lora_location": "local",
+            "file_path": "C:/loras/d.safetensors",
+            "name": "D",
+        },
+    )
+
+    deleted = client.delete("/lora-models/104")
+    assert deleted.status_code == 204
+    assert deleted.text == ""
+
+    after_delete = client.get("/lora-models/104")
+    assert after_delete.status_code == 404
+
+    missing = client.delete("/lora-models/104")
+    assert missing.status_code == 404
+    assert missing.json()["detail"] == "LoRA with id 104 not found."
