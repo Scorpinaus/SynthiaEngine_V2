@@ -21,6 +21,16 @@ class FrontendLoraPageTests(unittest.TestCase):
         self.assertIn('<script src="nav_bar.js?v=2"></script>', html)
         self.assertIn('<script src="lora_add.js?v=1"></script>', html)
         self.assertIn('href="lora_models.html"', html)
+        self.assertIn('<select name="lora_model_family" required>', html)
+        self.assertIn('<option value="sd15">sd15</option>', html)
+        self.assertIn('<option value="sdxl">sdxl</option>', html)
+        self.assertIn('<option value="flux">flux</option>', html)
+        self.assertIn('<option value="qwen-image">qwen-image</option>', html)
+        self.assertIn('<option value="z-image">z-image</option>', html)
+        self.assertIn('<select name="lora_type" required>', html)
+        self.assertIn('<option value="lora">lora</option>', html)
+        self.assertIn('<option value="lycoris">lycoris</option>', html)
+        self.assertIn('<option value="lokr">lokr</option>', html)
 
     def test_lora_edit_page_includes_expected_scripts(self):
         html = (ROOT / "frontend" / "lora_edit.html").read_text(encoding="utf-8")
@@ -29,6 +39,16 @@ class FrontendLoraPageTests(unittest.TestCase):
         self.assertIn('<script src="nav_bar.js?v=2"></script>', html)
         self.assertIn('<script src="lora_edit.js?v=1"></script>', html)
         self.assertIn('href="lora_models.html"', html)
+        self.assertIn('<select name="lora_model_family" required>', html)
+        self.assertIn('<option value="sd15">sd15</option>', html)
+        self.assertIn('<option value="sdxl">sdxl</option>', html)
+        self.assertIn('<option value="flux">flux</option>', html)
+        self.assertIn('<option value="qwen-image">qwen-image</option>', html)
+        self.assertIn('<option value="z-image">z-image</option>', html)
+        self.assertIn('<select name="lora_type" required>', html)
+        self.assertIn('<option value="lora">lora</option>', html)
+        self.assertIn('<option value="lycoris">lycoris</option>', html)
+        self.assertIn('<option value="lokr">lokr</option>', html)
 
     def test_lora_models_script_calls_list_and_delete_endpoints(self):
         js = (ROOT / "frontend" / "lora_models.js").read_text(encoding="utf-8")

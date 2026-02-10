@@ -12,6 +12,21 @@ class FrontendModelRegistryScriptTests(unittest.TestCase):
         self.assertIn('<script src="header.js?v=1"></script>', html)
         self.assertIn('<script src="nav_bar.js?v=2"></script>', html)
         self.assertIn('<script src="model_edit.js?v=1"></script>', html)
+        self.assertIn('<select name="family" required>', html)
+        self.assertIn('<option value="sd15">sd15</option>', html)
+        self.assertIn('<option value="sdxl">sdxl</option>', html)
+        self.assertIn('<option value="flux">flux</option>', html)
+        self.assertIn('<option value="qwen-image">qwen-image</option>', html)
+        self.assertIn('<option value="z-image">z-image</option>', html)
+
+    def test_model_add_page_family_uses_fixed_dropdown_options(self):
+        html = (ROOT / "frontend" / "model_base_add.html").read_text(encoding="utf-8")
+        self.assertIn('<select name="family" required>', html)
+        self.assertIn('<option value="sd15">sd15</option>', html)
+        self.assertIn('<option value="sdxl">sdxl</option>', html)
+        self.assertIn('<option value="flux">flux</option>', html)
+        self.assertIn('<option value="qwen-image">qwen-image</option>', html)
+        self.assertIn('<option value="z-image">z-image</option>', html)
 
     def test_models_page_keeps_base_add_and_lora_registry_buttons(self):
         html = (ROOT / "frontend" / "models.html").read_text(encoding="utf-8")

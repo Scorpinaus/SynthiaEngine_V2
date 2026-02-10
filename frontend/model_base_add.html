@@ -29,7 +29,14 @@
                 </label>
                 <label class="field">
                     <span>Family</span>
-                    <input name="family" type="text" placeholder="sd15" required />
+                    <select name="family" required>
+                        <option value="" disabled selected>Select a family</option>
+                        <option value="sd15">sd15</option>
+                        <option value="sdxl">sdxl</option>
+                        <option value="flux">flux</option>
+                        <option value="qwen-image">qwen-image</option>
+                        <option value="z-image">z-image</option>
+                    </select>
                 </label>
                 <label class="field">
                     <span>Model Type</span>

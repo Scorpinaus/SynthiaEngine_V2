@@ -33,11 +33,23 @@
                 </label>
                 <label class="field">
                     <span>Family</span>
-                    <input name="lora_model_family" type="text" placeholder="sd15" required />
+                    <select name="lora_model_family" required>
+                        <option value="" disabled>Select a family</option>
+                        <option value="sd15">sd15</option>
+                        <option value="sdxl">sdxl</option>
+                        <option value="flux">flux</option>
+                        <option value="qwen-image">qwen-image</option>
+                        <option value="z-image">z-image</option>
+                    </select>
                 </label>
                 <label class="field">
                     <span>LoRA Type</span>
-                    <input name="lora_type" type="text" placeholder="lora" required />
+                    <select name="lora_type" required>
+                        <option value="" disabled>Select a LoRA type</option>
+                        <option value="lora">lora</option>
+                        <option value="lycoris">lycoris</option>
+                        <option value="lokr">lokr</option>
+                    </select>
                 </label>
                 <label class="field">
                     <span>Location Type</span>
