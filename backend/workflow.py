@@ -458,6 +458,7 @@ class ZImageImg2ImgInputs(BaseModel):
     scheduler: str = "euler"
     model: str | None = None
     num_images: int = 1
+    lora_adapters: Any | None = None
 
 
 class ImagesOutput(BaseModel):
@@ -2499,6 +2500,7 @@ def _z_image_img2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str,
         scheduler=str(inputs.get("scheduler") or "euler"),
         model=inputs.get("model"),
         num_images=int(inputs.get("num_images") or 1),
+        lora_adapters=inputs.get("lora_adapters"),
     )
     if not isinstance(result, dict):
         raise ValueError("z-image.img2img must return an object")

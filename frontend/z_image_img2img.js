@@ -49,6 +49,7 @@ async function loadModels() {
 }
 
 loadModels();
+window.LoraPanel?.init({ apiBase: API_BASE, family: "z-image" });
 if (window.WorkflowCatalog?.load) {
     void window.WorkflowCatalog
         .load(API_BASE)
@@ -89,6 +90,7 @@ async function generateZImageImg2Img() {
         integer: true,
     });
     const strength = WorkflowClient.readNumberValue("strength", defaults.strength ?? 0.75);
+    const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
     const initialImageInput = document.getElementById("initial_image");
 
     if (!initialImageInput.files || initialImageInput.files.length === 0) {
@@ -104,25 +106,30 @@ async function generateZImageImg2Img() {
             initialFile.name || "initial.png"
         );
 
+        const taskInputs = {
+            initial_image: `@artifact:${uploaded.artifact_id}`,
+            prompt,
+            negative_prompt,
+            steps,
+            guidance_scale,
+            scheduler,
+            width,
+            height,
+            seed,
+            num_images,
+            model,
+            strength,
+        };
+        if (loraAdapters.length > 0) {
+            taskInputs.lora_adapters = loraAdapters;
+        }
+
         const workflowPayload = {
             tasks: [
                 {
                     id: "t1",
                     type: "z-image.img2img",
-                    inputs: {
-                        initial_image: `@artifact:${uploaded.artifact_id}`,
-                        prompt,
-                        negative_prompt,
-                        steps,
-                        guidance_scale,
-                        scheduler,
-                        width,
-                        height,
-                        seed,
-                        num_images,
-                        model,
-                        strength,
-                    },
+                    inputs: taskInputs,
                 },
             ],
             return: "@t1.images",

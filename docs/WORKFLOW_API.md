@@ -559,6 +559,13 @@ Task inputs/outputs are task-specific. As a convention, image-generating tasks r
 - Family validation is enforced: only LoRAs registered with `lora_model_family: "z-image"` are accepted for `z-image.text2img`.
 - Invalid adapter references (for example missing `lora_id`, unknown id, or incompatible family) fail the task with a validation/runtime error.
 
+`z-image.img2img` LoRA input notes:
+- `lora_adapters` is optional. When omitted or empty, img2img runs without LoRA adapters.
+- `lora_adapters` entries are resolved through the LoRA registry (`/lora-models`) by `lora_id`.
+- Each adapter may provide `strength` (default `1.0`).
+- Family validation is enforced: only LoRAs registered with `lora_model_family: "z-image"` are accepted for `z-image.img2img`.
+- Invalid adapter references (for example missing `lora_id`, unknown id, or incompatible family) fail the task with a validation/runtime error.
+
 ## Example: img2img workflow (artifact input)
 
 1) Upload image:
