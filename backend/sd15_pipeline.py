@@ -1230,6 +1230,7 @@ def generate_images_inpaint(
     strength: float,
     padding_mask_crop: int,
     clip_skip: int,
+    lora_adapters: list[object] | None = None,
     batch_id: str | None = None,
 ):
     """
@@ -1261,21 +1262,47 @@ def generate_images_inpaint(
     )
 
     filenames = []
+    adapter_names = _apply_lora_adapters(pipe, lora_adapters)
 
-    for i in range(num_images):
-        # Offset seed per image so batches are deterministic and distinct.
-        current_seed = base_seed + i
-        generator = torch.Generator(device="cuda").manual_seed(current_seed)
+    try:
+        for i in range(num_images):
+            # Offset seed per image so batches are deterministic and distinct.
+            current_seed = base_seed + i
+            generator = torch.Generator(device="cuda").manual_seed(current_seed)
 
-        if config.PIPELINE_LAYER_LOGGING_ENABLED and i == 0:
-            arch_layers = collect_pipeline_layers(
-                pipe,
-                leaf_only=config.PIPELINE_LAYER_LOGGING_LEAF_ONLY,
-            )
-            with capture_runtime_used_layers(
-                pipe,
-                leaf_only=config.PIPELINE_LAYER_LOGGING_LEAF_ONLY,
-            ) as (used_layer_names, name_to_type, name_to_inputs, name_to_calls):
+            if config.PIPELINE_LAYER_LOGGING_ENABLED and i == 0:
+                arch_layers = collect_pipeline_layers(
+                    pipe,
+                    leaf_only=config.PIPELINE_LAYER_LOGGING_LEAF_ONLY,
+                )
+                with capture_runtime_used_layers(
+                    pipe,
+                    leaf_only=config.PIPELINE_LAYER_LOGGING_LEAF_ONLY,
+                ) as (used_layer_names, name_to_type, name_to_inputs, name_to_calls):
+                    image = pipe(
+                        prompt=prompt,
+                        negative_prompt=negative_prompt,
+                        image=initial_image,
+                        mask_image=mask_image,
+                        num_inference_steps=steps,
+                        guidance_scale=cfg,
+                        generator=generator,
+                        strength=strength,
+                        padding_mask_crop=padding_mask_crop,
+                        clip_skip=clip_skip,
+                    ).images[0]
+                append_layers_report(
+                    output_dir=batch_output_dir,
+                    batch_id=batch_id,
+                    label="sd15_inpaint",
+                    pipeline_name=pipe.__class__.__name__,
+                    architecture_layers=arch_layers,
+                    runtime_used_layer_names=used_layer_names,
+                    runtime_name_to_type=name_to_type,
+                    runtime_name_to_input_summary=(name_to_inputs if config.PIPELINE_LAYER_LOGGING_CAPTURE_INPUTS else None),
+                    runtime_name_to_call_count=(name_to_calls if config.PIPELINE_LAYER_LOGGING_CAPTURE_INPUTS else None),
+                )
+            else:
                 image = pipe(
                     prompt=prompt,
                     negative_prompt=negative_prompt,
@@ -1288,53 +1315,32 @@ def generate_images_inpaint(
                     padding_mask_crop=padding_mask_crop,
                     clip_skip=clip_skip,
                 ).images[0]
-            append_layers_report(
-                output_dir=batch_output_dir,
-                batch_id=batch_id,
-                label="sd15_inpaint",
-                pipeline_name=pipe.__class__.__name__,
-                architecture_layers=arch_layers,
-                runtime_used_layer_names=used_layer_names,
-                runtime_name_to_type=name_to_type,
-                runtime_name_to_input_summary=(name_to_inputs if config.PIPELINE_LAYER_LOGGING_CAPTURE_INPUTS else None),
-                runtime_name_to_call_count=(name_to_calls if config.PIPELINE_LAYER_LOGGING_CAPTURE_INPUTS else None),
-            )
-        else:
-            image = pipe(
-                prompt=prompt,
-                negative_prompt=negative_prompt,
-                image=initial_image,
-                mask_image=mask_image,
-                num_inference_steps=steps,
-                guidance_scale=cfg,
-                generator=generator,
-                strength=strength,
-                padding_mask_crop=padding_mask_crop,
-                clip_skip=clip_skip,
-            ).images[0]
 
-        filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
-        # Embed all settings into the PNG for later reproduction/debugging.
-        pnginfo = build_png_metadata({
-            "mode": "inpaint",
-            "prompt": prompt,
-            "negative_prompt": negative_prompt,
-            "steps": steps,
-            "cfg": cfg,
-            "width": width,
-            "height": height,
-            "seed": current_seed,
-            "scheduler": scheduler,
-            "model": model,
-            "strength": strength,
-            "padding_mask_crop": padding_mask_crop,
-            "clip_skip": clip_skip,
-            "batch_id": batch_id,
-        })
-        image.save(filename, pnginfo=pnginfo)
-        logger.info("Image %s saved to %s", i, filename.name)
+            filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
+            # Embed all settings into the PNG for later reproduction/debugging.
+            pnginfo = build_png_metadata({
+                "mode": "inpaint",
+                "prompt": prompt,
+                "negative_prompt": negative_prompt,
+                "steps": steps,
+                "cfg": cfg,
+                "width": width,
+                "height": height,
+                "seed": current_seed,
+                "scheduler": scheduler,
+                "model": model,
+                "strength": strength,
+                "padding_mask_crop": padding_mask_crop,
+                "clip_skip": clip_skip,
+                "batch_id": batch_id,
+            })
+            image.save(filename, pnginfo=pnginfo)
+            logger.info("Image %s saved to %s", i, filename.name)
 
-        filenames.append(build_batch_output_relpath(batch_id, filename.name))
+            filenames.append(build_batch_output_relpath(batch_id, filename.name))
+    finally:
+        if adapter_names and hasattr(pipe, "unload_lora_weights"):
+            pipe.unload_lora_weights()
 
     return filenames
 
@@ -1360,6 +1366,7 @@ def generate_images_inpaint_controlnet(
     controlnet_guess_mode: bool = False,
     control_guidance_start: float = 0.0,
     control_guidance_end: float = 1.0,
+    lora_adapters: list[object] | None = None,
     batch_id: str | None = None,
 ) -> list[str]:
     """
@@ -1401,59 +1408,72 @@ def generate_images_inpaint_controlnet(
     )
 
     filenames = []
+    adapter_names, lora_coverage = apply_lora_adapters_with_validation(
+        pipe,
+        lora_adapters,
+        expected_family="sd15",
+        validate=True,
+    )
+    report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
+    if report_path is not None:
+        logger.info("LoRA coverage report saved to %s", report_path)
 
-    for i in range(num_images):
-        current_seed = base_seed + i
-        generator = torch.Generator(device="cuda").manual_seed(current_seed)
+    try:
+        for i in range(num_images):
+            current_seed = base_seed + i
+            generator = torch.Generator(device="cuda").manual_seed(current_seed)
 
-        image = pipe(
-            prompt=prompt,
-            negative_prompt=negative_prompt,
-            image=initial_image,
-            mask_image=mask_image,
-            control_image=control_image,
-            num_inference_steps=steps,
-            guidance_scale=cfg,
-            generator=generator,
-            strength=strength,
-            padding_mask_crop=padding_mask_crop,
-            clip_skip=clip_skip,
-            controlnet_conditioning_scale=controlnet_conditioning_scale,
-            guess_mode=controlnet_guess_mode,
-            control_guidance_start=control_guidance_start,
-            control_guidance_end=control_guidance_end,
-        ).images[0]
+            image = pipe(
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                image=initial_image,
+                mask_image=mask_image,
+                control_image=control_image,
+                num_inference_steps=steps,
+                guidance_scale=cfg,
+                generator=generator,
+                strength=strength,
+                padding_mask_crop=padding_mask_crop,
+                clip_skip=clip_skip,
+                controlnet_conditioning_scale=controlnet_conditioning_scale,
+                guess_mode=controlnet_guess_mode,
+                control_guidance_start=control_guidance_start,
+                control_guidance_end=control_guidance_end,
+            ).images[0]
 
-        filename = batch_output_dir / f"{batch_id}_controlnet_{current_seed}.png"
-        metadata = {
-            "mode": "inpaint_controlnet",
-            "prompt": prompt,
-            "negative_prompt": negative_prompt,
-            "steps": steps,
-            "cfg": cfg,
-            "width": width,
-            "height": height,
-            "seed": current_seed,
-            "scheduler": scheduler,
-            "model": model,
-            "strength": strength,
-            "padding_mask_crop": padding_mask_crop,
-            "clip_skip": clip_skip,
-            "controlnet_model": controlnet_model,
-            "controlnet_conditioning_scale": controlnet_conditioning_scale,
-            "controlnet_guess_mode": controlnet_guess_mode,
-            "control_guidance_start": control_guidance_start,
-            "control_guidance_end": control_guidance_end,
-            "batch_id": batch_id,
-        }
-        if isinstance(controlnet_model, list):
-            metadata["controlnet_models"] = controlnet_model
-        if isinstance(controlnet_conditioning_scale, list):
-            metadata["controlnet_conditioning_scales"] = controlnet_conditioning_scale
-        pnginfo = build_png_metadata(metadata)
-        image.save(filename, pnginfo=pnginfo)
-        logger.info("Image %s saved to %s", i, filename.name)
+            filename = batch_output_dir / f"{batch_id}_controlnet_{current_seed}.png"
+            metadata = {
+                "mode": "inpaint_controlnet",
+                "prompt": prompt,
+                "negative_prompt": negative_prompt,
+                "steps": steps,
+                "cfg": cfg,
+                "width": width,
+                "height": height,
+                "seed": current_seed,
+                "scheduler": scheduler,
+                "model": model,
+                "strength": strength,
+                "padding_mask_crop": padding_mask_crop,
+                "clip_skip": clip_skip,
+                "controlnet_model": controlnet_model,
+                "controlnet_conditioning_scale": controlnet_conditioning_scale,
+                "controlnet_guess_mode": controlnet_guess_mode,
+                "control_guidance_start": control_guidance_start,
+                "control_guidance_end": control_guidance_end,
+                "batch_id": batch_id,
+            }
+            if isinstance(controlnet_model, list):
+                metadata["controlnet_models"] = controlnet_model
+            if isinstance(controlnet_conditioning_scale, list):
+                metadata["controlnet_conditioning_scales"] = controlnet_conditioning_scale
+            pnginfo = build_png_metadata(metadata)
+            image.save(filename, pnginfo=pnginfo)
+            logger.info("Image %s saved to %s", i, filename.name)
 
-        filenames.append(build_batch_output_relpath(batch_id, filename.name))
+            filenames.append(build_batch_output_relpath(batch_id, filename.name))
+    finally:
+        if adapter_names and hasattr(pipe, "unload_lora_weights"):
+            pipe.unload_lora_weights()
 
     return filenames

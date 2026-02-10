@@ -171,6 +171,7 @@ class Sd15InpaintInputs(BaseModel):
     controlnet_guess_mode: bool = False
     control_guidance_start: float = Field(default=0.0, ge=0.0, le=1.0)
     control_guidance_end: float = Field(default=1.0, ge=0.0, le=1.0)
+    lora_adapters: Any | None = None
     batch_id: str | None = None
 
 
@@ -1430,6 +1431,7 @@ def _sd15_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, An
             controlnet_guess_mode=bool(inputs.get("controlnet_guess_mode", False)),
             control_guidance_start=control_guidance_start,
             control_guidance_end=control_guidance_end,
+            lora_adapters=inputs.get("lora_adapters"),
             batch_id=batch_id,
         )
         result: dict[str, Any] = {
@@ -1454,6 +1456,7 @@ def _sd15_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, An
         strength=strength,
         padding_mask_crop=int(inputs.get("padding_mask_crop") or 32),
         clip_skip=int(inputs.get("clip_skip") or 1),
+        lora_adapters=inputs.get("lora_adapters"),
         batch_id=batch_id,
     )
     return {"batch_id": batch_id, "images": [f"/outputs/{name}" for name in filenames]}

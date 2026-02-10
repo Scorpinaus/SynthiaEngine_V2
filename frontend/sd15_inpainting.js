@@ -176,6 +176,8 @@ function initSd15InpaintingPage() {
             console.warn("ControlNet init failed:", error);
         });
     }
+    // Optional LoRA panel integration (only active if that script is present on the page).
+    window.LoraPanel?.init({ apiBase: API_BASE, family: "sd15" });
  
     // When a new base image is selected, reset mask state and render it on the canvases.
     initialImageInput.addEventListener("change", () => {
@@ -580,6 +582,7 @@ async function generateInpaint() {
         "controlnet_compat_mode",
         defaults.controlnet_compat_mode ?? "warn"
     );
+    const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
 
     const idempotencyKey = WorkflowClient.makeIdempotencyKey();
 
@@ -667,6 +670,9 @@ async function generateInpaint() {
                     taskInputs.controlnet_preprocessor_ids = controlnetPreprocessorIds;
                 }
             }
+        }
+        if (loraAdapters.length > 0) {
+            taskInputs.lora_adapters = loraAdapters;
         }
 
         const workflowPayload = {

@@ -473,6 +473,13 @@ Task inputs/outputs are task-specific. As a convention, image-generating tasks r
 `sd15.inpaint` optional ControlNet output notes:
 - May include `warnings: string[]` when compatibility/perf warnings are produced.
 
+`sd15.inpaint` LoRA input notes:
+- `lora_adapters` is optional. When omitted or empty, inpaint runs without LoRA adapters.
+- `lora_adapters` entries are resolved through the LoRA registry (`/lora-models`) by `lora_id`.
+- Each adapter may provide `strength` (default `1.0`) and optional per-component overrides (`unet_strength`, `text_encoder_strength`).
+- Family validation is enforced: only LoRAs registered with `lora_model_family: "sd15"` are accepted for `sd15.inpaint`.
+- Invalid adapter references (for example missing `lora_id`, unknown id, or incompatible family) fail the task with a validation/runtime error.
+
 `sdxl.controlnet.text2img` extra input notes:
 - `controlnet_conditioning_scale`: float in `[0, 2]` (default `1.0`)
 - `controlnet_conditioning_scales`: optional list form for multi-ControlNet; length must match model/image list length
