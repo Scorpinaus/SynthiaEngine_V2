@@ -106,6 +106,24 @@ Response:
 ```json
 {
   "version": "v2",
+  "capabilities": {
+    "sd15": {
+      "label": "SD 1.5",
+      "aliases": ["sd1.5"],
+      "task_types": ["sd15.text2img", "sd15.img2img", "sd15.inpaint", "sd15.controlnet.text2img", "sd15.hires_fix"],
+      "features": {
+        "text2img": true,
+        "img2img": true,
+        "inpaint": true,
+        "controlnet": true,
+        "multi_controlnet": true,
+        "hires_fix": true,
+        "lora_adapters": true,
+        "scheduler": true,
+        "true_cfg_scale": false
+      }
+    }
+  },
   "tasks": {
     "sd15.text2img": {
       "input_schema": { /* JSON Schema for inputs */ },
@@ -118,6 +136,7 @@ Response:
 ```
 
 Notes:
+- `capabilities` is a model-family matrix for builder UIs. Current families include `sd15`, `sdxl`, `flux`, `qwen-image`, and `z-image`.
 - `ui_hints` is best-effort metadata for workflow builders (labels, widgets, suggested min/max, option lists, etc.).
 - `output_schema` describes the per-task result object stored under `result.tasks[taskId]`.
 
@@ -381,6 +400,18 @@ Resolution behavior:
 - Z-Image: `z-image.text2img`, `z-image.img2img`
 - ControlNet utility: `controlnet.preprocess`
 
+## Model capabilities matrix
+
+This same matrix is available in machine-readable form at `GET /api/workflow/catalog` under `capabilities`.
+
+| Family | text2img | img2img | inpaint | controlnet | hires_fix | lora_adapters | true_cfg_scale |
+|---|---|---|---|---|---|---|---|
+| `sd15` | yes | yes | yes | yes | yes | yes | no |
+| `sdxl` | yes | yes | yes | yes | no | no | no |
+| `flux` | yes | yes | yes | no | no | no | no |
+| `qwen-image` | yes | yes | yes | no | no | no | yes |
+| `z-image` (`zimage`) | yes | yes | no | no | no | no | no |
+
 Task inputs/outputs are task-specific. As a convention, image-generating tasks return:
 - `images`: list of `"/outputs/..."` URLs
 
@@ -422,6 +453,13 @@ Task inputs/outputs are task-specific. As a convention, image-generating tasks r
 
 `sd15.img2img` optional ControlNet output notes:
 - May include `warnings: string[]` when compatibility/perf warnings are produced.
+
+`sd15.img2img` LoRA input notes:
+- `lora_adapters` is optional. When omitted or empty, img2img runs without LoRA adapters.
+- `lora_adapters` entries are resolved through the LoRA registry (`/lora-models`) by `lora_id`.
+- Each adapter may provide `strength` (default `1.0`) and optional per-component overrides (`unet_strength`, `text_encoder_strength`).
+- Family validation is enforced: only LoRAs registered with `lora_model_family: "sd15"` are accepted for `sd15.img2img`.
+- Invalid adapter references (for example missing `lora_id`, unknown id, or incompatible family) fail the task with a validation/runtime error.
 
 `sd15.inpaint` optional ControlNet input notes:
 - Existing `sd15.inpaint` payloads remain valid without any ControlNet fields.

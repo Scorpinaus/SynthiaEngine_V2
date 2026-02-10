@@ -215,11 +215,21 @@ class WorkflowCatalogTask(BaseModel):
     ui_hints: dict[str, Any] | None = None
 
 
+class WorkflowModelCapabilities(BaseModel):
+    """Capability summary for a single model family."""
+
+    label: str
+    aliases: list[str] = Field(default_factory=list)
+    task_types: list[str] = Field(default_factory=list)
+    features: dict[str, bool] = Field(default_factory=dict)
+
+
 class WorkflowCatalogResponse(BaseModel):
     """Response payload exposing per-task input schemas/defaults for workflow builders."""
 
     version: str
     tasks: dict[str, WorkflowCatalogTask]
+    capabilities: dict[str, WorkflowModelCapabilities] = Field(default_factory=dict)
 
 
 def _serialize_job(job) -> JobResponse:

@@ -108,6 +108,12 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("control_images", img2img_js)
         self.assertIn("controlnet_models", img2img_js)
 
+    def test_sd15_img2img_script_wires_lora_panel_and_payload(self):
+        img2img_js = (ROOT / "frontend" / "sd15_img2img.js").read_text(encoding="utf-8")
+        self.assertIn('window.LoraPanel?.init({ apiBase: API_BASE, family: "sd15" })', img2img_js)
+        self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", img2img_js)
+        self.assertIn("taskInputs.lora_adapters = loraAdapters;", img2img_js)
+
     def test_sd15_inpaint_script_consumes_controlnet_state(self):
         inpaint_js = (ROOT / "frontend" / "sd15_inpainting.js").read_text(encoding="utf-8")
         self.assertIn("window.ControlNetPanel?.getState?.()", inpaint_js)

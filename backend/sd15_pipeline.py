@@ -194,7 +194,15 @@ def apply_hires_fix(
     upscaled = _upscale_image(image, hires_scale)
     pipe = load_img2img_pipeline(model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
-    adapter_names = _apply_lora_adapters(pipe, lora_adapters)
+    adapter_names, lora_coverage = apply_lora_adapters_with_validation(
+        pipe,
+        lora_adapters,
+        expected_family="sd15",
+        validate=True,
+    )
+    report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
+    if report_path is not None:
+        logger.info("LoRA coverage report saved to %s", report_path)
 
     generator = None
     if seed is not None:
@@ -808,7 +816,15 @@ def generate_images_img2img_controlnet(
         strength,
         num_images,
     )
-    adapter_names = _apply_lora_adapters(pipe, lora_adapters)
+    adapter_names, lora_coverage = apply_lora_adapters_with_validation(
+        pipe,
+        lora_adapters,
+        expected_family="sd15",
+        validate=True,
+    )
+    report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
+    if report_path is not None:
+        logger.info("LoRA coverage report saved to %s", report_path)
 
     filenames = []
     try:
@@ -972,7 +988,6 @@ def generate_images(
                         weighting_policy=weighting_policy,
                     )
                     prompt_embeds_ready = True
-                     
                     # Generate image
                     image = pipe(
                         prompt=None if use_prompt_embeds else prompt,

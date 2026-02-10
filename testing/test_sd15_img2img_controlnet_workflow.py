@@ -28,6 +28,46 @@ class Sd15Img2ImgControlNetInputValidationTests(unittest.TestCase):
 
 
 class Sd15Img2ImgControlNetWorkflowPlumbingTests(unittest.TestCase):
+    def test_non_controlnet_path_forwards_lora_adapters(self):
+        captured = {}
+        lora_adapters = [{"lora_id": 101, "strength": 0.8}]
+
+        def _fake_generate_images_img2img(**kwargs):
+            captured.update(kwargs)
+            return ["batch/out.png"]
+
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+                with patch(
+                    "backend.workflow.generate_images_img2img",
+                    side_effect=_fake_generate_images_img2img,
+                ):
+                    result = _sd15_img2img(
+                        {
+                            "initial_image": {
+                                "artifact_id": "a0123456789abcdef0123456789abcdef"
+                            },
+                            "prompt": "test prompt",
+                            "strength": 0.75,
+                            "steps": 20,
+                            "cfg": 7.5,
+                            "width": 512,
+                            "height": 512,
+                            "seed": 123,
+                            "scheduler": "euler",
+                            "model": "stable-diffusion-v1-5",
+                            "num_images": 1,
+                            "clip_skip": 1,
+                            "lora_adapters": lora_adapters,
+                        },
+                        _ctx=None,
+                    )
+
+        self.assertEqual(result["batch_id"], "batch123")
+        self.assertEqual(result["images"], ["/outputs/batch/out.png"])
+        self.assertIn("lora_adapters", captured)
+        self.assertEqual(captured["lora_adapters"], lora_adapters)
+
     def test_controlnet_path_passes_expected_pipeline_kwargs(self):
         captured = {}
 
@@ -77,6 +117,40 @@ class Sd15Img2ImgControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertTrue(captured["controlnet_guess_mode"])
         self.assertEqual(captured["control_guidance_start"], 0.1)
         self.assertEqual(captured["control_guidance_end"], 0.9)
+
+    def test_controlnet_path_forwards_lora_adapters(self):
+        captured = {}
+        lora_adapters = [{"lora_id": 201, "strength": 0.65}]
+
+        def _fake_generate_images_img2img_controlnet(**kwargs):
+            captured.update(kwargs)
+            return ["batch/out.png"]
+
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+                with patch(
+                    "backend.workflow.generate_images_img2img_controlnet",
+                    side_effect=_fake_generate_images_img2img_controlnet,
+                ):
+                    result = _sd15_img2img(
+                        {
+                            "initial_image": {
+                                "artifact_id": "a0123456789abcdef0123456789abcdef"
+                            },
+                            "control_image": {
+                                "artifact_id": "a0123456789abcdef0123456789abcdef"
+                            },
+                            "prompt": "test prompt",
+                            "controlnet_model": "lllyasviel/sd-controlnet-canny",
+                            "lora_adapters": lora_adapters,
+                        },
+                        _ctx=None,
+                    )
+
+        self.assertEqual(result["batch_id"], "batch123")
+        self.assertEqual(result["images"], ["/outputs/batch/out.png"])
+        self.assertIn("lora_adapters", captured)
+        self.assertEqual(captured["lora_adapters"], lora_adapters)
 
     def test_controlnet_missing_control_image_rejected(self):
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):

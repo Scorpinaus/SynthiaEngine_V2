@@ -606,6 +606,14 @@ _WEIGHTING_POLICY_OPTIONS: list[str] = [
     "comfyui-like",
 ]
 
+_MODEL_FAMILY_METADATA: dict[str, dict[str, Any]] = {
+    "sd15": {"label": "SD 1.5", "aliases": ["sd1.5"]},
+    "sdxl": {"label": "SDXL", "aliases": []},
+    "flux": {"label": "Flux", "aliases": []},
+    "qwen-image": {"label": "Qwen-Image", "aliases": ["qwen"]},
+    "z-image": {"label": "Z-Image", "aliases": ["zimage"]},
+}
+
 
 def _infer_model_family(task_type: str) -> str | None:
     prefix = task_type.split(".", 1)[0]
@@ -737,6 +745,65 @@ def _build_task_ui_hints(task_type: str, model_cls: type[BaseModel]) -> dict[str
     }
 
 
+def _build_model_capabilities() -> dict[str, Any]:
+    families: dict[str, dict[str, Any]] = {}
+    for task_type, model_cls in TASK_INPUT_MODELS.items():
+        family = _infer_model_family(task_type)
+        if not family:
+            continue
+        meta = _MODEL_FAMILY_METADATA.get(family, {})
+        entry = families.setdefault(
+            family,
+            {
+                "label": meta.get("label", family),
+                "aliases": list(meta.get("aliases", [])),
+                "task_types": [],
+                "features": {
+                    "text2img": False,
+                    "img2img": False,
+                    "inpaint": False,
+                    "controlnet": False,
+                    "multi_controlnet": False,
+                    "hires_fix": False,
+                    "lora_adapters": False,
+                    "scheduler": False,
+                    "true_cfg_scale": False,
+                },
+            },
+        )
+        if task_type not in entry["task_types"]:
+            entry["task_types"].append(task_type)
+
+        features = entry["features"]
+        if task_type.endswith(".text2img"):
+            features["text2img"] = True
+        if task_type.endswith(".img2img"):
+            features["img2img"] = True
+        if task_type.endswith(".inpaint"):
+            features["inpaint"] = True
+        if task_type.endswith(".hires_fix"):
+            features["hires_fix"] = True
+
+        field_names = model_cls.model_fields.keys()
+        if "scheduler" in field_names:
+            features["scheduler"] = True
+        if "true_cfg_scale" in field_names:
+            features["true_cfg_scale"] = True
+        if "lora_adapters" in field_names:
+            features["lora_adapters"] = True
+        if (
+            "controlnet_model" in field_names
+            or "controlnet_models" in field_names
+            or "control_image" in field_names
+            or "control_images" in field_names
+        ):
+            features["controlnet"] = True
+        if "controlnet_models" in field_names:
+            features["multi_controlnet"] = True
+
+    return {family: families[family] for family in sorted(families.keys())}
+
+
 def build_workflow_catalog() -> dict[str, Any]:
     tasks: dict[str, Any] = {}
     for task_type, model_cls in TASK_INPUT_MODELS.items():
@@ -754,7 +821,11 @@ def build_workflow_catalog() -> dict[str, Any]:
             "output_schema": output_model.model_json_schema(by_alias=True) if output_model else None,
             "ui_hints": _build_task_ui_hints(task_type, model_cls),
         }
-    return {"version": "v2", "tasks": tasks}
+    return {
+        "version": "v2",
+        "tasks": tasks,
+        "capabilities": _build_model_capabilities(),
+    }
 
 
 class WorkflowTask(BaseModel):
