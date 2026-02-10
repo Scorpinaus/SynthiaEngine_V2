@@ -1,4 +1,5 @@
 import logging
+import re
 
 import torch
 from diffusers import ZImageImg2ImgPipeline, ZImagePipeline
@@ -7,6 +8,7 @@ import threading
 
 from backend.config import OUTPUT_DIR
 from backend.logging_utils import configure_logging
+from backend.lora_registry import get_lora_entry
 from backend.model_registry import get_model_entry
 from backend.pipeline_utils import (
     build_fixed_step_timesteps,
@@ -23,6 +25,7 @@ GEN_LOCK = threading.Lock()
 
 logger = logging.getLogger(__name__)
 configure_logging()
+_ADAPTER_NAME_SANITIZE_RE = re.compile(r"[^0-9A-Za-z_-]+")
 
 
 # def _align_pad_token_dtype(pipe: ZImagePipeline | ZImageImg2ImgPipeline) -> None:
@@ -39,6 +42,84 @@ configure_logging()
 #             continue
 #         if token.dtype != target_dtype or token.device != target_device:
 #             token.data = token.data.to(dtype=target_dtype, device=target_device)
+
+
+def _sanitize_adapter_fragment(raw_name: str | None) -> str:
+    if not raw_name:
+        return ""
+    sanitized = _ADAPTER_NAME_SANITIZE_RE.sub("_", raw_name).strip("_")
+    return re.sub(r"_+", "_", sanitized)
+
+
+def _build_adapter_name(
+    lora_id: int,
+    display_name: str | None,
+    used_names: set[str],
+) -> str:
+    fragment = _sanitize_adapter_fragment(display_name) or f"id_{lora_id}"
+    base_name = f"lora_{fragment}"
+    candidate = base_name
+    if candidate not in used_names:
+        used_names.add(candidate)
+        return candidate
+
+    candidate = f"{base_name}_{lora_id}"
+    if candidate not in used_names:
+        used_names.add(candidate)
+        return candidate
+
+    suffix = 2
+    while True:
+        candidate = f"{base_name}_{lora_id}_{suffix}"
+        if candidate not in used_names:
+            used_names.add(candidate)
+            return candidate
+        suffix += 1
+
+
+def _apply_z_image_lora_adapters(
+    pipe: ZImagePipeline,
+    lora_adapters: list[object] | None,
+) -> list[str]:
+    if not lora_adapters:
+        return []
+
+    adapter_names: list[str] = []
+    adapter_weights: list[float] = []
+    used_adapter_names: set[str] = set()
+
+    for adapter in lora_adapters:
+        if isinstance(adapter, dict):
+            lora_id = adapter.get("lora_id")
+            strength = adapter.get("strength", 1.0)
+        else:
+            lora_id = getattr(adapter, "lora_id", None)
+            strength = getattr(adapter, "strength", 1.0)
+
+        if lora_id is None:
+            raise ValueError("LoRA adapter missing lora_id.")
+
+        entry = get_lora_entry(int(lora_id))
+        if entry.lora_model_family.lower() != "z-image":
+            raise ValueError(f"LoRA {entry.name} is not compatible with z-image.")
+
+        adapter_name = _build_adapter_name(entry.lora_id, entry.name, used_adapter_names)
+        adapter_weight = float(strength)
+        pipe.load_lora_weights(entry.file_path, adapter_name=adapter_name)
+        adapter_names.append(adapter_name)
+        adapter_weights.append(adapter_weight)
+
+        logger.info(
+            "z-image lora_name=%s lora_id=%s lora_weight=%s",
+            adapter_name,
+            entry.lora_id,
+            adapter_weight,
+        )
+
+    if hasattr(pipe, "set_adapters"):
+        pipe.set_adapters(adapter_names, adapter_weights=adapter_weights)
+
+    return adapter_names
 
 ## Load Pipelines
 
@@ -126,6 +207,7 @@ def run_z_image_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
     model = payload.get("model")
     num_images = int(payload.get("num_images", 1))
     scheduler = str(payload.get("scheduler") or "euler")
+    lora_adapters = payload.get("lora_adapters")
 
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
@@ -150,6 +232,7 @@ def run_z_image_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
 
     filenames: list[str] = []
     pipe.scheduler = create_scheduler(scheduler, pipe)
+    adapter_names = _apply_z_image_lora_adapters(pipe, lora_adapters)
 
     with GEN_LOCK:
         for i in range(num_images):
@@ -198,6 +281,9 @@ def run_z_image_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
             # ✅ release per-image intermediates
             del image
             cleanup_memory()
+
+    if adapter_names and hasattr(pipe, "unload_lora_weights"):
+        pipe.unload_lora_weights()
 
     return {"images": [f"/outputs/{name}" for name in filenames]}
 

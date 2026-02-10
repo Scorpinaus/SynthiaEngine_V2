@@ -442,6 +442,7 @@ class ZImageText2ImgInputs(BaseModel):
     model: str | None = None
     num_images: int = 1
     scheduler: str = "euler"
+    lora_adapters: Any | None = None
 
 
 class ZImageImg2ImgInputs(BaseModel):
