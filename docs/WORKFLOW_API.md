@@ -175,6 +175,7 @@ Notes:
 - Response `200`: created `LoraRegistryEntry`
 - Error `400`: validation/domain error in `{"detail": "<message>"}`.
 - Duplicate id error is deterministic: `LoRA with id <lora_id> already exists.`
+- Validation: `name` cannot contain `.` (dot). Requests with dot in `name` return `422`.
 
 `GET /lora-models/{lora_id}`
 - Response `200`: `LoraRegistryEntry`
@@ -196,6 +197,7 @@ Notes:
 - Response `200`: updated `LoraRegistryEntry`
 - Error `400`: explicit validation/domain error in `{"detail": "<message>"}`.
 - Error `404`: missing id in `{"detail": "LoRA with id <lora_id> not found."}`
+- Validation: when provided, `name` cannot contain `.` (dot). Requests with dot in `name` return `422`.
 - Error `422`: schema validation failure (for example attempting to patch non-editable `lora_id`).
 
 `DELETE /lora-models/{lora_id}`
@@ -311,6 +313,7 @@ Frontend note (SD1.5 page):
 - `frontend/sdxl.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()` for `sdxl.controlnet.text2img`.
 - `frontend/sdxl_img2img.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()` for `sdxl.img2img` optional ControlNet usage.
 - `frontend/sdxl_inpaint.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()` for `sdxl.inpaint` optional ControlNet usage.
+- `frontend/sdxl_inpaint.js` also consumes shared LoRA state via `window.LoraPanel.getSelectedAdapters()` for `sdxl.inpaint`.
 
 ## Job object
 
@@ -541,6 +544,13 @@ Task inputs/outputs are task-specific. As a convention, image-generating tasks r
 
 `sdxl.inpaint` optional ControlNet output notes:
 - May include `warnings: string[]` when compatibility/perf warnings are produced.
+
+`sdxl.inpaint` LoRA input notes:
+- `lora_adapters` is optional. When omitted or empty, inpaint runs without LoRA adapters.
+- `lora_adapters` entries are resolved through the LoRA registry (`/lora-models`) by `lora_id`.
+- Each adapter may provide `strength` (default `1.0`) and optional per-component overrides (`unet_strength`, `text_encoder_strength`).
+- Family validation is enforced: only LoRAs registered with `lora_model_family: "sdxl"` are accepted for `sdxl.inpaint`.
+- Invalid adapter references (for example missing `lora_id`, unknown id, or incompatible family) fail the task with a validation/runtime error.
 
 ## Example: img2img workflow (artifact input)
 

@@ -1,11 +1,13 @@
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
 from backend.lora_registry import get_lora_entry
 
 logger = logging.getLogger(__name__)
+_ADAPTER_NAME_SANITIZE_RE = re.compile(r"[^0-9A-Za-z_-]+")
 
 
 def _extract_lora_params(adapter: Any) -> tuple[int | None, float, float | None, float | None]:
@@ -43,6 +45,39 @@ def _build_adapter_weight(
         "unet": float(unet_strength if unet_strength is not None else strength),
         "text_encoder": float(text_encoder_strength if text_encoder_strength is not None else strength),
     }
+
+
+def _sanitize_adapter_fragment(raw_name: str | None) -> str:
+    if not raw_name:
+        return ""
+    sanitized = _ADAPTER_NAME_SANITIZE_RE.sub("_", raw_name).strip("_")
+    return re.sub(r"_+", "_", sanitized)
+
+
+def _build_adapter_name(
+    lora_id: int,
+    display_name: str | None,
+    used_names: set[str],
+) -> str:
+    fragment = _sanitize_adapter_fragment(display_name) or f"id_{lora_id}"
+    base_name = f"lora_{fragment}"
+    candidate = base_name
+    if candidate not in used_names:
+        used_names.add(candidate)
+        return candidate
+
+    candidate = f"{base_name}_{lora_id}"
+    if candidate not in used_names:
+        used_names.add(candidate)
+        return candidate
+
+    suffix = 2
+    while True:
+        candidate = f"{base_name}_{lora_id}_{suffix}"
+        if candidate not in used_names:
+            used_names.add(candidate)
+            return candidate
+        suffix += 1
 
 
 def _matches_target(module_name: str, target: str) -> bool:
@@ -133,6 +168,7 @@ def apply_lora_adapters_with_validation(
     adapter_names: list[str] = []
     adapter_weights: list[float | dict[str, float]] = []
     coverage: dict[str, dict[str, object]] = {}
+    used_adapter_names: set[str] = set()
 
     for adapter in lora_adapters:
         lora_id, strength, unet_strength, text_encoder_strength = _extract_lora_params(adapter)
@@ -143,7 +179,7 @@ def apply_lora_adapters_with_validation(
         if entry.lora_model_family.lower() != expected_family.lower():
             raise ValueError(f"LoRA {entry.name} is not compatible with {expected_family}.")
 
-        adapter_name = f"lora_{entry.name}"
+        adapter_name = _build_adapter_name(entry.lora_id, entry.name, used_adapter_names)
         pipe.load_lora_weights(entry.file_path, adapter_name=adapter_name)
         adapter_names.append(adapter_name)
         adapter_weights.append(_build_adapter_weight(strength, unet_strength, text_encoder_strength))

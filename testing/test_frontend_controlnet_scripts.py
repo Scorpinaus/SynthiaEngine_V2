@@ -80,13 +80,16 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         sdxl_inpaint_html = (ROOT / "frontend" / "sdxl_inpaint.html").read_text(encoding="utf-8")
         panel_tag = '<script src="controlnet_panel.js?v=2"></script>'
         preprocessor_tag = '<script src="controlnet_preprocessor.js?v=3"></script>'
+        lora_tag = '<script src="lora_panel.js?v=1"></script>'
         sdxl_inpaint_tag = '<script src="sdxl_inpaint.js?v=3"></script>'
 
         self.assertIn(panel_tag, sdxl_inpaint_html)
         self.assertIn(preprocessor_tag, sdxl_inpaint_html)
+        self.assertIn(lora_tag, sdxl_inpaint_html)
         self.assertIn(sdxl_inpaint_tag, sdxl_inpaint_html)
         self.assertLess(sdxl_inpaint_html.index(panel_tag), sdxl_inpaint_html.index(sdxl_inpaint_tag))
         self.assertLess(sdxl_inpaint_html.index(preprocessor_tag), sdxl_inpaint_html.index(sdxl_inpaint_tag))
+        self.assertLess(sdxl_inpaint_html.index(lora_tag), sdxl_inpaint_html.index(sdxl_inpaint_tag))
 
     def test_controlnet_panel_script_exposes_expected_api(self):
         panel_js = (ROOT / "frontend" / "controlnet_panel.js").read_text(encoding="utf-8")
@@ -170,6 +173,12 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("controlnetEnabled", sdxl_inpaint_js)
         self.assertIn("control_images", sdxl_inpaint_js)
         self.assertIn("controlnet_models", sdxl_inpaint_js)
+
+    def test_sdxl_inpaint_script_wires_lora_panel_and_payload(self):
+        sdxl_inpaint_js = (ROOT / "frontend" / "sdxl_inpaint.js").read_text(encoding="utf-8")
+        self.assertIn('window.LoraPanel?.init({ apiBase: API_BASE, family: "sdxl" })', sdxl_inpaint_js)
+        self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", sdxl_inpaint_js)
+        self.assertIn("taskInputs.lora_adapters = loraAdapters;", sdxl_inpaint_js)
 
     def test_preprocessor_modal_has_two_column_layout_hooks(self):
         preprocessor_html = (ROOT / "frontend" / "controlnet_preprocessor.html").read_text(

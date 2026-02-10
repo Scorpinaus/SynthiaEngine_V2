@@ -63,6 +63,35 @@ class Sd15InpaintControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertIn("lora_adapters", captured)
         self.assertEqual(captured["lora_adapters"], lora_adapters)
 
+    def test_non_controlnet_path_preserves_zero_padding_mask_crop(self):
+        captured = {}
+
+        def _fake_generate_images_inpaint(**kwargs):
+            captured.update(kwargs)
+            return ["batch/out.png"]
+
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+                with patch(
+                    "backend.workflow.generate_images_inpaint",
+                    side_effect=_fake_generate_images_inpaint,
+                ):
+                    _sd15_inpaint(
+                        {
+                            "initial_image": {
+                                "artifact_id": "a0123456789abcdef0123456789abcdef"
+                            },
+                            "mask_image": {
+                                "artifact_id": "a0123456789abcdef0123456789abcdef"
+                            },
+                            "prompt": "test prompt",
+                            "padding_mask_crop": 0,
+                        },
+                        _ctx=None,
+                    )
+
+        self.assertEqual(captured["padding_mask_crop"], 0)
+
     def test_controlnet_path_passes_expected_pipeline_kwargs(self):
         captured = {}
 
@@ -151,6 +180,38 @@ class Sd15InpaintControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertEqual(result["images"], ["/outputs/batch/out.png"])
         self.assertIn("lora_adapters", captured)
         self.assertEqual(captured["lora_adapters"], lora_adapters)
+
+    def test_controlnet_path_preserves_zero_padding_mask_crop(self):
+        captured = {}
+
+        def _fake_generate_images_inpaint_controlnet(**kwargs):
+            captured.update(kwargs)
+            return ["batch/out.png"]
+
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+                with patch(
+                    "backend.workflow.generate_images_inpaint_controlnet",
+                    side_effect=_fake_generate_images_inpaint_controlnet,
+                ):
+                    _sd15_inpaint(
+                        {
+                            "initial_image": {
+                                "artifact_id": "a0123456789abcdef0123456789abcdef"
+                            },
+                            "mask_image": {
+                                "artifact_id": "a0123456789abcdef0123456789abcdef"
+                            },
+                            "control_image": {
+                                "artifact_id": "a0123456789abcdef0123456789abcdef"
+                            },
+                            "prompt": "test prompt",
+                            "padding_mask_crop": 0,
+                        },
+                        _ctx=None,
+                    )
+
+        self.assertEqual(captured["padding_mask_crop"], 0)
 
     def test_controlnet_missing_control_image_rejected(self):
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):

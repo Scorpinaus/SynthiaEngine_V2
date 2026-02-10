@@ -25,7 +25,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageFilter
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from backend.config import DEFAULTS, OUTPUT_DIR
 from backend.controlnet_preprocessors import get_preprocessor, list_preprocessors
@@ -86,6 +86,14 @@ app.mount("/outputs", StaticFiles(directory=OUTPUT_DIR), name="outputs")
 
 ALLOWED_JOB_KINDS = {"workflow"}
 
+
+def _validate_lora_name(name: str | None) -> str | None:
+    if name is None:
+        return None
+    if "." in name:
+        raise ValueError("LoRA name cannot contain '.'")
+    return name
+
 ## BaseModel references
 class ModelCreateRequest(BaseModel):
     """Request payload used to register a new model in the local registry."""
@@ -122,6 +130,11 @@ class LoraCreateRequest(BaseModel):
     file_path: str
     name: str | None = None
 
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str | None) -> str | None:
+        return _validate_lora_name(value)
+
 
 class LoraUpdateRequest(BaseModel):
     """Request payload used to update editable fields on a LoRA entry."""
@@ -133,6 +146,11 @@ class LoraUpdateRequest(BaseModel):
     lora_location: str | None = None
     file_path: str | None = None
     name: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str | None) -> str | None:
+        return _validate_lora_name(value)
 
 
 class ControlNetPreprocessorInfo(BaseModel):

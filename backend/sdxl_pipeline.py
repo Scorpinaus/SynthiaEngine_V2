@@ -111,7 +111,7 @@ def render_sdxl_img2img_latents(
     ).images[0]
 
 
-def render_sdxl_inpaint_latents(
+def render_sdxl_inpaint_image(
     pipe: StableDiffusionXLInpaintPipeline,
     *,
     initial_image: Image.Image,
@@ -124,7 +124,7 @@ def render_sdxl_inpaint_latents(
     seed: int,
     padding_mask_crop: int,
     clip_skip: int,
-) -> torch.Tensor:
+) -> Image.Image:
     device = _get_pipe_device(pipe)
     generator = torch.Generator(device=device).manual_seed(seed)
     return pipe(
@@ -138,7 +138,6 @@ def render_sdxl_inpaint_latents(
         generator=generator,
         padding_mask_crop=padding_mask_crop,
         clip_skip=clip_skip,
-        output_type="latent",
     ).images[0]
 
 
@@ -797,7 +796,8 @@ def run_sdxl_inpaint(
     num_images: int,
     padding_mask_crop: int,
     clip_skip: int,
-    scheduler: str
+    scheduler: str,
+    lora_adapters: list[object] | None = None,
 ) -> dict[str, list[str]]:
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
@@ -817,54 +817,64 @@ def run_sdxl_inpaint(
 
     filenames: list[str] = []
     pipe.scheduler = create_scheduler(scheduler, pipe)
+    adapter_names, lora_coverage = apply_lora_adapters_with_validation(
+        pipe,
+        lora_adapters,
+        expected_family="sdxl",
+        validate=True,
+    )
+    report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
+    if report_path is not None:
+        logger.info("LoRA coverage report saved to %s", report_path)
 
-    for i in range(num_images):
-        current_seed = base_seed + i
+    try:
+        for i in range(num_images):
+            current_seed = base_seed + i
 
-        # device = getattr(pipe, "_execution_device", None) or pipe.device
-        # timesteps = build_fixed_step_timesteps(pipe.scheduler, steps, strength, device = device)
+            # device = getattr(pipe, "_execution_device", None) or pipe.device
+            # timesteps = build_fixed_step_timesteps(pipe.scheduler, steps, strength, device = device)
 
-        latents = render_sdxl_inpaint_latents(
-            pipe,
-            initial_image=initial_image,
-            mask_image=mask_image,
-            strength=strength,
-            prompt=prompt,
-            negative_prompt=negative_prompt,
-            steps=steps,
-            guidance_scale=guidance_scale,
-            seed=current_seed,
-            padding_mask_crop=padding_mask_crop,
-            clip_skip=clip_skip,
-        )
+            image = render_sdxl_inpaint_image(
+                pipe,
+                initial_image=initial_image,
+                mask_image=mask_image,
+                strength=strength,
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                steps=steps,
+                guidance_scale=guidance_scale,
+                seed=current_seed,
+                padding_mask_crop=padding_mask_crop,
+                clip_skip=clip_skip,
+            )
 
-        image = _decode_sdxl_latents_to_pil(pipe, latents)
-        del latents
+            relpath = save_sdxl_image(
+                image=image,
+                batch_output_dir=batch_output_dir,
+                batch_id=batch_id,
+                seed=current_seed,
+                metadata={
+                "mode": "inpaint",
+                "prompt": prompt,
+                "negative_prompt": negative_prompt,
+                "steps": steps,
+                "guidance_scale": guidance_scale,
+                "width": width,
+                "height": height,
+                "seed": current_seed,
+                "model": model,
+                "strength": strength,
+                "padding_mask_crop": padding_mask_crop,
+                "clip_skip": clip_skip,
+                "batch_id": batch_id,
+                },
+            )
+            logger.info("Image %s saved to %s", i, Path(relpath).name)
 
-        relpath = save_sdxl_image(
-            image=image,
-            batch_output_dir=batch_output_dir,
-            batch_id=batch_id,
-            seed=current_seed,
-            metadata={
-            "mode": "inpaint",
-            "prompt": prompt,
-            "negative_prompt": negative_prompt,
-            "steps": steps,
-            "guidance_scale": guidance_scale,
-            "width": width,
-            "height": height,
-            "seed": current_seed,
-            "model": model,
-            "strength": strength,
-            "padding_mask_crop": padding_mask_crop,
-            "clip_skip": clip_skip,
-            "batch_id": batch_id,
-            },
-        )
-        logger.info("Image %s saved to %s", i, Path(relpath).name)
-
-        filenames.append(relpath)
+            filenames.append(relpath)
+    finally:
+        if adapter_names and hasattr(pipe, "unload_lora_weights"):
+            pipe.unload_lora_weights()
 
     return {"images": [f"/outputs/{name}" for name in filenames]}
 
@@ -885,6 +895,7 @@ def run_sdxl_inpaint_controlnet(
     padding_mask_crop: int,
     clip_skip: int,
     scheduler: str,
+    lora_adapters: list[object] | None = None,
     controlnet_model: str | list[str],
     control_image: Image.Image | list[Image.Image],
     controlnet_conditioning_scale: float | list[float] = 1.0,
@@ -924,53 +935,67 @@ def run_sdxl_inpaint_controlnet(
     )
 
     filenames: list[str] = []
-    for i in range(num_images):
-        current_seed = base_seed + i
-        generator = torch.Generator(device=_get_pipe_device(pipe)).manual_seed(current_seed)
-        image = pipe(
-            prompt=prompt,
-            negative_prompt=negative_prompt,
-            image=initial_image,
-            mask_image=mask_image,
-            control_image=control_image,
-            strength=strength,
-            num_inference_steps=steps,
-            guidance_scale=guidance_scale,
-            generator=generator,
-            padding_mask_crop=padding_mask_crop,
-            clip_skip=clip_skip,
-            controlnet_conditioning_scale=controlnet_conditioning_scale,
-            guess_mode=controlnet_guess_mode,
-            control_guidance_start=control_guidance_start,
-            control_guidance_end=control_guidance_end,
-        ).images[0]
-        relpath = save_sdxl_image(
-            image=image,
-            batch_output_dir=batch_output_dir,
-            batch_id=batch_id,
-            seed=current_seed,
-            metadata={
-                "mode": "inpaint_controlnet",
-                "prompt": prompt,
-                "negative_prompt": negative_prompt,
-                "steps": steps,
-                "guidance_scale": guidance_scale,
-                "width": width,
-                "height": height,
-                "seed": current_seed,
-                "model": model,
-                "strength": strength,
-                "padding_mask_crop": padding_mask_crop,
-                "clip_skip": clip_skip,
-                "batch_id": batch_id,
-                "controlnet_model": controlnet_model,
-                "controlnet_conditioning_scale": controlnet_conditioning_scale,
-                "controlnet_guess_mode": controlnet_guess_mode,
-                "control_guidance_start": control_guidance_start,
-                "control_guidance_end": control_guidance_end,
-            },
-        )
-        logger.info("Image %s saved to %s", i, Path(relpath).name)
-        filenames.append(relpath)
+    adapter_names, lora_coverage = apply_lora_adapters_with_validation(
+        pipe,
+        lora_adapters,
+        expected_family="sdxl",
+        validate=True,
+    )
+    report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
+    if report_path is not None:
+        logger.info("LoRA coverage report saved to %s", report_path)
+
+    try:
+        for i in range(num_images):
+            current_seed = base_seed + i
+            generator = torch.Generator(device=_get_pipe_device(pipe)).manual_seed(current_seed)
+            image = pipe(
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                image=initial_image,
+                mask_image=mask_image,
+                control_image=control_image,
+                strength=strength,
+                num_inference_steps=steps,
+                guidance_scale=guidance_scale,
+                generator=generator,
+                padding_mask_crop=padding_mask_crop,
+                clip_skip=clip_skip,
+                controlnet_conditioning_scale=controlnet_conditioning_scale,
+                guess_mode=controlnet_guess_mode,
+                control_guidance_start=control_guidance_start,
+                control_guidance_end=control_guidance_end,
+            ).images[0]
+            relpath = save_sdxl_image(
+                image=image,
+                batch_output_dir=batch_output_dir,
+                batch_id=batch_id,
+                seed=current_seed,
+                metadata={
+                    "mode": "inpaint_controlnet",
+                    "prompt": prompt,
+                    "negative_prompt": negative_prompt,
+                    "steps": steps,
+                    "guidance_scale": guidance_scale,
+                    "width": width,
+                    "height": height,
+                    "seed": current_seed,
+                    "model": model,
+                    "strength": strength,
+                    "padding_mask_crop": padding_mask_crop,
+                    "clip_skip": clip_skip,
+                    "batch_id": batch_id,
+                    "controlnet_model": controlnet_model,
+                    "controlnet_conditioning_scale": controlnet_conditioning_scale,
+                    "controlnet_guess_mode": controlnet_guess_mode,
+                    "control_guidance_start": control_guidance_start,
+                    "control_guidance_end": control_guidance_end,
+                },
+            )
+            logger.info("Image %s saved to %s", i, Path(relpath).name)
+            filenames.append(relpath)
+    finally:
+        if adapter_names and hasattr(pipe, "unload_lora_weights"):
+            pipe.unload_lora_weights()
 
     return {"images": [f"/outputs/{name}" for name in filenames]}

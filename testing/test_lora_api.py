@@ -142,3 +142,44 @@ def test_lora_delete_endpoint(tmp_path):
     missing = client.delete("/lora-models/104")
     assert missing.status_code == 404
     assert missing.json()["detail"] == "LoRA with id 104 not found."
+
+
+def test_lora_create_rejects_name_with_dot(tmp_path):
+    _reset_lora_registry_paths(tmp_path)
+    client = TestClient(app)
+    response = client.post(
+        "/lora-models",
+        json={
+            "lora_id": 105,
+            "lora_model_family": "sdxl",
+            "lora_type": "lora",
+            "lora_location": "local",
+            "file_path": "C:/loras/e.safetensors",
+            "name": "Pinpin Art Style V3.0",
+        },
+    )
+
+    assert response.status_code == 422
+    errors = response.json().get("detail", [])
+    assert any("LoRA name cannot contain '.'" in str(item.get("msg", "")) for item in errors)
+
+
+def test_lora_patch_rejects_name_with_dot(tmp_path):
+    _reset_lora_registry_paths(tmp_path)
+    client = TestClient(app)
+    client.post(
+        "/lora-models",
+        json={
+            "lora_id": 106,
+            "lora_model_family": "sdxl",
+            "lora_type": "lora",
+            "lora_location": "local",
+            "file_path": "C:/loras/f.safetensors",
+            "name": "Pinpin Art Style V3",
+        },
+    )
+    response = client.patch("/lora-models/106", json={"name": "Pinpin Art Style V3.0"})
+
+    assert response.status_code == 422
+    errors = response.json().get("detail", [])
+    assert any("LoRA name cannot contain '.'" in str(item.get("msg", "")) for item in errors)

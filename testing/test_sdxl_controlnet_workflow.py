@@ -66,6 +66,15 @@ class SdxlControlNetInputValidationTests(unittest.TestCase):
                 controlnet_conditioning_scale=2.5,
             )
 
+    def test_sdxl_inpaint_accepts_lora_adapters(self):
+        inputs = SdxlInpaintInputs(
+            initial_image={"artifact_id": "a0123456789abcdef0123456789abcdef"},
+            mask_image={"artifact_id": "a0123456789abcdef0123456789abcdef"},
+            prompt="test",
+            lora_adapters=[{"lora_id": 303, "strength": 0.6}],
+        )
+        self.assertEqual(inputs.lora_adapters, [{"lora_id": 303, "strength": 0.6}])
+
 
 class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
     def test_sdxl_text2img_forwards_lora_adapters(self):
@@ -408,6 +417,32 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertEqual(captured["control_guidance_start"], 0.1)
         self.assertEqual(captured["control_guidance_end"], 0.9)
 
+    def test_inpaint_controlnet_path_forwards_lora_adapters(self):
+        captured = {}
+
+        def _fake_run_sdxl_inpaint_controlnet(**kwargs):
+            captured.update(kwargs)
+            return {"images": ["/outputs/batch/out.png"]}
+
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch(
+                "backend.sdxl_pipeline.run_sdxl_inpaint_controlnet",
+                side_effect=_fake_run_sdxl_inpaint_controlnet,
+            ):
+                _sdxl_inpaint(
+                    {
+                        "initial_image": {"artifact_id": "a0123456789abcdef0123456789abcdef"},
+                        "mask_image": {"artifact_id": "a0123456789abcdef0123456789abcdef"},
+                        "control_image": {"artifact_id": "a0123456789abcdef0123456789abcdef"},
+                        "prompt": "test prompt",
+                        "lora_adapters": [{"lora_id": 101, "strength": 0.8}],
+                    },
+                    _ctx=None,
+                )
+
+        self.assertIn("lora_adapters", captured)
+        self.assertEqual(captured["lora_adapters"], [{"lora_id": 101, "strength": 0.8}])
+
     def test_inpaint_controlnet_missing_control_image_rejected(self):
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
@@ -487,10 +522,16 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertGreaterEqual(len(result["warnings"]), 1)
 
     def test_inpaint_without_controlnet_uses_default_pipeline(self):
+        captured = {}
+
+        def _fake_run_sdxl_inpaint(**kwargs):
+            captured.update(kwargs)
+            return {"images": ["/outputs/batch/plain.png"]}
+
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with patch(
                 "backend.sdxl_pipeline.run_sdxl_inpaint",
-                return_value={"images": ["/outputs/batch/plain.png"]},
+                side_effect=_fake_run_sdxl_inpaint,
             ) as default_runner:
                 with patch("backend.sdxl_pipeline.run_sdxl_inpaint_controlnet") as controlnet_runner:
                     result = _sdxl_inpaint(
@@ -498,6 +539,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
                             "initial_image": {"artifact_id": "a0123456789abcdef0123456789abcdef"},
                             "mask_image": {"artifact_id": "a0123456789abcdef0123456789abcdef"},
                             "prompt": "test prompt",
+                            "lora_adapters": [{"lora_id": 101, "strength": 0.8}],
                         },
                         _ctx=None,
                     )
@@ -505,6 +547,54 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertEqual(result["images"], ["/outputs/batch/plain.png"])
         default_runner.assert_called_once()
         controlnet_runner.assert_not_called()
+        self.assertIn("lora_adapters", captured)
+        self.assertEqual(captured["lora_adapters"], [{"lora_id": 101, "strength": 0.8}])
+
+    def test_inpaint_without_controlnet_preserves_zero_padding_mask_crop(self):
+        captured = {}
+
+        def _fake_run_sdxl_inpaint(**kwargs):
+            captured.update(kwargs)
+            return {"images": ["/outputs/batch/plain.png"]}
+
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.sdxl_pipeline.run_sdxl_inpaint", side_effect=_fake_run_sdxl_inpaint):
+                _sdxl_inpaint(
+                    {
+                        "initial_image": {"artifact_id": "a0123456789abcdef0123456789abcdef"},
+                        "mask_image": {"artifact_id": "a0123456789abcdef0123456789abcdef"},
+                        "prompt": "test prompt",
+                        "padding_mask_crop": 0,
+                    },
+                    _ctx=None,
+                )
+
+        self.assertEqual(captured["padding_mask_crop"], 0)
+
+    def test_inpaint_controlnet_preserves_zero_padding_mask_crop(self):
+        captured = {}
+
+        def _fake_run_sdxl_inpaint_controlnet(**kwargs):
+            captured.update(kwargs)
+            return {"images": ["/outputs/batch/out.png"]}
+
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch(
+                "backend.sdxl_pipeline.run_sdxl_inpaint_controlnet",
+                side_effect=_fake_run_sdxl_inpaint_controlnet,
+            ):
+                _sdxl_inpaint(
+                    {
+                        "initial_image": {"artifact_id": "a0123456789abcdef0123456789abcdef"},
+                        "mask_image": {"artifact_id": "a0123456789abcdef0123456789abcdef"},
+                        "control_image": {"artifact_id": "a0123456789abcdef0123456789abcdef"},
+                        "prompt": "test prompt",
+                        "padding_mask_crop": 0,
+                    },
+                    _ctx=None,
+                )
+
+        self.assertEqual(captured["padding_mask_crop"], 0)
 
 
 if __name__ == "__main__":

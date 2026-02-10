@@ -326,6 +326,7 @@ class SdxlInpaintInputs(BaseModel):
     num_images: int = 1
     padding_mask_crop: int = 32
     clip_skip: int = 1
+    lora_adapters: Any | None = None
     control_image: ImageRef | None = Field(
         default=None,
         description='Optional ControlNet image reference: {"artifact_id":"..."} OR "@artifact:..." OR "/outputs/...".',
@@ -1242,6 +1243,8 @@ def _sd15_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, An
 
     strength = float(inputs.get("strength") or 0.5)
     strength = _remap_img2img_strength(strength)
+    padding_mask_crop_input = inputs.get("padding_mask_crop")
+    padding_mask_crop = 32 if padding_mask_crop_input is None else int(padding_mask_crop_input)
     batch_id = str(inputs.get("batch_id") or make_batch_id())
     width, height = initial_image.size
 
@@ -1425,7 +1428,7 @@ def _sd15_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, An
             model=inputs.get("model"),
             num_images=int(inputs.get("num_images") or 1),
             strength=strength,
-            padding_mask_crop=int(inputs.get("padding_mask_crop") or 32),
+            padding_mask_crop=padding_mask_crop,
             clip_skip=int(inputs.get("clip_skip") or 1),
             control_image=control_image_arg,
             controlnet_model=controlnet_model_arg,
@@ -1456,7 +1459,7 @@ def _sd15_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, An
         model=inputs.get("model"),
         num_images=int(inputs.get("num_images") or 1),
         strength=strength,
-        padding_mask_crop=int(inputs.get("padding_mask_crop") or 32),
+        padding_mask_crop=padding_mask_crop,
         clip_skip=int(inputs.get("clip_skip") or 1),
         lora_adapters=inputs.get("lora_adapters"),
         batch_id=batch_id,
@@ -2107,6 +2110,8 @@ def _sdxl_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, An
     if not 0.0 <= strength <= 1.0:
         raise ValueError("strength must be between 0 and 1")
     strength = _remap_img2img_strength(strength)
+    padding_mask_crop_input = inputs.get("padding_mask_crop")
+    padding_mask_crop = 32 if padding_mask_crop_input is None else int(padding_mask_crop_input)
 
     controlnet_requested = any(
         key in inputs
@@ -2278,8 +2283,9 @@ def _sdxl_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, An
             scheduler=str(inputs.get("scheduler") or "euler"),
             model=inputs.get("model"),
             num_images=int(inputs.get("num_images") or 1),
-            padding_mask_crop=int(inputs.get("padding_mask_crop") or 32),
+            padding_mask_crop=padding_mask_crop,
             clip_skip=int(inputs.get("clip_skip") or 1),
+            lora_adapters=inputs.get("lora_adapters"),
             controlnet_model=controlnet_model_arg,
             control_image=control_image_arg,
             controlnet_conditioning_scale=controlnet_conditioning_scale_arg,
@@ -2305,8 +2311,9 @@ def _sdxl_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, An
         scheduler=str(inputs.get("scheduler") or "euler"),
         model=inputs.get("model"),
         num_images=int(inputs.get("num_images") or 1),
-        padding_mask_crop=int(inputs.get("padding_mask_crop") or 32),
+        padding_mask_crop=padding_mask_crop,
         clip_skip=int(inputs.get("clip_skip") or 1),
+        lora_adapters=inputs.get("lora_adapters"),
     )
     if not isinstance(result, dict):
         raise ValueError("sdxl.inpaint must return an object")
