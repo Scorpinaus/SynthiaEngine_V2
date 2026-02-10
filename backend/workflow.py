@@ -294,6 +294,7 @@ class SdxlImg2ImgInputs(BaseModel):
     model: str | None = None
     num_images: int = 1
     clip_skip: int = 1
+    lora_adapters: Any | None = None
     control_image: ImageRef | None = Field(
         default=None,
         description='Optional ControlNet image reference: {"artifact_id":"..."} OR "@artifact:..." OR "/outputs/...".',
@@ -2038,6 +2039,7 @@ def _sdxl_img2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, An
             model=inputs.get("model"),
             num_images=int(inputs.get("num_images") or 1),
             clip_skip=int(inputs.get("clip_skip") or 1),
+            lora_adapters=inputs.get("lora_adapters"),
             controlnet_model=controlnet_model_arg,
             control_image=control_image_arg,
             controlnet_conditioning_scale=controlnet_conditioning_scale_arg,
@@ -2065,6 +2067,7 @@ def _sdxl_img2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, An
         model=inputs.get("model"),
         num_images=int(inputs.get("num_images") or 1),
         clip_skip=int(inputs.get("clip_skip") or 1),
+        lora_adapters=inputs.get("lora_adapters"),
     )
     if not isinstance(result, dict):
         raise ValueError("sdxl.img2img must return an object")

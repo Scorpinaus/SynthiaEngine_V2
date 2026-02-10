@@ -86,6 +86,7 @@ if (window.ControlNetPreprocessor?.init) {
         console.warn("ControlNet init failed:", error);
     });
 }
+window.LoraPanel?.init({ apiBase: API_BASE, family: "sdxl" });
 
 async function generateSdxlImg2Img() {
     const token = ++activeJobToken;
@@ -134,6 +135,7 @@ async function generateSdxlImg2Img() {
         "controlnet_compat_mode",
         defaults.controlnet_compat_mode ?? "warn"
     );
+    const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
 
     try {
         const uploaded = await WorkflowClient.uploadArtifact(
@@ -157,6 +159,9 @@ async function generateSdxlImg2Img() {
             model,
             clip_skip,
         };
+        if (loraAdapters.length > 0) {
+            taskInputs.lora_adapters = loraAdapters;
+        }
         if (controlnetEnabled) {
             const controlItems = Array.isArray(controlnetState?.controlItems)
                 ? controlnetState.controlItems

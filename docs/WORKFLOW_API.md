@@ -521,6 +521,13 @@ Task inputs/outputs are task-specific. As a convention, image-generating tasks r
 `sdxl.img2img` optional ControlNet output notes:
 - May include `warnings: string[]` when compatibility/perf warnings are produced.
 
+`sdxl.img2img` LoRA input notes:
+- `lora_adapters` is optional. When omitted or empty, img2img runs without LoRA adapters.
+- `lora_adapters` entries are resolved through the LoRA registry (`/lora-models`) by `lora_id`.
+- Each adapter may provide `strength` (default `1.0`) and optional per-component overrides (`unet_strength`, `text_encoder_strength`).
+- Family validation is enforced: only LoRAs registered with `lora_model_family: "sdxl"` are accepted for `sdxl.img2img`.
+- Invalid adapter references (for example missing `lora_id`, unknown id, or incompatible family) fail the task with a validation/runtime error.
+
 `sdxl.inpaint` optional ControlNet input notes:
 - Existing `sdxl.inpaint` payloads remain valid without any ControlNet fields.
 - To enable ControlNet, provide `control_image` (single) or `control_image` + `control_images` (multi).

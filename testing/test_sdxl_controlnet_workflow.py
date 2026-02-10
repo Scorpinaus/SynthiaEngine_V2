@@ -48,6 +48,14 @@ class SdxlControlNetInputValidationTests(unittest.TestCase):
                 controlnet_conditioning_scale=2.5,
             )
 
+    def test_sdxl_img2img_accepts_lora_adapters(self):
+        inputs = SdxlImg2ImgInputs(
+            initial_image={"artifact_id": "a0123456789abcdef0123456789abcdef"},
+            prompt="test",
+            lora_adapters=[{"lora_id": 202, "strength": 0.7}],
+        )
+        self.assertEqual(inputs.lora_adapters, [{"lora_id": 202, "strength": 0.7}])
+
     def test_inpaint_conditioning_scale_out_of_range_rejected(self):
         with self.assertRaises(ValidationError):
             SdxlInpaintInputs(
@@ -269,6 +277,31 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertEqual(captured["control_guidance_start"], 0.1)
         self.assertEqual(captured["control_guidance_end"], 0.9)
 
+    def test_img2img_controlnet_path_forwards_lora_adapters(self):
+        captured = {}
+
+        def _fake_run_sdxl_img2img_controlnet(**kwargs):
+            captured.update(kwargs)
+            return {"images": ["/outputs/batch/out.png"]}
+
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch(
+                "backend.sdxl_pipeline.run_sdxl_img2img_controlnet",
+                side_effect=_fake_run_sdxl_img2img_controlnet,
+            ):
+                _sdxl_img2img(
+                    {
+                        "initial_image": {"artifact_id": "a0123456789abcdef0123456789abcdef"},
+                        "control_image": {"artifact_id": "a0123456789abcdef0123456789abcdef"},
+                        "prompt": "test prompt",
+                        "lora_adapters": [{"lora_id": 101, "strength": 0.8}],
+                    },
+                    _ctx=None,
+                )
+
+        self.assertIn("lora_adapters", captured)
+        self.assertEqual(captured["lora_adapters"], [{"lora_id": 101, "strength": 0.8}])
+
     def test_img2img_controlnet_missing_control_image_rejected(self):
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
@@ -304,16 +337,23 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertGreaterEqual(len(result["warnings"]), 1)
 
     def test_img2img_without_controlnet_uses_default_pipeline(self):
+        captured = {}
+
+        def _fake_run_sdxl_img2img(**kwargs):
+            captured.update(kwargs)
+            return {"images": ["/outputs/batch/plain.png"]}
+
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with patch(
                 "backend.sdxl_pipeline.run_sdxl_img2img",
-                return_value={"images": ["/outputs/batch/plain.png"]},
+                side_effect=_fake_run_sdxl_img2img,
             ) as default_runner:
                 with patch("backend.sdxl_pipeline.run_sdxl_img2img_controlnet") as controlnet_runner:
                     result = _sdxl_img2img(
                         {
                             "initial_image": {"artifact_id": "a0123456789abcdef0123456789abcdef"},
                             "prompt": "test prompt",
+                            "lora_adapters": [{"lora_id": 101, "strength": 0.8}],
                         },
                         _ctx=None,
                     )
@@ -321,6 +361,8 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertEqual(result["images"], ["/outputs/batch/plain.png"])
         default_runner.assert_called_once()
         controlnet_runner.assert_not_called()
+        self.assertIn("lora_adapters", captured)
+        self.assertEqual(captured["lora_adapters"], [{"lora_id": 101, "strength": 0.8}])
 
     def test_inpaint_controlnet_path_passes_expected_pipeline_kwargs(self):
         captured = {}
