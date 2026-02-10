@@ -27,7 +27,7 @@ def test_workflow_capability_features_for_core_families():
     sdxl = capabilities["sdxl"]["features"]
     assert sdxl["controlnet"] is True
     assert sdxl["hires_fix"] is False
-    assert sdxl["lora_adapters"] is False
+    assert sdxl["lora_adapters"] is True
 
     flux = capabilities["flux"]["features"]
     assert flux["text2img"] is True

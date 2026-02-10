@@ -74,6 +74,7 @@ if (window.ControlNetPreprocessor?.init) {
         console.warn("ControlNet init failed:", error);
     });
 }
+window.LoraPanel?.init({ apiBase: API_BASE, family: "sdxl" });
 
 function getControlNetState() {
     return window.ControlNetPanel?.getState?.() ?? null;
@@ -144,6 +145,7 @@ async function generate() {
         "controlnet_compat_mode",
         defaults.controlnet_compat_mode ?? "warn"
     );
+    const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
 
     try {
         setJobUiState(true, "Submitting job...");
@@ -210,6 +212,9 @@ async function generate() {
                 control_guidance_end,
                 controlnet_compat_mode,
             };
+            if (loraAdapters.length > 0) {
+                inputs.lora_adapters = loraAdapters;
+            }
             if (effectiveItems.length > 1) {
                 inputs.control_images = controlImages;
                 inputs.controlnet_models = controlnetModels;
@@ -244,6 +249,9 @@ async function generate() {
                 hires_enabled,
                 hires_scale,
             };
+            if (loraAdapters.length > 0) {
+                payload.lora_adapters = loraAdapters;
+            }
             workflowPayload = {
                 tasks: [{ id: "t1", type: "sdxl.text2img", inputs: payload }],
                 return: "@t1.images",

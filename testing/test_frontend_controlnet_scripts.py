@@ -50,13 +50,16 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         sdxl_html = (ROOT / "frontend" / "sdxl.html").read_text(encoding="utf-8")
         panel_tag = '<script src="controlnet_panel.js?v=2"></script>'
         preprocessor_tag = '<script src="controlnet_preprocessor.js?v=3"></script>'
+        lora_tag = '<script src="lora_panel.js?v=1"></script>'
         sdxl_tag = '<script src="sdxl.js?v=5"></script>'
 
         self.assertIn(panel_tag, sdxl_html)
         self.assertIn(preprocessor_tag, sdxl_html)
+        self.assertIn(lora_tag, sdxl_html)
         self.assertIn(sdxl_tag, sdxl_html)
         self.assertLess(sdxl_html.index(panel_tag), sdxl_html.index(sdxl_tag))
         self.assertLess(sdxl_html.index(preprocessor_tag), sdxl_html.index(sdxl_tag))
+        self.assertLess(sdxl_html.index(lora_tag), sdxl_html.index(sdxl_tag))
 
     def test_sdxl_img2img_page_includes_controlnet_scripts_before_sdxl_img2img(self):
         sdxl_img2img_html = (ROOT / "frontend" / "sdxl_img2img.html").read_text(encoding="utf-8")
@@ -135,6 +138,13 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("controlnetEnabled", sdxl_js)
         self.assertIn("control_images", sdxl_js)
         self.assertIn("controlnet_models", sdxl_js)
+
+    def test_sdxl_script_wires_lora_panel_and_payload(self):
+        sdxl_js = (ROOT / "frontend" / "sdxl.js").read_text(encoding="utf-8")
+        self.assertIn('window.LoraPanel?.init({ apiBase: API_BASE, family: "sdxl" })', sdxl_js)
+        self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", sdxl_js)
+        self.assertIn("inputs.lora_adapters = loraAdapters;", sdxl_js)
+        self.assertIn("payload.lora_adapters = loraAdapters;", sdxl_js)
 
     def test_sdxl_img2img_script_consumes_controlnet_state(self):
         sdxl_img2img_js = (ROOT / "frontend" / "sdxl_img2img.js").read_text(encoding="utf-8")

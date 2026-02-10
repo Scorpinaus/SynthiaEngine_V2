@@ -248,6 +248,7 @@ class SdxlText2ImgInputs(BaseModel):
     num_images: int = 1
     clip_skip: int = 1
     scheduler: str = "euler"
+    lora_adapters: Any | None = None
 
 
 class SdxlControlNetText2ImgInputs(BaseModel):

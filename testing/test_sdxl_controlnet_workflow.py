@@ -8,13 +8,22 @@ from backend.workflow import (
     SdxlControlNetText2ImgInputs,
     SdxlImg2ImgInputs,
     SdxlInpaintInputs,
+    SdxlText2ImgInputs,
     _sdxl_controlnet_text2img,
     _sdxl_img2img,
     _sdxl_inpaint,
+    _sdxl_text2img,
 )
 
 
 class SdxlControlNetInputValidationTests(unittest.TestCase):
+    def test_sdxl_text2img_accepts_lora_adapters(self):
+        inputs = SdxlText2ImgInputs(
+            prompt="test",
+            lora_adapters=[{"lora_id": 101, "strength": 0.8}],
+        )
+        self.assertEqual(inputs.lora_adapters, [{"lora_id": 101, "strength": 0.8}])
+
     def test_conditioning_scale_out_of_range_rejected(self):
         with self.assertRaises(ValidationError):
             SdxlControlNetText2ImgInputs(
@@ -51,6 +60,26 @@ class SdxlControlNetInputValidationTests(unittest.TestCase):
 
 
 class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
+    def test_sdxl_text2img_forwards_lora_adapters(self):
+        captured = {}
+
+        def _fake_run_sdxl_text2img(payload):
+            captured.update(payload)
+            return {"images": ["/outputs/batch/out.png"]}
+
+        with patch("backend.sdxl_pipeline.run_sdxl_text2img", side_effect=_fake_run_sdxl_text2img):
+            result = _sdxl_text2img(
+                {
+                    "prompt": "test prompt",
+                    "lora_adapters": [{"lora_id": 101, "strength": 0.8}],
+                },
+                _ctx=None,
+            )
+
+        self.assertEqual(result["images"], ["/outputs/batch/out.png"])
+        self.assertIn("lora_adapters", captured)
+        self.assertEqual(captured["lora_adapters"], [{"lora_id": 101, "strength": 0.8}])
+
     def test_controlnet_task_passes_expected_pipeline_kwargs(self):
         captured = {}
 

@@ -407,7 +407,7 @@ This same matrix is available in machine-readable form at `GET /api/workflow/cat
 | Family | text2img | img2img | inpaint | controlnet | hires_fix | lora_adapters | true_cfg_scale |
 |---|---|---|---|---|---|---|---|
 | `sd15` | yes | yes | yes | yes | yes | yes | no |
-| `sdxl` | yes | yes | yes | yes | no | no | no |
+| `sdxl` | yes | yes | yes | yes | no | yes | no |
 | `flux` | yes | yes | yes | no | no | no | no |
 | `qwen-image` | yes | yes | yes | no | no | no | yes |
 | `z-image` (`zimage`) | yes | yes | no | no | no | no | no |
@@ -478,6 +478,13 @@ Task inputs/outputs are task-specific. As a convention, image-generating tasks r
 - `lora_adapters` entries are resolved through the LoRA registry (`/lora-models`) by `lora_id`.
 - Each adapter may provide `strength` (default `1.0`) and optional per-component overrides (`unet_strength`, `text_encoder_strength`).
 - Family validation is enforced: only LoRAs registered with `lora_model_family: "sd15"` are accepted for `sd15.inpaint`.
+- Invalid adapter references (for example missing `lora_id`, unknown id, or incompatible family) fail the task with a validation/runtime error.
+
+`sdxl.text2img` LoRA input notes:
+- `lora_adapters` is optional. When omitted or empty, text2img runs without LoRA adapters.
+- `lora_adapters` entries are resolved through the LoRA registry (`/lora-models`) by `lora_id`.
+- Each adapter may provide `strength` (default `1.0`) and optional per-component overrides (`unet_strength`, `text_encoder_strength`).
+- Family validation is enforced: only LoRAs registered with `lora_model_family: "sdxl"` are accepted for `sdxl.text2img`.
 - Invalid adapter references (for example missing `lora_id`, unknown id, or incompatible family) fail the task with a validation/runtime error.
 
 `sdxl.controlnet.text2img` extra input notes:
