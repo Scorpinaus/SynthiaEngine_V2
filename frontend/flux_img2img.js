@@ -49,6 +49,7 @@ async function loadModels() {
 }
 
 loadModels();
+window.LoraPanel?.init({ apiBase: API_BASE, family: "flux" });
 if (window.WorkflowCatalog?.load) {
     void window.WorkflowCatalog
         .load(API_BASE)
@@ -84,6 +85,7 @@ async function generateFluxImg2Img() {
     const model = modelRaw ? modelRaw : (defaults.model ?? null);
     const num_images = WorkflowClient.readNumberValue("num_images", defaults.num_images ?? 1, { integer: true });
     const strength = WorkflowClient.readNumberValue("strength", defaults.strength ?? 0.75);
+    const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
     const initialImageInput = document.getElementById("initial_image");
 
     if (!initialImageInput.files || initialImageInput.files.length === 0) {
@@ -99,25 +101,30 @@ async function generateFluxImg2Img() {
             initialFile.name || "initial.png",
         );
 
+        const taskInputs = {
+            initial_image: `@artifact:${uploaded.artifact_id}`,
+            prompt,
+            negative_prompt,
+            steps,
+            guidance_scale,
+            scheduler,
+            seed,
+            width,
+            height,
+            num_images,
+            model,
+            strength,
+        };
+        if (loraAdapters.length > 0) {
+            taskInputs.lora_adapters = loraAdapters;
+        }
+
         const workflowPayload = {
             tasks: [
                 {
                     id: "t1",
                     type: "flux.img2img",
-                    inputs: {
-                        initial_image: `@artifact:${uploaded.artifact_id}`,
-                        prompt,
-                        negative_prompt,
-                        steps,
-                        guidance_scale,
-                        scheduler,
-                        seed,
-                        width,
-                        height,
-                        num_images,
-                        model,
-                        strength,
-                    },
+                    inputs: taskInputs,
                 },
             ],
             return: "@t1.images",

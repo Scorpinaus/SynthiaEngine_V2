@@ -220,6 +220,7 @@ def run_flux_img2img(
     model: str | None,
     num_images: int,
     scheduler: str,
+    lora_adapters: list[object] | None = None,
 ) -> dict[str, list[str]]:
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
@@ -239,51 +240,64 @@ def run_flux_img2img(
 
     filenames: list[str] = []
     pipe.scheduler = create_scheduler(scheduler, pipe)
+    adapter_names, lora_coverage = apply_lora_adapters_with_validation(
+        pipe,
+        lora_adapters,
+        expected_family="flux",
+        validate=True,
+    )
+    report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
+    if report_path is not None:
+        logger.info("LoRA coverage report saved to %s", report_path)
 
-    with GEN_LOCK:
-        for i in range(num_images):
-            current_seed = base_seed + i
-            generator = torch.Generator(device="cpu").manual_seed(current_seed)
+    try:
+        with GEN_LOCK:
+            for i in range(num_images):
+                current_seed = base_seed + i
+                generator = torch.Generator(device="cpu").manual_seed(current_seed)
 
-            with torch.autocast("cuda", dtype=torch.bfloat16):
-                call_kwargs = dict(
-                    prompt=prompt,
-                    image=initial_image,
-                    strength=strength,
-                    num_inference_steps=steps,
-                    guidance_scale=guidance_scale,
-                    width=width,
-                    height=height,
-                    generator=generator,
-                )
-                if negative_prompt:
-                    call_kwargs["negative_prompt"] = negative_prompt
+                with torch.autocast("cuda", dtype=torch.bfloat16):
+                    call_kwargs = dict(
+                        prompt=prompt,
+                        image=initial_image,
+                        strength=strength,
+                        num_inference_steps=steps,
+                        guidance_scale=guidance_scale,
+                        width=width,
+                        height=height,
+                        generator=generator,
+                    )
+                    if negative_prompt:
+                        call_kwargs["negative_prompt"] = negative_prompt
 
-                image = pipe(**call_kwargs).images[0]
+                    image = pipe(**call_kwargs).images[0]
 
-            filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
-            image_width, image_height = initial_image.size
-            pnginfo = build_png_metadata({
-                "mode": "img2img",
-                "pipeline": "flux",
-                "prompt": prompt,
-                "negative_prompt": negative_prompt,
-                "steps": steps,
-                "guidance_scale": guidance_scale,
-                "width": image_width,
-                "height": image_height,
-                "seed": current_seed,
-                "model": model,
-                "strength": strength,
-                "batch_id": batch_id,
-            })
-            image.save(filename, pnginfo=pnginfo)
-            logger.info("Image %s saved to %s", i, filename.name)
+                filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
+                image_width, image_height = initial_image.size
+                pnginfo = build_png_metadata({
+                    "mode": "img2img",
+                    "pipeline": "flux",
+                    "prompt": prompt,
+                    "negative_prompt": negative_prompt,
+                    "steps": steps,
+                    "guidance_scale": guidance_scale,
+                    "width": image_width,
+                    "height": image_height,
+                    "seed": current_seed,
+                    "model": model,
+                    "strength": strength,
+                    "batch_id": batch_id,
+                })
+                image.save(filename, pnginfo=pnginfo)
+                logger.info("Image %s saved to %s", i, filename.name)
 
-            filenames.append(build_batch_output_relpath(batch_id, filename.name))
+                filenames.append(build_batch_output_relpath(batch_id, filename.name))
 
-            del image
-            cleanup_memory()
+                del image
+                cleanup_memory()
+    finally:
+        if adapter_names and hasattr(pipe, "unload_lora_weights"):
+            pipe.unload_lora_weights()
 
     return {"images": [f"/outputs/{name}" for name in filenames]}
 
