@@ -34,6 +34,7 @@ def test_workflow_capability_features_for_core_families():
     assert flux["img2img"] is True
     assert flux["inpaint"] is True
     assert flux["controlnet"] is False
+    assert flux["lora_adapters"] is True
 
     qwen = capabilities["qwen-image"]["features"]
     assert qwen["true_cfg_scale"] is True

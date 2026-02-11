@@ -210,6 +210,21 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", z_image_img2img_js)
         self.assertIn("taskInputs.lora_adapters = loraAdapters;", z_image_img2img_js)
 
+    def test_flux_page_includes_lora_script_before_flux(self):
+        flux_html = (ROOT / "frontend" / "flux.html").read_text(encoding="utf-8")
+        lora_tag = '<script src="lora_panel.js?v=1"></script>'
+        flux_tag = '<script src="flux.js?v=2"></script>'
+
+        self.assertIn(lora_tag, flux_html)
+        self.assertIn(flux_tag, flux_html)
+        self.assertLess(flux_html.index(lora_tag), flux_html.index(flux_tag))
+
+    def test_flux_script_wires_lora_panel_and_payload(self):
+        flux_js = (ROOT / "frontend" / "flux.js").read_text(encoding="utf-8")
+        self.assertIn('window.LoraPanel?.init({ apiBase: API_BASE, family: "flux" })', flux_js)
+        self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", flux_js)
+        self.assertIn("payload.lora_adapters = loraAdapters;", flux_js)
+
     def test_preprocessor_modal_has_two_column_layout_hooks(self):
         preprocessor_html = (ROOT / "frontend" / "controlnet_preprocessor.html").read_text(
             encoding="utf-8"
