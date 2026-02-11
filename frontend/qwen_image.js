@@ -49,6 +49,7 @@ async function loadModels() {
 }
 
 loadModels();
+window.LoraPanel?.init({ apiBase: API_BASE, family: "qwen-image" });
 if (window.WorkflowCatalog?.load) {
     void window.WorkflowCatalog
         .load(API_BASE)
@@ -84,6 +85,7 @@ async function generate() {
     const modelRaw = document.getElementById("model_select")?.value ?? "";
     const model = modelRaw ? modelRaw : (defaults.model ?? null);
     const num_images = WorkflowClient.readNumberValue("num_images", defaults.num_images ?? 1, { integer: true });
+    const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
 
     const payload = {
         prompt,
@@ -98,6 +100,9 @@ async function generate() {
         model,
         num_images,
     };
+    if (loraAdapters.length > 0) {
+        payload.lora_adapters = loraAdapters;
+    }
     console.log("Generate payload", payload);
 
     try {

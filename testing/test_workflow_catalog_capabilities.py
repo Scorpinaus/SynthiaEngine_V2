@@ -39,6 +39,7 @@ def test_workflow_capability_features_for_core_families():
     qwen = capabilities["qwen-image"]["features"]
     assert qwen["true_cfg_scale"] is True
     assert qwen["inpaint"] is True
+    assert qwen["lora_adapters"] is True
 
     zimage = capabilities["z-image"]["features"]
     assert zimage["text2img"] is True

@@ -242,6 +242,24 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", flux_img2img_js)
         self.assertIn("taskInputs.lora_adapters = loraAdapters;", flux_img2img_js)
 
+    def test_qwen_image_page_includes_lora_script_before_qwen_image(self):
+        qwen_image_html = (ROOT / "frontend" / "qwen_image.html").read_text(encoding="utf-8")
+        lora_tag = '<script src="lora_panel.js?v=1"></script>'
+        qwen_image_tag = '<script src="qwen_image.js?v=2"></script>'
+
+        self.assertIn(lora_tag, qwen_image_html)
+        self.assertIn(qwen_image_tag, qwen_image_html)
+        self.assertLess(qwen_image_html.index(lora_tag), qwen_image_html.index(qwen_image_tag))
+
+    def test_qwen_image_script_wires_lora_panel_and_payload(self):
+        qwen_image_js = (ROOT / "frontend" / "qwen_image.js").read_text(encoding="utf-8")
+        self.assertIn(
+            'window.LoraPanel?.init({ apiBase: API_BASE, family: "qwen-image" })',
+            qwen_image_js,
+        )
+        self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", qwen_image_js)
+        self.assertIn("payload.lora_adapters = loraAdapters;", qwen_image_js)
+
     def test_preprocessor_modal_has_two_column_layout_hooks(self):
         preprocessor_html = (ROOT / "frontend" / "controlnet_preprocessor.html").read_text(
             encoding="utf-8"
