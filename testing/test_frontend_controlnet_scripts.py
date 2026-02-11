@@ -260,6 +260,31 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", qwen_image_js)
         self.assertIn("payload.lora_adapters = loraAdapters;", qwen_image_js)
 
+    def test_qwen_image_img2img_page_includes_lora_script_before_qwen_image_img2img(self):
+        qwen_image_img2img_html = (ROOT / "frontend" / "qwen_image_img2img.html").read_text(
+            encoding="utf-8"
+        )
+        lora_tag = '<script src="lora_panel.js?v=1"></script>'
+        qwen_image_img2img_tag = '<script src="qwen_image_img2img.js?v=2"></script>'
+
+        self.assertIn(lora_tag, qwen_image_img2img_html)
+        self.assertIn(qwen_image_img2img_tag, qwen_image_img2img_html)
+        self.assertLess(
+            qwen_image_img2img_html.index(lora_tag),
+            qwen_image_img2img_html.index(qwen_image_img2img_tag),
+        )
+
+    def test_qwen_image_img2img_script_wires_lora_panel_and_payload(self):
+        qwen_image_img2img_js = (ROOT / "frontend" / "qwen_image_img2img.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            'window.LoraPanel?.init({ apiBase: API_BASE, family: "qwen-image" })',
+            qwen_image_img2img_js,
+        )
+        self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", qwen_image_img2img_js)
+        self.assertIn("taskInputs.lora_adapters = loraAdapters;", qwen_image_img2img_js)
+
     def test_preprocessor_modal_has_two_column_layout_hooks(self):
         preprocessor_html = (ROOT / "frontend" / "controlnet_preprocessor.html").read_text(
             encoding="utf-8"
