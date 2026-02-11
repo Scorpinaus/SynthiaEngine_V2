@@ -393,6 +393,7 @@ def run_qwen_image_inpaint(
     model: str | None,
     num_images: int,
     scheduler: str,
+    lora_adapters: list[object] | None = None,
 ) -> dict[str, list[str]]:
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
@@ -420,50 +421,55 @@ def run_qwen_image_inpaint(
 
     filenames: list[str] = []
     pipe.scheduler = create_scheduler(scheduler, pipe)
+    adapter_names = _apply_qwen_image_lora_adapters(pipe, lora_adapters)
 
-    with GEN_LOCK:
-        for i in range(num_images):
-            current_seed = base_seed + i
-            generator = torch.Generator(device="cpu").manual_seed(current_seed)
+    try:
+        with GEN_LOCK:
+            for i in range(num_images):
+                current_seed = base_seed + i
+                generator = torch.Generator(device="cpu").manual_seed(current_seed)
 
-            with torch.autocast("cuda", dtype=torch.bfloat16):
-                call_kwargs: dict[str, object] = {
-                    "prompt": prompt,
-                    "image": initial_image,
-                    "mask_image": mask_image,
-                    "strength": strength,
-                    "num_inference_steps": steps,
-                    "true_cfg_scale": true_cfg_scale,
-                    "guidance_scale": guidance_scale,
-                    "generator": generator,
-                }
-                if negative_prompt:
-                    call_kwargs["negative_prompt"] = negative_prompt
+                with torch.autocast("cuda", dtype=torch.bfloat16):
+                    call_kwargs: dict[str, object] = {
+                        "prompt": prompt,
+                        "image": initial_image,
+                        "mask_image": mask_image,
+                        "strength": strength,
+                        "num_inference_steps": steps,
+                        "true_cfg_scale": true_cfg_scale,
+                        "guidance_scale": guidance_scale,
+                        "generator": generator,
+                    }
+                    if negative_prompt:
+                        call_kwargs["negative_prompt"] = negative_prompt
 
-                image = pipe(**call_kwargs).images[0]
+                    image = pipe(**call_kwargs).images[0]
 
-            filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
-            pnginfo = build_png_metadata(
-                {
-                    "mode": "inpaint",
-                    "pipeline": "qwen-image",
-                    "prompt": prompt,
-                    "negative_prompt": negative_prompt,
-                    "steps": steps,
-                    "true_cfg_scale": true_cfg_scale,
-                    "guidance_scale": guidance_scale,
-                    "width": width,
-                    "height": height,
-                    "seed": current_seed,
-                    "model": model,
-                    "strength": strength,
-                    "scheduler": scheduler,
-                    "batch_id": batch_id,
-                }
-            )
-            image.save(filename, pnginfo=pnginfo)
-            logger.info("Image %s saved to %s", i, filename.name)
+                filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
+                pnginfo = build_png_metadata(
+                    {
+                        "mode": "inpaint",
+                        "pipeline": "qwen-image",
+                        "prompt": prompt,
+                        "negative_prompt": negative_prompt,
+                        "steps": steps,
+                        "true_cfg_scale": true_cfg_scale,
+                        "guidance_scale": guidance_scale,
+                        "width": width,
+                        "height": height,
+                        "seed": current_seed,
+                        "model": model,
+                        "strength": strength,
+                        "scheduler": scheduler,
+                        "batch_id": batch_id,
+                    }
+                )
+                image.save(filename, pnginfo=pnginfo)
+                logger.info("Image %s saved to %s", i, filename.name)
 
-            filenames.append(build_batch_output_relpath(batch_id, filename.name))
+                filenames.append(build_batch_output_relpath(batch_id, filename.name))
+    finally:
+        if adapter_names and hasattr(pipe, "unload_lora_weights"):
+            pipe.unload_lora_weights()
 
     return {"images": [f"/outputs/{name}" for name in filenames]}

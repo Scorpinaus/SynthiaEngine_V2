@@ -433,6 +433,7 @@ class QwenImageInpaintInputs(BaseModel):
     scheduler: str = "euler"
     model: str | None = None
     num_images: int = 1
+    lora_adapters: Any | None = None
 
 
 class ZImageText2ImgInputs(BaseModel):
@@ -2465,6 +2466,7 @@ def _qwen_image_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[s
         scheduler=str(inputs.get("scheduler") or "euler"),
         model=inputs.get("model"),
         num_images=int(inputs.get("num_images") or 1),
+        lora_adapters=inputs.get("lora_adapters"),
     )
     if not isinstance(result, dict):
         raise ValueError("qwen-image.inpaint must return an object")
