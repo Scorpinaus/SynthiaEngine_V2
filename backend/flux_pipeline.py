@@ -6,11 +6,12 @@ import threading
 from typing import Any
 
 import torch
-from diffusers import FluxImg2ImgPipeline, FluxInpaintPipeline, FluxPipeline
+from diffusers import FluxImg2ImgPipeline, FluxInpaintPipeline
 try:
     from diffusers import FluxFillPipeline
 except ImportError:  # pragma: no cover - depends on installed diffusers version
     FluxFillPipeline = None
+from custom_pipelines.Flux.pipeline_flux import FluxPipeline as CustomFluxPipeline
 
 from backend.config import OUTPUT_DIR
 from backend.logging_utils import configure_logging
@@ -40,30 +41,47 @@ def _should_use_flux_fill_pipeline(model_name: str | None, source: str, version:
     return "flux" in joined and "fill" in joined
 
 
+def _release_pipeline(pipe: Any) -> None:
+    if pipe is None:
+        return
+
+    if hasattr(pipe, "maybe_free_model_hooks"):
+        try:
+            pipe.maybe_free_model_hooks()
+        except Exception as exc:  # pragma: no cover - defensive cleanup
+            logger.warning("Failed to free model hooks: %s", exc)
+
+    if hasattr(pipe, "remove_all_hooks"):
+        try:
+            pipe.remove_all_hooks()
+        except Exception as exc:  # pragma: no cover - defensive cleanup
+            logger.warning("Failed to remove pipeline hooks: %s", exc)
+
+
 """
     Methods for loading flux pipelines
 """
 
-def load_flux_pipeline(model_name: str | None) -> FluxPipeline:
+def load_flux_pipeline(model_name: str | None) -> Any:
     entry = get_model_entry(model_name)
 
     source = resolve_model_source(entry)
     logger.info("Flux model source: %s", source)
 
     if entry.model_type == "diffusers":
-        pipe = FluxPipeline.from_pretrained(
+        pipe = CustomFluxPipeline.from_pretrained(
             source,
             torch_dtype=torch.bfloat16,
         )
     elif entry.model_type == "single-file":
-        pipe = FluxPipeline.from_single_file(
+        pipe = CustomFluxPipeline.from_single_file(
             source,
             torch_dtype=torch.bfloat16,
         )
     else:
         raise ValueError(f"Unsupported model type: {entry.model_type}")
 
-    pipe.enable_attention_slicing("max")
+    # pipe.enable_attention_slicing("max")
     pipe.vae.enable_slicing()
     pipe.vae.enable_tiling()
     pipe.enable_sequential_cpu_offload()
@@ -161,7 +179,7 @@ def run_flux_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
     batch_id = make_batch_id()
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
-    pipe = load_flux_pipeline(model)
+    pipe: Any | None = load_flux_pipeline(model)
     logger.info(
         "Flux Generate: model=%s seed=%s steps=%s guidance_scale=%s size=%sx%s num_images=%s",
         model, base_seed, steps, guidance_scale, width, height, num_images,
@@ -169,6 +187,7 @@ def run_flux_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
 
     filenames: list[str] = []
     pipe.scheduler = create_scheduler(scheduler, pipe)
+    adapter_names: list[str] = []
     adapter_names, lora_coverage = apply_lora_adapters_with_validation(
         pipe,
         lora_adapters,
@@ -221,8 +240,15 @@ def run_flux_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
                 del image
                 cleanup_memory()
     finally:
-        if adapter_names and hasattr(pipe, "unload_lora_weights"):
-            pipe.unload_lora_weights()
+        if pipe is not None and adapter_names and hasattr(pipe, "unload_lora_weights"):
+            try:
+                pipe.unload_lora_weights()
+            except Exception as exc:  # pragma: no cover - defensive cleanup
+                logger.warning("Failed to unload LoRA weights: %s", exc)
+
+        _release_pipeline(pipe)
+        pipe = None
+        cleanup_memory()
 
     return {"images": [f"/outputs/{name}" for name in filenames]}
 
@@ -252,7 +278,7 @@ def run_flux_img2img(
     batch_id = make_batch_id()
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
-    pipe = load_flux_img2img_pipeline(model)
+    pipe: Any | None = load_flux_img2img_pipeline(model)
     logger.info(
         "Flux Img2Img: model=%s seed=%s steps=%s guidance_scale=%s size=%sx%s strength=%s num_images=%s",
         model, base_seed, steps, guidance_scale, width,
@@ -261,6 +287,7 @@ def run_flux_img2img(
 
     filenames: list[str] = []
     pipe.scheduler = create_scheduler(scheduler, pipe)
+    adapter_names: list[str] = []
     adapter_names, lora_coverage = apply_lora_adapters_with_validation(
         pipe,
         lora_adapters,
@@ -317,8 +344,15 @@ def run_flux_img2img(
                 del image
                 cleanup_memory()
     finally:
-        if adapter_names and hasattr(pipe, "unload_lora_weights"):
-            pipe.unload_lora_weights()
+        if pipe is not None and adapter_names and hasattr(pipe, "unload_lora_weights"):
+            try:
+                pipe.unload_lora_weights()
+            except Exception as exc:  # pragma: no cover - defensive cleanup
+                logger.warning("Failed to unload LoRA weights: %s", exc)
+
+        _release_pipeline(pipe)
+        pipe = None
+        cleanup_memory()
 
     return {"images": [f"/outputs/{name}" for name in filenames]}
 
@@ -347,7 +381,7 @@ def run_flux_inpaint(
     batch_id = make_batch_id()
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
-    pipe = load_flux_inpaint_pipeline(model)
+    pipe: Any | None = load_flux_inpaint_pipeline(model)
     logger.info(
         "Flux Inpaint: model=%s seed=%s steps=%s guidance_scale=%s strength=%s num_images=%s",
         model, base_seed, steps, guidance_scale, strength,
@@ -356,6 +390,7 @@ def run_flux_inpaint(
 
     filenames: list[str] = []
     pipe.scheduler = create_scheduler(scheduler, pipe)
+    adapter_names: list[str] = []
     adapter_names, lora_coverage = apply_lora_adapters_with_validation(
         pipe,
         lora_adapters,
@@ -411,7 +446,14 @@ def run_flux_inpaint(
                 del image
                 cleanup_memory()
     finally:
-        if adapter_names and hasattr(pipe, "unload_lora_weights"):
-            pipe.unload_lora_weights()
+        if pipe is not None and adapter_names and hasattr(pipe, "unload_lora_weights"):
+            try:
+                pipe.unload_lora_weights()
+            except Exception as exc:  # pragma: no cover - defensive cleanup
+                logger.warning("Failed to unload LoRA weights: %s", exc)
+
+        _release_pipeline(pipe)
+        pipe = None
+        cleanup_memory()
 
     return {"images": [f"/outputs/{name}" for name in filenames]}

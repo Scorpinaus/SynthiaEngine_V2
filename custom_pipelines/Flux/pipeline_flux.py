@@ -214,6 +214,50 @@ class FluxPipeline(
             self.tokenizer.model_max_length if hasattr(self, "tokenizer") and self.tokenizer is not None else 77
         )
         self.default_sample_size = 128
+        self.auto_max_sequence_length = 256
+        self.max_sequence_length_limit = 512
+
+    def _resolve_max_sequence_length(
+        self,
+        max_sequence_length: Optional[int],
+        prompt: Optional[Union[str, List[str]]] = None,
+        prompt_2: Optional[Union[str, List[str]]] = None,
+        negative_prompt: Optional[Union[str, List[str]]] = None,
+        negative_prompt_2: Optional[Union[str, List[str]]] = None,
+    ) -> int:
+        if max_sequence_length is not None:
+            return max_sequence_length
+
+        if self.tokenizer_2 is None:
+            return self.auto_max_sequence_length
+
+        all_prompts: List[str] = []
+        for current_prompt in (prompt, prompt_2, negative_prompt, negative_prompt_2):
+            if current_prompt is None:
+                continue
+            normalized_prompt = [current_prompt] if isinstance(current_prompt, str) else current_prompt
+            if isinstance(self, TextualInversionLoaderMixin):
+                normalized_prompt = self.maybe_convert_prompt(normalized_prompt, self.tokenizer_2)
+            all_prompts.extend(normalized_prompt)
+
+        if not all_prompts:
+            return self.auto_max_sequence_length
+
+        prompt_tokens = self.tokenizer_2(
+            all_prompts,
+            padding=False,
+            truncation=False,
+            add_special_tokens=True,
+            return_attention_mask=False,
+            return_overflowing_tokens=False,
+            return_length=False,
+        ).input_ids
+        longest_prompt_tokens = max((len(token_ids) for token_ids in prompt_tokens), default=0)
+
+        if longest_prompt_tokens > self.auto_max_sequence_length:
+            return self.max_sequence_length_limit
+
+        return self.auto_max_sequence_length
 
     def _get_t5_prompt_embeds(
         self,
@@ -227,14 +271,13 @@ class FluxPipeline(
         dtype = dtype or self.text_encoder.dtype
 
         prompt = [prompt] if isinstance(prompt, str) else prompt
-        batch_size = len(prompt)
 
         if isinstance(self, TextualInversionLoaderMixin):
             prompt = self.maybe_convert_prompt(prompt, self.tokenizer_2)
 
         text_inputs = self.tokenizer_2(
             prompt,
-            padding="max_length",
+            padding="longest",
             max_length=max_sequence_length,
             truncation=True,
             return_length=False,
@@ -245,7 +288,7 @@ class FluxPipeline(
         untruncated_ids = self.tokenizer_2(prompt, padding="longest", return_tensors="pt").input_ids
 
         if untruncated_ids.shape[-1] >= text_input_ids.shape[-1] and not torch.equal(text_input_ids, untruncated_ids):
-            removed_text = self.tokenizer_2.batch_decode(untruncated_ids[:, self.tokenizer_max_length - 1 : -1])
+            removed_text = self.tokenizer_2.batch_decode(untruncated_ids[:, max_sequence_length - 1 : -1])
             logger.warning(
                 "The following part of your input was truncated because `max_sequence_length` is set to "
                 f" {max_sequence_length} tokens: {removed_text}"
@@ -256,11 +299,8 @@ class FluxPipeline(
         dtype = self.text_encoder_2.dtype
         prompt_embeds = prompt_embeds.to(dtype=dtype, device=device)
 
-        _, seq_len, _ = prompt_embeds.shape
-
-        # duplicate text embeddings and attention mask for each generation per prompt, using mps friendly method
-        prompt_embeds = prompt_embeds.repeat(1, num_images_per_prompt, 1)
-        prompt_embeds = prompt_embeds.view(batch_size * num_images_per_prompt, seq_len, -1)
+        # duplicate text embeddings for each generation per prompt
+        prompt_embeds = prompt_embeds.repeat_interleave(num_images_per_prompt, dim=0)
 
         return prompt_embeds
 
@@ -273,7 +313,6 @@ class FluxPipeline(
         device = device or self._execution_device
 
         prompt = [prompt] if isinstance(prompt, str) else prompt
-        batch_size = len(prompt)
 
         if isinstance(self, TextualInversionLoaderMixin):
             prompt = self.maybe_convert_prompt(prompt, self.tokenizer)
@@ -302,9 +341,8 @@ class FluxPipeline(
         prompt_embeds = prompt_embeds.pooler_output
         prompt_embeds = prompt_embeds.to(dtype=self.text_encoder.dtype, device=device)
 
-        # duplicate text embeddings for each generation per prompt, using mps friendly method
-        prompt_embeds = prompt_embeds.repeat(1, num_images_per_prompt)
-        prompt_embeds = prompt_embeds.view(batch_size * num_images_per_prompt, -1)
+        # duplicate text embeddings for each generation per prompt
+        prompt_embeds = prompt_embeds.repeat_interleave(num_images_per_prompt, dim=0)
 
         return prompt_embeds
 
@@ -440,6 +478,8 @@ class FluxPipeline(
         prompt_2,
         height,
         width,
+        true_cfg_scale=1.0,
+        true_cfg_mode="auto",
         negative_prompt=None,
         negative_prompt_2=None,
         prompt_embeds=None,
@@ -448,6 +488,7 @@ class FluxPipeline(
         negative_pooled_prompt_embeds=None,
         callback_on_step_end_tensor_inputs=None,
         max_sequence_length=None,
+        decode_chunk_size=None,
     ):
         if height % (self.vae_scale_factor * 2) != 0 or width % (self.vae_scale_factor * 2) != 0:
             logger.warning(
@@ -502,6 +543,27 @@ class FluxPipeline(
 
         if max_sequence_length is not None and max_sequence_length > 512:
             raise ValueError(f"`max_sequence_length` cannot be greater than 512 but is {max_sequence_length}")
+        if true_cfg_mode not in {"auto", "off", "force"}:
+            raise ValueError(
+                f"`true_cfg_mode` must be one of ['auto', 'off', 'force'] but is {true_cfg_mode!r}."
+            )
+        if true_cfg_mode == "force":
+            has_neg_prompt = negative_prompt is not None or (
+                negative_prompt_embeds is not None and negative_pooled_prompt_embeds is not None
+            )
+            if true_cfg_scale <= 1:
+                raise ValueError(
+                    f"`true_cfg_mode='force'` requires `true_cfg_scale > 1` but got {true_cfg_scale}."
+                )
+            if not has_neg_prompt:
+                raise ValueError(
+                    "`true_cfg_mode='force'` requires `negative_prompt` or negative prompt embeddings."
+                )
+        if decode_chunk_size is not None:
+            if not isinstance(decode_chunk_size, int):
+                raise ValueError(f"`decode_chunk_size` has to be of type `int` but is {type(decode_chunk_size)}")
+            if decode_chunk_size < 1:
+                raise ValueError(f"`decode_chunk_size` has to be greater than 0 but is {decode_chunk_size}")
 
     @staticmethod
     def _prepare_latent_image_ids(batch_size, height, width, device, dtype):
@@ -610,9 +672,24 @@ class FluxPipeline(
         height = 2 * (int(height) // (self.vae_scale_factor * 2))
         width = 2 * (int(width) // (self.vae_scale_factor * 2))
 
-        shape = (batch_size, num_channels_latents, height, width)
+        unpacked_shape = (batch_size, num_channels_latents, height, width)
+        packed_shape = (batch_size, (height // 2) * (width // 2), num_channels_latents * 4)
 
         if latents is not None:
+            if latents.ndim == 4:
+                if tuple(latents.shape) != unpacked_shape:
+                    raise ValueError(
+                        f"Unexpected unpacked latents shape {tuple(latents.shape)}. Expected {unpacked_shape}."
+                    )
+                latents = self._pack_latents(latents, batch_size, num_channels_latents, height, width)
+            elif latents.ndim == 3:
+                if tuple(latents.shape) != packed_shape:
+                    raise ValueError(f"Unexpected packed latents shape {tuple(latents.shape)}. Expected {packed_shape}.")
+            else:
+                raise ValueError(
+                    "Latents must be either packed 3D or unpacked 4D tensor."
+                    f" Got shape {tuple(latents.shape)} with ndim={latents.ndim}."
+                )
             latent_image_ids = self._prepare_latent_image_ids(batch_size, height // 2, width // 2, device, dtype)
             return latents.to(device=device, dtype=dtype), latent_image_ids
 
@@ -622,12 +699,43 @@ class FluxPipeline(
                 f" size of {batch_size}. Make sure the batch size matches the length of the generators."
             )
 
-        latents = randn_tensor(shape, generator=generator, device=device, dtype=dtype)
-        latents = self._pack_latents(latents, batch_size, num_channels_latents, height, width)
+        # Generate packed latents directly to avoid allocating a large temporary unpacked BCHW tensor.
+        latents = randn_tensor(packed_shape, generator=generator, device=device, dtype=dtype)
 
         latent_image_ids = self._prepare_latent_image_ids(batch_size, height // 2, width // 2, device, dtype)
 
         return latents, latent_image_ids
+
+    def _decode_latents(
+        self,
+        latents: torch.Tensor,
+        output_type: str,
+        decode_chunk_size: Optional[int] = None,
+    ) -> Union[List[Any], np.ndarray, torch.Tensor]:
+        if decode_chunk_size is None or decode_chunk_size >= latents.shape[0]:
+            image = self.vae.decode(latents, return_dict=False)[0]
+            return self.image_processor.postprocess(image, output_type=output_type)
+
+        decoded_chunks: List[Union[List[Any], np.ndarray, torch.Tensor]] = []
+        for chunk_start in range(0, latents.shape[0], decode_chunk_size):
+            chunk_end = chunk_start + decode_chunk_size
+            latents_chunk = latents[chunk_start:chunk_end]
+            image_chunk = self.vae.decode(latents_chunk, return_dict=False)[0]
+            postprocessed_chunk = self.image_processor.postprocess(image_chunk, output_type=output_type)
+            decoded_chunks.append(postprocessed_chunk)
+
+        first_chunk = decoded_chunks[0]
+        if isinstance(first_chunk, torch.Tensor):
+            return torch.cat(decoded_chunks, dim=0)
+        if isinstance(first_chunk, np.ndarray):
+            return np.concatenate(decoded_chunks, axis=0)
+        if isinstance(first_chunk, list):
+            merged_chunks: List[Any] = []
+            for chunk in decoded_chunks:
+                merged_chunks.extend(chunk)
+            return merged_chunks
+
+        raise ValueError(f"Unsupported decoded chunk type: {type(first_chunk)}")
 
     @property
     def guidance_scale(self):
@@ -658,6 +766,7 @@ class FluxPipeline(
         negative_prompt: Union[str, List[str]] = None,
         negative_prompt_2: Optional[Union[str, List[str]]] = None,
         true_cfg_scale: float = 1.0,
+        true_cfg_mode: str = "auto",
         height: Optional[int] = None,
         width: Optional[int] = None,
         num_inference_steps: int = 28,
@@ -679,7 +788,8 @@ class FluxPipeline(
         joint_attention_kwargs: Optional[Dict[str, Any]] = None,
         callback_on_step_end: Optional[Callable[[int, int, Dict], None]] = None,
         callback_on_step_end_tensor_inputs: List[str] = ["latents"],
-        max_sequence_length: int = 512,
+        max_sequence_length: Optional[int] = None,
+        decode_chunk_size: Optional[int] = None,
     ):
         r"""
         Function invoked when calling the pipeline for generation.
@@ -701,6 +811,9 @@ class FluxPipeline(
             true_cfg_scale (`float`, *optional*, defaults to 1.0):
                 True classifier-free guidance (guidance scale) is enabled when `true_cfg_scale` > 1 and
                 `negative_prompt` is provided.
+            true_cfg_mode (`str`, *optional*, defaults to `"auto"`):
+                Controls true CFG execution. `"auto"` preserves default behavior, `"off"` disables the unconditional
+                pass to reduce memory/compute, and `"force"` requires and always enables true CFG.
             height (`int`, *optional*, defaults to self.unet.config.sample_size * self.vae_scale_factor):
                 The height in pixels of the generated image. This is set to 1024 by default for the best results.
             width (`int`, *optional*, defaults to self.unet.config.sample_size * self.vae_scale_factor):
@@ -726,7 +839,9 @@ class FluxPipeline(
             latents (`torch.FloatTensor`, *optional*):
                 Pre-generated noisy latents, sampled from a Gaussian distribution, to be used as inputs for image
                 generation. Can be used to tweak the same generation with different prompts. If not provided, a latents
-                tensor will be generated by sampling using the supplied random `generator`.
+                tensor will be generated by sampling using the supplied random `generator`. Packed latents
+                `(batch, patch_count, channels*4)` are preferred. Unpacked BCHW latents are also accepted and packed
+                internally.
             prompt_embeds (`torch.FloatTensor`, *optional*):
                 Pre-generated text embeddings. Can be used to easily tweak text inputs, *e.g.* prompt weighting. If not
                 provided, text embeddings will be generated from `prompt` input argument.
@@ -770,7 +885,12 @@ class FluxPipeline(
                 The list of tensor inputs for the `callback_on_step_end` function. The tensors specified in the list
                 will be passed as `callback_kwargs` argument. You will only be able to include variables listed in the
                 `._callback_tensor_inputs` attribute of your pipeline class.
-            max_sequence_length (`int` defaults to 512): Maximum sequence length to use with the `prompt`.
+            max_sequence_length (`int`, *optional*):
+                Maximum sequence length to use with the `prompt`. If not provided, the pipeline uses an auto policy
+                that defaults to `256` and increases to `512` when prompt length requires it.
+            decode_chunk_size (`int`, *optional*):
+                Number of samples to decode per VAE call. Use this to reduce peak VRAM during decode. If not set,
+                all samples are decoded in one call.
 
         Examples:
 
@@ -789,6 +909,8 @@ class FluxPipeline(
             prompt_2,
             height,
             width,
+            true_cfg_scale=true_cfg_scale,
+            true_cfg_mode=true_cfg_mode,
             negative_prompt=negative_prompt,
             negative_prompt_2=negative_prompt_2,
             prompt_embeds=prompt_embeds,
@@ -797,12 +919,20 @@ class FluxPipeline(
             negative_pooled_prompt_embeds=negative_pooled_prompt_embeds,
             callback_on_step_end_tensor_inputs=callback_on_step_end_tensor_inputs,
             max_sequence_length=max_sequence_length,
+            decode_chunk_size=decode_chunk_size,
         )
 
         self._guidance_scale = guidance_scale
         self._joint_attention_kwargs = joint_attention_kwargs
         self._current_timestep = None
         self._interrupt = False
+        effective_max_sequence_length = self._resolve_max_sequence_length(
+            max_sequence_length=max_sequence_length,
+            prompt=prompt,
+            prompt_2=prompt_2,
+            negative_prompt=negative_prompt,
+            negative_prompt_2=negative_prompt_2,
+        )
 
         # 2. Define call parameters
         if prompt is not None and isinstance(prompt, str):
@@ -820,7 +950,12 @@ class FluxPipeline(
         has_neg_prompt = negative_prompt is not None or (
             negative_prompt_embeds is not None and negative_pooled_prompt_embeds is not None
         )
-        do_true_cfg = true_cfg_scale > 1 and has_neg_prompt
+        if true_cfg_mode == "off":
+            do_true_cfg = False
+        elif true_cfg_mode == "force":
+            do_true_cfg = True
+        else:
+            do_true_cfg = true_cfg_scale > 1 and has_neg_prompt
         (
             prompt_embeds,
             pooled_prompt_embeds,
@@ -832,7 +967,7 @@ class FluxPipeline(
             pooled_prompt_embeds=pooled_prompt_embeds,
             device=device,
             num_images_per_prompt=num_images_per_prompt,
-            max_sequence_length=max_sequence_length,
+            max_sequence_length=effective_max_sequence_length,
             lora_scale=lora_scale,
         )
         if do_true_cfg:
@@ -847,7 +982,7 @@ class FluxPipeline(
                 pooled_prompt_embeds=negative_pooled_prompt_embeds,
                 device=device,
                 num_images_per_prompt=num_images_per_prompt,
-                max_sequence_length=max_sequence_length,
+                max_sequence_length=effective_max_sequence_length,
                 lora_scale=lora_scale,
             )
 
@@ -1003,8 +1138,11 @@ class FluxPipeline(
         else:
             latents = self._unpack_latents(latents, height, width, self.vae_scale_factor)
             latents = (latents / self.vae.config.scaling_factor) + self.vae.config.shift_factor
-            image = self.vae.decode(latents, return_dict=False)[0]
-            image = self.image_processor.postprocess(image, output_type=output_type)
+            image = self._decode_latents(
+                latents,
+                output_type=output_type,
+                decode_chunk_size=decode_chunk_size,
+            )
 
         # Offload all models
         self.maybe_free_model_hooks()
