@@ -400,7 +400,7 @@ Resolution behavior:
 - SDXL: `sdxl.text2img`, `sdxl.controlnet.text2img`, `sdxl.img2img`, `sdxl.inpaint`
 - Flux: `flux.text2img`, `flux.img2img`, `flux.inpaint`
 - Qwen-Image: `qwen-image.text2img`, `qwen-image.img2img`, `qwen-image.inpaint`
-- Z-Image: `z-image.text2img`, `z-image.img2img`
+- Z-Image: `z-image.text2img`, `z-image.img2img`, `z-image.inpaint`
 - ControlNet utility: `controlnet.preprocess`
 
 ## Model capabilities matrix
@@ -413,7 +413,7 @@ This same matrix is available in machine-readable form at `GET /api/workflow/cat
 | `sdxl` | yes | yes | yes | yes | no | yes | no |
 | `flux` | yes | yes | yes | no | no | yes | no |
 | `qwen-image` | yes | yes | yes | no | no | yes | yes |
-| `z-image` (`zimage`) | yes | yes | no | no | no | yes | no |
+| `z-image` (`zimage`) | yes | yes | yes | no | no | yes | no |
 
 Task inputs/outputs are task-specific. As a convention, image-generating tasks return:
 - `images`: list of `"/outputs/..."` URLs
@@ -599,6 +599,13 @@ Task inputs/outputs are task-specific. As a convention, image-generating tasks r
 - `lora_adapters` entries are resolved through the LoRA registry (`/lora-models`) by `lora_id`.
 - Each adapter may provide `strength` (default `1.0`).
 - Family validation is enforced: only LoRAs registered with `lora_model_family: "z-image"` are accepted for `z-image.img2img`.
+- Invalid adapter references (for example missing `lora_id`, unknown id, or incompatible family) fail the task with a validation/runtime error.
+
+`z-image.inpaint` LoRA input notes:
+- `lora_adapters` is optional. When omitted or empty, inpaint runs without LoRA adapters.
+- `lora_adapters` entries are resolved through the LoRA registry (`/lora-models`) by `lora_id`.
+- Each adapter may provide `strength` (default `1.0`).
+- Family validation is enforced: only LoRAs registered with `lora_model_family: "z-image"` are accepted for `z-image.inpaint`.
 - Invalid adapter references (for example missing `lora_id`, unknown id, or incompatible family) fail the task with a validation/runtime error.
 
 ## Example: img2img workflow (artifact input)

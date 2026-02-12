@@ -1,8 +1,13 @@
 import logging
 import re
+from typing import Any
 
 import torch
 from diffusers import ZImageImg2ImgPipeline, ZImagePipeline
+try:
+    from diffusers import ZImageInpaintPipeline
+except ImportError:  # pragma: no cover - depends on installed diffusers version
+    ZImageInpaintPipeline = None
 
 import threading
 
@@ -78,7 +83,7 @@ def _build_adapter_name(
 
 
 def _apply_z_image_lora_adapters(
-    pipe: ZImagePipeline | ZImageImg2ImgPipeline,
+    pipe: Any,
     lora_adapters: list[object] | None,
 ) -> list[str]:
     if not lora_adapters:
@@ -188,6 +193,45 @@ def load_z_image_img2img_pipeline(model_name: str | None) -> ZImageImg2ImgPipeli
 
     pipe.enable_sequential_cpu_offload()
 
+    cleanup_memory()
+
+    return pipe
+
+
+def load_z_image_inpaint_pipeline(model_name: str | None) -> Any:
+    entry = get_model_entry(model_name)
+
+    source = resolve_model_source(entry)
+    logger.info("Z-Image inpaint model source: %s", source)
+
+    if ZImageInpaintPipeline is None:
+        raise ValueError(
+            "ZImageInpaintPipeline is unavailable in the installed diffusers package. "
+            "Install a diffusers build with Z-Image inpaint support."
+        )
+
+    if entry.model_type == "diffusers":
+        pipe = ZImageInpaintPipeline.from_pretrained(
+            source,
+            torch_dtype=torch.bfloat16,
+            low_cpu_mem_usage=True,
+        )
+    elif entry.model_type == "single-file":
+        pipe = ZImageInpaintPipeline.from_single_file(
+            source,
+            torch_dtype=torch.bfloat16,
+            low_cpu_mem_usage=True,
+        )
+    else:
+        raise ValueError(f"Unsupported model type: {entry.model_type}")
+
+    dtypes = set(p.dtype for p in pipe.transformer.parameters())
+    logger.info("Transformer dtypes: %s", dtypes)
+
+    logger.info("Allocated GB: %s", torch.cuda.memory_allocated() / 1024**3)
+    logger.info("Reserved GB: %s", torch.cuda.memory_reserved() / 1024**3)
+
+    pipe.enable_sequential_cpu_offload()
     cleanup_memory()
 
     return pipe
@@ -373,6 +417,104 @@ def run_z_image_img2img(
                     "scheduler": scheduler,
                     "batch_id": batch_id,
                 })
+                image.save(filename, pnginfo=pnginfo)
+                logger.info("Image %s saved to %s", i, filename.name)
+
+                filenames.append(build_batch_output_relpath(batch_id, filename.name))
+
+                del image
+                cleanup_memory()
+    finally:
+        if adapter_names and hasattr(pipe, "unload_lora_weights"):
+            pipe.unload_lora_weights()
+
+    return {"images": [f"/outputs/{name}" for name in filenames]}
+
+
+@torch.inference_mode()
+def run_z_image_inpaint(
+    initial_image,
+    mask_image,
+    strength: float,
+    prompt: str,
+    negative_prompt: str,
+    steps: int,
+    guidance_scale: float,
+    seed: int | None,
+    model: str | None,
+    num_images: int,
+    scheduler: str,
+    lora_adapters: list[object] | None = None,
+) -> dict[str, list[str]]:
+    logger.info("seed=%s", seed)
+    if seed is None or seed == 0:
+        base_seed = torch.randint(0, 2**31, (1,)).item()
+    else:
+        base_seed = int(seed)
+
+    batch_id = make_batch_id()
+    batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
+
+    pipe = load_z_image_inpaint_pipeline(model)
+    width, height = initial_image.size
+    logger.info(
+        "Z-Image Inpaint: model=%s seed=%s steps=%s guidance_scale=%s size=%sx%s strength=%s num_images=%s",
+        model,
+        base_seed,
+        steps,
+        guidance_scale,
+        width,
+        height,
+        strength,
+        num_images,
+    )
+
+    filenames: list[str] = []
+    pipe.scheduler = create_scheduler(scheduler, pipe)
+    adapter_names = _apply_z_image_lora_adapters(pipe, lora_adapters)
+
+    try:
+        with GEN_LOCK:
+            for i in range(num_images):
+                current_seed = base_seed + i
+                generator = torch.Generator(device="cpu").manual_seed(current_seed)
+
+                print("Allocated GB:", torch.cuda.memory_allocated() / 1024**3)
+                print("Reserved GB:", torch.cuda.memory_reserved() / 1024**3)
+
+                with torch.autocast("cuda", dtype=torch.bfloat16):
+                    call_kwargs: dict[str, object] = {
+                        "prompt": prompt,
+                        "image": initial_image,
+                        "mask_image": mask_image,
+                        "strength": strength,
+                        "num_inference_steps": steps,
+                        "guidance_scale": guidance_scale,
+                        "generator": generator,
+                    }
+                    if negative_prompt:
+                        call_kwargs["negative_prompt"] = negative_prompt
+
+                    image = pipe(**call_kwargs).images[0]
+
+                filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
+                pnginfo = build_png_metadata(
+                    {
+                        "mode": "inpaint",
+                        "pipeline": "z-image",
+                        "prompt": prompt,
+                        "negative_prompt": negative_prompt,
+                        "steps": steps,
+                        "guidance_scale": guidance_scale,
+                        "width": width,
+                        "height": height,
+                        "seed": current_seed,
+                        "model": model,
+                        "strength": strength,
+                        "scheduler": scheduler,
+                        "batch_id": batch_id,
+                    }
+                )
                 image.save(filename, pnginfo=pnginfo)
                 logger.info("Image %s saved to %s", i, filename.name)
 

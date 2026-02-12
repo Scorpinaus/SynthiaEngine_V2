@@ -57,6 +57,7 @@ TaskType = Literal[
     "qwen-image.inpaint",
     "z-image.text2img",
     "z-image.img2img",
+    "z-image.inpaint",
 ]
 
 
@@ -466,6 +467,21 @@ class ZImageImg2ImgInputs(BaseModel):
     lora_adapters: Any | None = None
 
 
+class ZImageInpaintInputs(BaseModel):
+    initial_image: ImageRef
+    mask_image: ImageRef
+    prompt: str
+    negative_prompt: str = ""
+    strength: float = 0.5
+    steps: int = 8
+    guidance_scale: float = 0.0
+    seed: int | None = None
+    scheduler: str = "euler"
+    model: str | None = None
+    num_images: int = 1
+    lora_adapters: Any | None = None
+
+
 class ImagesOutput(BaseModel):
     """Standard output for image-generating tasks."""
 
@@ -562,6 +578,7 @@ TASK_INPUT_MODELS: dict[str, type[BaseModel]] = {
     "qwen-image.inpaint": QwenImageInpaintInputs,
     "z-image.text2img": ZImageText2ImgInputs,
     "z-image.img2img": ZImageImg2ImgInputs,
+    "z-image.inpaint": ZImageInpaintInputs,
 }
 
 
@@ -584,6 +601,7 @@ TASK_OUTPUT_MODELS: dict[str, type[BaseModel]] = {
     "qwen-image.inpaint": ImagesOutput,
     "z-image.text2img": ImagesOutput,
     "z-image.img2img": ImagesOutput,
+    "z-image.inpaint": ImagesOutput,
 }
 
 
@@ -2515,6 +2533,37 @@ def _z_image_img2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str,
     return result
 
 
+def _z_image_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
+    from backend.z_image_pipeline import run_z_image_inpaint
+
+    initial_image = _open_image_ref(inputs["initial_image"]).convert("RGB")
+    mask_image = _open_image_ref(inputs["mask_image"]).convert("L")
+    if mask_image.size != initial_image.size:
+        mask_image = mask_image.resize(initial_image.size, resample=Image.NEAREST)
+
+    strength = float(inputs.get("strength") or 0.5)
+    if not 0.0 <= strength <= 1.0:
+        raise ValueError("strength must be between 0 and 1")
+
+    result = run_z_image_inpaint(
+        initial_image=initial_image,
+        mask_image=mask_image,
+        strength=strength,
+        prompt=str(inputs["prompt"]),
+        negative_prompt=str(inputs.get("negative_prompt") or ""),
+        steps=int(inputs.get("steps") or 8),
+        guidance_scale=float(inputs.get("guidance_scale") or 0.0),
+        seed=inputs.get("seed"),
+        scheduler=str(inputs.get("scheduler") or "euler"),
+        model=inputs.get("model"),
+        num_images=int(inputs.get("num_images") or 1),
+        lora_adapters=inputs.get("lora_adapters"),
+    )
+    if not isinstance(result, dict):
+        raise ValueError("z-image.inpaint must return an object")
+    return result
+
+
 TASK_REGISTRY: dict[str, Callable[[dict[str, Any], WorkflowContext], dict[str, Any]]] = {
     "sd15.text2img": _sd15_text2img,
     "sd15.img2img": _sd15_img2img,
@@ -2534,6 +2583,7 @@ TASK_REGISTRY: dict[str, Callable[[dict[str, Any], WorkflowContext], dict[str, A
     "qwen-image.inpaint": _qwen_image_inpaint,
     "z-image.text2img": _z_image_text2img,
     "z-image.img2img": _z_image_img2img,
+    "z-image.inpaint": _z_image_inpaint,
 }
 
 

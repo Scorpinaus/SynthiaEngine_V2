@@ -44,5 +44,5 @@ def test_workflow_capability_features_for_core_families():
     zimage = capabilities["z-image"]["features"]
     assert zimage["text2img"] is True
     assert zimage["img2img"] is True
-    assert zimage["inpaint"] is False
+    assert zimage["inpaint"] is True
     assert zimage["lora_adapters"] is True

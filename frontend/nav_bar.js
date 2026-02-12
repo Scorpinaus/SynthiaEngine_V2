@@ -10,6 +10,7 @@ const NAV_GROUPS = [
             { href: "sdxl_inpaint.html", label: "SDXL Inpaint" },
             { href: "z_image.html", label: "Z-Image Text2Img" },
             { href: "z_image_img2img.html", label: "Z-Image Img2Img" },
+            { href: "z_image_inpaint.html", label: "Z-Image Inpaint" },
             { href: "qwen_image.html", label: "Qwen-Image Text2Img" },
             { href: "qwen_image_img2img.html", label: "Qwen-Image Img2Img" },
             { href: "qwen_image_inpaint.html", label: "Qwen-Image Inpaint" },
