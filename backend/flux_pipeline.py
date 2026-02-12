@@ -3,9 +3,14 @@ Docstring for backend.flux_pipeline
 """
 import logging
 import threading
+from typing import Any
 
 import torch
 from diffusers import FluxImg2ImgPipeline, FluxInpaintPipeline, FluxPipeline
+try:
+    from diffusers import FluxFillPipeline
+except ImportError:  # pragma: no cover - depends on installed diffusers version
+    FluxFillPipeline = None
 
 from backend.config import OUTPUT_DIR
 from backend.logging_utils import configure_logging
@@ -28,6 +33,11 @@ GEN_LOCK = threading.Lock()
 
 logger = logging.getLogger(__name__)
 configure_logging()
+
+
+def _should_use_flux_fill_pipeline(model_name: str | None, source: str, version: str) -> bool:
+    joined = " ".join([model_name or "", source or "", version or ""]).lower()
+    return "flux" in joined and "fill" in joined
 
 
 """
@@ -87,19 +97,30 @@ def load_flux_img2img_pipeline(model_name: str | None) -> FluxImg2ImgPipeline:
 
     return pipe
 
-def load_flux_inpaint_pipeline(model_name: str | None) -> FluxInpaintPipeline:
+def load_flux_inpaint_pipeline(model_name: str | None) -> Any:
     entry = get_model_entry(model_name)
 
     source = resolve_model_source(entry)
     logger.info("Flux inpaint model source: %s", source)
+    pipeline_cls: Any = FluxInpaintPipeline
+    pipeline_name = "FluxInpaintPipeline"
+    if _should_use_flux_fill_pipeline(entry.name, source, entry.version):
+        if FluxFillPipeline is None:
+            raise ValueError(
+                "Flux Fill model selected but FluxFillPipeline is unavailable in the installed diffusers package. "
+                "Install a diffusers build with Flux Fill support."
+            )
+        pipeline_cls = FluxFillPipeline
+        pipeline_name = "FluxFillPipeline"
+    logger.info("Flux inpaint pipeline class: %s", pipeline_name)
 
     if entry.model_type == "diffusers":
-        pipe = FluxInpaintPipeline.from_pretrained(
+        pipe = pipeline_cls.from_pretrained(
             source,
             torch_dtype=torch.bfloat16,
         )
     elif entry.model_type == "single-file":
-        pipe = FluxInpaintPipeline.from_single_file(
+        pipe = pipeline_cls.from_single_file(
             source,
             torch_dtype=torch.bfloat16,
         )
@@ -315,6 +336,7 @@ def run_flux_inpaint(
     model: str | None,
     num_images: int,
     scheduler: str,
+    lora_adapters: list[object] | None = None,
 ) -> dict[str, list[str]]:
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
@@ -334,49 +356,62 @@ def run_flux_inpaint(
 
     filenames: list[str] = []
     pipe.scheduler = create_scheduler(scheduler, pipe)
+    adapter_names, lora_coverage = apply_lora_adapters_with_validation(
+        pipe,
+        lora_adapters,
+        expected_family="flux",
+        validate=True,
+    )
+    report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
+    if report_path is not None:
+        logger.info("LoRA coverage report saved to %s", report_path)
 
-    with GEN_LOCK:
-        for i in range(num_images):
-            current_seed = base_seed + i
-            generator = torch.Generator(device="cpu").manual_seed(current_seed)
+    try:
+        with GEN_LOCK:
+            for i in range(num_images):
+                current_seed = base_seed + i
+                generator = torch.Generator(device="cpu").manual_seed(current_seed)
 
-            with torch.autocast("cuda", dtype=torch.bfloat16):
-                call_kwargs = dict(
-                    prompt=prompt,
-                    image=initial_image,
-                    mask_image=mask_image,
-                    strength=strength,
-                    num_inference_steps=steps,
-                    guidance_scale=guidance_scale,
-                    generator=generator,
-                )
-                if negative_prompt:
-                    call_kwargs["negative_prompt"] = negative_prompt
+                with torch.autocast("cuda", dtype=torch.bfloat16):
+                    call_kwargs = dict(
+                        prompt=prompt,
+                        image=initial_image,
+                        mask_image=mask_image,
+                        strength=strength,
+                        num_inference_steps=steps,
+                        guidance_scale=guidance_scale,
+                        generator=generator,
+                    )
+                    if negative_prompt:
+                        call_kwargs["negative_prompt"] = negative_prompt
 
-                image = pipe(**call_kwargs).images[0]
+                    image = pipe(**call_kwargs).images[0]
 
-            filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
-            image_width, image_height = initial_image.size
-            pnginfo = build_png_metadata({
-                "mode": "inpaint",
-                "pipeline": "flux",
-                "prompt": prompt,
-                "negative_prompt": negative_prompt,
-                "steps": steps,
-                "guidance_scale": guidance_scale,
-                "width": image_width,
-                "height": image_height,
-                "seed": current_seed,
-                "model": model,
-                "strength": strength,
-                "batch_id": batch_id,
-            })
-            image.save(filename, pnginfo=pnginfo)
-            logger.info("Image %s saved to %s", i, filename.name)
+                filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
+                image_width, image_height = initial_image.size
+                pnginfo = build_png_metadata({
+                    "mode": "inpaint",
+                    "pipeline": "flux",
+                    "prompt": prompt,
+                    "negative_prompt": negative_prompt,
+                    "steps": steps,
+                    "guidance_scale": guidance_scale,
+                    "width": image_width,
+                    "height": image_height,
+                    "seed": current_seed,
+                    "model": model,
+                    "strength": strength,
+                    "batch_id": batch_id,
+                })
+                image.save(filename, pnginfo=pnginfo)
+                logger.info("Image %s saved to %s", i, filename.name)
 
-            filenames.append(build_batch_output_relpath(batch_id, filename.name))
+                filenames.append(build_batch_output_relpath(batch_id, filename.name))
 
-            del image
-            cleanup_memory()
+                del image
+                cleanup_memory()
+    finally:
+        if adapter_names and hasattr(pipe, "unload_lora_weights"):
+            pipe.unload_lora_weights()
 
     return {"images": [f"/outputs/{name}" for name in filenames]}

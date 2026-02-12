@@ -267,6 +267,23 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", flux_img2img_js)
         self.assertIn("taskInputs.lora_adapters = loraAdapters;", flux_img2img_js)
 
+    def test_flux_inpaint_page_includes_lora_script_before_flux_inpaint(self):
+        flux_inpaint_html = (ROOT / "frontend" / "flux_inpaint.html").read_text(encoding="utf-8")
+        lora_tag = '<script src="lora_panel.js?v=1"></script>'
+        flux_inpaint_tag = '<script src="flux_inpaint.js?v=2"></script>'
+
+        self.assertIn(lora_tag, flux_inpaint_html)
+        self.assertIn(flux_inpaint_tag, flux_inpaint_html)
+        self.assertLess(
+            flux_inpaint_html.index(lora_tag), flux_inpaint_html.index(flux_inpaint_tag)
+        )
+
+    def test_flux_inpaint_script_wires_lora_panel_and_payload(self):
+        flux_inpaint_js = (ROOT / "frontend" / "flux_inpaint.js").read_text(encoding="utf-8")
+        self.assertIn('window.LoraPanel?.init({ apiBase: API_BASE, family: "flux" })', flux_inpaint_js)
+        self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", flux_inpaint_js)
+        self.assertIn("taskInputs.lora_adapters = loraAdapters;", flux_inpaint_js)
+
     def test_qwen_image_page_includes_lora_script_before_qwen_image(self):
         qwen_image_html = (ROOT / "frontend" / "qwen_image.html").read_text(encoding="utf-8")
         lora_tag = '<script src="lora_panel.js?v=1"></script>'

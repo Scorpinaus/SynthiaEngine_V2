@@ -4,7 +4,14 @@ from unittest.mock import patch
 
 from PIL import Image
 
-from backend.workflow import FluxImg2ImgInputs, FluxText2ImgInputs, _flux_img2img, _flux_text2img
+from backend.workflow import (
+    FluxImg2ImgInputs,
+    FluxInpaintInputs,
+    FluxText2ImgInputs,
+    _flux_img2img,
+    _flux_inpaint,
+    _flux_text2img,
+)
 
 
 class FluxWorkflowTests(unittest.TestCase):
@@ -70,6 +77,44 @@ class FluxWorkflowTests(unittest.TestCase):
         self.assertEqual(result["images"], ["/outputs/batch/out.png"])
         self.assertIn("lora_adapters", captured)
         self.assertEqual(captured["lora_adapters"], [{"lora_id": 201, "strength": 0.6}])
+
+    def test_flux_inpaint_accepts_lora_adapters(self):
+        inputs = FluxInpaintInputs(
+            initial_image="@artifact:a0123456789abcdef0123456789abcdef",
+            mask_image="@artifact:b0123456789abcdef0123456789abcdef",
+            prompt="test",
+            lora_adapters=[{"lora_id": 301, "strength": 0.7}],
+        )
+        self.assertEqual(inputs.lora_adapters, [{"lora_id": 301, "strength": 0.7}])
+
+    def test_flux_inpaint_forwards_lora_adapters(self):
+        captured = {}
+
+        def _fake_run_flux_inpaint(**kwargs):
+            captured.update(kwargs)
+            return {"images": ["/outputs/batch/out.png"]}
+
+        fake_module = SimpleNamespace(run_flux_inpaint=_fake_run_flux_inpaint)
+        with (
+            patch.dict("sys.modules", {"backend.flux_pipeline": fake_module}),
+            patch(
+                "backend.workflow._open_image_ref",
+                side_effect=[Image.new("RGB", (64, 64)), Image.new("L", (64, 64))],
+            ),
+        ):
+            result = _flux_inpaint(
+                {
+                    "initial_image": "@artifact:a0123456789abcdef0123456789abcdef",
+                    "mask_image": "@artifact:b0123456789abcdef0123456789abcdef",
+                    "prompt": "test prompt",
+                    "lora_adapters": [{"lora_id": 301, "strength": 0.7}],
+                },
+                _ctx=None,
+            )
+
+        self.assertEqual(result["images"], ["/outputs/batch/out.png"])
+        self.assertIn("lora_adapters", captured)
+        self.assertEqual(captured["lora_adapters"], [{"lora_id": 301, "strength": 0.7}])
 
 
 if __name__ == "__main__":

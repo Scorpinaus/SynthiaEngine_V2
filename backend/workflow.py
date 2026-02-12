@@ -387,6 +387,7 @@ class FluxInpaintInputs(BaseModel):
     scheduler: str = "euler"
     model: str | None = None
     num_images: int = 1
+    lora_adapters: Any | None = None
 
 
 class QwenImageText2ImgInputs(BaseModel):
@@ -2410,6 +2411,7 @@ def _flux_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, An
         scheduler=str(inputs.get("scheduler") or "euler"),
         model=inputs.get("model"),
         num_images=int(inputs.get("num_images") or 1),
+        lora_adapters=inputs.get("lora_adapters"),
     )
     if not isinstance(result, dict):
         raise ValueError("flux.inpaint must return an object")
