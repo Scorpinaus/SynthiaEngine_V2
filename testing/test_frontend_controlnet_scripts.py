@@ -436,11 +436,14 @@ class FrontendControlNetScriptTests(unittest.TestCase):
     def test_qwen_image_page_includes_lora_script_before_qwen_image(self):
         qwen_image_html = (ROOT / "frontend" / "qwen_image.html").read_text(encoding="utf-8")
         lora_tag = '<script src="lora_panel.js?v=1"></script>'
+        preset_tag = '<script src="preset_panel.js?v=1"></script>'
         qwen_image_tag = '<script src="qwen_image.js?v=2"></script>'
 
         self.assertIn(lora_tag, qwen_image_html)
+        self.assertIn(preset_tag, qwen_image_html)
         self.assertIn(qwen_image_tag, qwen_image_html)
         self.assertLess(qwen_image_html.index(lora_tag), qwen_image_html.index(qwen_image_tag))
+        self.assertLess(qwen_image_html.index(preset_tag), qwen_image_html.index(qwen_image_tag))
 
     def test_qwen_image_script_wires_lora_panel_and_payload(self):
         qwen_image_js = (ROOT / "frontend" / "qwen_image.js").read_text(encoding="utf-8")
@@ -451,17 +454,30 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", qwen_image_js)
         self.assertIn("payload.lora_adapters = loraAdapters;", qwen_image_js)
 
+    def test_qwen_image_script_wires_preset_panel(self):
+        qwen_image_js = (ROOT / "frontend" / "qwen_image.js").read_text(encoding="utf-8")
+        self.assertIn("window.PresetPanel?.init({", qwen_image_js)
+        self.assertIn('taskType: "qwen-image.text2img"', qwen_image_js)
+        self.assertIn("collectSettings: collectQwenImagePresetSettings", qwen_image_js)
+        self.assertIn("applySettings: applyQwenImagePresetSettings", qwen_image_js)
+
     def test_qwen_image_img2img_page_includes_lora_script_before_qwen_image_img2img(self):
         qwen_image_img2img_html = (ROOT / "frontend" / "qwen_image_img2img.html").read_text(
             encoding="utf-8"
         )
         lora_tag = '<script src="lora_panel.js?v=1"></script>'
+        preset_tag = '<script src="preset_panel.js?v=1"></script>'
         qwen_image_img2img_tag = '<script src="qwen_image_img2img.js?v=2"></script>'
 
         self.assertIn(lora_tag, qwen_image_img2img_html)
+        self.assertIn(preset_tag, qwen_image_img2img_html)
         self.assertIn(qwen_image_img2img_tag, qwen_image_img2img_html)
         self.assertLess(
             qwen_image_img2img_html.index(lora_tag),
+            qwen_image_img2img_html.index(qwen_image_img2img_tag),
+        )
+        self.assertLess(
+            qwen_image_img2img_html.index(preset_tag),
             qwen_image_img2img_html.index(qwen_image_img2img_tag),
         )
 
@@ -476,17 +492,32 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", qwen_image_img2img_js)
         self.assertIn("taskInputs.lora_adapters = loraAdapters;", qwen_image_img2img_js)
 
+    def test_qwen_image_img2img_script_wires_preset_panel(self):
+        qwen_image_img2img_js = (ROOT / "frontend" / "qwen_image_img2img.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("window.PresetPanel?.init({", qwen_image_img2img_js)
+        self.assertIn('taskType: "qwen-image.img2img"', qwen_image_img2img_js)
+        self.assertIn("collectSettings: collectQwenImageImg2ImgPresetSettings", qwen_image_img2img_js)
+        self.assertIn("applySettings: applyQwenImageImg2ImgPresetSettings", qwen_image_img2img_js)
+
     def test_qwen_image_inpaint_page_includes_lora_script_before_qwen_image_inpaint(self):
         qwen_image_inpaint_html = (ROOT / "frontend" / "qwen_image_inpaint.html").read_text(
             encoding="utf-8"
         )
         lora_tag = '<script src="lora_panel.js?v=1"></script>'
+        preset_tag = '<script src="preset_panel.js?v=1"></script>'
         qwen_image_inpaint_tag = '<script src="qwen_image_inpaint.js?v=2"></script>'
 
         self.assertIn(lora_tag, qwen_image_inpaint_html)
+        self.assertIn(preset_tag, qwen_image_inpaint_html)
         self.assertIn(qwen_image_inpaint_tag, qwen_image_inpaint_html)
         self.assertLess(
             qwen_image_inpaint_html.index(lora_tag),
+            qwen_image_inpaint_html.index(qwen_image_inpaint_tag),
+        )
+        self.assertLess(
+            qwen_image_inpaint_html.index(preset_tag),
             qwen_image_inpaint_html.index(qwen_image_inpaint_tag),
         )
 
@@ -500,6 +531,15 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         )
         self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", qwen_image_inpaint_js)
         self.assertIn("taskInputs.lora_adapters = loraAdapters;", qwen_image_inpaint_js)
+
+    def test_qwen_image_inpaint_script_wires_preset_panel(self):
+        qwen_image_inpaint_js = (ROOT / "frontend" / "qwen_image_inpaint.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("window.PresetPanel?.init({", qwen_image_inpaint_js)
+        self.assertIn('taskType: "qwen-image.inpaint"', qwen_image_inpaint_js)
+        self.assertIn("collectSettings: collectQwenImageInpaintPresetSettings", qwen_image_inpaint_js)
+        self.assertIn("applySettings: applyQwenImageInpaintPresetSettings", qwen_image_inpaint_js)
 
     def test_preprocessor_modal_has_two_column_layout_hooks(self):
         preprocessor_html = (ROOT / "frontend" / "controlnet_preprocessor.html").read_text(
