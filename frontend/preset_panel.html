@@ -1,0 +1,28 @@
+<div class="preset-panel">
+    <button class="preset-toggle" type="button" id="preset-toggle">
+        <span>Prompt + Generation Presets</span>
+        <span class="chevron" id="preset-chevron">&#x25be;</span>
+    </button>
+    <div class="preset-content" id="preset-content">
+        <label class="field">
+            <span>Preset</span>
+            <select id="preset-select">
+                <option value="" selected>No presets</option>
+            </select>
+        </label>
+        <div class="field-row">
+            <button class="secondary" id="preset-load" type="button">Load</button>
+            <button class="secondary" id="preset-refresh" type="button">Refresh</button>
+        </div>
+        <label class="field">
+            <span>Name</span>
+            <input id="preset-name" type="text" placeholder="Preset name" />
+        </label>
+        <div class="field-row">
+            <button class="secondary" id="preset-save-new" type="button">Save New</button>
+            <button class="secondary" id="preset-update" type="button">Update</button>
+            <button class="secondary" id="preset-delete" type="button">Delete</button>
+        </div>
+        <div class="field-hint" id="preset-status">No preset selected.</div>
+    </div>
+</div>

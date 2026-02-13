@@ -10,41 +10,50 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         sd15_html = (ROOT / "frontend" / "sd15.html").read_text(encoding="utf-8")
         panel_tag = '<script src="controlnet_panel.js?v=2"></script>'
         preprocessor_tag = '<script src="controlnet_preprocessor.js?v=3"></script>'
+        preset_tag = '<script src="preset_panel.js?v=1"></script>'
         sd15_tag = '<script src="sd15.js?v=3"></script>'
 
         self.assertIn(panel_tag, sd15_html)
         self.assertIn(preprocessor_tag, sd15_html)
+        self.assertIn(preset_tag, sd15_html)
         self.assertIn(sd15_tag, sd15_html)
         self.assertLess(sd15_html.index(panel_tag), sd15_html.index(sd15_tag))
         self.assertLess(sd15_html.index(preprocessor_tag), sd15_html.index(sd15_tag))
+        self.assertLess(sd15_html.index(preset_tag), sd15_html.index(sd15_tag))
 
     def test_sd15_img2img_page_includes_controlnet_scripts_before_img2img(self):
         sd15_img2img_html = (ROOT / "frontend" / "sd15_img2img.html").read_text(encoding="utf-8")
         panel_tag = '<script src="controlnet_panel.js?v=2"></script>'
         preprocessor_tag = '<script src="controlnet_preprocessor.js?v=3"></script>'
+        preset_tag = '<script src="preset_panel.js?v=1"></script>'
         img2img_tag = '<script src="sd15_img2img.js?v=3"></script>'
 
         self.assertIn(panel_tag, sd15_img2img_html)
         self.assertIn(preprocessor_tag, sd15_img2img_html)
+        self.assertIn(preset_tag, sd15_img2img_html)
         self.assertIn(img2img_tag, sd15_img2img_html)
         self.assertLess(sd15_img2img_html.index(panel_tag), sd15_img2img_html.index(img2img_tag))
         self.assertLess(
             sd15_img2img_html.index(preprocessor_tag), sd15_img2img_html.index(img2img_tag)
         )
+        self.assertLess(sd15_img2img_html.index(preset_tag), sd15_img2img_html.index(img2img_tag))
 
     def test_sd15_inpaint_page_includes_controlnet_scripts_before_inpaint(self):
         sd15_inpaint_html = (ROOT / "frontend" / "sd15_inpainting.html").read_text(encoding="utf-8")
         panel_tag = '<script src="controlnet_panel.js?v=2"></script>'
         preprocessor_tag = '<script src="controlnet_preprocessor.js?v=3"></script>'
+        preset_tag = '<script src="preset_panel.js?v=1"></script>'
         inpaint_tag = '<script src="sd15_inpainting.js?v=3"></script>'
 
         self.assertIn(panel_tag, sd15_inpaint_html)
         self.assertIn(preprocessor_tag, sd15_inpaint_html)
+        self.assertIn(preset_tag, sd15_inpaint_html)
         self.assertIn(inpaint_tag, sd15_inpaint_html)
         self.assertLess(sd15_inpaint_html.index(panel_tag), sd15_inpaint_html.index(inpaint_tag))
         self.assertLess(
             sd15_inpaint_html.index(preprocessor_tag), sd15_inpaint_html.index(inpaint_tag)
         )
+        self.assertLess(sd15_inpaint_html.index(preset_tag), sd15_inpaint_html.index(inpaint_tag))
 
     def test_sdxl_page_includes_controlnet_scripts_before_sdxl(self):
         sdxl_html = (ROOT / "frontend" / "sdxl.html").read_text(encoding="utf-8")
@@ -116,6 +125,27 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("controlnetEnabled", img2img_js)
         self.assertIn("control_images", img2img_js)
         self.assertIn("controlnet_models", img2img_js)
+
+    def test_sd15_script_wires_preset_panel(self):
+        sd15_js = (ROOT / "frontend" / "sd15.js").read_text(encoding="utf-8")
+        self.assertIn("window.PresetPanel?.init({", sd15_js)
+        self.assertIn('taskType: "sd15.text2img"', sd15_js)
+        self.assertIn("collectSettings: collectSd15PresetSettings", sd15_js)
+        self.assertIn("applySettings: applySd15PresetSettings", sd15_js)
+
+    def test_sd15_img2img_script_wires_preset_panel(self):
+        img2img_js = (ROOT / "frontend" / "sd15_img2img.js").read_text(encoding="utf-8")
+        self.assertIn("window.PresetPanel?.init({", img2img_js)
+        self.assertIn('taskType: "sd15.img2img"', img2img_js)
+        self.assertIn("collectSettings: collectSd15Img2ImgPresetSettings", img2img_js)
+        self.assertIn("applySettings: applySd15Img2ImgPresetSettings", img2img_js)
+
+    def test_sd15_inpaint_script_wires_preset_panel(self):
+        inpaint_js = (ROOT / "frontend" / "sd15_inpainting.js").read_text(encoding="utf-8")
+        self.assertIn("window.PresetPanel?.init({", inpaint_js)
+        self.assertIn('taskType: "sd15.inpaint"', inpaint_js)
+        self.assertIn("collectSettings: collectSd15InpaintPresetSettings", inpaint_js)
+        self.assertIn("applySettings: applySd15InpaintPresetSettings", inpaint_js)
 
     def test_sd15_img2img_script_wires_lora_panel_and_payload(self):
         img2img_js = (ROOT / "frontend" / "sd15_img2img.js").read_text(encoding="utf-8")

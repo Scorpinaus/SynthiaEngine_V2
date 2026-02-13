@@ -6,7 +6,7 @@ import threading
 from typing import Any
 
 import torch
-from diffusers import FluxImg2ImgPipeline, FluxInpaintPipeline
+from diffusers import FluxImg2ImgPipeline, FluxInpaintPipeline, FluxPipeline
 try:
     from diffusers import FluxFillPipeline
 except ImportError:  # pragma: no cover - depends on installed diffusers version
@@ -80,6 +80,19 @@ def load_flux_pipeline(model_name: str | None) -> Any:
         )
     else:
         raise ValueError(f"Unsupported model type: {entry.model_type}")
+    
+    # if entry.model_type == "diffusers":
+    #     pipe = FluxPipeline.from_pretrained(
+    #         source,
+    #         torch_dtype=torch.bfloat16,
+    #     )
+    # elif entry.model_type == "single-file":
+    #     pipe = FluxPipeline.from_single_file(
+    #         source,
+    #         torch_dtype=torch.bfloat16,
+    #     )
+    # else:
+    #     raise ValueError(f"Unsupported model type: {entry.model_type}")
 
     # pipe.enable_attention_slicing("max")
     pipe.vae.enable_slicing()

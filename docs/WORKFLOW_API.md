@@ -6,6 +6,7 @@ Registry persistence note:
 - `/lora-models` entries are persisted in `database/lora_registry.sqlite3`.
 - If that SQLite registry is empty and `backend/lora_registry.json` exists, the backend performs a one-time import on startup and skips invalid rows with warning logs.
 - API payload shape for LoRA entries is unchanged.
+- `/api/presets` entries are persisted in `database/preset_registry.sqlite3`.
 
 ## Endpoints
 
@@ -209,6 +210,81 @@ Compatibility guarantees:
 - Existing `GET /lora-models` and `POST /lora-models` consumers are backward-compatible.
 - Existing list/create payload fields and response field names are unchanged.
 - Existing list/create status codes remain unchanged (`200` success, `400` domain/validation error for create).
+
+### Preset registry endpoints
+
+`GET /api/presets`
+- Lists saved prompt/generation presets.
+- Optional query `family` filters by exact family (case-insensitive).
+- Optional query `task_type` filters by exact workflow task type.
+- Response `200`: `PresetRegistryEntry[]`
+
+`PresetRegistryEntry` shape:
+```json
+{
+  "preset_id": 1,
+  "name": "SD15 Product Baseline",
+  "family": "sd15",
+  "task_type": "sd15.text2img",
+  "settings": {
+    "prompt": "product photo, studio lighting",
+    "negative_prompt": "blurry, low quality",
+    "steps": 30,
+    "cfg": 7.0,
+    "scheduler": "euler",
+    "seed": 1234,
+    "width": 640,
+    "height": 640,
+    "num_images": 1,
+    "clip_skip": 1,
+    "weighting_policy": "diffusers-like",
+    "hires_enabled": true,
+    "hires_scale": 1.5,
+    "controlnet_enabled": false,
+    "lora_adapters": [{ "lora_id": 101, "strength": 0.8 }]
+  }
+}
+```
+
+`POST /api/presets`
+- Creates a new preset.
+- Request shape:
+```json
+{
+  "name": "SD15 Product Baseline",
+  "family": "sd15",
+  "task_type": "sd15.text2img",
+  "settings": { "prompt": "..." }
+}
+```
+- Response `201`: created `PresetRegistryEntry`
+- Error `400`: explicit validation/domain error in `{"detail": "<message>"}`.
+
+`GET /api/presets/{preset_id}`
+- Response `200`: `PresetRegistryEntry`
+- Error `404`: missing id in `{"detail": "Preset with id <preset_id> not found."}`
+
+`PATCH /api/presets/{preset_id}`
+- Updates editable fields: `name`, `family`, `task_type`, `settings`.
+- Request shape:
+```json
+{
+  "name": "SD15 Product Baseline v2",
+  "settings": {
+    "prompt": "updated prompt",
+    "steps": 24
+  }
+}
+```
+- Response `200`: updated `PresetRegistryEntry`
+- Error `400`: explicit validation/domain error in `{"detail": "<message>"}`.
+- Error `404`: missing id in `{"detail": "Preset with id <preset_id> not found."}`
+- Error `422`: schema validation failure (for example unknown patch fields).
+
+`DELETE /api/presets/{preset_id}`
+- Deletes one preset.
+- Returns `204` on success.
+- Error `404`: missing id in `{"detail": "Preset with id <preset_id> not found."}`
 
 Frontend note (registry pages):
 - `frontend/models.html` now serves base model listing with edit/delete actions.

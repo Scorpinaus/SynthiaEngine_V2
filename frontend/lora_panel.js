@@ -147,6 +147,39 @@
         }));
     }
 
+    function setSelectedAdapters(adapters) {
+        if (!Array.isArray(adapters)) {
+            loraState.selected = [];
+            renderLoraList();
+            return;
+        }
+
+        const mapped = [];
+        adapters.forEach((adapter) => {
+            const loraId = Number(adapter?.lora_id);
+            if (!Number.isFinite(loraId)) {
+                return;
+            }
+
+            const matched = loraState.available.find((entry) => Number(entry.lora_id) === loraId);
+            const strengthRaw = Number(adapter?.strength);
+            const strength = Number.isFinite(strengthRaw)
+                ? Math.max(0, Math.min(1, strengthRaw))
+                : 0.8;
+            mapped.push({
+                lora_id: loraId,
+                lora_name:
+                    matched?.name ??
+                    matched?.file_path ??
+                    adapter?.lora_name ??
+                    `LoRA ${loraId}`,
+                strength,
+            });
+        });
+        loraState.selected = mapped;
+        renderLoraList();
+    }
+
     async function initLoraUI({ apiBase, family }) {
         const container = document.getElementById("lora-panel-root");
         if (!container) {
@@ -174,5 +207,6 @@
     window.LoraPanel = {
         init: initLoraUI,
         getSelectedAdapters: buildLoraPayload,
+        setSelectedAdapters,
     };
 })();

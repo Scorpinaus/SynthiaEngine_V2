@@ -37,6 +37,106 @@ function getControlNetState() {
     return window.ControlNetPanel?.getState?.() ?? null;
 }
 
+let controlNetUiReady = Promise.resolve();
+let loraPanelReady = Promise.resolve();
+
+function setInputValue(elementId, value) {
+    const el = document.getElementById(elementId);
+    if (!el || value === undefined) {
+        return;
+    }
+    el.value = value === null ? "" : String(value);
+}
+
+function setCheckboxValue(elementId, value) {
+    const el = document.getElementById(elementId);
+    if (!el || value === undefined) {
+        return;
+    }
+    el.checked = Boolean(value);
+}
+
+function setModelSelection(value) {
+    if (value === undefined) {
+        return;
+    }
+    const select = document.getElementById("model_select");
+    if (!select) {
+        return;
+    }
+    if (value === null || value === "") {
+        select.value = "";
+        return;
+    }
+    const normalized = String(value);
+    const hasOption = Array.from(select.options).some((opt) => opt.value === normalized);
+    if (!hasOption) {
+        const option = document.createElement("option");
+        option.value = normalized;
+        option.textContent = `${normalized} (preset)`;
+        select.appendChild(option);
+    }
+    select.value = normalized;
+}
+
+function collectSd15Img2ImgPresetSettings() {
+    return {
+        prompt: WorkflowClient.readTextValue("prompt", ""),
+        negative_prompt: WorkflowClient.readTextValue("negative_prompt", ""),
+        steps: WorkflowClient.readNumberValue("steps", 20, { integer: true }),
+        cfg: WorkflowClient.readNumberValue("cfg", 7.5),
+        scheduler: WorkflowClient.readTextValue("scheduler", "euler"),
+        seed: WorkflowClient.readSeedValue("seed"),
+        width: WorkflowClient.readNumberValue("width", 512, { integer: true }),
+        height: WorkflowClient.readNumberValue("height", 512, { integer: true }),
+        strength: WorkflowClient.readNumberValue("strength", 0.75),
+        num_images: WorkflowClient.readNumberValue("num_images", 1, { integer: true }),
+        model: WorkflowClient.readTextValue("model_select", null),
+        clip_skip: WorkflowClient.readNumberValue("clip_skip", 1, { integer: true }),
+        controlnet_enabled: Boolean(document.getElementById("controlnet-enabled")?.checked),
+        controlnet_conditioning_scale: WorkflowClient.readNumberValue(
+            "controlnet_conditioning_scale",
+            1.0
+        ),
+        control_guidance_start: WorkflowClient.readNumberValue("control_guidance_start", 0.0),
+        control_guidance_end: WorkflowClient.readNumberValue("control_guidance_end", 1.0),
+        controlnet_guess_mode: Boolean(document.getElementById("controlnet_guess_mode")?.checked),
+        controlnet_compat_mode: WorkflowClient.readTextValue("controlnet_compat_mode", "warn"),
+        lora_adapters: window.LoraPanel?.getSelectedAdapters?.() ?? [],
+    };
+}
+
+async function applySd15Img2ImgPresetSettings(settings) {
+    await Promise.all([controlNetUiReady, loraPanelReady]);
+
+    setInputValue("prompt", settings.prompt);
+    setInputValue("negative_prompt", settings.negative_prompt);
+    setInputValue("steps", settings.steps);
+    setInputValue("cfg", settings.cfg);
+    setInputValue("scheduler", settings.scheduler);
+    setInputValue("seed", settings.seed);
+    setInputValue("width", settings.width);
+    setInputValue("height", settings.height);
+    setInputValue("strength", settings.strength);
+    setInputValue("num_images", settings.num_images);
+    setModelSelection(settings.model);
+    setInputValue("clip_skip", settings.clip_skip);
+    setCheckboxValue("controlnet-enabled", settings.controlnet_enabled);
+    setInputValue("controlnet_conditioning_scale", settings.controlnet_conditioning_scale);
+    setInputValue("control_guidance_start", settings.control_guidance_start);
+    setInputValue("control_guidance_end", settings.control_guidance_end);
+    setCheckboxValue("controlnet_guess_mode", settings.controlnet_guess_mode);
+    setInputValue("controlnet_compat_mode", settings.controlnet_compat_mode);
+
+    if (Array.isArray(settings.lora_adapters)) {
+        window.LoraPanel?.setSelectedAdapters?.(settings.lora_adapters);
+    }
+
+    window.ControlNetPanel?.clearControlItems?.();
+    window.ControlNetPanel?.updateIndicator?.();
+    window.ControlNetPanel?.updateActiveFlag?.();
+}
+
 /**
  * Populate the SD1.5 model dropdown from the backend model registry.
  * Falls back to a sane default if the request fails.
@@ -100,12 +200,19 @@ function initSd15Img2ImgPage() {
             .catch(() => {});
     }
     if (window.ControlNetPreprocessor?.init) {
-        window.ControlNetPreprocessor.init().catch((error) => {
+        controlNetUiReady = window.ControlNetPreprocessor.init().catch((error) => {
             console.warn("ControlNet init failed:", error);
         });
     }
     // Optional LoRA panel integration (only active if that script is present on the page).
-    window.LoraPanel?.init({ apiBase: API_BASE, family: "sd15" });
+    loraPanelReady = window.LoraPanel?.init({ apiBase: API_BASE, family: "sd15" }) ?? Promise.resolve();
+    window.PresetPanel?.init({
+        apiBase: API_BASE,
+        family: "sd15",
+        taskType: "sd15.img2img",
+        collectSettings: collectSd15Img2ImgPresetSettings,
+        applySettings: applySd15Img2ImgPresetSettings,
+    });
 }
 
 initSd15Img2ImgPage();

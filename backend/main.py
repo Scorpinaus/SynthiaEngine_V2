@@ -50,6 +50,15 @@ from backend.lora_registry import (
     list_lora_entries,
     update_lora_entry,
 )
+from backend.preset_registry import (
+    PresetRegistryCreate,
+    PresetRegistryEntry,
+    create_preset_entry,
+    delete_preset_entry,
+    get_preset_entry,
+    list_preset_entries,
+    update_preset_entry,
+)
 from backend.job_queue import (
     JobNotFoundError,
     JobQueueConfig,
@@ -151,6 +160,26 @@ class LoraUpdateRequest(BaseModel):
     @classmethod
     def validate_name(cls, value: str | None) -> str | None:
         return _validate_lora_name(value)
+
+
+class PresetCreateRequest(BaseModel):
+    """Request payload used to create a saved generation preset."""
+
+    name: str
+    family: str
+    task_type: str
+    settings: dict[str, Any] = Field(default_factory=dict)
+
+
+class PresetUpdateRequest(BaseModel):
+    """Request payload used to update editable fields on a saved preset."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = None
+    family: str | None = None
+    task_type: str | None = None
+    settings: dict[str, Any] | None = None
 
 
 class ControlNetPreprocessorInfo(BaseModel):
@@ -580,6 +609,58 @@ async def remove_lora_model(lora_id: int):
     """Delete a single LoRA registry entry by id."""
     try:
         delete_lora_entry(lora_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return Response(status_code=204)
+
+
+@app.get("/api/presets", response_model=list[PresetRegistryEntry])
+async def list_presets(family: str | None = None, task_type: str | None = None):
+    """List saved generation presets, with optional family/task filters."""
+    try:
+        return list_preset_entries(family=family, task_type=task_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/presets", response_model=PresetRegistryEntry, status_code=201)
+async def create_preset(req: PresetCreateRequest):
+    """Create a new saved generation preset."""
+    try:
+        return create_preset_entry(PresetRegistryCreate(**req.model_dump()))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/presets/{preset_id}", response_model=PresetRegistryEntry)
+async def get_preset(preset_id: int):
+    """Fetch one saved generation preset by id."""
+    try:
+        return get_preset_entry(preset_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.patch("/api/presets/{preset_id}", response_model=PresetRegistryEntry)
+async def patch_preset(preset_id: int, req: PresetUpdateRequest):
+    """Update editable fields for one saved generation preset."""
+    updates = req.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(status_code=400, detail="At least one editable field must be provided.")
+    try:
+        return update_preset_entry(preset_id, updates)
+    except ValueError as exc:
+        detail = str(exc)
+        if detail.endswith("not found."):
+            raise HTTPException(status_code=404, detail=detail) from exc
+        raise HTTPException(status_code=400, detail=detail) from exc
+
+
+@app.delete("/api/presets/{preset_id}", status_code=204)
+async def remove_preset(preset_id: int):
+    """Delete one saved generation preset by id."""
+    try:
+        delete_preset_entry(preset_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return Response(status_code=204)

@@ -74,6 +74,110 @@ function getControlNetState() {
     return window.ControlNetPanel?.getState?.() ?? null;
 }
 
+let controlNetUiReady = Promise.resolve();
+let loraPanelReady = Promise.resolve();
+
+function setInputValue(elementId, value) {
+    const el = document.getElementById(elementId);
+    if (!el || value === undefined) {
+        return;
+    }
+    el.value = value === null ? "" : String(value);
+}
+
+function setCheckboxValue(elementId, value) {
+    const el = document.getElementById(elementId);
+    if (!el || value === undefined) {
+        return;
+    }
+    el.checked = Boolean(value);
+}
+
+function setModelSelection(value) {
+    if (value === undefined) {
+        return;
+    }
+    const select = document.getElementById("model_select");
+    if (!select) {
+        return;
+    }
+    if (value === null || value === "") {
+        select.value = "";
+        return;
+    }
+    const normalized = String(value);
+    const hasOption = Array.from(select.options).some((opt) => opt.value === normalized);
+    if (!hasOption) {
+        const option = document.createElement("option");
+        option.value = normalized;
+        option.textContent = `${normalized} (preset)`;
+        select.appendChild(option);
+    }
+    select.value = normalized;
+}
+
+function collectSd15PresetSettings() {
+    return {
+        prompt: WorkflowClient.readTextValue("prompt", ""),
+        negative_prompt: WorkflowClient.readTextValue("negative_prompt", ""),
+        steps: WorkflowClient.readNumberValue("steps", 20, { integer: true }),
+        cfg: WorkflowClient.readNumberValue("cfg", 7.5),
+        scheduler: WorkflowClient.readTextValue("scheduler", "euler"),
+        seed: WorkflowClient.readSeedValue("seed"),
+        width: WorkflowClient.readNumberValue("width", 512, { integer: true }),
+        height: WorkflowClient.readNumberValue("height", 512, { integer: true }),
+        hires_enabled: Boolean(document.getElementById("hires_enabled")?.checked),
+        hires_scale: WorkflowClient.readNumberValue("hires_scale", 1.0),
+        model: WorkflowClient.readTextValue("model_select", null),
+        clip_skip: WorkflowClient.readNumberValue("clip_skip", 1, { integer: true }),
+        num_images: WorkflowClient.readNumberValue("num_images", 1, { integer: true }),
+        weighting_policy: WorkflowClient.readTextValue("weighting_policy", "diffusers-like"),
+        controlnet_enabled: Boolean(document.getElementById("controlnet-enabled")?.checked),
+        controlnet_conditioning_scale: WorkflowClient.readNumberValue(
+            "controlnet_conditioning_scale",
+            1.0
+        ),
+        control_guidance_start: WorkflowClient.readNumberValue("control_guidance_start", 0.0),
+        control_guidance_end: WorkflowClient.readNumberValue("control_guidance_end", 1.0),
+        controlnet_guess_mode: Boolean(document.getElementById("controlnet_guess_mode")?.checked),
+        controlnet_compat_mode: WorkflowClient.readTextValue("controlnet_compat_mode", "warn"),
+        lora_adapters: window.LoraPanel?.getSelectedAdapters?.() ?? [],
+    };
+}
+
+async function applySd15PresetSettings(settings) {
+    await Promise.all([controlNetUiReady, loraPanelReady]);
+
+    setInputValue("prompt", settings.prompt);
+    setInputValue("negative_prompt", settings.negative_prompt);
+    setInputValue("steps", settings.steps);
+    setInputValue("cfg", settings.cfg);
+    setInputValue("scheduler", settings.scheduler);
+    setInputValue("seed", settings.seed);
+    setInputValue("width", settings.width);
+    setInputValue("height", settings.height);
+    setCheckboxValue("hires_enabled", settings.hires_enabled);
+    setInputValue("hires_scale", settings.hires_scale);
+    setModelSelection(settings.model);
+    setInputValue("clip_skip", settings.clip_skip);
+    setInputValue("num_images", settings.num_images);
+    setInputValue("weighting_policy", settings.weighting_policy);
+    setCheckboxValue("controlnet-enabled", settings.controlnet_enabled);
+    setInputValue("controlnet_conditioning_scale", settings.controlnet_conditioning_scale);
+    setInputValue("control_guidance_start", settings.control_guidance_start);
+    setInputValue("control_guidance_end", settings.control_guidance_end);
+    setCheckboxValue("controlnet_guess_mode", settings.controlnet_guess_mode);
+    setInputValue("controlnet_compat_mode", settings.controlnet_compat_mode);
+
+    if (Array.isArray(settings.lora_adapters)) {
+        window.LoraPanel?.setSelectedAdapters?.(settings.lora_adapters);
+    }
+
+    window.ControlNetPanel?.clearControlItems?.();
+    window.ControlNetPanel?.updateIndicator?.();
+    window.ControlNetPanel?.updateActiveFlag?.();
+}
+
 /**
  * Initialize page-level UI integrations.
  *
@@ -125,13 +229,20 @@ function initSd15Page() {
             .catch(() => {});
     }
     if (window.ControlNetPreprocessor?.init) {
-        window.ControlNetPreprocessor.init().catch((error) => {
+        controlNetUiReady = window.ControlNetPreprocessor.init().catch((error) => {
             console.warn("ControlNet init failed:", error);
         });
     }
 
     // Optional LoRA panel integration (only active if that script is present on the page).
-    window.LoraPanel?.init({ apiBase: API_BASE, family: "sd15" });
+    loraPanelReady = window.LoraPanel?.init({ apiBase: API_BASE, family: "sd15" }) ?? Promise.resolve();
+    window.PresetPanel?.init({
+        apiBase: API_BASE,
+        family: "sd15",
+        taskType: "sd15.text2img",
+        collectSettings: collectSd15PresetSettings,
+        applySettings: applySd15PresetSettings,
+    });
 }
 
 let didInitSd15Page = false;
