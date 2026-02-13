@@ -8,11 +8,76 @@ gallery.render();
 
 let activeJobToken = 0;
 let activeEventSource = null;
+let loraPanelReady = Promise.resolve();
 
 function closeActiveEventSource() {
     if (activeEventSource) {
         activeEventSource.close();
         activeEventSource = null;
+    }
+}
+
+function setInputValue(elementId, value) {
+    const el = document.getElementById(elementId);
+    if (!el || value === undefined) {
+        return;
+    }
+    el.value = value === null ? "" : String(value);
+}
+
+function setModelSelection(value) {
+    if (value === undefined) {
+        return;
+    }
+    const select = document.getElementById("model_select");
+    if (!select) {
+        return;
+    }
+    if (value === null || value === "") {
+        select.value = "";
+        return;
+    }
+    const normalized = String(value);
+    const hasOption = Array.from(select.options).some((opt) => opt.value === normalized);
+    if (!hasOption) {
+        const option = document.createElement("option");
+        option.value = normalized;
+        option.textContent = `${normalized} (preset)`;
+        select.appendChild(option);
+    }
+    select.value = normalized;
+}
+
+function collectFluxInpaintPresetSettings() {
+    return {
+        prompt: WorkflowClient.readTextValue("prompt", ""),
+        negative_prompt: WorkflowClient.readTextValue("negative_prompt", ""),
+        steps: WorkflowClient.readNumberValue("steps", 20, { integer: true }),
+        guidance_scale: WorkflowClient.readNumberValue("guidance_scale", 0.0),
+        scheduler: WorkflowClient.readTextValue("scheduler", "euler"),
+        seed: WorkflowClient.readSeedValue("seed"),
+        model: WorkflowClient.readTextValue("model_select", null),
+        num_images: WorkflowClient.readNumberValue("num_images", 1, { integer: true }),
+        strength: WorkflowClient.readNumberValue("strength", 0.5),
+        lora_adapters: window.LoraPanel?.getSelectedAdapters?.() ?? [],
+    };
+}
+
+async function applyFluxInpaintPresetSettings(settings) {
+    await loraPanelReady;
+
+    setInputValue("prompt", settings.prompt);
+    setInputValue("negative_prompt", settings.negative_prompt);
+    setInputValue("steps", settings.steps);
+    setInputValue("guidance_scale", settings.guidance_scale);
+    setInputValue("scheduler", settings.scheduler);
+    setInputValue("seed", settings.seed);
+    setModelSelection(settings.model);
+    setInputValue("num_images", settings.num_images);
+    setInputValue("strength", settings.strength);
+
+    if (Array.isArray(settings.lora_adapters)) {
+        window.LoraPanel?.setSelectedAdapters?.(settings.lora_adapters);
     }
 }
 
@@ -98,7 +163,14 @@ async function loadModels() {
 }
 
 loadModels();
-window.LoraPanel?.init({ apiBase: API_BASE, family: "flux" });
+loraPanelReady = window.LoraPanel?.init({ apiBase: API_BASE, family: "flux" }) ?? Promise.resolve();
+window.PresetPanel?.init({
+    apiBase: API_BASE,
+    family: "flux",
+    taskType: "flux.inpaint",
+    collectSettings: collectFluxInpaintPresetSettings,
+    applySettings: applyFluxInpaintPresetSettings,
+});
 if (window.WorkflowCatalog?.load) {
     void window.WorkflowCatalog
         .load(API_BASE)

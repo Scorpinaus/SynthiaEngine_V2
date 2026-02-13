@@ -315,11 +315,14 @@ class FrontendControlNetScriptTests(unittest.TestCase):
     def test_flux_page_includes_lora_script_before_flux(self):
         flux_html = (ROOT / "frontend" / "flux.html").read_text(encoding="utf-8")
         lora_tag = '<script src="lora_panel.js?v=1"></script>'
+        preset_tag = '<script src="preset_panel.js?v=1"></script>'
         flux_tag = '<script src="flux.js?v=2"></script>'
 
         self.assertIn(lora_tag, flux_html)
+        self.assertIn(preset_tag, flux_html)
         self.assertIn(flux_tag, flux_html)
         self.assertLess(flux_html.index(lora_tag), flux_html.index(flux_tag))
+        self.assertLess(flux_html.index(preset_tag), flux_html.index(flux_tag))
 
     def test_flux_script_wires_lora_panel_and_payload(self):
         flux_js = (ROOT / "frontend" / "flux.js").read_text(encoding="utf-8")
@@ -327,15 +330,27 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", flux_js)
         self.assertIn("payload.lora_adapters = loraAdapters;", flux_js)
 
+    def test_flux_script_wires_preset_panel(self):
+        flux_js = (ROOT / "frontend" / "flux.js").read_text(encoding="utf-8")
+        self.assertIn("window.PresetPanel?.init({", flux_js)
+        self.assertIn('taskType: "flux.text2img"', flux_js)
+        self.assertIn("collectSettings: collectFluxPresetSettings", flux_js)
+        self.assertIn("applySettings: applyFluxPresetSettings", flux_js)
+
     def test_flux_img2img_page_includes_lora_script_before_flux_img2img(self):
         flux_img2img_html = (ROOT / "frontend" / "flux_img2img.html").read_text(encoding="utf-8")
         lora_tag = '<script src="lora_panel.js?v=1"></script>'
+        preset_tag = '<script src="preset_panel.js?v=1"></script>'
         flux_img2img_tag = '<script src="flux_img2img.js?v=2"></script>'
 
         self.assertIn(lora_tag, flux_img2img_html)
+        self.assertIn(preset_tag, flux_img2img_html)
         self.assertIn(flux_img2img_tag, flux_img2img_html)
         self.assertLess(
             flux_img2img_html.index(lora_tag), flux_img2img_html.index(flux_img2img_tag)
+        )
+        self.assertLess(
+            flux_img2img_html.index(preset_tag), flux_img2img_html.index(flux_img2img_tag)
         )
 
     def test_flux_img2img_script_wires_lora_panel_and_payload(self):
@@ -344,15 +359,27 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", flux_img2img_js)
         self.assertIn("taskInputs.lora_adapters = loraAdapters;", flux_img2img_js)
 
+    def test_flux_img2img_script_wires_preset_panel(self):
+        flux_img2img_js = (ROOT / "frontend" / "flux_img2img.js").read_text(encoding="utf-8")
+        self.assertIn("window.PresetPanel?.init({", flux_img2img_js)
+        self.assertIn('taskType: "flux.img2img"', flux_img2img_js)
+        self.assertIn("collectSettings: collectFluxImg2ImgPresetSettings", flux_img2img_js)
+        self.assertIn("applySettings: applyFluxImg2ImgPresetSettings", flux_img2img_js)
+
     def test_flux_inpaint_page_includes_lora_script_before_flux_inpaint(self):
         flux_inpaint_html = (ROOT / "frontend" / "flux_inpaint.html").read_text(encoding="utf-8")
         lora_tag = '<script src="lora_panel.js?v=1"></script>'
+        preset_tag = '<script src="preset_panel.js?v=1"></script>'
         flux_inpaint_tag = '<script src="flux_inpaint.js?v=2"></script>'
 
         self.assertIn(lora_tag, flux_inpaint_html)
+        self.assertIn(preset_tag, flux_inpaint_html)
         self.assertIn(flux_inpaint_tag, flux_inpaint_html)
         self.assertLess(
             flux_inpaint_html.index(lora_tag), flux_inpaint_html.index(flux_inpaint_tag)
+        )
+        self.assertLess(
+            flux_inpaint_html.index(preset_tag), flux_inpaint_html.index(flux_inpaint_tag)
         )
 
     def test_flux_inpaint_script_wires_lora_panel_and_payload(self):
@@ -360,6 +387,13 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn('window.LoraPanel?.init({ apiBase: API_BASE, family: "flux" })', flux_inpaint_js)
         self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", flux_inpaint_js)
         self.assertIn("taskInputs.lora_adapters = loraAdapters;", flux_inpaint_js)
+
+    def test_flux_inpaint_script_wires_preset_panel(self):
+        flux_inpaint_js = (ROOT / "frontend" / "flux_inpaint.js").read_text(encoding="utf-8")
+        self.assertIn("window.PresetPanel?.init({", flux_inpaint_js)
+        self.assertIn('taskType: "flux.inpaint"', flux_inpaint_js)
+        self.assertIn("collectSettings: collectFluxInpaintPresetSettings", flux_inpaint_js)
+        self.assertIn("applySettings: applyFluxInpaintPresetSettings", flux_inpaint_js)
 
     def test_qwen_image_page_includes_lora_script_before_qwen_image(self):
         qwen_image_html = (ROOT / "frontend" / "qwen_image.html").read_text(encoding="utf-8")
