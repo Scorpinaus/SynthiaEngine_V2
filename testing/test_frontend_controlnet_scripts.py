@@ -260,11 +260,14 @@ class FrontendControlNetScriptTests(unittest.TestCase):
     def test_z_image_page_includes_lora_script_before_z_image(self):
         z_image_html = (ROOT / "frontend" / "z_image.html").read_text(encoding="utf-8")
         lora_tag = '<script src="lora_panel.js?v=1"></script>'
+        preset_tag = '<script src="preset_panel.js?v=1"></script>'
         z_image_tag = '<script src="z_image.js?v=2"></script>'
 
         self.assertIn(lora_tag, z_image_html)
+        self.assertIn(preset_tag, z_image_html)
         self.assertIn(z_image_tag, z_image_html)
         self.assertLess(z_image_html.index(lora_tag), z_image_html.index(z_image_tag))
+        self.assertLess(z_image_html.index(preset_tag), z_image_html.index(z_image_tag))
 
     def test_z_image_script_wires_lora_panel_and_payload(self):
         z_image_js = (ROOT / "frontend" / "z_image.js").read_text(encoding="utf-8")
@@ -272,14 +275,27 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", z_image_js)
         self.assertIn("payload.lora_adapters = loraAdapters;", z_image_js)
 
+    def test_z_image_script_wires_preset_panel(self):
+        z_image_js = (ROOT / "frontend" / "z_image.js").read_text(encoding="utf-8")
+        self.assertIn("window.PresetPanel?.init({", z_image_js)
+        self.assertIn('taskType: "z-image.text2img"', z_image_js)
+        self.assertIn("collectSettings: collectZImagePresetSettings", z_image_js)
+        self.assertIn("applySettings: applyZImagePresetSettings", z_image_js)
+
     def test_z_image_img2img_page_includes_lora_script_before_z_image_img2img(self):
         z_image_img2img_html = (ROOT / "frontend" / "z_image_img2img.html").read_text(encoding="utf-8")
         lora_tag = '<script src="lora_panel.js?v=1"></script>'
+        preset_tag = '<script src="preset_panel.js?v=1"></script>'
         z_image_img2img_tag = '<script src="z_image_img2img.js?v=2"></script>'
 
         self.assertIn(lora_tag, z_image_img2img_html)
+        self.assertIn(preset_tag, z_image_img2img_html)
         self.assertIn(z_image_img2img_tag, z_image_img2img_html)
         self.assertLess(z_image_img2img_html.index(lora_tag), z_image_img2img_html.index(z_image_img2img_tag))
+        self.assertLess(
+            z_image_img2img_html.index(preset_tag),
+            z_image_img2img_html.index(z_image_img2img_tag),
+        )
 
     def test_z_image_img2img_script_wires_lora_panel_and_payload(self):
         z_image_img2img_js = (ROOT / "frontend" / "z_image_img2img.js").read_text(encoding="utf-8")
@@ -287,17 +303,30 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", z_image_img2img_js)
         self.assertIn("taskInputs.lora_adapters = loraAdapters;", z_image_img2img_js)
 
+    def test_z_image_img2img_script_wires_preset_panel(self):
+        z_image_img2img_js = (ROOT / "frontend" / "z_image_img2img.js").read_text(encoding="utf-8")
+        self.assertIn("window.PresetPanel?.init({", z_image_img2img_js)
+        self.assertIn('taskType: "z-image.img2img"', z_image_img2img_js)
+        self.assertIn("collectSettings: collectZImageImg2ImgPresetSettings", z_image_img2img_js)
+        self.assertIn("applySettings: applyZImageImg2ImgPresetSettings", z_image_img2img_js)
+
     def test_z_image_inpaint_page_includes_lora_script_before_z_image_inpaint(self):
         z_image_inpaint_html = (ROOT / "frontend" / "z_image_inpaint.html").read_text(
             encoding="utf-8"
         )
         lora_tag = '<script src="lora_panel.js?v=1"></script>'
+        preset_tag = '<script src="preset_panel.js?v=1"></script>'
         z_image_inpaint_tag = '<script src="z_image_inpaint.js?v=1"></script>'
 
         self.assertIn(lora_tag, z_image_inpaint_html)
+        self.assertIn(preset_tag, z_image_inpaint_html)
         self.assertIn(z_image_inpaint_tag, z_image_inpaint_html)
         self.assertLess(
             z_image_inpaint_html.index(lora_tag),
+            z_image_inpaint_html.index(z_image_inpaint_tag),
+        )
+        self.assertLess(
+            z_image_inpaint_html.index(preset_tag),
             z_image_inpaint_html.index(z_image_inpaint_tag),
         )
 
@@ -311,6 +340,15 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         )
         self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", z_image_inpaint_js)
         self.assertIn("taskInputs.lora_adapters = loraAdapters;", z_image_inpaint_js)
+
+    def test_z_image_inpaint_script_wires_preset_panel(self):
+        z_image_inpaint_js = (ROOT / "frontend" / "z_image_inpaint.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("window.PresetPanel?.init({", z_image_inpaint_js)
+        self.assertIn('taskType: "z-image.inpaint"', z_image_inpaint_js)
+        self.assertIn("collectSettings: collectZImageInpaintPresetSettings", z_image_inpaint_js)
+        self.assertIn("applySettings: applyZImageInpaintPresetSettings", z_image_inpaint_js)
 
     def test_flux_page_includes_lora_script_before_flux(self):
         flux_html = (ROOT / "frontend" / "flux.html").read_text(encoding="utf-8")
