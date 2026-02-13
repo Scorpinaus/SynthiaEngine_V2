@@ -60,6 +60,19 @@ _EXTRA_FIELDS_BY_TASK: dict[str, set[str]] = {
     },
     "sd15.img2img": {"controlnet_enabled"},
     "sd15.inpaint": {"controlnet_enabled"},
+    "sdxl.text2img": {
+        "cfg",
+        "hires_enabled",
+        "hires_scale",
+        "controlnet_enabled",
+        "controlnet_conditioning_scale",
+        "control_guidance_start",
+        "control_guidance_end",
+        "controlnet_guess_mode",
+        "controlnet_compat_mode",
+    },
+    "sdxl.img2img": {"cfg", "controlnet_enabled"},
+    "sdxl.inpaint": {"cfg", "controlnet_enabled"},
 }
 
 

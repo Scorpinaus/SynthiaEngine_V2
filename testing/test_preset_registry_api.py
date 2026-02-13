@@ -174,3 +174,46 @@ def test_preset_validation_errors(tmp_path):
     invalid_filter = client.get("/api/presets?task_type=sd15.unknown")
     assert invalid_filter.status_code == 400
     assert invalid_filter.json()["detail"] == "Unsupported task_type 'sd15.unknown'."
+
+
+def test_sdxl_preset_allows_frontend_extra_fields(tmp_path):
+    _reset_preset_registry_paths(tmp_path)
+    client = TestClient(app)
+
+    created = client.post(
+        "/api/presets",
+        json={
+            "name": "sdxl baseline",
+            "family": "sdxl",
+            "task_type": "sdxl.text2img",
+            "settings": {
+                "prompt": "studio portrait",
+                "negative_prompt": "blurry",
+                "steps": 30,
+                "cfg": 6.5,
+                "guidance_scale": 6.5,
+                "scheduler": "euler",
+                "seed": 42,
+                "width": 1024,
+                "height": 1024,
+                "num_images": 1,
+                "clip_skip": 1,
+                "hires_enabled": True,
+                "hires_scale": 1.5,
+                "controlnet_enabled": False,
+                "controlnet_conditioning_scale": 1.0,
+                "control_guidance_start": 0.0,
+                "control_guidance_end": 1.0,
+                "controlnet_guess_mode": False,
+                "controlnet_compat_mode": "warn",
+                "model": "stable-diffusion-xl-base-1.0",
+                "lora_adapters": [{"lora_id": 101, "strength": 0.8}],
+            },
+        },
+    )
+    assert created.status_code == 201
+    body = created.json()
+    assert body["family"] == "sdxl"
+    assert body["task_type"] == "sdxl.text2img"
+    assert body["settings"]["cfg"] == 6.5
+    assert body["settings"]["hires_enabled"] is True
