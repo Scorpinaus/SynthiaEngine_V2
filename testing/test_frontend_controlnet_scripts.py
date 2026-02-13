@@ -118,6 +118,23 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("gridTemplateColumns", preprocessor_js)
         self.assertIn("window.innerWidth <= 700", preprocessor_js)
 
+    def test_preset_panel_html_has_mode_specific_controls(self):
+        preset_html = (ROOT / "frontend" / "preset_panel.html").read_text(encoding="utf-8")
+        self.assertIn('id="preset-load"', preset_html)
+        self.assertIn('id="preset-refresh"', preset_html)
+        self.assertIn('id="preset-add-new"', preset_html)
+        self.assertIn('id="preset-name-field"', preset_html)
+        self.assertIn('id="preset-create-actions"', preset_html)
+        self.assertIn('id="preset-manage-actions"', preset_html)
+        self.assertIn('id="preset-cancel"', preset_html)
+
+    def test_preset_panel_script_supports_create_and_manage_modes(self):
+        preset_js = (ROOT / "frontend" / "preset_panel.js").read_text(encoding="utf-8")
+        self.assertIn("const UI_MODES", preset_js)
+        self.assertIn("setUiMode(UI_MODES.MANAGE)", preset_js)
+        self.assertIn('document.getElementById("preset-add-new")', preset_js)
+        self.assertIn('document.getElementById("preset-cancel")', preset_js)
+
     def test_sd15_img2img_script_consumes_controlnet_state(self):
         img2img_js = (ROOT / "frontend" / "sd15_img2img.js").read_text(encoding="utf-8")
         self.assertIn("window.ControlNetPanel?.getState?.()", img2img_js)

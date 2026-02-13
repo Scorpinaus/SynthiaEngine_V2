@@ -10,16 +10,20 @@
                 <option value="" selected>No presets</option>
             </select>
         </label>
-        <div class="field-row">
-            <button class="secondary" id="preset-load" type="button">Load</button>
+        <div class="field-row field-row-3">
+            <button class="secondary" id="preset-load" type="button">Load Preset</button>
+            <button class="secondary" id="preset-add-new" type="button">Add New Preset</button>
             <button class="secondary" id="preset-refresh" type="button">Refresh</button>
         </div>
-        <label class="field">
-            <span>Name</span>
+        <label class="field is-hidden" id="preset-name-field">
+            <span>Preset Name</span>
             <input id="preset-name" type="text" placeholder="Preset name" />
         </label>
-        <div class="field-row">
+        <div class="field-row is-hidden" id="preset-create-actions">
             <button class="secondary" id="preset-save-new" type="button">Save New</button>
+            <button class="secondary" id="preset-cancel" type="button">Cancel</button>
+        </div>
+        <div class="field-row is-hidden" id="preset-manage-actions">
             <button class="secondary" id="preset-update" type="button">Update</button>
             <button class="secondary" id="preset-delete" type="button">Delete</button>
         </div>

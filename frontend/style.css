@@ -109,6 +109,10 @@ body {
     gap: 12px;
 }
 
+.field-row-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 textarea,
 input,
 select {
@@ -644,6 +648,10 @@ button {
     border-radius: 14px;
     overflow: hidden;
     background: #fdfbf7;
+}
+
+.preset-panel button {
+    border-radius: 10px;
 }
 
 .preset-toggle {

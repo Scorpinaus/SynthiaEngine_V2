@@ -7,6 +7,13 @@
         applySettings: null,
         presets: [],
         selectedId: null,
+        uiMode: "default",
+    };
+
+    const UI_MODES = {
+        DEFAULT: "default",
+        CREATE: "create",
+        MANAGE: "manage",
     };
 
     function setStatus(message) {
@@ -69,9 +76,49 @@
         return state.presets.find((entry) => entry.preset_id === state.selectedId) ?? null;
     }
 
+    function syncNameInputWithSelected() {
+        if (state.uiMode !== UI_MODES.MANAGE) {
+            return;
+        }
+        const nameInput = document.getElementById("preset-name");
+        if (!nameInput) {
+            return;
+        }
+        const selected = getSelectedPreset();
+        nameInput.value = selected?.name ?? "";
+    }
+
+    function setUiMode(mode, options = {}) {
+        const { clearName = false, focusName = false } = options;
+        const nextMode = Object.values(UI_MODES).includes(mode) ? mode : UI_MODES.DEFAULT;
+        state.uiMode = nextMode;
+
+        const nameField = document.getElementById("preset-name-field");
+        const createActions = document.getElementById("preset-create-actions");
+        const manageActions = document.getElementById("preset-manage-actions");
+        const nameInput = document.getElementById("preset-name");
+
+        nameField?.classList.toggle("is-hidden", nextMode === UI_MODES.DEFAULT);
+        createActions?.classList.toggle("is-hidden", nextMode !== UI_MODES.CREATE);
+        manageActions?.classList.toggle("is-hidden", nextMode !== UI_MODES.MANAGE);
+
+        if (nameInput) {
+            if (nextMode === UI_MODES.CREATE && clearName) {
+                nameInput.value = "";
+            }
+            if (nextMode === UI_MODES.MANAGE) {
+                const selected = getSelectedPreset();
+                nameInput.value = selected?.name ?? "";
+            }
+            if (focusName) {
+                nameInput.focus();
+                nameInput.select();
+            }
+        }
+    }
+
     function renderPresetOptions() {
         const select = document.getElementById("preset-select");
-        const nameInput = document.getElementById("preset-name");
         if (!select) {
             return;
         }
@@ -84,8 +131,8 @@
             option.selected = true;
             select.appendChild(option);
             state.selectedId = null;
-            if (nameInput) {
-                nameInput.value = "";
+            if (state.uiMode === UI_MODES.MANAGE) {
+                setUiMode(UI_MODES.DEFAULT);
             }
             setStatus("No preset selected.");
             return;
@@ -106,10 +153,10 @@
             select.value = String(state.selectedId);
         }
 
-        const selected = getSelectedPreset();
-        if (nameInput) {
-            nameInput.value = selected?.name ?? "";
+        if (state.uiMode === UI_MODES.MANAGE) {
+            syncNameInputWithSelected();
         }
+        const selected = getSelectedPreset();
         setStatus(selected ? `Selected "${selected.name}".` : "No preset selected.");
     }
 
@@ -166,6 +213,7 @@
             });
             state.selectedId = Number(created?.preset_id);
             await fetchPresets();
+            setUiMode(UI_MODES.MANAGE);
             setStatus(`Saved preset "${created?.name ?? body.name}".`);
         } catch (error) {
             setStatus(getErrorMessage(error, "Failed to save preset."));
@@ -190,6 +238,7 @@
             });
             state.selectedId = Number(updated?.preset_id ?? selected.preset_id);
             await fetchPresets();
+            setUiMode(UI_MODES.MANAGE);
             setStatus(`Updated preset "${updated?.name ?? body.name}".`);
         } catch (error) {
             setStatus(getErrorMessage(error, "Failed to update preset."));
@@ -211,6 +260,7 @@
             });
             state.selectedId = null;
             await fetchPresets();
+            setUiMode(getSelectedPreset() ? UI_MODES.MANAGE : UI_MODES.DEFAULT);
             setStatus(`Deleted preset "${selected.name}".`);
         } catch (error) {
             setStatus(getErrorMessage(error, "Failed to delete preset."));
@@ -229,6 +279,7 @@
         }
         try {
             await Promise.resolve(state.applySettings(selected.settings ?? {}));
+            setUiMode(UI_MODES.MANAGE);
             setStatus(`Loaded preset "${selected.name}".`);
         } catch (error) {
             setStatus(getErrorMessage(error, "Failed to load preset."));
@@ -245,8 +296,17 @@
         document.getElementById("preset-load")?.addEventListener("click", () => {
             void loadSelectedPreset();
         });
+        document.getElementById("preset-add-new")?.addEventListener("click", () => {
+            setUiMode(UI_MODES.CREATE, { clearName: true, focusName: true });
+            setStatus("Enter a preset name and click Save New.");
+        });
         document.getElementById("preset-save-new")?.addEventListener("click", () => {
             void saveNewPreset();
+        });
+        document.getElementById("preset-cancel")?.addEventListener("click", () => {
+            setUiMode(UI_MODES.DEFAULT);
+            const selected = getSelectedPreset();
+            setStatus(selected ? `Selected "${selected.name}".` : "No preset selected.");
         });
         document.getElementById("preset-update")?.addEventListener("click", () => {
             void updatePreset();
@@ -258,9 +318,8 @@
             const value = Number(event.target?.value);
             state.selectedId = Number.isFinite(value) ? value : null;
             const selected = getSelectedPreset();
-            const nameInput = document.getElementById("preset-name");
-            if (nameInput) {
-                nameInput.value = selected?.name ?? "";
+            if (state.uiMode === UI_MODES.MANAGE) {
+                syncNameInputWithSelected();
             }
             setStatus(selected ? `Selected "${selected.name}".` : "No preset selected.");
         });
@@ -278,6 +337,7 @@
         state.applySettings = applySettings ?? null;
         state.presets = [];
         state.selectedId = null;
+        state.uiMode = UI_MODES.DEFAULT;
 
         try {
             const res = await fetch("preset_panel.html?v=1", { cache: "no-store" });
@@ -291,6 +351,7 @@
         }
 
         bindEvents();
+        setUiMode(UI_MODES.DEFAULT);
         try {
             await fetchPresets();
         } catch (error) {
