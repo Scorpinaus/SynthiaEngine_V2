@@ -284,10 +284,7 @@ async function generate() {
     const hiresDefaults = catalog?.tasks?.["sd15.hires_fix"]?.input_defaults ?? {};
 
     const prompt = WorkflowClient.readTextValue("prompt", "");
-    const negative_prompt = WorkflowClient.readTextValue(
-        "negative_prompt",
-        primaryDefaults.negative_prompt ?? ""
-    );
+    const negative_prompt = WorkflowClient.readTextValue("negative_prompt", primaryDefaults.negative_prompt ?? "");
     const steps = WorkflowClient.readNumberValue("steps", primaryDefaults.steps ?? 20, {
         integer: true,
     });

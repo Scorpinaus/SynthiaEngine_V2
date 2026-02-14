@@ -1445,29 +1445,30 @@ def _sd15_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, An
             control_image_arg = control_images
             controlnet_conditioning_scale_arg = controlnet_conditioning_scales
 
-        filenames = generate_images_inpaint_controlnet(
-            initial_image=initial_image,
-            mask_image=mask_image,
-            prompt=str(inputs["prompt"]),
-            negative_prompt=str(inputs.get("negative_prompt") or ""),
-            steps=int(inputs.get("steps") or 20),
-            cfg=float(inputs.get("cfg") or 7.5),
-            seed=inputs.get("seed"),
-            scheduler=str(inputs.get("scheduler") or "euler"),
-            model=inputs.get("model"),
-            num_images=int(inputs.get("num_images") or 1),
-            strength=strength,
-            padding_mask_crop=padding_mask_crop,
-            clip_skip=int(inputs.get("clip_skip") or 1),
-            control_image=control_image_arg,
-            controlnet_model=controlnet_model_arg,
-            controlnet_conditioning_scale=controlnet_conditioning_scale_arg,
-            controlnet_guess_mode=bool(inputs.get("controlnet_guess_mode", False)),
-            control_guidance_start=control_guidance_start,
-            control_guidance_end=control_guidance_end,
-            lora_adapters=inputs.get("lora_adapters"),
-            batch_id=batch_id,
-        )
+        generation_params = {
+            "initial_image": initial_image,
+            "mask_image": mask_image,
+            "prompt": str(inputs["prompt"]),
+            "negative_prompt": str(inputs.get("negative_prompt") or ""),
+            "steps": int(inputs.get("steps") or 20),
+            "cfg": float(inputs.get("cfg") or 7.5),
+            "seed": inputs.get("seed"),
+            "scheduler": str(inputs.get("scheduler") or "euler"),
+            "model": inputs.get("model"),
+            "num_images": int(inputs.get("num_images") or 1),
+            "strength": strength,
+            "padding_mask_crop": padding_mask_crop,
+            "clip_skip": int(inputs.get("clip_skip") or 1),
+            "control_image": control_image_arg,
+            "controlnet_model": controlnet_model_arg,
+            "controlnet_conditioning_scale": controlnet_conditioning_scale_arg,
+            "controlnet_guess_mode": bool(inputs.get("controlnet_guess_mode", False)),
+            "control_guidance_start": control_guidance_start,
+            "control_guidance_end": control_guidance_end,
+            "lora_adapters": inputs.get("lora_adapters"),
+            "batch_id": batch_id,
+        }
+        filenames = generate_images_inpaint_controlnet(generation_params)
         result: dict[str, Any] = {
             "batch_id": batch_id,
             "images": [f"/outputs/{name}" for name in filenames],
