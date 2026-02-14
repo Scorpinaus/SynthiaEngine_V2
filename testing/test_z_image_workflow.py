@@ -54,8 +54,8 @@ class ZImageWorkflowTests(unittest.TestCase):
     def test_z_image_img2img_forwards_lora_adapters(self):
         captured = {}
 
-        def _fake_run_z_image_img2img(**kwargs):
-            captured.update(kwargs)
+        def _fake_run_z_image_img2img(payload):
+            captured.update(payload)
             return {"images": ["/outputs/batch/out.png"]}
 
         fake_module = SimpleNamespace(run_z_image_img2img=_fake_run_z_image_img2img)
