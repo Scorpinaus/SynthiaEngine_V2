@@ -1871,25 +1871,27 @@ def _sdxl_controlnet_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> 
         control_image_arg = control_images
         controlnet_conditioning_scale_arg = controlnet_conditioning_scales
 
-    result = run_sdxl_controlnet_text2img(
-        prompt=str(inputs.get("prompt") or ""),
-        negative_prompt=str(inputs.get("negative_prompt") or ""),
-        steps=int(inputs.get("steps") or 20),
-        guidance_scale=float(inputs.get("guidance_scale") or inputs.get("cfg") or 7.5),
-        width=width,
-        height=height,
-        seed=inputs.get("seed"),
-        scheduler=str(inputs.get("scheduler") or "euler"),
-        model=inputs.get("model"),
-        num_images=int(inputs.get("num_images") or 1),
-        clip_skip=int(inputs.get("clip_skip") or 1),
-        controlnet_model=controlnet_model_arg,
-        control_image=control_image_arg,
-        controlnet_conditioning_scale=controlnet_conditioning_scale_arg,
-        controlnet_guess_mode=bool(inputs.get("controlnet_guess_mode", False)),
-        control_guidance_start=control_guidance_start,
-        control_guidance_end=control_guidance_end,
-    )
+    pipeline_params: dict[str, Any] = {
+        "prompt": str(inputs.get("prompt") or ""),
+        "negative_prompt": str(inputs.get("negative_prompt") or ""),
+        "steps": int(inputs.get("steps") or 20),
+        "guidance_scale": float(inputs.get("guidance_scale") or inputs.get("cfg") or 7.5),
+        "width": width,
+        "height": height,
+        "seed": inputs.get("seed"),
+        "scheduler": str(inputs.get("scheduler") or "euler"),
+        "model": inputs.get("model"),
+        "num_images": int(inputs.get("num_images") or 1),
+        "clip_skip": int(inputs.get("clip_skip") or 1),
+        "controlnet_model": controlnet_model_arg,
+        "control_image": control_image_arg,
+        "controlnet_conditioning_scale": controlnet_conditioning_scale_arg,
+        "controlnet_guess_mode": bool(inputs.get("controlnet_guess_mode", False)),
+        "control_guidance_start": control_guidance_start,
+        "control_guidance_end": control_guidance_end,
+    }
+
+    result = run_sdxl_controlnet_text2img(pipeline_params)
     if not isinstance(result, dict):
         raise ValueError("sdxl.controlnet.text2img must return an object")
     if warnings:
@@ -2063,26 +2065,28 @@ def _sdxl_img2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, An
             controlnet_conditioning_scale_arg = controlnet_conditioning_scales
 
         result = run_sdxl_img2img_controlnet(
-            initial_image=initial_image,
-            strength=strength,
-            prompt=str(inputs["prompt"]),
-            negative_prompt=str(inputs.get("negative_prompt") or ""),
-            steps=int(inputs.get("steps") or 20),
-            guidance_scale=float(inputs.get("guidance_scale") or inputs.get("cfg") or 7.5),
-            width=width,
-            height=height,
-            seed=inputs.get("seed"),
-            scheduler=str(inputs.get("scheduler") or "euler"),
-            model=inputs.get("model"),
-            num_images=int(inputs.get("num_images") or 1),
-            clip_skip=int(inputs.get("clip_skip") or 1),
-            lora_adapters=inputs.get("lora_adapters"),
-            controlnet_model=controlnet_model_arg,
-            control_image=control_image_arg,
-            controlnet_conditioning_scale=controlnet_conditioning_scale_arg,
-            controlnet_guess_mode=bool(inputs.get("controlnet_guess_mode", False)),
-            control_guidance_start=control_guidance_start,
-            control_guidance_end=control_guidance_end,
+            {
+                "initial_image": initial_image,
+                "strength": strength,
+                "prompt": str(inputs["prompt"]),
+                "negative_prompt": str(inputs.get("negative_prompt") or ""),
+                "steps": int(inputs.get("steps") or 20),
+                "guidance_scale": float(inputs.get("guidance_scale") or inputs.get("cfg") or 7.5),
+                "width": width,
+                "height": height,
+                "seed": inputs.get("seed"),
+                "scheduler": str(inputs.get("scheduler") or "euler"),
+                "model": inputs.get("model"),
+                "num_images": int(inputs.get("num_images") or 1),
+                "clip_skip": int(inputs.get("clip_skip") or 1),
+                "lora_adapters": inputs.get("lora_adapters"),
+                "controlnet_model": controlnet_model_arg,
+                "control_image": control_image_arg,
+                "controlnet_conditioning_scale": controlnet_conditioning_scale_arg,
+                "controlnet_guess_mode": bool(inputs.get("controlnet_guess_mode", False)),
+                "control_guidance_start": control_guidance_start,
+                "control_guidance_end": control_guidance_end,
+            }
         )
         if not isinstance(result, dict):
             raise ValueError("sdxl.img2img must return an object")

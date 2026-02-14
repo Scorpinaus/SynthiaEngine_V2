@@ -97,11 +97,11 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertIn("lora_adapters", captured)
         self.assertEqual(captured["lora_adapters"], [{"lora_id": 101, "strength": 0.8}])
 
-    def test_controlnet_task_passes_expected_pipeline_kwargs(self):
+    def test_controlnet_task_passes_expected_pipeline_params(self):
         captured = {}
 
-        def _fake_run_sdxl_controlnet_text2img(**kwargs):
-            captured.update(kwargs)
+        def _fake_run_sdxl_controlnet_text2img(params):
+            captured.update(params)
             return {"images": ["/outputs/batch/out.png"]}
 
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
@@ -154,11 +154,11 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
                     _ctx=None,
                 )
 
-    def test_multi_controlnet_passes_list_kwargs_and_warns_for_perf(self):
+    def test_multi_controlnet_passes_list_params_and_warns_for_perf(self):
         captured = {}
 
-        def _fake_run_sdxl_controlnet_text2img(**kwargs):
-            captured.update(kwargs)
+        def _fake_run_sdxl_controlnet_text2img(params):
+            captured.update(params)
             return {"images": ["/outputs/batch/out.png"]}
 
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
@@ -245,8 +245,8 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
     def test_img2img_controlnet_path_passes_expected_pipeline_kwargs(self):
         captured = {}
 
-        def _fake_run_sdxl_img2img_controlnet(**kwargs):
-            captured.update(kwargs)
+        def _fake_run_sdxl_img2img_controlnet(params):
+            captured.update(params)
             return {"images": ["/outputs/batch/out.png"]}
 
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
@@ -289,8 +289,8 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
     def test_img2img_controlnet_path_forwards_lora_adapters(self):
         captured = {}
 
-        def _fake_run_sdxl_img2img_controlnet(**kwargs):
-            captured.update(kwargs)
+        def _fake_run_sdxl_img2img_controlnet(params):
+            captured.update(params)
             return {"images": ["/outputs/batch/out.png"]}
 
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
