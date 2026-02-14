@@ -55,7 +55,9 @@ logger = logging.getLogger(__name__)
 configure_logging()
 
 
-## Helper functions
+##
+# Helper functions
+##
 
 def create_blur_mask(mask_image, blur_factor: int):
     """
