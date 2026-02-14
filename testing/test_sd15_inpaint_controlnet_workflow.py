@@ -34,8 +34,8 @@ class Sd15InpaintControlNetWorkflowPlumbingTests(unittest.TestCase):
         captured = {}
         lora_adapters = [{"lora_id": 101, "strength": 0.8}]
 
-        def _fake_generate_images_inpaint(**kwargs):
-            captured.update(kwargs)
+        def _fake_generate_images_inpaint(params):
+            captured.update(params)
             return ["batch/out.png"]
 
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
@@ -62,12 +62,13 @@ class Sd15InpaintControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertEqual(result["images"], ["/outputs/batch/out.png"])
         self.assertIn("lora_adapters", captured)
         self.assertEqual(captured["lora_adapters"], lora_adapters)
+        self.assertEqual(captured["batch_id"], "batch123")
 
     def test_non_controlnet_path_preserves_zero_padding_mask_crop(self):
         captured = {}
 
-        def _fake_generate_images_inpaint(**kwargs):
-            captured.update(kwargs)
+        def _fake_generate_images_inpaint(params):
+            captured.update(params)
             return ["batch/out.png"]
 
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):

@@ -1226,21 +1226,7 @@ def generate_images_img2img(
 
 @torch.inference_mode()
 def generate_images_inpaint(
-    initial_image,
-    mask_image,
-    prompt: str,
-    negative_prompt: str,
-    steps: int,
-    cfg: float,
-    seed: int,
-    scheduler: str,
-    model: str | None,
-    num_images: int,
-    strength: float,
-    padding_mask_crop: int,
-    clip_skip: int,
-    lora_adapters: list[object] | None = None,
-    batch_id: str | None = None,
+    params: dict[str, object],
 ):
     """
     Generate SD1.5 inpaint outputs from an initial image and mask.
@@ -1251,6 +1237,23 @@ def generate_images_inpaint(
     Returns:
         Output PNG paths relative to ``OUTPUT_DIR``.
     """
+    # Normalize all inpaint inputs in one place for easier maintenance and tracing.
+    initial_image = params["initial_image"]
+    mask_image = params["mask_image"]
+    prompt = str(params["prompt"])
+    negative_prompt = str(params.get("negative_prompt") or "")
+    steps = int(params.get("steps") or 20)
+    cfg = float(params.get("cfg") or 7.5)
+    seed = params.get("seed")
+    scheduler = str(params.get("scheduler") or "euler")
+    model = params.get("model")
+    num_images = int(params.get("num_images") or 1)
+    strength = float(params.get("strength") or 0.5)
+    padding_mask_crop = int(params.get("padding_mask_crop") or 32)
+    clip_skip = int(params.get("clip_skip") or 1)
+    lora_adapters = params.get("lora_adapters")
+    batch_id = params.get("batch_id")
+
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
         base_seed = torch.randint(0, 2**31, (1,)).item()
@@ -1272,6 +1275,21 @@ def generate_images_inpaint(
 
     filenames = []
     adapter_names = _apply_lora_adapters(pipe, lora_adapters)
+    metadata_base = {
+        "mode": "inpaint",
+        "prompt": prompt,
+        "negative_prompt": negative_prompt,
+        "steps": steps,
+        "cfg": cfg,
+        "width": width,
+        "height": height,
+        "scheduler": scheduler,
+        "model": model,
+        "strength": strength,
+        "padding_mask_crop": padding_mask_crop,
+        "clip_skip": clip_skip,
+        "batch_id": batch_id,
+    }
 
     try:
         for i in range(num_images):
@@ -1326,23 +1344,8 @@ def generate_images_inpaint(
                 ).images[0]
 
             filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
-            # Embed all settings into the PNG for later reproduction/debugging.
-            pnginfo = build_png_metadata({
-                "mode": "inpaint",
-                "prompt": prompt,
-                "negative_prompt": negative_prompt,
-                "steps": steps,
-                "cfg": cfg,
-                "width": width,
-                "height": height,
-                "seed": current_seed,
-                "scheduler": scheduler,
-                "model": model,
-                "strength": strength,
-                "padding_mask_crop": padding_mask_crop,
-                "clip_skip": clip_skip,
-                "batch_id": batch_id,
-            })
+            metadata = {**metadata_base, "seed": current_seed}
+            pnginfo = build_png_metadata(metadata)
             image.save(filename, pnginfo=pnginfo)
             logger.info("Image %s saved to %s", i, filename.name)
 
