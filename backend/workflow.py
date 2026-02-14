@@ -1001,25 +1001,26 @@ def _resolve_refs(value: Any, task_results: dict[str, dict[str, Any]]) -> Any:
 
 def _sd15_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
     batch_id = str(inputs.get("batch_id") or make_batch_id())
-    filenames = generate_images(
-        prompt=str(inputs["prompt"]),
-        negative_prompt=str(inputs.get("negative_prompt") or ""),
-        steps=int(inputs.get("steps") or 20),
-        cfg=float(inputs.get("cfg") or 7.5),
-        width=int(inputs.get("width") or 512),
-        height=int(inputs.get("height") or 512),
-        seed=inputs.get("seed"),
-        scheduler=str(inputs.get("scheduler") or "euler"),
-        model=inputs.get("model"),
-        num_images=int(inputs.get("num_images") or 1),
-        clip_skip=int(inputs.get("clip_skip") or 1),
-        lora_adapters=inputs.get("lora_adapters"),
-        hires_enabled=bool(inputs.get("hires_enabled") or False),
-        hires_scale=float(inputs.get("hires_scale") or 1.0),
-        weighting_policy=str(inputs.get("weighting_policy") or "diffusers-like"),
-        batch_id=batch_id,
-        lora_scale=inputs.get("lora_scale"),
-    )
+    generation_params = {
+        "prompt": str(inputs["prompt"]),
+        "negative_prompt": str(inputs.get("negative_prompt") or ""),
+        "steps": int(inputs.get("steps") or 20),
+        "cfg": float(inputs.get("cfg") or 7.5),
+        "width": int(inputs.get("width") or 512),
+        "height": int(inputs.get("height") or 512),
+        "seed": inputs.get("seed"),
+        "scheduler": str(inputs.get("scheduler") or "euler"),
+        "model": inputs.get("model"),
+        "num_images": int(inputs.get("num_images") or 1),
+        "clip_skip": int(inputs.get("clip_skip") or 1),
+        "lora_adapters": inputs.get("lora_adapters"),
+        "hires_enabled": bool(inputs.get("hires_enabled") or False),
+        "hires_scale": float(inputs.get("hires_scale") or 1.0),
+        "weighting_policy": str(inputs.get("weighting_policy") or "diffusers-like"),
+        "batch_id": batch_id,
+        "lora_scale": inputs.get("lora_scale"),
+    }
+    filenames = generate_images(generation_params)
     return {"batch_id": batch_id, "images": [f"/outputs/{name}" for name in filenames]}
 
 

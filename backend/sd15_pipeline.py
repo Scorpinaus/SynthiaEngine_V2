@@ -886,23 +886,7 @@ def generate_images_img2img_controlnet(
 
 @torch.inference_mode()
 def generate_images(
-    prompt: str,
-    negative_prompt: str,
-    steps: int,
-    cfg: float,
-    width: int,
-    height: int,
-    seed: int,
-    scheduler: str,
-    model: str | None,
-    num_images:int,
-    clip_skip: int,
-    lora_adapters: list[object] | None = None,
-    hires_scale: float = 1.0,
-    hires_enabled: bool = False,
-    weighting_policy: str = "diffusers-like",
-    batch_id: str | None = None,
-    lora_scale: float | None = None,
+    params: dict[str, object],
 ):
     """
     Generate SD1.5 txt2img images, write PNG outputs, and return relative paths.
@@ -917,6 +901,25 @@ def generate_images(
         ``hires_enabled``/``hires_scale`` are currently recorded in metadata for
         downstream usage; this function itself performs txt2img generation only.
     """
+    # Normalize all txt2img inputs in one place for easier maintenance and tracing.
+    prompt = str(params["prompt"])
+    negative_prompt = str(params.get("negative_prompt") or "")
+    steps = int(params.get("steps") or 20)
+    cfg = float(params.get("cfg") or 7.5)
+    width = int(params.get("width") or 512)
+    height = int(params.get("height") or 512)
+    seed = params.get("seed")
+    scheduler = str(params.get("scheduler") or "euler")
+    model = params.get("model")
+    num_images = int(params.get("num_images") or 1)
+    clip_skip = int(params.get("clip_skip") or 1)
+    lora_adapters = params.get("lora_adapters")
+    hires_scale = float(params.get("hires_scale") or 1.0)
+    hires_enabled = bool(params.get("hires_enabled") or False)
+    weighting_policy = str(params.get("weighting_policy") or "diffusers-like")
+    batch_id = params.get("batch_id")
+    lora_scale = params.get("lora_scale")
+
     # 1. Check and set seed number(if not present, set random seed)
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
@@ -965,6 +968,22 @@ def generate_images(
             weighting_policy=weighting_policy,
         )
         prompt_embeds_ready = True
+
+    metadata_base = {
+        "mode": "txt2img",
+        "prompt": prompt,
+        "negative_prompt": negative_prompt,
+        "steps": steps,
+        "cfg": cfg,
+        "width": width,
+        "height": height,
+        "scheduler": scheduler,
+        "model": model,
+        "clip_skip": clip_skip,
+        "hires_enabled": hires_enabled,
+        "hires_scale": hires_scale,
+        "batch_id": batch_id,
+    }
 
     # 6. Loop around image generation per image
     try:
@@ -1044,22 +1063,8 @@ def generate_images(
 
             # Write the PNG and embed all inputs/settings for later inspection.
             filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
-            pnginfo = build_png_metadata({
-                "mode": "txt2img",
-                "prompt": prompt,
-                "negative_prompt": negative_prompt,
-                "steps": steps,
-                "cfg": cfg,
-                "width": width,
-                "height": height,
-                "seed": current_seed,
-                "scheduler": scheduler,
-                "model": model,
-                "clip_skip": clip_skip,
-                "hires_enabled": hires_enabled,
-                "hires_scale": hires_scale,
-                "batch_id": batch_id,
-            })
+            metadata = {**metadata_base, "seed": current_seed}
+            pnginfo = build_png_metadata(metadata)
             image.save(filename, pnginfo=pnginfo)
             logger.info("Image %s saved to %s", i, filename.name)
 
