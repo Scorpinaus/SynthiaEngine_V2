@@ -745,27 +745,7 @@ def generate_images_controlnet(
 
 @torch.inference_mode()
 def generate_images_img2img_controlnet(
-    initial_image,
-    strength: float,
-    prompt: str,
-    negative_prompt: str,
-    steps: int,
-    cfg: float,
-    width: int,
-    height: int,
-    seed: int,
-    scheduler: str,
-    model: str | None,
-    num_images: int,
-    clip_skip: int,
-    controlnet_model: str | list[str],
-    control_image: Image.Image | list[Image.Image],
-    controlnet_conditioning_scale: float | list[float] = 1.0,
-    controlnet_guess_mode: bool = False,
-    control_guidance_start: float = 0.0,
-    control_guidance_end: float = 1.0,
-    lora_adapters: list[object] | None = None,
-    batch_id: str | None = None,
+    params: dict[str, object],
 ) -> list[str]:
     """
     Generate SD1.5 img2img + ControlNet outputs and write PNG files.
@@ -773,6 +753,32 @@ def generate_images_img2img_controlnet(
     Returns:
         Output PNG paths relative to ``OUTPUT_DIR``.
     """
+    # Normalize all img2img controlnet inputs in one place for easier maintenance and tracing.
+    initial_image = cast(Image.Image, params["initial_image"])
+    strength = float(params.get("strength") or 0.75)
+    prompt = str(params["prompt"])
+    negative_prompt = str(params.get("negative_prompt") or "")
+    steps = int(params.get("steps") or 20)
+    cfg = float(params.get("cfg") or 7.5)
+    width = int(params.get("width") or initial_image.width)
+    height = int(params.get("height") or initial_image.height)
+    seed = params.get("seed")
+    scheduler = str(params.get("scheduler") or "euler")
+    model = params.get("model")
+    num_images = int(params.get("num_images") or 1)
+    clip_skip = int(params.get("clip_skip") or 1)
+    controlnet_model = cast(str | list[str], params["controlnet_model"])
+    control_image = cast(Image.Image | list[Image.Image], params["control_image"])
+    controlnet_conditioning_scale = cast(
+        float | list[float],
+        params.get("controlnet_conditioning_scale", 1.0),
+    )
+    controlnet_guess_mode = bool(params.get("controlnet_guess_mode", False))
+    control_guidance_start = float(params.get("control_guidance_start", 0.0))
+    control_guidance_end = float(params.get("control_guidance_end", 1.0))
+    lora_adapters = params.get("lora_adapters")
+    batch_id = cast(str | None, params.get("batch_id"))
+
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
         base_seed = torch.randint(0, 2**31, (1,)).item()
@@ -780,6 +786,7 @@ def generate_images_img2img_controlnet(
         base_seed = seed
     if batch_id is None:
         batch_id = make_batch_id()
+    params["batch_id"] = batch_id
 
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
     image_width, image_height = initial_image.size
@@ -837,31 +844,15 @@ def generate_images_img2img_controlnet(
             ).images[0]
 
             filename = batch_output_dir / f"{batch_id}_controlnet_{current_seed}.png"
-            metadata = {
+            image_params = {
+                **params,
                 "mode": "img2img_controlnet",
-                "prompt": prompt,
-                "negative_prompt": negative_prompt,
-                "steps": steps,
-                "cfg": cfg,
                 "width": image_width,
                 "height": image_height,
                 "seed": current_seed,
-                "scheduler": scheduler,
-                "model": model,
-                "strength": strength,
-                "clip_skip": clip_skip,
-                "controlnet_model": controlnet_model,
-                "controlnet_conditioning_scale": controlnet_conditioning_scale,
-                "controlnet_guess_mode": controlnet_guess_mode,
-                "control_guidance_start": control_guidance_start,
-                "control_guidance_end": control_guidance_end,
                 "batch_id": batch_id,
             }
-            if isinstance(controlnet_model, list):
-                metadata["controlnet_models"] = controlnet_model
-            if isinstance(controlnet_conditioning_scale, list):
-                metadata["controlnet_conditioning_scales"] = controlnet_conditioning_scale
-            pnginfo = build_png_metadata(metadata)
+            pnginfo = build_png_metadata(image_params)
             image.save(filename, pnginfo=pnginfo)
             logger.info("Image %s saved to %s", i, filename.name)
             filenames.append(build_batch_output_relpath(batch_id, filename.name))

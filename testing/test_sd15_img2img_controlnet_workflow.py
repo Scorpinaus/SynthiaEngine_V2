@@ -72,8 +72,8 @@ class Sd15Img2ImgControlNetWorkflowPlumbingTests(unittest.TestCase):
     def test_controlnet_path_passes_expected_pipeline_kwargs(self):
         captured = {}
 
-        def _fake_generate_images_img2img_controlnet(**kwargs):
-            captured.update(kwargs)
+        def _fake_generate_images_img2img_controlnet(params):
+            captured.update(params)
             return ["batch/out.png"]
 
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
@@ -123,8 +123,8 @@ class Sd15Img2ImgControlNetWorkflowPlumbingTests(unittest.TestCase):
         captured = {}
         lora_adapters = [{"lora_id": 201, "strength": 0.65}]
 
-        def _fake_generate_images_img2img_controlnet(**kwargs):
-            captured.update(kwargs)
+        def _fake_generate_images_img2img_controlnet(params):
+            captured.update(params)
             return ["batch/out.png"]
 
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
