@@ -54,8 +54,8 @@ class FluxWorkflowTests(unittest.TestCase):
     def test_flux_img2img_forwards_lora_adapters(self):
         captured = {}
 
-        def _fake_run_flux_img2img(**kwargs):
-            captured.update(kwargs)
+        def _fake_run_flux_img2img(payload):
+            captured.update(payload)
             return {"images": ["/outputs/batch/out.png"]}
 
         fake_module = SimpleNamespace(run_flux_img2img=_fake_run_flux_img2img)
@@ -90,8 +90,8 @@ class FluxWorkflowTests(unittest.TestCase):
     def test_flux_inpaint_forwards_lora_adapters(self):
         captured = {}
 
-        def _fake_run_flux_inpaint(**kwargs):
-            captured.update(kwargs)
+        def _fake_run_flux_inpaint(payload):
+            captured.update(payload)
             return {"images": ["/outputs/batch/out.png"]}
 
         fake_module = SimpleNamespace(run_flux_inpaint=_fake_run_flux_inpaint)

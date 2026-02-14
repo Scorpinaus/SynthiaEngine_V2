@@ -2386,19 +2386,21 @@ def _flux_img2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, An
         raise ValueError("strength must be between 0 and 1")
 
     result = run_flux_img2img(
-        initial_image=initial_image,
-        strength=strength,
-        prompt=str(inputs["prompt"]),
-        negative_prompt=str(inputs.get("negative_prompt") or ""),
-        steps=int(inputs.get("steps") or 20),
-        guidance_scale=float(inputs.get("guidance_scale") or 0.0),
-        width=width,
-        height=height,
-        seed=inputs.get("seed"),
-        scheduler=str(inputs.get("scheduler") or "euler"),
-        model=inputs.get("model"),
-        num_images=int(inputs.get("num_images") or 1),
-        lora_adapters=inputs.get("lora_adapters"),
+        {
+            "initial_image": initial_image,
+            "strength": strength,
+            "prompt": str(inputs["prompt"]),
+            "negative_prompt": str(inputs.get("negative_prompt") or ""),
+            "steps": int(inputs.get("steps") or 20),
+            "guidance_scale": float(inputs.get("guidance_scale") or 0.0),
+            "width": width,
+            "height": height,
+            "seed": inputs.get("seed"),
+            "scheduler": str(inputs.get("scheduler") or "euler"),
+            "model": inputs.get("model"),
+            "num_images": int(inputs.get("num_images") or 1),
+            "lora_adapters": inputs.get("lora_adapters"),
+        }
     )
     if not isinstance(result, dict):
         raise ValueError("flux.img2img must return an object")
@@ -2418,18 +2420,20 @@ def _flux_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, An
         raise ValueError("strength must be between 0 and 1")
 
     result = run_flux_inpaint(
-        initial_image=initial_image,
-        mask_image=mask_image,
-        strength=strength,
-        prompt=str(inputs["prompt"]),
-        negative_prompt=str(inputs.get("negative_prompt") or ""),
-        steps=int(inputs.get("steps") or 20),
-        guidance_scale=float(inputs.get("guidance_scale") or 0.0),
-        seed=inputs.get("seed"),
-        scheduler=str(inputs.get("scheduler") or "euler"),
-        model=inputs.get("model"),
-        num_images=int(inputs.get("num_images") or 1),
-        lora_adapters=inputs.get("lora_adapters"),
+        {
+            "initial_image": initial_image,
+            "mask_image": mask_image,
+            "strength": strength,
+            "prompt": str(inputs["prompt"]),
+            "negative_prompt": str(inputs.get("negative_prompt") or ""),
+            "steps": int(inputs.get("steps") or 20),
+            "guidance_scale": float(inputs.get("guidance_scale") or 0.0),
+            "seed": inputs.get("seed"),
+            "scheduler": str(inputs.get("scheduler") or "euler"),
+            "model": inputs.get("model"),
+            "num_images": int(inputs.get("num_images") or 1),
+            "lora_adapters": inputs.get("lora_adapters"),
+        }
     )
     if not isinstance(result, dict):
         raise ValueError("flux.inpaint must return an object")

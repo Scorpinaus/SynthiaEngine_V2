@@ -263,21 +263,21 @@ def run_flux_text2img(params: dict[str, object]) -> dict[str, list[str]]:
 
 
 @torch.inference_mode()
-def run_flux_img2img(
-    initial_image,
-    strength: float,
-    prompt: str,
-    negative_prompt: str,
-    steps: int,
-    guidance_scale: float,
-    width: int,
-    height: int,
-    seed: int | None,
-    model: str | None,
-    num_images: int,
-    scheduler: str,
-    lora_adapters: list[object] | None = None,
-) -> dict[str, list[str]]:
+def run_flux_img2img(params: dict[str, object]) -> dict[str, list[str]]:
+    initial_image = params["initial_image"]
+    strength = float(params["strength"])
+    prompt = str(params["prompt"])
+    negative_prompt = str(params["negative_prompt"])
+    steps = int(params["steps"])
+    guidance_scale = float(params["guidance_scale"])
+    width = int(params["width"])
+    height = int(params["height"])
+    seed = params["seed"]
+    model = params["model"]
+    num_images = int(params["num_images"])
+    scheduler = str(params["scheduler"])
+    lora_adapters = params["lora_adapters"]
+
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
         base_seed = torch.randint(0, 2**31, (1,)).item()
@@ -287,7 +287,7 @@ def run_flux_img2img(
     batch_id = make_batch_id()
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
-    pipe: Any | None = load_flux_img2img_pipeline(model)
+    pipe = load_flux_img2img_pipeline(model)
     logger.info(
         "Flux Img2Img: model=%s seed=%s steps=%s guidance_scale=%s size=%sx%s strength=%s num_images=%s",
         model, base_seed, steps, guidance_scale, width,
@@ -331,20 +331,17 @@ def run_flux_img2img(
 
                 filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
                 image_width, image_height = initial_image.size
-                pnginfo = build_png_metadata({
+                image_params = dict(params)
+                image_params.pop("initial_image", None)
+                image_params.update({
                     "mode": "img2img",
                     "pipeline": "flux",
-                    "prompt": prompt,
-                    "negative_prompt": negative_prompt,
-                    "steps": steps,
-                    "guidance_scale": guidance_scale,
                     "width": image_width,
                     "height": image_height,
                     "seed": current_seed,
-                    "model": model,
-                    "strength": strength,
                     "batch_id": batch_id,
                 })
+                pnginfo = build_png_metadata(image_params)
                 image.save(filename, pnginfo=pnginfo)
                 logger.info("Image %s saved to %s", i, filename.name)
 
@@ -367,20 +364,20 @@ def run_flux_img2img(
 
 
 @torch.inference_mode()
-def run_flux_inpaint(
-    initial_image,
-    mask_image,
-    strength: float,
-    prompt: str,
-    negative_prompt: str,
-    steps: int,
-    guidance_scale: float,
-    seed: int | None,
-    model: str | None,
-    num_images: int,
-    scheduler: str,
-    lora_adapters: list[object] | None = None,
-) -> dict[str, list[str]]:
+def run_flux_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
+    initial_image = params["initial_image"]
+    mask_image = params["mask_image"]
+    strength = float(params["strength"])
+    prompt = str(params["prompt"])
+    negative_prompt = str(params["negative_prompt"])
+    steps = int(params["steps"])
+    guidance_scale = float(params["guidance_scale"])
+    seed = params["seed"]
+    model = params["model"]
+    num_images = int(params["num_images"])
+    scheduler = str(params["scheduler"])
+    lora_adapters = params["lora_adapters"]
+
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
         base_seed = torch.randint(0, 2**31, (1,)).item()
@@ -433,20 +430,18 @@ def run_flux_inpaint(
 
                 filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
                 image_width, image_height = initial_image.size
-                pnginfo = build_png_metadata({
+                image_params = dict(params)
+                image_params.pop("initial_image", None)
+                image_params.pop("mask_image", None)
+                image_params.update({
                     "mode": "inpaint",
                     "pipeline": "flux",
-                    "prompt": prompt,
-                    "negative_prompt": negative_prompt,
-                    "steps": steps,
-                    "guidance_scale": guidance_scale,
                     "width": image_width,
                     "height": image_height,
                     "seed": current_seed,
-                    "model": model,
-                    "strength": strength,
                     "batch_id": batch_id,
                 })
+                pnginfo = build_png_metadata(image_params)
                 image.save(filename, pnginfo=pnginfo)
                 logger.info("Image %s saved to %s", i, filename.name)
 
