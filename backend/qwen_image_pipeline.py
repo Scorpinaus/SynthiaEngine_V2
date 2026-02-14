@@ -275,22 +275,24 @@ def run_qwen_image_text2img(params: dict[str, object]) -> dict[str, list[str]]:
 
 
 @torch.inference_mode()
-def run_qwen_image_img2img(
-    initial_image,
-    strength: float,
-    prompt: str,
-    negative_prompt: str,
-    steps: int,
-    true_cfg_scale: float,
-    guidance_scale: float,
-    width: int,
-    height: int,
-    seed: int | None,
-    model: str | None,
-    num_images: int,
-    scheduler: str,
-    lora_adapters: list[object] | None = None,
-) -> dict[str, list[str]]:
+def run_qwen_image_img2img(params: dict[str, object]) -> dict[str, list[str]]:
+    initial_image = params.get("initial_image")
+    if initial_image is None:
+        raise ValueError("initial_image is required")
+    strength = float(params.get("strength", 0.75))
+    prompt = str(params.get("prompt") or "")
+    negative_prompt = str(params.get("negative_prompt") or "").strip()
+    steps = int(params.get("steps", 30))
+    true_cfg_scale = float(params.get("true_cfg_scale", 4.0))
+    guidance_scale = float(params.get("guidance_scale", 7.5))
+    width = int(params.get("width", 1024))
+    height = int(params.get("height", 1024))
+    seed = params.get("seed")
+    model = params.get("model")
+    num_images = int(params.get("num_images", 1))
+    scheduler = str(params.get("scheduler") or "euler")
+    lora_adapters = params.get("lora_adapters")
+
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
         base_seed = torch.randint(0, 2**31, (1,)).item()
@@ -343,24 +345,19 @@ def run_qwen_image_img2img(
 
                 filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
                 image_width, image_height = initial_image.size
-                pnginfo = build_png_metadata(
+                image_params = dict(params)
+                image_params.pop("initial_image", None)
+                image_params.update(
                     {
                         "mode": "img2img",
                         "pipeline": "qwen-image",
-                        "prompt": prompt,
-                        "negative_prompt": negative_prompt,
-                        "steps": steps,
-                        "true_cfg_scale": true_cfg_scale,
-                        "guidance_scale": guidance_scale,
                         "width": image_width,
                         "height": image_height,
                         "seed": current_seed,
-                        "model": model,
-                        "strength": strength,
-                        "scheduler": scheduler,
                         "batch_id": batch_id,
                     }
                 )
+                pnginfo = build_png_metadata(image_params)
                 image.save(filename, pnginfo=pnginfo)
                 logger.info("Image %s saved to %s", i, filename.name)
 

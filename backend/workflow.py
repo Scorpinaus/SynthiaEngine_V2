@@ -2463,20 +2463,22 @@ def _qwen_image_img2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[s
     strength = _remap_img2img_strength(strength)
 
     result = run_qwen_image_img2img(
-        initial_image=initial_image,
-        strength=strength,
-        prompt=str(inputs["prompt"]),
-        negative_prompt=str(inputs.get("negative_prompt") or ""),
-        steps=int(inputs.get("steps") or 30),
-        true_cfg_scale=float(inputs.get("true_cfg_scale") or 4.0),
-        guidance_scale=float(inputs.get("guidance_scale") or 7.5),
-        width=width,
-        height=height,
-        seed=inputs.get("seed"),
-        scheduler=str(inputs.get("scheduler") or "euler"),
-        model=inputs.get("model"),
-        num_images=int(inputs.get("num_images") or 1),
-        lora_adapters=inputs.get("lora_adapters"),
+        {
+            "initial_image": initial_image,
+            "strength": strength,
+            "prompt": str(inputs["prompt"]),
+            "negative_prompt": str(inputs.get("negative_prompt") or ""),
+            "steps": int(inputs.get("steps") or 30),
+            "true_cfg_scale": float(inputs.get("true_cfg_scale") or 4.0),
+            "guidance_scale": float(inputs.get("guidance_scale") or 7.5),
+            "width": width,
+            "height": height,
+            "seed": inputs.get("seed"),
+            "scheduler": str(inputs.get("scheduler") or "euler"),
+            "model": inputs.get("model"),
+            "num_images": int(inputs.get("num_images") or 1),
+            "lora_adapters": inputs.get("lora_adapters"),
+        }
     )
     if not isinstance(result, dict):
         raise ValueError("qwen-image.img2img must return an object")
