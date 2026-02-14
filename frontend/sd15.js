@@ -286,7 +286,7 @@ async function generate() {
     const prompt = WorkflowClient.readTextValue("prompt", "");
     const negative_prompt = WorkflowClient.readTextValue("negative_prompt", primaryDefaults.negative_prompt ?? "");
     const steps = WorkflowClient.readNumberValue("steps", primaryDefaults.steps ?? 20, {
-        integer: true,
+         integer: true,
     });
     const cfg = WorkflowClient.readNumberValue("cfg", primaryDefaults.cfg ?? 7.5);
     const scheduler = WorkflowClient.readTextValue("scheduler", primaryDefaults.scheduler ?? "euler");

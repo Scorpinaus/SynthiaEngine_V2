@@ -590,34 +590,37 @@ def run_sdxl_img2img_controlnet(
 @torch.inference_mode()
 def run_sdxl_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
     
-    prompt = str(payload.get("prompt") or "")
-    negative_prompt = str(payload.get("negative_prompt") or "")
-    steps = int(payload.get("steps", 20))
-    guidance_scale = float(payload.get("guidance_scale", 7.5))
-    width = int(payload.get("width", 1024))
-    height = int(payload.get("height", 1024))
-    seed = payload.get("seed")
-    model = payload.get("model")
-    num_images = int(payload.get("num_images", 1))
-    clip_skip = int(payload.get("clip_skip", 1))
-    scheduler = payload.get("scheduler")
-    lora_adapters = payload.get("lora_adapters")
-    logger.info("seed=%s", seed)
+    # Normalize all txt2img inputs in one place for easier maintenance and tracing.
+    prompt = str(payload["prompt"])
+    negative_prompt = str(payload["negative_prompt"])
+    steps = int(payload["steps"])
+    guidance_scale = float(payload["guidance_scale"])
+    width = int(payload["width"])
+    height = int(payload["height"])
+    seed = payload["seed"]
+    model = payload["model"]
+    num_images = int(payload["num_images"])
+    clip_skip = int(payload["clip_skip"])
+    scheduler = payload["scheduler"]
+    lora_adapters = payload["lora_adapters"]
     
+    # Check seed & generate new seed for null seed
     if seed is None or seed == 0:
         base_seed = torch.randint(0, 2**31, (1,)).item()
     else:
         base_seed = int(seed)
+    
+    logger.info("SDXL Generate: model=%s seed=%s steps=%s guidance_scale=%s size=%sx%s num_images=%s", model, base_seed, steps, guidance_scale, width, height, num_images)
 
+    # Create batch id and output folder
     batch_id = make_batch_id()
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
+    # Load pipeline and scheduler
     pipe = load_sdxl_pipeline(model)
-    logger.info("SDXL Generate: model=%s seed=%s steps=%s guidance_scale=%s size=%sx%s num_images=%s",
-        model, base_seed, steps, guidance_scale, width, height, num_images)
-
-    filenames: list[str] = []
     pipe.scheduler = create_scheduler(scheduler, pipe)
+    
+    # Load loras to pipeline
     adapter_names, lora_coverage = apply_lora_adapters_with_validation(
         pipe,
         lora_adapters,
@@ -627,8 +630,13 @@ def run_sdxl_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
     report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
     if report_path is not None:
         logger.info("LoRA coverage report saved to %s", report_path)
-
+    
+    # Prepare empty list
+    filenames: list[str] = []
+    
+    # Image render process
     try:
+        # Render latent images
         latents_batch: list[torch.Tensor] = []
         seed_batch: list[int] = []
         for i in range(num_images):
@@ -649,36 +657,30 @@ def run_sdxl_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
             seed_batch.append(current_seed)
             del latents
 
+        # Decode latents to images
         images: list[Image.Image] = []
         for latents in latents_batch:
             images.append(_decode_sdxl_latents_to_pil(pipe, latents))
         del latents_batch
 
+        # Generate image metadata and append to image
         for i, (image, current_seed) in enumerate(zip(images, seed_batch, strict=True)):
-
+            image_params = dict(payload)
+            image_params["mode"] = "txt2img"
+            image_params["seed"] = current_seed
+            image_params["batch_id"] = batch_id
             relpath = save_sdxl_image(
                 image=image,
                 batch_output_dir=batch_output_dir,
                 batch_id=batch_id,
                 seed=current_seed,
-                metadata={
-                "mode": "txt2img",
-                "prompt": prompt,
-                "negative_prompt": negative_prompt,
-                "steps": steps,
-                "guidance_scale": guidance_scale,
-                "width": width,
-                "height": height,
-                "seed": current_seed,
-                "model": model,
-                "clip_skip": clip_skip,
-                "batch_id": batch_id,
-                },
+                metadata=image_params,
             )
             logger.info("Image %s saved to %s", i, Path(relpath).name)
 
             filenames.append(relpath)
 
+        # Return images list with metadata
         return {"images": [f"/outputs/{name}" for name in filenames]}
     finally:
         if adapter_names and hasattr(pipe, "unload_lora_weights"):
