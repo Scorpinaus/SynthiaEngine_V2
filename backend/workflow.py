@@ -2572,18 +2572,20 @@ def _z_image_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str,
         raise ValueError("strength must be between 0 and 1")
 
     result = run_z_image_inpaint(
-        initial_image=initial_image,
-        mask_image=mask_image,
-        strength=strength,
-        prompt=str(inputs["prompt"]),
-        negative_prompt=str(inputs.get("negative_prompt") or ""),
-        steps=int(inputs.get("steps") or 8),
-        guidance_scale=float(inputs.get("guidance_scale") or 0.0),
-        seed=inputs.get("seed"),
-        scheduler=str(inputs.get("scheduler") or "euler"),
-        model=inputs.get("model"),
-        num_images=int(inputs.get("num_images") or 1),
-        lora_adapters=inputs.get("lora_adapters"),
+        {
+            "initial_image": initial_image,
+            "mask_image": mask_image,
+            "strength": strength,
+            "prompt": str(inputs["prompt"]),
+            "negative_prompt": str(inputs.get("negative_prompt") or ""),
+            "steps": int(inputs.get("steps") or 8),
+            "guidance_scale": float(inputs.get("guidance_scale") or 0.0),
+            "seed": inputs.get("seed"),
+            "scheduler": str(inputs.get("scheduler") or "euler"),
+            "model": inputs.get("model"),
+            "num_images": int(inputs.get("num_images") or 1),
+            "lora_adapters": inputs.get("lora_adapters"),
+        }
     )
     if not isinstance(result, dict):
         raise ValueError("z-image.inpaint must return an object")

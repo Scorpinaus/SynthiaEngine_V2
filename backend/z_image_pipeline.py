@@ -421,20 +421,20 @@ def run_z_image_img2img(params: dict[str, object]) -> dict[str, list[str]]:
 
 
 @torch.inference_mode()
-def run_z_image_inpaint(
-    initial_image,
-    mask_image,
-    strength: float,
-    prompt: str,
-    negative_prompt: str,
-    steps: int,
-    guidance_scale: float,
-    seed: int | None,
-    model: str | None,
-    num_images: int,
-    scheduler: str,
-    lora_adapters: list[object] | None = None,
-) -> dict[str, list[str]]:
+def run_z_image_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
+    initial_image = params["initial_image"]
+    mask_image = params["mask_image"]
+    strength = float(params["strength"])
+    prompt = str(params["prompt"])
+    negative_prompt = str(params["negative_prompt"])
+    steps = int(params["steps"])
+    guidance_scale = float(params["guidance_scale"])
+    seed = params["seed"]
+    model = params["model"]
+    num_images = int(params["num_images"])
+    scheduler = str(params["scheduler"])
+    lora_adapters = params["lora_adapters"]
+
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
         base_seed = torch.randint(0, 2**31, (1,)).item()
@@ -487,23 +487,20 @@ def run_z_image_inpaint(
                     image = pipe(**call_kwargs).images[0]
 
                 filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
-                pnginfo = build_png_metadata(
+                image_params = dict(params)
+                image_params.pop("initial_image", None)
+                image_params.pop("mask_image", None)
+                image_params.update(
                     {
                         "mode": "inpaint",
                         "pipeline": "z-image",
-                        "prompt": prompt,
-                        "negative_prompt": negative_prompt,
-                        "steps": steps,
-                        "guidance_scale": guidance_scale,
                         "width": width,
                         "height": height,
                         "seed": current_seed,
-                        "model": model,
-                        "strength": strength,
-                        "scheduler": scheduler,
                         "batch_id": batch_id,
                     }
                 )
+                pnginfo = build_png_metadata(image_params)
                 image.save(filename, pnginfo=pnginfo)
                 logger.info("Image %s saved to %s", i, filename.name)
 
