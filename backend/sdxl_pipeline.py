@@ -200,8 +200,8 @@ def load_sdxl_controlnet_pipeline(
     model_name: str | None,
     controlnet_model: str | list[str],
 ) -> StableDiffusionXLControlNetPipeline:
+    
     entry = get_model_entry(model_name)
-
     source = resolve_model_source(entry)
     logger.info("SDXL ControlNet model source: %s", source)
 
@@ -240,7 +240,6 @@ def load_sdxl_controlnet_pipeline(
 
 def load_sdxl_img2img_pipeline(model_name: str | None) -> StableDiffusionXLImg2ImgPipeline:
     entry = get_model_entry(model_name)
-
     source = resolve_model_source(entry)
     logger.info("SDXL img2img model source: %s", source)
 
@@ -268,7 +267,6 @@ def load_sdxl_controlnet_img2img_pipeline(
     controlnet_model: str | list[str],
 ) -> StableDiffusionXLControlNetImg2ImgPipeline:
     entry = get_model_entry(model_name)
-
     source = resolve_model_source(entry)
     logger.info("SDXL ControlNet img2img model source: %s", source)
 
@@ -307,7 +305,6 @@ def load_sdxl_controlnet_img2img_pipeline(
 
 def load_sdxl_inpaint_pipeline(model_name: str | None) -> StableDiffusionXLInpaintPipeline:
     entry = get_model_entry(model_name)
-
     source = resolve_model_source(entry)
     logger.info("SDXL inpaint model source: %s", source)
 
@@ -335,7 +332,6 @@ def load_sdxl_controlnet_inpaint_pipeline(
     controlnet_model: str | list[str],
 ) -> StableDiffusionXLControlNetInpaintPipeline:
     entry = get_model_entry(model_name)
-
     source = resolve_model_source(entry)
     logger.info("SDXL ControlNet inpaint model source: %s", source)
 
@@ -427,6 +423,7 @@ def run_sdxl_controlnet_text2img(
     for i in range(num_images):
         current_seed = base_seed + i
         generator = torch.Generator(device=_get_pipe_device(pipe)).manual_seed(current_seed)
+        
         image = pipe(
             prompt=prompt,
             negative_prompt=negative_prompt,
@@ -442,11 +439,13 @@ def run_sdxl_controlnet_text2img(
             control_guidance_start=control_guidance_start,
             control_guidance_end=control_guidance_end,
         ).images[0]
+        
         image_params = dict(params)
         image_params.pop("control_image", None)
         image_params["mode"] = "txt2img_controlnet"
         image_params["seed"] = current_seed
         image_params["batch_id"] = batch_id
+        
         relpath = save_sdxl_image(
             image=image,
             batch_output_dir=batch_output_dir,
