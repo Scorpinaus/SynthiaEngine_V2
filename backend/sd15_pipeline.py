@@ -15,6 +15,7 @@ import torch
 import logging
 import math
 from pathlib import Path
+from typing import cast
 from PIL import ImageFilter, Image
 
 from diffusers import (
@@ -610,25 +611,9 @@ def load_controlnet_inpaint_pipeline(model_name: str | None, controlnet_model: s
 
 ## Generate and render images
 
+@torch.inference_mode()
 def generate_images_controlnet(
-    prompt: str,
-    negative_prompt: str,
-    steps: int,
-    cfg: float,
-    width: int,
-    height: int,
-    seed: int | None,
-    scheduler: str,
-    model: str | None,
-    num_images: int,
-    clip_skip: int,
-    controlnet_model: str | list[str],
-    control_image: Image.Image | list[Image.Image],
-    controlnet_conditioning_scale: float | list[float] = 1.0,
-    controlnet_guess_mode: bool = False,
-    control_guidance_start: float = 0.0,
-    control_guidance_end: float = 1.0,
-    batch_id: str | None = None,
+    params: dict[str, object],
 ) -> list[str]:
     """
     Generate SD1.5 + ControlNet images and write PNG outputs to disk.
@@ -639,8 +624,32 @@ def generate_images_controlnet(
     Returns:
         Output PNG paths relative to ``OUTPUT_DIR``.
     """
+    # Normalize all controlnet txt2img inputs in one place for easier maintenance and tracing.
+    prompt = str(params["prompt"])
+    negative_prompt = str(params.get("negative_prompt") or "")
+    steps = int(params.get("steps") or 20)
+    cfg = float(params.get("cfg") or 7.5)
+    width = int(params.get("width") or 512)
+    height = int(params.get("height") or 512)
+    seed = params.get("seed")
+    scheduler = str(params.get("scheduler") or "euler")
+    model = params.get("model")
+    num_images = int(params.get("num_images") or 1)
+    clip_skip = int(params.get("clip_skip") or 1)
+    controlnet_model = cast(str | list[str], params["controlnet_model"])
+    control_image = cast(Image.Image | list[Image.Image], params["control_image"])
+    controlnet_conditioning_scale = cast(
+        float | list[float],
+        params.get("controlnet_conditioning_scale", 1.0),
+    )
+    controlnet_guess_mode = bool(params.get("controlnet_guess_mode", False))
+    control_guidance_start = float(params.get("control_guidance_start", 0.0))
+    control_guidance_end = float(params.get("control_guidance_end", 1.0))
+    batch_id = cast(str | None, params.get("batch_id"))
+
     if not batch_id:
         batch_id = make_batch_id()
+    params["batch_id"] = batch_id
 
     control_image = _resize_control_image_to_target(
         control_image,
@@ -724,29 +733,7 @@ def generate_images_controlnet(
             runtime_name_to_call_count=(name_to_calls if config.PIPELINE_LAYER_LOGGING_CAPTURE_INPUTS else None),
         )
 
-    # Embed settings into PNG metadata for reproducibility/debugging.
-    metadata = {
-        "prompt": prompt,
-        "negative_prompt": negative_prompt,
-        "steps": steps,
-        "cfg": cfg,
-        "width": width,
-        "height": height,
-        "seed": seed,
-        "scheduler": scheduler,
-        "model": model,
-        "controlnet_model": controlnet_model,
-        "controlnet_conditioning_scale": controlnet_conditioning_scale,
-        "controlnet_guess_mode": controlnet_guess_mode,
-        "control_guidance_start": control_guidance_start,
-        "control_guidance_end": control_guidance_end,
-        "batch_id": batch_id,
-    }
-    if isinstance(controlnet_model, list):
-        metadata["controlnet_models"] = controlnet_model
-    if isinstance(controlnet_conditioning_scale, list):
-        metadata["controlnet_conditioning_scales"] = controlnet_conditioning_scale
-    png_info = build_png_metadata(metadata)
+    png_info = build_png_metadata(params)
 
     filenames = []
     for idx, image in enumerate(results.images):

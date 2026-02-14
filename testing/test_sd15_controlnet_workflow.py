@@ -36,8 +36,8 @@ class Sd15ControlNetWorkflowPlumbingTests(unittest.TestCase):
     def test_controlnet_task_passes_expected_pipeline_kwargs(self):
         captured = {}
 
-        def _fake_generate_images_controlnet(**kwargs):
-            captured.update(kwargs)
+        def _fake_generate_images_controlnet(params):
+            captured.update(params)
             return ["batch/out.png"]
 
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
@@ -139,8 +139,8 @@ class Sd15ControlNetWorkflowPlumbingTests(unittest.TestCase):
     def test_multi_controlnet_passes_list_kwargs_and_warns_for_perf(self):
         captured = {}
 
-        def _fake_generate_images_controlnet(**kwargs):
-            captured.update(kwargs)
+        def _fake_generate_images_controlnet(params):
+            captured.update(params)
             return ["batch/out.png"]
 
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):

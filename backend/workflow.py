@@ -1503,11 +1503,13 @@ def _sd15_controlnet_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> 
     control_image_single = control_image_single.resize((width, height))
     control_guidance_start = float(inputs.get("control_guidance_start", 0.0))
     control_guidance_end = float(inputs.get("control_guidance_end", 1.0))
+    
     if control_guidance_start > control_guidance_end:
         raise ValueError("control_guidance_start must be <= control_guidance_end")
     controlnet_model_single = str(
         inputs.get("controlnet_model") or _DEFAULT_SD15_CONTROLNET_MODEL
     )
+    
     controlnet_models_raw = inputs.get("controlnet_models")
     if controlnet_models_raw is not None and not isinstance(controlnet_models_raw, list):
         raise ValueError("controlnet_models must be a list of model ids")
@@ -1645,26 +1647,27 @@ def _sd15_controlnet_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> 
         control_image_arg = control_images
         controlnet_conditioning_scale_arg = controlnet_conditioning_scales
 
-    filenames = generate_images_controlnet(
-        prompt=str(inputs["prompt"]),
-        negative_prompt=str(inputs.get("negative_prompt") or ""),
-        steps=int(inputs.get("steps") or 20),
-        cfg=float(inputs.get("cfg") or 7.5),
-        width=width,
-        height=height,
-        seed=inputs.get("seed"),
-        scheduler=str(inputs.get("scheduler") or "euler"),
-        model=inputs.get("model"),
-        num_images=int(inputs.get("num_images") or 1),
-        clip_skip=int(inputs.get("clip_skip") or 1),
-        control_image=control_image_arg,
-        controlnet_model=controlnet_model_arg,
-        controlnet_conditioning_scale=controlnet_conditioning_scale_arg,
-        controlnet_guess_mode=bool(inputs.get("controlnet_guess_mode", False)),
-        control_guidance_start=control_guidance_start,
-        control_guidance_end=control_guidance_end,
-        batch_id=batch_id,
-    )
+    generation_params = {
+        "prompt": str(inputs["prompt"]),
+        "negative_prompt": str(inputs.get("negative_prompt") or ""),
+        "steps": int(inputs.get("steps") or 20),
+        "cfg": float(inputs.get("cfg") or 7.5),
+        "width": width,
+        "height": height,
+        "seed": inputs.get("seed"),
+        "scheduler": str(inputs.get("scheduler") or "euler"),
+        "model": inputs.get("model"),
+        "num_images": int(inputs.get("num_images") or 1),
+        "clip_skip": int(inputs.get("clip_skip") or 1),
+        "control_image": control_image_arg,
+        "controlnet_model": controlnet_model_arg,
+        "controlnet_conditioning_scale": controlnet_conditioning_scale_arg,
+        "controlnet_guess_mode": bool(inputs.get("controlnet_guess_mode", False)),
+        "control_guidance_start": control_guidance_start,
+        "control_guidance_end": control_guidance_end,
+        "batch_id": batch_id,
+    }
+    filenames = generate_images_controlnet(generation_params)
     result: dict[str, Any] = {
         "batch_id": batch_id,
         "images": [f"/outputs/{name}" for name in filenames],
