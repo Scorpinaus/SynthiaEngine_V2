@@ -1078,21 +1078,7 @@ def generate_images(
 
 @torch.inference_mode()
 def generate_images_img2img(
-    initial_image,
-    strength: float,
-    prompt: str,
-    negative_prompt: str,
-    steps: int,
-    cfg: float,
-    width: int,
-    height: int,
-    seed: int,
-    scheduler: str,
-    model: str | None,
-    num_images: int,
-    clip_skip: int,
-    lora_adapters: list[object] | None = None,
-    batch_id: str | None = None,
+    params: dict[str, object],
 ):
     """
     Generate SD1.5 img2img outputs from an initial image and write PNG files.
@@ -1117,6 +1103,23 @@ def generate_images_img2img(
     Returns:
         Output PNG paths relative to ``OUTPUT_DIR``.
     """
+    # Normalize all img2img inputs in one place for easier maintenance and tracing.
+    initial_image = params["initial_image"]
+    strength = float(params.get("strength") or 0.75)
+    prompt = str(params["prompt"])
+    negative_prompt = str(params.get("negative_prompt") or "")
+    steps = int(params.get("steps") or 20)
+    cfg = float(params.get("cfg") or 7.5)
+    width = int(params.get("width") or getattr(initial_image, "width", 0))
+    height = int(params.get("height") or getattr(initial_image, "height", 0))
+    seed = params.get("seed")
+    scheduler = str(params.get("scheduler") or "euler")
+    model = params.get("model")
+    num_images = int(params.get("num_images") or 1)
+    clip_skip = int(params.get("clip_skip") or 1)
+    lora_adapters = params.get("lora_adapters")
+    batch_id = params.get("batch_id")
+
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
         base_seed = torch.randint(0, 2**31, (1,)).item()
@@ -1144,6 +1147,21 @@ def generate_images_img2img(
 
     filenames = []
     adapter_names = _apply_lora_adapters(pipe, lora_adapters)
+    image_width, image_height = initial_image.size
+    metadata_base = {
+        "mode": "img2img",
+        "prompt": prompt,
+        "negative_prompt": negative_prompt,
+        "steps": steps,
+        "cfg": cfg,
+        "width": image_width,
+        "height": image_height,
+        "scheduler": scheduler,
+        "model": model,
+        "strength": strength,
+        "clip_skip": clip_skip,
+        "batch_id": batch_id,
+    }
 
     try:
         for i in range(num_images):
@@ -1194,22 +1212,8 @@ def generate_images_img2img(
                 ).images[0]
 
             filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
-            image_width, image_height = initial_image.size
-            pnginfo = build_png_metadata({
-                "mode": "img2img",
-                "prompt": prompt,
-                "negative_prompt": negative_prompt,
-                "steps": steps,
-                "cfg": cfg,
-                "width": image_width,
-                "height": image_height,
-                "seed": current_seed,
-                "scheduler": scheduler,
-                "model": model,
-                "strength": strength,
-                "clip_skip": clip_skip,
-                "batch_id": batch_id,
-            })
+            metadata = {**metadata_base, "seed": current_seed}
+            pnginfo = build_png_metadata(metadata)
             image.save(filename, pnginfo=pnginfo)
             logger.info("Image %s saved to %s", i, filename.name)
 

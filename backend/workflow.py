@@ -1242,23 +1242,24 @@ def _sd15_img2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, An
             result["warnings"] = warnings
         return result
 
-    filenames = generate_images_img2img(
-        initial_image=initial_image,
-        strength=strength,
-        prompt=str(inputs["prompt"]),
-        negative_prompt=str(inputs.get("negative_prompt") or ""),
-        steps=int(inputs.get("steps") or 20),
-        cfg=float(inputs.get("cfg") or 7.5),
-        width=width,
-        height=height,
-        seed=inputs.get("seed"),
-        scheduler=str(inputs.get("scheduler") or "euler"),
-        model=inputs.get("model"),
-        num_images=int(inputs.get("num_images") or 1),
-        clip_skip=int(inputs.get("clip_skip") or 1),
-        lora_adapters=inputs.get("lora_adapters"),
-        batch_id=batch_id,
-    )
+    generation_params = {
+        "initial_image": initial_image,
+        "strength": strength,
+        "prompt": str(inputs["prompt"]),
+        "negative_prompt": str(inputs.get("negative_prompt") or ""),
+        "steps": int(inputs.get("steps") or 20),
+        "cfg": float(inputs.get("cfg") or 7.5),
+        "width": width,
+        "height": height,
+        "seed": inputs.get("seed"),
+        "scheduler": str(inputs.get("scheduler") or "euler"),
+        "model": inputs.get("model"),
+        "num_images": int(inputs.get("num_images") or 1),
+        "clip_skip": int(inputs.get("clip_skip") or 1),
+        "lora_adapters": inputs.get("lora_adapters"),
+        "batch_id": batch_id,
+    }
+    filenames = generate_images_img2img(generation_params)
     return {"batch_id": batch_id, "images": [f"/outputs/{name}" for name in filenames]}
 
 
