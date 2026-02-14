@@ -2336,20 +2336,22 @@ def _sdxl_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, An
         return result
 
     result = run_sdxl_inpaint(
-        initial_image=initial_image,
-        mask_image=mask_image,
-        strength=strength,
-        prompt=str(inputs["prompt"]),
-        negative_prompt=str(inputs.get("negative_prompt") or ""),
-        steps=int(inputs.get("steps") or 20),
-        guidance_scale=float(inputs.get("guidance_scale") or inputs.get("cfg") or 7.5),
-        seed=inputs.get("seed"),
-        scheduler=str(inputs.get("scheduler") or "euler"),
-        model=inputs.get("model"),
-        num_images=int(inputs.get("num_images") or 1),
-        padding_mask_crop=padding_mask_crop,
-        clip_skip=int(inputs.get("clip_skip") or 1),
-        lora_adapters=inputs.get("lora_adapters"),
+        {
+            "initial_image": initial_image,
+            "mask_image": mask_image,
+            "strength": strength,
+            "prompt": str(inputs["prompt"]),
+            "negative_prompt": str(inputs.get("negative_prompt") or ""),
+            "steps": int(inputs.get("steps") or 20),
+            "guidance_scale": float(inputs.get("guidance_scale") or inputs.get("cfg") or 7.5),
+            "seed": inputs.get("seed"),
+            "scheduler": str(inputs.get("scheduler") or "euler"),
+            "model": inputs.get("model"),
+            "num_images": int(inputs.get("num_images") or 1),
+            "padding_mask_crop": padding_mask_crop,
+            "clip_skip": int(inputs.get("clip_skip") or 1),
+            "lora_adapters": inputs.get("lora_adapters"),
+        }
     )
     if not isinstance(result, dict):
         raise ValueError("sdxl.inpaint must return an object")

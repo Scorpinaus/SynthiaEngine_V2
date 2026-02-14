@@ -69,10 +69,33 @@ function buildMetadata(metadata) {
     const list = document.createElement("dl");
     list.className = "history-meta-list";
     let hasEntries = false;
+    const knownKeys = new Set(METADATA_FIELDS.map(({ key }) => key));
 
-    METADATA_FIELDS.forEach(({ key, label }) => {
-        const value = metadata?.[key];
+    function normalizeLabel(key) {
+        return key
+            .split("_")
+            .filter(Boolean)
+            .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+            .join(" ");
+    }
+
+    function normalizeValue(value) {
         if (value === undefined || value === null || value === "") {
+            return null;
+        }
+        if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+            return String(value);
+        }
+        try {
+            return JSON.stringify(value);
+        } catch {
+            return String(value);
+        }
+    }
+
+    function appendRow(label, rawValue) {
+        const value = normalizeValue(rawValue);
+        if (value === null) {
             return;
         }
         hasEntries = true;
@@ -85,6 +108,17 @@ function buildMetadata(metadata) {
         row.appendChild(dt);
         row.appendChild(dd);
         list.appendChild(row);
+    }
+
+    METADATA_FIELDS.forEach(({ key, label }) => {
+        appendRow(label, metadata?.[key]);
+    });
+
+    Object.keys(metadata || {}).forEach((key) => {
+        if (knownKeys.has(key)) {
+            return;
+        }
+        appendRow(normalizeLabel(key), metadata[key]);
     });
 
     return hasEntries ? list : null;

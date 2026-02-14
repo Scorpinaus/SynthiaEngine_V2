@@ -285,36 +285,22 @@ async function generate() {
 
     const prompt = WorkflowClient.readTextValue("prompt", "");
     const negative_prompt = WorkflowClient.readTextValue("negative_prompt", primaryDefaults.negative_prompt ?? "");
-    const steps = WorkflowClient.readNumberValue("steps", primaryDefaults.steps ?? 20, {
-         integer: true,
-    });
+    const steps = WorkflowClient.readNumberValue("steps", primaryDefaults.steps ?? 20, {integer: true,});
     const cfg = WorkflowClient.readNumberValue("cfg", primaryDefaults.cfg ?? 7.5);
     const scheduler = WorkflowClient.readTextValue("scheduler", primaryDefaults.scheduler ?? "euler");
     const seed = WorkflowClient.readSeedValue("seed");
-    const width = WorkflowClient.readNumberValue("width", primaryDefaults.width ?? 512, {
-        integer: true,
-    });
-    const height = WorkflowClient.readNumberValue("height", primaryDefaults.height ?? 512, {
-        integer: true,
-    });
+    const width = WorkflowClient.readNumberValue("width", primaryDefaults.width ?? 512, {integer: true,});
+    const height = WorkflowClient.readNumberValue("height", primaryDefaults.height ?? 512, {integer: true,});
     const hires_enabled = Boolean(document.getElementById("hires_enabled")?.checked);
     const hires_scale = WorkflowClient.readNumberValue("hires_scale", hiresDefaults.hires_scale ?? 1.0);
     const modelRaw = document.getElementById("model_select")?.value ?? "";
     const model = modelRaw ? modelRaw : (primaryDefaults.model ?? null);
-    const clip_skip = WorkflowClient.readNumberValue("clip_skip", primaryDefaults.clip_skip ?? 1, {
-        integer: true,
-    });
-    const num_images = WorkflowClient.readNumberValue("num_images", primaryDefaults.num_images ?? 1, {
-        integer: true,
-    });
-    const weighting_policy = WorkflowClient.readTextValue(
-        "weighting_policy",
-        primaryDefaults.weighting_policy ?? "diffusers-like"
-    );
+    const clip_skip = WorkflowClient.readNumberValue("clip_skip", primaryDefaults.clip_skip ?? 1, {integer: true,});
+    const num_images = WorkflowClient.readNumberValue("num_images", primaryDefaults.num_images ?? 1, {integer: true,});
+    const weighting_policy = WorkflowClient.readTextValue("weighting_policy",
+    primaryDefaults.weighting_policy ?? "diffusers-like");
     const controlnet_conditioning_scale = WorkflowClient.readNumberValue(
-        "controlnet_conditioning_scale",
-        primaryDefaults.controlnet_conditioning_scale ?? 1.0
-    );
+    "controlnet_conditioning_scale", primaryDefaults.controlnet_conditioning_scale ?? 1.0);
     const control_guidance_start = WorkflowClient.readNumberValue(
         "control_guidance_start",
         primaryDefaults.control_guidance_start ?? 0.0
