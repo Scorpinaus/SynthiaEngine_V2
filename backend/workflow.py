@@ -2308,26 +2308,28 @@ def _sdxl_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, An
             controlnet_conditioning_scale_arg = controlnet_conditioning_scales
 
         result = run_sdxl_inpaint_controlnet(
-            initial_image=initial_image,
-            mask_image=mask_image,
-            strength=strength,
-            prompt=str(inputs["prompt"]),
-            negative_prompt=str(inputs.get("negative_prompt") or ""),
-            steps=int(inputs.get("steps") or 20),
-            guidance_scale=float(inputs.get("guidance_scale") or inputs.get("cfg") or 7.5),
-            seed=inputs.get("seed"),
-            scheduler=str(inputs.get("scheduler") or "euler"),
-            model=inputs.get("model"),
-            num_images=int(inputs.get("num_images") or 1),
-            padding_mask_crop=padding_mask_crop,
-            clip_skip=int(inputs.get("clip_skip") or 1),
-            lora_adapters=inputs.get("lora_adapters"),
-            controlnet_model=controlnet_model_arg,
-            control_image=control_image_arg,
-            controlnet_conditioning_scale=controlnet_conditioning_scale_arg,
-            controlnet_guess_mode=bool(inputs.get("controlnet_guess_mode", False)),
-            control_guidance_start=control_guidance_start,
-            control_guidance_end=control_guidance_end,
+            {
+                "initial_image": initial_image,
+                "mask_image": mask_image,
+                "strength": strength,
+                "prompt": str(inputs["prompt"]),
+                "negative_prompt": str(inputs.get("negative_prompt") or ""),
+                "steps": int(inputs.get("steps") or 20),
+                "guidance_scale": float(inputs.get("guidance_scale") or inputs.get("cfg") or 7.5),
+                "seed": inputs.get("seed"),
+                "scheduler": str(inputs.get("scheduler") or "euler"),
+                "model": inputs.get("model"),
+                "num_images": int(inputs.get("num_images") or 1),
+                "padding_mask_crop": padding_mask_crop,
+                "clip_skip": int(inputs.get("clip_skip") or 1),
+                "lora_adapters": inputs.get("lora_adapters"),
+                "controlnet_model": controlnet_model_arg,
+                "control_image": control_image_arg,
+                "controlnet_conditioning_scale": controlnet_conditioning_scale_arg,
+                "controlnet_guess_mode": bool(inputs.get("controlnet_guess_mode", False)),
+                "control_guidance_start": control_guidance_start,
+                "control_guidance_end": control_guidance_end,
+            }
         )
         if not isinstance(result, dict):
             raise ValueError("sdxl.inpaint must return an object")

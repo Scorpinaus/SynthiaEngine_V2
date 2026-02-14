@@ -376,8 +376,8 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
     def test_inpaint_controlnet_path_passes_expected_pipeline_kwargs(self):
         captured = {}
 
-        def _fake_run_sdxl_inpaint_controlnet(**kwargs):
-            captured.update(kwargs)
+        def _fake_run_sdxl_inpaint_controlnet(params):
+            captured.update(params)
             return {"images": ["/outputs/batch/out.png"]}
 
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
@@ -420,8 +420,8 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
     def test_inpaint_controlnet_path_forwards_lora_adapters(self):
         captured = {}
 
-        def _fake_run_sdxl_inpaint_controlnet(**kwargs):
-            captured.update(kwargs)
+        def _fake_run_sdxl_inpaint_controlnet(params):
+            captured.update(params)
             return {"images": ["/outputs/batch/out.png"]}
 
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
@@ -574,8 +574,8 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
     def test_inpaint_controlnet_preserves_zero_padding_mask_crop(self):
         captured = {}
 
-        def _fake_run_sdxl_inpaint_controlnet(**kwargs):
-            captured.update(kwargs)
+        def _fake_run_sdxl_inpaint_controlnet(params):
+            captured.update(params)
             return {"images": ["/outputs/batch/out.png"]}
 
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):

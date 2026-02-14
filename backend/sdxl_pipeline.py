@@ -876,28 +876,30 @@ def run_sdxl_inpaint(
 
 @torch.inference_mode()
 def run_sdxl_inpaint_controlnet(
-    *,
-    initial_image: Image.Image,
-    mask_image: Image.Image,
-    strength: float,
-    prompt: str,
-    negative_prompt: str,
-    steps: int,
-    guidance_scale: float,
-    seed: int | None,
-    model: str | None,
-    num_images: int,
-    padding_mask_crop: int,
-    clip_skip: int,
-    scheduler: str,
-    lora_adapters: list[object] | None = None,
-    controlnet_model: str | list[str],
-    control_image: Image.Image | list[Image.Image],
-    controlnet_conditioning_scale: float | list[float] = 1.0,
-    controlnet_guess_mode: bool = False,
-    control_guidance_start: float = 0.0,
-    control_guidance_end: float = 1.0,
+    params: dict[str, object],
 ) -> dict[str, list[str]]:
+    # Normalize all inpaint-ControlNet inputs in one place for easier maintenance and tracing.
+    initial_image = params["initial_image"]
+    mask_image = params["mask_image"]
+    strength = float(params["strength"])
+    prompt = str(params["prompt"])
+    negative_prompt = str(params["negative_prompt"])
+    steps = int(params["steps"])
+    guidance_scale = float(params["guidance_scale"])
+    seed = params["seed"]
+    model = params["model"]
+    num_images = int(params["num_images"])
+    padding_mask_crop = int(params["padding_mask_crop"])
+    clip_skip = int(params["clip_skip"])
+    scheduler = str(params["scheduler"])
+    lora_adapters = params.get("lora_adapters")
+    controlnet_model = params["controlnet_model"]
+    control_image = params["control_image"]
+    controlnet_conditioning_scale = params.get("controlnet_conditioning_scale", 1.0)
+    controlnet_guess_mode = bool(params.get("controlnet_guess_mode", False))
+    control_guidance_start = float(params.get("control_guidance_start", 0.0))
+    control_guidance_end = float(params.get("control_guidance_end", 1.0))
+
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
         base_seed = torch.randint(0, 2**31, (1,)).item()
@@ -961,31 +963,22 @@ def run_sdxl_inpaint_controlnet(
                 control_guidance_start=control_guidance_start,
                 control_guidance_end=control_guidance_end,
             ).images[0]
+
+            image_params = dict(params)
+            image_params.pop("initial_image", None)
+            image_params.pop("mask_image", None)
+            image_params.pop("control_image", None)
+            image_params["mode"] = "inpaint_controlnet"
+            image_params["seed"] = current_seed
+            image_params["batch_id"] = batch_id
+            image_params["width"] = width
+            image_params["height"] = height
             relpath = save_sdxl_image(
                 image=image,
                 batch_output_dir=batch_output_dir,
                 batch_id=batch_id,
                 seed=current_seed,
-                metadata={
-                    "mode": "inpaint_controlnet",
-                    "prompt": prompt,
-                    "negative_prompt": negative_prompt,
-                    "steps": steps,
-                    "guidance_scale": guidance_scale,
-                    "width": width,
-                    "height": height,
-                    "seed": current_seed,
-                    "model": model,
-                    "strength": strength,
-                    "padding_mask_crop": padding_mask_crop,
-                    "clip_skip": clip_skip,
-                    "batch_id": batch_id,
-                    "controlnet_model": controlnet_model,
-                    "controlnet_conditioning_scale": controlnet_conditioning_scale,
-                    "controlnet_guess_mode": controlnet_guess_mode,
-                    "control_guidance_start": control_guidance_start,
-                    "control_guidance_end": control_guidance_end,
-                },
+                metadata=image_params,
             )
             logger.info("Image %s saved to %s", i, Path(relpath).name)
             filenames.append(relpath)
