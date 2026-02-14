@@ -348,8 +348,8 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
     def test_img2img_without_controlnet_uses_default_pipeline(self):
         captured = {}
 
-        def _fake_run_sdxl_img2img(**kwargs):
-            captured.update(kwargs)
+        def _fake_run_sdxl_img2img(params):
+            captured.update(params)
             return {"images": ["/outputs/batch/plain.png"]}
 
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):

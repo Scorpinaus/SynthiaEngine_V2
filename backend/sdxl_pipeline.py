@@ -689,22 +689,24 @@ def run_sdxl_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
 
 @torch.inference_mode()
 def run_sdxl_img2img(
-    initial_image,
-    strength: float,
-    prompt: str,
-    negative_prompt: str,
-    steps: int,
-    guidance_scale: float,
-    width: int,
-    height: int,
-    seed: int | None,
-    model: str | None,
-    num_images: int,
-    clip_skip: int,
-    scheduler: str,
-    lora_adapters: list[object] | None = None,
+    params: dict[str, object],
 ) -> dict[str, list[str]]:
-    
+    # Normalize all img2img inputs in one place for easier maintenance and tracing.
+    initial_image = params["initial_image"]
+    strength = float(params["strength"])
+    prompt = str(params["prompt"])
+    negative_prompt = str(params["negative_prompt"])
+    steps = int(params["steps"])
+    guidance_scale = float(params["guidance_scale"])
+    width = int(params["width"])
+    height = int(params["height"])
+    seed = params["seed"]
+    model = params["model"]
+    num_images = int(params["num_images"])
+    clip_skip = int(params["clip_skip"])
+    scheduler = str(params["scheduler"])
+    lora_adapters = params["lora_adapters"]
+
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
         base_seed = torch.randint(0, 2**31, (1,)).item()
@@ -754,25 +756,19 @@ def run_sdxl_img2img(
             del latents
 
             image_width, image_height = initial_image.size
+            image_params = dict(params)
+            image_params.pop("initial_image", None)
+            image_params["mode"] = "img2img"
+            image_params["seed"] = current_seed
+            image_params["batch_id"] = batch_id
+            image_params["width"] = image_width
+            image_params["height"] = image_height
             relpath = save_sdxl_image(
                 image=image,
                 batch_output_dir=batch_output_dir,
                 batch_id=batch_id,
                 seed=current_seed,
-                metadata={
-                "mode": "img2img",
-                "prompt": prompt,
-                "negative_prompt": negative_prompt,
-                "steps": steps,
-                "guidance_scale": guidance_scale,
-                "width": image_width,
-                "height": image_height,
-                "seed": current_seed,
-                "model": model,
-                "strength": strength,
-                "clip_skip": clip_skip,
-                "batch_id": batch_id,
-                },
+                metadata=image_params,
             )
             logger.info("Image %s saved to %s", i, Path(relpath).name)
 
