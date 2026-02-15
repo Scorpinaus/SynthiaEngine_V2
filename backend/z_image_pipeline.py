@@ -30,8 +30,12 @@ GEN_LOCK = threading.Lock()
 
 logger = logging.getLogger(__name__)
 configure_logging()
+
 _ADAPTER_NAME_SANITIZE_RE = re.compile(r"[^0-9A-Za-z_-]+")
 
+"""
+    Helper Functions
+"""
 
 # def _align_pad_token_dtype(pipe: ZImagePipeline | ZImageImg2ImgPipeline) -> None:
 #     transformer = pipe.transformer
@@ -50,17 +54,16 @@ _ADAPTER_NAME_SANITIZE_RE = re.compile(r"[^0-9A-Za-z_-]+")
 
 
 def _sanitize_adapter_fragment(raw_name: str | None) -> str:
+    # Checks for empty or Null input
     if not raw_name:
         return ""
+    # Checks for spaces, punctuation and special symbols - replaces them with _. Trims leading or trailing underscopes
     sanitized = _ADAPTER_NAME_SANITIZE_RE.sub("_", raw_name).strip("_")
+    # Replaces multiple underscores with 1 underscore and returns final output
     return re.sub(r"_+", "_", sanitized)
 
 
-def _build_adapter_name(
-    lora_id: int,
-    display_name: str | None,
-    used_names: set[str],
-) -> str:
+def _build_adapter_name(lora_id: int, display_name: str | None,used_names: set[str],) -> str:
     fragment = _sanitize_adapter_fragment(display_name) or f"id_{lora_id}"
     base_name = f"lora_{fragment}"
     candidate = base_name
@@ -126,14 +129,17 @@ def _apply_z_image_lora_adapters(
 
     return adapter_names
 
-## Load Pipelines
+"""
+    Load Z-Image Pipelines
+"""
 
 def load_z_image_pipeline(model_name: str | None) -> ZImagePipeline:
+    # 1. Check input model_name is valid and load valid path
     entry = get_model_entry(model_name)
-
     source = resolve_model_source(entry)
     logger.info("Z-Image model source: %s", source)
 
+    #2. Check if diffusers multi-folder or single-file checkpoint
     if entry.model_type == "diffusers":
         pipe = ZImagePipeline.from_pretrained(
             source,
@@ -149,27 +155,22 @@ def load_z_image_pipeline(model_name: str | None) -> ZImagePipeline:
         )
     else:
         raise ValueError(f"Unsupported model type: {entry.model_type}")
-
-    dtypes = set(p.dtype for p in pipe.transformer.parameters())
-    logger.info("Transformer dtypes: %s", dtypes)
     
-    logger.info("Allocated GB: %s", torch.cuda.memory_allocated() / 1024**3)
-    logger.info("Reserved GB: %s", torch.cuda.memory_reserved() / 1024**3)
-    
+    #3. Set pipeline settings
     pipe.enable_sequential_cpu_offload()
 
-    # Cleanup any transient allocations after load
-    cleanup_memory()
-    
+    #Clean-up memory & Return ready pipeline
+    cleanup_memory()    
     return pipe
 
 
 def load_z_image_img2img_pipeline(model_name: str | None) -> ZImageImg2ImgPipeline:
+    #1. Check input model_name is valid and load valid path
     entry = get_model_entry(model_name)
-
     source = resolve_model_source(entry)
     logger.info("Z-Image img2img model source: %s", source)
 
+    #2. Check if diffusers multi-folder or single-file checkpoint
     if entry.model_type == "diffusers":
         pipe = ZImageImg2ImgPipeline.from_pretrained(
             source,
@@ -185,22 +186,17 @@ def load_z_image_img2img_pipeline(model_name: str | None) -> ZImageImg2ImgPipeli
     else:
         raise ValueError(f"Unsupported model type: {entry.model_type}")
 
-    dtypes = set(p.dtype for p in pipe.transformer.parameters())
-    logger.info("Transformer dtypes: %s", dtypes)
-
-    logger.info("Allocated GB: %s", torch.cuda.memory_allocated() / 1024**3)
-    logger.info("Reserved GB: %s", torch.cuda.memory_reserved() / 1024**3)
-
+    #3. Set pipeline settings
     pipe.enable_sequential_cpu_offload()
 
+    #4. Clean-up memory & Return ready pipeline
     cleanup_memory()
-
     return pipe
 
 
 def load_z_image_inpaint_pipeline(model_name: str | None) -> Any:
+    #1. Check input model_name is valid and load valid path
     entry = get_model_entry(model_name)
-
     source = resolve_model_source(entry)
     logger.info("Z-Image inpaint model source: %s", source)
 
@@ -210,6 +206,7 @@ def load_z_image_inpaint_pipeline(model_name: str | None) -> Any:
             "Install a diffusers build with Z-Image inpaint support."
         )
 
+    #2. Check if diffusers multi-folder or single-file checkpoint
     if entry.model_type == "diffusers":
         pipe = ZImageInpaintPipeline.from_pretrained(
             source,
@@ -225,21 +222,21 @@ def load_z_image_inpaint_pipeline(model_name: str | None) -> Any:
     else:
         raise ValueError(f"Unsupported model type: {entry.model_type}")
 
-    dtypes = set(p.dtype for p in pipe.transformer.parameters())
-    logger.info("Transformer dtypes: %s", dtypes)
-
-    logger.info("Allocated GB: %s", torch.cuda.memory_allocated() / 1024**3)
-    logger.info("Reserved GB: %s", torch.cuda.memory_reserved() / 1024**3)
-
+    #3. Set pipeline settings:
     pipe.enable_sequential_cpu_offload()
+    
+    #4. Clean-up memory & Return ready pipeline
     cleanup_memory()
-
     return pipe
 
-## Run and generate renders
+
+"""
+    Image Rendering Functions
+"""
 
 @torch.inference_mode()
 def run_z_image_text2img(params: dict[str, object]) -> dict[str, list[str]]:
+    #1. Load and create local method variables + ensure correct formatting from input dict
     prompt = str(params.get("prompt") or "")
     negative_prompt = str(params.get("negative_prompt") or "").strip()
     steps = int(params.get("steps", 8))
@@ -252,40 +249,37 @@ def run_z_image_text2img(params: dict[str, object]) -> dict[str, list[str]]:
     scheduler = str(params.get("scheduler") or "euler")
     lora_adapters = params.get("lora_adapters")
 
-    logger.info("seed=%s", seed)
+    #2. Check and set seed value
     if seed is None or seed == 0:
         base_seed = torch.randint(0, 2**31, (1,)).item()
     else:
         base_seed = int(seed)
-
+    logger.info(
+        "Z-Image Generate: model=%s seed=%s steps=%s guidance_scale=%s size=%sx%s num_images=%s",
+        model, base_seed, steps, guidance_scale, width, height, num_images,
+    )
+    
+    #3. Create batch_id and output directory
     batch_id = make_batch_id()
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
+    #4. Load and create pipeline and scheduler
     pipe = load_z_image_pipeline(model)
-    logger.info(
-        "Z-Image Generate: model=%s seed=%s steps=%s guidance_scale=%s size=%sx%s num_images=%s",
-        model,
-        base_seed,
-        steps,
-        guidance_scale,
-        width,
-        height,
-        num_images,
-    )
-
-    filenames: list[str] = []
     pipe.scheduler = create_scheduler(scheduler, pipe)
+
+    #5. Load lora into pipeline
     adapter_names = _apply_z_image_lora_adapters(pipe, lora_adapters)
 
+    #6. Create list of filenames
+    filenames: list[str] = []
     with GEN_LOCK:
+        #7. Render image one by one
         for i in range(num_images):
+            # Set current seed
             current_seed = base_seed + i
-            
             generator = torch.Generator(device="cpu").manual_seed(current_seed)
             
-            print("Allocated GB:", torch.cuda.memory_allocated()/1024**3)
-            print("Reserved GB:", torch.cuda.memory_reserved()/1024**3)
-            
+            # Render image
             with torch.autocast("cuda", dtype=torch.bfloat16):
                 call_kwargs = dict(
                     prompt=prompt,
@@ -301,6 +295,7 @@ def run_z_image_text2img(params: dict[str, object]) -> dict[str, list[str]]:
 
                 image = pipe(**call_kwargs).images[0]
 
+            # Define filenames & Create image_params metadata dict to store metadata
             filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
             image_params = dict(params)
             image_params.update({
@@ -310,26 +305,28 @@ def run_z_image_text2img(params: dict[str, object]) -> dict[str, list[str]]:
                 "batch_id": batch_id,
             })
             pnginfo = build_png_metadata(image_params)
+            
+            # Save filename to rendered image
             image.save(filename, pnginfo=pnginfo)
             logger.info("Image %s saved to %s", i, filename.name)
-
             filenames.append(build_batch_output_relpath(batch_id, filename.name))
             
-            # ✅ release per-image intermediates
+            # Clean-up memory to prevent OOM
             del image
             cleanup_memory()
 
+    # 8. Unload lora weights & clean memory
     if adapter_names and hasattr(pipe, "unload_lora_weights"):
         pipe.unload_lora_weights()
 
+    # 9. Return output
     return {"images": [f"/outputs/{name}" for name in filenames]}
 
 
 @torch.inference_mode()
 def run_z_image_img2img(params: dict[str, object]) -> dict[str, list[str]]:
+    #1. Load and create local method variables + ensure correct formatting from input dict
     initial_image = params.get("initial_image")
-    if initial_image is None:
-        raise ValueError("initial_image is required")
     strength = float(params.get("strength", 0.75))
     prompt = str(params.get("prompt") or "")
     negative_prompt = str(params.get("negative_prompt") or "").strip()
@@ -343,42 +340,39 @@ def run_z_image_img2img(params: dict[str, object]) -> dict[str, list[str]]:
     scheduler = str(params.get("scheduler") or "euler")
     lora_adapters = params.get("lora_adapters")
 
-    logger.info("seed=%s", seed)
+    # 2. Check and set seed value
     if seed is None or seed == 0:
         base_seed = torch.randint(0, 2**31, (1,)).item()
     else:
         base_seed = int(seed)
+    logger.info(
+        "Z-Image Img2Img: model=%s seed=%s steps=%s guidance_scale=%s size=%sx%s strength=%s num_images=%s",
+        model, base_seed, steps, guidance_scale, width, height, strength,
+        num_images,)
 
+    #3. Create batch_id and output directory
     batch_id = make_batch_id()
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
+    #4. Load and create pipeline and scheduler
     pipe = load_z_image_img2img_pipeline(model)
-    logger.info(
-        "Z-Image Img2Img: model=%s seed=%s steps=%s guidance_scale=%s size=%sx%s strength=%s num_images=%s",
-        model,
-        base_seed,
-        steps,
-        guidance_scale,
-        width,
-        height,
-        strength,
-        num_images,
-    )
-
-    filenames: list[str] = []
     pipe.scheduler = create_scheduler(scheduler, pipe)
+    
+    #5. Load lora into pipeline
     adapter_names = _apply_z_image_lora_adapters(pipe, lora_adapters)
 
+    #6. Create list of filenames
+    filenames: list[str] = []
+    
+    #7. Render image one by one
     try:
         with GEN_LOCK:
             for i in range(num_images):
+                # Set current seed
                 current_seed = base_seed + i
-
                 generator = torch.Generator(device="cpu").manual_seed(current_seed)
 
-                print("Allocated GB:", torch.cuda.memory_allocated()/1024**3)
-                print("Reserved GB:", torch.cuda.memory_reserved()/1024**3)
-
+                # Render image
                 with torch.autocast("cuda", dtype=torch.bfloat16):
                     call_kwargs = dict(
                         prompt=prompt,
@@ -395,6 +389,7 @@ def run_z_image_img2img(params: dict[str, object]) -> dict[str, list[str]]:
 
                     image = pipe(**call_kwargs).images[0]
 
+                #define filenames & Create image_params metadata dict to save image metadata
                 filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
                 image_params = dict(params)
                 image_params.update(
@@ -406,22 +401,28 @@ def run_z_image_img2img(params: dict[str, object]) -> dict[str, list[str]]:
                     }
                 )
                 pnginfo = build_png_metadata(image_params)
+                
+                # Save filename to rendered image
                 image.save(filename, pnginfo=pnginfo)
                 logger.info("Image %s saved to %s", i, filename.name)
-
                 filenames.append(build_batch_output_relpath(batch_id, filename.name))
 
+                #Clean-up intermediate memory to prevent OOM
                 del image
                 cleanup_memory()
     finally:
+        #8. Unload lora weights & clean memory
         if adapter_names and hasattr(pipe, "unload_lora_weights"):
             pipe.unload_lora_weights()
+        cleanup_memory()
 
+    #9. Return output back to workflow calling method
     return {"images": [f"/outputs/{name}" for name in filenames]}
 
 
 @torch.inference_mode()
 def run_z_image_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
+    #1. Load and create local method variables + ensure correct formatting from input dict
     initial_image = params["initial_image"]
     mask_image = params["mask_image"]
     strength = float(params["strength"])
@@ -435,42 +436,42 @@ def run_z_image_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
     scheduler = str(params["scheduler"])
     lora_adapters = params["lora_adapters"]
 
-    logger.info("seed=%s", seed)
+    #2. Check and set seed value
     if seed is None or seed == 0:
         base_seed = torch.randint(0, 2**31, (1,)).item()
     else:
         base_seed = int(seed)
-
-    batch_id = make_batch_id()
-    batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
-
-    pipe = load_z_image_inpaint_pipeline(model)
-    width, height = initial_image.size
     logger.info(
         "Z-Image Inpaint: model=%s seed=%s steps=%s guidance_scale=%s size=%sx%s strength=%s num_images=%s",
-        model,
-        base_seed,
-        steps,
-        guidance_scale,
-        width,
-        height,
-        strength,
+        model, base_seed, steps, guidance_scale, width, height, strength,
         num_images,
     )
 
-    filenames: list[str] = []
-    pipe.scheduler = create_scheduler(scheduler, pipe)
-    adapter_names = _apply_z_image_lora_adapters(pipe, lora_adapters)
+    #3. Create batch_id and output directory
+    batch_id = make_batch_id()
+    batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
+    #4. Load and create pipeline and scheduler
+    pipe = load_z_image_inpaint_pipeline(model)
+    pipe.scheduler = create_scheduler(scheduler, pipe)
+        
+    width, height = initial_image.size
+    
+    #5. Load lora into pipeline
+    adapter_names = _apply_z_image_lora_adapters(pipe, lora_adapters)
+    
+    #6. Create list of filenames
+    filenames: list[str] = []
+    
+    #7. Render image one by one
     try:
         with GEN_LOCK:
             for i in range(num_images):
+                # Set current seed
                 current_seed = base_seed + i
                 generator = torch.Generator(device="cpu").manual_seed(current_seed)
 
-                print("Allocated GB:", torch.cuda.memory_allocated() / 1024**3)
-                print("Reserved GB:", torch.cuda.memory_reserved() / 1024**3)
-
+                # Render image
                 with torch.autocast("cuda", dtype=torch.bfloat16):
                     call_kwargs: dict[str, object] = {
                         "prompt": prompt,
@@ -486,6 +487,7 @@ def run_z_image_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
 
                     image = pipe(**call_kwargs).images[0]
 
+                # Define filenames & Create image_params to store image metadata
                 filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
                 image_params = dict(params)
                 image_params.pop("initial_image", None)
@@ -501,15 +503,20 @@ def run_z_image_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
                     }
                 )
                 pnginfo = build_png_metadata(image_params)
+                
+                # Save filename to rendered image
                 image.save(filename, pnginfo=pnginfo)
                 logger.info("Image %s saved to %s", i, filename.name)
-
                 filenames.append(build_batch_output_relpath(batch_id, filename.name))
-
+                
+                # Memory cleanup
                 del image
                 cleanup_memory()
     finally:
+        #8. Unload loras and final memory clean-up
         if adapter_names and hasattr(pipe, "unload_lora_weights"):
             pipe.unload_lora_weights()
+        cleanup_memory()
 
+    #9. Return output back to workflow calling method
     return {"images": [f"/outputs/{name}" for name in filenames]}

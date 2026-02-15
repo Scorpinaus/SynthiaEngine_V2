@@ -63,11 +63,12 @@ def _release_pipeline(pipe: Any) -> None:
 """
 
 def load_flux_pipeline(model_name: str | None) -> Any:
+    # 1. Check input model_name is valid and load valid path
     entry = get_model_entry(model_name)
-
     source = resolve_model_source(entry)
     logger.info("Flux model source: %s", source)
 
+    # 2. Check if diffusers multi-folder or single-file checkpoint
     if entry.model_type == "diffusers":
         pipe = CustomFluxPipeline.from_pretrained(
             source,
@@ -94,6 +95,7 @@ def load_flux_pipeline(model_name: str | None) -> Any:
     # else:
     #     raise ValueError(f"Unsupported model type: {entry.model_type}")
 
+    #3. Set pipeline settings to prevent OOM
     # pipe.enable_attention_slicing("max")
     pipe.vae.enable_slicing()
     pipe.vae.enable_tiling()
@@ -103,11 +105,13 @@ def load_flux_pipeline(model_name: str | None) -> Any:
 
 
 def load_flux_img2img_pipeline(model_name: str | None) -> FluxImg2ImgPipeline:
+    
+    #1. Check input model_name is valid and load valid path
     entry = get_model_entry(model_name)
-
     source = resolve_model_source(entry)
     logger.info("Flux img2img model source: %s", source)
 
+    #2. Check if diffusers multi-folder or single-file checkpoint
     if entry.model_type == "diffusers":
         pipe = FluxImg2ImgPipeline.from_pretrained(
             source,
@@ -121,6 +125,7 @@ def load_flux_img2img_pipeline(model_name: str | None) -> FluxImg2ImgPipeline:
     else:
         raise ValueError(f"Unsupported model type: {entry.model_type}")
 
+    #3. Set pipeline settings: enable vae slicing and tiling to reduce vram and sequetial cpu offload
     pipe.enable_attention_slicing("max")
     pipe.vae.enable_slicing()
     pipe.vae.enable_tiling()
@@ -129,12 +134,11 @@ def load_flux_img2img_pipeline(model_name: str | None) -> FluxImg2ImgPipeline:
     return pipe
 
 def load_flux_inpaint_pipeline(model_name: str | None) -> Any:
+    #1. Check input model_name is valid and load valid path
     entry = get_model_entry(model_name)
-
     source = resolve_model_source(entry)
     logger.info("Flux inpaint model source: %s", source)
-    pipeline_cls: Any = FluxInpaintPipeline
-    pipeline_name = "FluxInpaintPipeline"
+    
     if _should_use_flux_fill_pipeline(entry.name, source, entry.version):
         if FluxFillPipeline is None:
             raise ValueError(
@@ -143,8 +147,12 @@ def load_flux_inpaint_pipeline(model_name: str | None) -> Any:
             )
         pipeline_cls = FluxFillPipeline
         pipeline_name = "FluxFillPipeline"
+    else:
+        pipeline_cls: Any = FluxInpaintPipeline
+        pipeline_name = "FluxInpaintPipeline"        
     logger.info("Flux inpaint pipeline class: %s", pipeline_name)
 
+    #2. Check if diffusers multi-folder or single-file checkpoint
     if entry.model_type == "diffusers":
         pipe = pipeline_cls.from_pretrained(
             source,
@@ -158,6 +166,7 @@ def load_flux_inpaint_pipeline(model_name: str | None) -> Any:
     else:
         raise ValueError(f"Unsupported model type: {entry.model_type}")
 
+    #3. Set pipeline settings:
     pipe.enable_attention_slicing("max")
     pipe.vae.enable_slicing()
     pipe.vae.enable_tiling()
@@ -166,12 +175,12 @@ def load_flux_inpaint_pipeline(model_name: str | None) -> Any:
     return pipe
 
 """
-    Generates and renders image
+    Methods which generates and renders image using Flux-related Pipelines
 """
 
 @torch.inference_mode()
 def run_flux_text2img(params: dict[str, object]) -> dict[str, list[str]]:
-
+    # 1. Load and create local method variables + ensure correct formatting from input dict
     prompt = str(params["prompt"])
     negative_prompt = str(params["negative_prompt"])
     steps = int(params["steps"])
@@ -184,23 +193,25 @@ def run_flux_text2img(params: dict[str, object]) -> dict[str, list[str]]:
     scheduler = str(params["scheduler"])
     lora_adapters = params["lora_adapters"]
 
-    logger.info("seed=%s", seed)
+    # 2. Check and set seed value
     if seed is None or seed == 0:
         base_seed = torch.randint(0, 2**31, (1,)).item()
     else:
         base_seed = int(seed)
-
-    batch_id = make_batch_id()
-    batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
-
-    pipe: Any | None = load_flux_pipeline(model)
     logger.info(
-        "Flux Generate: model=%s seed=%s steps=%s guidance_scale=%s size=%sx%s num_images=%s",
+        "Flux Text2Image: model=%s seed=%s steps=%s guidance_scale=%s size=%sx%s num_images=%s",
         model, base_seed, steps, guidance_scale, width, height, num_images,
     )
 
-    filenames: list[str] = []
+    # 3. Create batch_id and output directory
+    batch_id = make_batch_id()
+    batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
+
+    # 4. Load and create pipeline and scheduler
+    pipe = load_flux_pipeline(model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
+    
+    # 5. Load lora into pipeline
     adapter_names: list[str] = []
     adapter_names, lora_coverage = apply_lora_adapters_with_validation(
         pipe,
@@ -212,12 +223,18 @@ def run_flux_text2img(params: dict[str, object]) -> dict[str, list[str]]:
     if report_path is not None:
         logger.info("LoRA coverage report saved to %s", report_path)
 
+    #6. Create list of filenames
+    filenames: list[str] = []
+    
+    #7. Render image
     try:
         with GEN_LOCK:
             for i in range(num_images):
+                # Define current seed
                 current_seed = base_seed + i
                 generator = torch.Generator(device="cpu").manual_seed(current_seed)
 
+                # Render image
                 with torch.autocast("cuda", dtype=torch.bfloat16):
                     call_kwargs: dict[str, object] = {
                         "prompt": prompt,
@@ -232,6 +249,7 @@ def run_flux_text2img(params: dict[str, object]) -> dict[str, list[str]]:
 
                     image = pipe(**call_kwargs).images[0]
 
+                # Set filename and create image_params metadata dioct
                 filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
                 image_params = dict(params)
                 image_params.update({
@@ -244,11 +262,12 @@ def run_flux_text2img(params: dict[str, object]) -> dict[str, list[str]]:
                 image.save(filename, pnginfo=pnginfo)
                 logger.info("Image %s saved to %s", i, filename.name)
 
+                # Save filename to rendered image
                 filenames.append(build_batch_output_relpath(batch_id, filename.name))
-
                 del image
                 cleanup_memory()
     finally:
+        #8. Load pipeline + clean memory
         if pipe is not None and adapter_names and hasattr(pipe, "unload_lora_weights"):
             try:
                 pipe.unload_lora_weights()
@@ -259,11 +278,13 @@ def run_flux_text2img(params: dict[str, object]) -> dict[str, list[str]]:
         pipe = None
         cleanup_memory()
 
+    #9.  Return output
     return {"images": [f"/outputs/{name}" for name in filenames]}
 
 
 @torch.inference_mode()
 def run_flux_img2img(params: dict[str, object]) -> dict[str, list[str]]:
+    #1. Load and create local method variables + ensure correct formatting from input dict
     initial_image = params["initial_image"]
     strength = float(params["strength"])
     prompt = str(params["prompt"])
@@ -278,24 +299,26 @@ def run_flux_img2img(params: dict[str, object]) -> dict[str, list[str]]:
     scheduler = str(params["scheduler"])
     lora_adapters = params["lora_adapters"]
 
-    logger.info("seed=%s", seed)
+    #2. Check and set seed value
     if seed is None or seed == 0:
         base_seed = torch.randint(0, 2**31, (1,)).item()
     else:
         base_seed = int(seed)
-
-    batch_id = make_batch_id()
-    batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
-
-    pipe = load_flux_img2img_pipeline(model)
     logger.info(
         "Flux Img2Img: model=%s seed=%s steps=%s guidance_scale=%s size=%sx%s strength=%s num_images=%s",
         model, base_seed, steps, guidance_scale, width,
         height, strength,num_images,
     )
+    
+    #3. Create batch_id and output directory
+    batch_id = make_batch_id()
+    batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
-    filenames: list[str] = []
+    #4. Load and create pipeline and scheduler
+    pipe = load_flux_img2img_pipeline(model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
+    
+    #5. Load lora into pipeline
     adapter_names: list[str] = []
     adapter_names, lora_coverage = apply_lora_adapters_with_validation(
         pipe,
@@ -307,12 +330,18 @@ def run_flux_img2img(params: dict[str, object]) -> dict[str, list[str]]:
     if report_path is not None:
         logger.info("LoRA coverage report saved to %s", report_path)
 
+    #6. Create list of filenames
+    filenames: list[str] = []
+    
+    #7. Render images one by one
     try:
         with GEN_LOCK:
             for i in range(num_images):
+                #Set current seed
                 current_seed = base_seed + i
                 generator = torch.Generator(device="cpu").manual_seed(current_seed)
-
+                
+                #Render image
                 with torch.autocast("cuda", dtype=torch.bfloat16):
                     call_kwargs = dict(
                         prompt=prompt,
@@ -329,6 +358,7 @@ def run_flux_img2img(params: dict[str, object]) -> dict[str, list[str]]:
 
                     image = pipe(**call_kwargs).images[0]
 
+                # define filenames and create image_params dict to save as image metadata
                 filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
                 image_width, image_height = initial_image.size
                 image_params = dict(params)
@@ -344,12 +374,12 @@ def run_flux_img2img(params: dict[str, object]) -> dict[str, list[str]]:
                 pnginfo = build_png_metadata(image_params)
                 image.save(filename, pnginfo=pnginfo)
                 logger.info("Image %s saved to %s", i, filename.name)
-
                 filenames.append(build_batch_output_relpath(batch_id, filename.name))
 
                 del image
                 cleanup_memory()
     finally:
+        #8. Unload lora weights & clean memory
         if pipe is not None and adapter_names and hasattr(pipe, "unload_lora_weights"):
             try:
                 pipe.unload_lora_weights()
@@ -360,11 +390,13 @@ def run_flux_img2img(params: dict[str, object]) -> dict[str, list[str]]:
         pipe = None
         cleanup_memory()
 
+    #9. Return output
     return {"images": [f"/outputs/{name}" for name in filenames]}
 
 
 @torch.inference_mode()
 def run_flux_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
+    #1. Load and create local method variables + ensure correct formatting from input dict
     initial_image = params["initial_image"]
     mask_image = params["mask_image"]
     strength = float(params["strength"])
@@ -378,24 +410,26 @@ def run_flux_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
     scheduler = str(params["scheduler"])
     lora_adapters = params["lora_adapters"]
 
-    logger.info("seed=%s", seed)
+    #2. Check and set seed value
     if seed is None or seed == 0:
         base_seed = torch.randint(0, 2**31, (1,)).item()
     else:
         base_seed = int(seed)
-
-    batch_id = make_batch_id()
-    batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
-
-    pipe: Any | None = load_flux_inpaint_pipeline(model)
     logger.info(
         "Flux Inpaint: model=%s seed=%s steps=%s guidance_scale=%s strength=%s num_images=%s",
         model, base_seed, steps, guidance_scale, strength,
         num_images,
     )
 
-    filenames: list[str] = []
+    #3. Create batch_id and output directory
+    batch_id = make_batch_id()
+    batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
+
+    #4. Load and create pipeline and scheduler
+    pipe = load_flux_inpaint_pipeline(model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
+
+    #5. Load lora into pipeline
     adapter_names: list[str] = []
     adapter_names, lora_coverage = apply_lora_adapters_with_validation(
         pipe,
@@ -407,12 +441,18 @@ def run_flux_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
     if report_path is not None:
         logger.info("LoRA coverage report saved to %s", report_path)
 
+    #6. Create list of filenames
+    filenames: list[str] = []
+    
+    #7. Render image one by one
     try:
         with GEN_LOCK:
             for i in range(num_images):
+                # Set current seed
                 current_seed = base_seed + i
                 generator = torch.Generator(device="cpu").manual_seed(current_seed)
 
+                # Render image
                 with torch.autocast("cuda", dtype=torch.bfloat16):
                     call_kwargs = dict(
                         prompt=prompt,
@@ -428,6 +468,7 @@ def run_flux_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
 
                     image = pipe(**call_kwargs).images[0]
 
+                #define filenames & Create image_params metadata dict
                 filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
                 image_width, image_height = initial_image.size
                 image_params = dict(params)
@@ -444,12 +485,14 @@ def run_flux_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
                 pnginfo = build_png_metadata(image_params)
                 image.save(filename, pnginfo=pnginfo)
                 logger.info("Image %s saved to %s", i, filename.name)
-
+                
+                # Save filename to rendered image
                 filenames.append(build_batch_output_relpath(batch_id, filename.name))
 
                 del image
                 cleanup_memory()
     finally:
+        #8. Unload lora weights & clean memory
         if pipe is not None and adapter_names and hasattr(pipe, "unload_lora_weights"):
             try:
                 pipe.unload_lora_weights()
@@ -460,4 +503,5 @@ def run_flux_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
         pipe = None
         cleanup_memory()
 
+    # 9. Return output
     return {"images": [f"/outputs/{name}" for name in filenames]}
