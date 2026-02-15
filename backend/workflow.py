@@ -25,6 +25,10 @@ from backend.sd15_pipeline import (
     generate_images_inpaint_controlnet,
     run_sd15_hires_fix,
 )
+from backend.z_image_pipeline import (run_z_image_inpaint, run_z_image_text2img, run_z_image_img2img)
+from backend.qwen_image_pipeline import (run_qwen_image_inpaint, run_qwen_image_img2img, run_qwen_image_text2img)
+from backend.flux_pipeline import (run_flux_inpaint, run_flux_img2img, run_flux_text2img)
+from backend.sdxl_pipeline import (run_sdxl_inpaint, run_sdxl_inpaint_controlnet, run_sdxl_img2img, run_sdxl_img2img_controlnet, run_sdxl_controlnet_text2img, run_sdxl_text2img)
 
 logger = logging.getLogger(__name__)
 
@@ -1730,7 +1734,6 @@ def _sd15_hires_fix(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, 
     return {"batch_id": batch_id, "images": [f"/outputs/{p}" for p in relpaths]}
 
 def _sdxl_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
-    from backend.sdxl_pipeline import run_sdxl_text2img
 
     result = run_sdxl_text2img(dict(inputs))
     if not isinstance(result, dict):
@@ -1739,7 +1742,6 @@ def _sdxl_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, A
 
 
 def _sdxl_controlnet_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
-    from backend.sdxl_pipeline import run_sdxl_controlnet_text2img
 
     width = int(inputs.get("width") or 1024)
     height = int(inputs.get("height") or 1024)
@@ -1900,7 +1902,6 @@ def _sdxl_controlnet_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> 
 
 
 def _sdxl_img2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
-    from backend.sdxl_pipeline import run_sdxl_img2img, run_sdxl_img2img_controlnet
 
     initial_image = _open_image_ref(inputs["initial_image"]).convert("RGB")
     width = int(inputs.get("width") or 1024)
@@ -2118,7 +2119,6 @@ def _sdxl_img2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, An
 
 
 def _sdxl_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
-    from backend.sdxl_pipeline import run_sdxl_inpaint, run_sdxl_inpaint_controlnet
 
     initial_image = _open_image_ref(inputs["initial_image"]).convert("RGB")
     mask_image = _open_image_ref(inputs["mask_image"]).convert("L")
@@ -2365,7 +2365,6 @@ def _sdxl_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, An
 
 
 def _flux_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
-    from backend.flux_pipeline import run_flux_text2img
 
     result = run_flux_text2img(dict(inputs))
     if not isinstance(result, dict):
@@ -2374,7 +2373,6 @@ def _flux_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, A
 
 
 def _flux_img2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
-    from backend.flux_pipeline import run_flux_img2img
 
     initial_image = _open_image_ref(inputs["initial_image"]).convert("RGB")
     width = int(inputs.get("width") or 1024)
@@ -2408,7 +2406,6 @@ def _flux_img2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, An
 
 
 def _flux_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
-    from backend.flux_pipeline import run_flux_inpaint
 
     initial_image = _open_image_ref(inputs["initial_image"]).convert("RGB")
     mask_image = _open_image_ref(inputs["mask_image"]).convert("L")
@@ -2441,7 +2438,6 @@ def _flux_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, An
 
 
 def _qwen_image_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
-    from backend.qwen_image_pipeline import run_qwen_image_text2img
 
     result = run_qwen_image_text2img(dict(inputs))
     if not isinstance(result, dict):
@@ -2450,7 +2446,6 @@ def _qwen_image_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[
 
 
 def _qwen_image_img2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
-    from backend.qwen_image_pipeline import run_qwen_image_img2img
 
     initial_image = _open_image_ref(inputs["initial_image"]).convert("RGB")
     width = int(inputs.get("width") or 1024)
@@ -2486,7 +2481,6 @@ def _qwen_image_img2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[s
 
 
 def _qwen_image_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
-    from backend.qwen_image_pipeline import run_qwen_image_inpaint
 
     initial_image = _open_image_ref(inputs["initial_image"]).convert("RGB")
     mask_image = _open_image_ref(inputs["mask_image"]).convert("L")
@@ -2520,7 +2514,6 @@ def _qwen_image_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[s
 
 
 def _z_image_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
-    from backend.z_image_pipeline import run_z_image_text2img
 
     result = run_z_image_text2img(dict(inputs))
     if not isinstance(result, dict):
@@ -2529,7 +2522,6 @@ def _z_image_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str
 
 
 def _z_image_img2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
-    from backend.z_image_pipeline import run_z_image_img2img
 
     initial_image = _open_image_ref(inputs["initial_image"]).convert("RGB")
     width = int(inputs.get("width") or 1024)
@@ -2564,7 +2556,6 @@ def _z_image_img2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str,
 
 
 def _z_image_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
-    from backend.z_image_pipeline import run_z_image_inpaint
 
     initial_image = _open_image_ref(inputs["initial_image"]).convert("RGB")
     mask_image = _open_image_ref(inputs["mask_image"]).convert("L")
