@@ -1733,6 +1733,7 @@ def _sd15_hires_fix(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, 
     )
     return {"batch_id": batch_id, "images": [f"/outputs/{p}" for p in relpaths]}
 
+
 def _sdxl_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
 
     result = run_sdxl_text2img(dict(inputs))

@@ -272,9 +272,9 @@ runWhenDomReady(initSd15Page);
  * 4) Submit job and attach SSE listener for status updates.
  */
 async function generate() {
+    // 1. Set and create variables
     const token = ++activeJobToken;
     closeActiveEventSource();
-    const controlnetState = getControlNetState();
 
     const controlnetEnabled = Boolean(document.getElementById("controlnet-enabled")?.checked);
     const primaryTaskType = controlnetEnabled ? "sd15.controlnet.text2img" : "sd15.text2img";
@@ -291,47 +291,52 @@ async function generate() {
     const seed = WorkflowClient.readSeedValue("seed");
     const width = WorkflowClient.readNumberValue("width", primaryDefaults.width ?? 512, {integer: true,});
     const height = WorkflowClient.readNumberValue("height", primaryDefaults.height ?? 512, {integer: true,});
-    const hires_enabled = Boolean(document.getElementById("hires_enabled")?.checked);
-    const hires_scale = WorkflowClient.readNumberValue("hires_scale", hiresDefaults.hires_scale ?? 1.0);
     const modelRaw = document.getElementById("model_select")?.value ?? "";
     const model = modelRaw ? modelRaw : (primaryDefaults.model ?? null);
     const clip_skip = WorkflowClient.readNumberValue("clip_skip", primaryDefaults.clip_skip ?? 1, {integer: true,});
     const num_images = WorkflowClient.readNumberValue("num_images", primaryDefaults.num_images ?? 1, {integer: true,});
     const weighting_policy = WorkflowClient.readTextValue("weighting_policy",
     primaryDefaults.weighting_policy ?? "diffusers-like");
-    const controlnet_conditioning_scale = WorkflowClient.readNumberValue(
-    "controlnet_conditioning_scale", primaryDefaults.controlnet_conditioning_scale ?? 1.0);
-    const control_guidance_start = WorkflowClient.readNumberValue(
-        "control_guidance_start",
-        primaryDefaults.control_guidance_start ?? 0.0
-    );
-    const control_guidance_end = WorkflowClient.readNumberValue(
-        "control_guidance_end",
-        primaryDefaults.control_guidance_end ?? 1.0
-    );
-    const controlnet_guess_mode = Boolean(document.getElementById("controlnet_guess_mode")?.checked);
-    const controlnet_compat_mode = WorkflowClient.readTextValue(
-        "controlnet_compat_mode",
-        primaryDefaults.controlnet_compat_mode ?? "warn"
-    );
+
+    const hires_enabled = Boolean(document.getElementById("hires_enabled")?.checked);
+    const hires_scale = WorkflowClient.readNumberValue("hires_scale", hiresDefaults.hires_scale ?? 1.0);
+
     const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
 
     const idempotencyKey = WorkflowClient.makeIdempotencyKey();
 
     try {
+        // Initialize empty tasks
         const tasks = [];
-
+        // Check if controlnetEnabled
         if (controlnetEnabled) {
+            const controlnetState = getControlNetState();
+            const controlnet_conditioning_scale = WorkflowClient.readNumberValue(
+                "controlnet_conditioning_scale",
+                primaryDefaults.controlnet_conditioning_scale ?? 1.0
+            );
+            const control_guidance_start = WorkflowClient.readNumberValue(
+                "control_guidance_start",
+                primaryDefaults.control_guidance_start ?? 0.0
+            );
+            const control_guidance_end = WorkflowClient.readNumberValue(
+                "control_guidance_end",
+                primaryDefaults.control_guidance_end ?? 1.0
+            );
+            const controlnet_guess_mode = Boolean(document.getElementById("controlnet_guess_mode")?.checked);
+            const controlnet_compat_mode = WorkflowClient.readTextValue(
+                "controlnet_compat_mode",
+                primaryDefaults.controlnet_compat_mode ?? "warn"
+            );
+
+            // Create and set up controlNet input array
             const controlItems = Array.isArray(controlnetState?.controlItems)
-                ? controlnetState.controlItems
-                : [];
+                ? controlnetState.controlItems: [];
+            
             if (controlItems.length === 0 && !controlnetState?.previewBlob) {
                 throw new Error("ControlNet enabled but no preprocessor output image is ready.");
             }
-            const effectiveItems =
-                controlItems.length > 0
-                    ? controlItems
-                    : [
+            const effectiveItems = controlItems.length > 0 ? controlItems : [
                         {
                             previewBlob: controlnetState.previewBlob,
                             preprocessorId: controlnetState.preprocessorId ?? null,
@@ -339,7 +344,8 @@ async function generate() {
                             conditioningScale: controlnet_conditioning_scale,
                         },
                     ];
-            const uploadedArtifacts = await Promise.all(
+            
+                    const uploadedArtifacts = await Promise.all(
                 effectiveItems.map((item, idx) =>
                     WorkflowClient.uploadArtifact(
                         API_BASE,
@@ -348,22 +354,15 @@ async function generate() {
                     )
                 )
             );
-            const controlImages = uploadedArtifacts.map(
-                (uploaded) => `@artifact:${uploaded.artifact_id}`
-            );
-            const controlnetModels = effectiveItems.map(
-                (item) => item.modelId || "lllyasviel/control_v11p_sd15_canny"
-            );
+            const controlImages = uploadedArtifacts.map((uploaded) => `@artifact:${uploaded.artifact_id}`);
+            const controlnetModels = effectiveItems.map((item) => item.modelId || "lllyasviel/control_v11p_sd15_canny");
             const controlnetScales = effectiveItems.map((item) => {
                 const parsed = Number(item.conditioningScale);
                 return Number.isFinite(parsed) ? parsed : controlnet_conditioning_scale;
             });
-            const controlnetPreprocessorIds = effectiveItems.map(
-                (item) => item.preprocessorId || null
-            );
-            const hasAllPreprocessorIds = controlnetPreprocessorIds.every(
-                (value) => typeof value === "string" && value.length > 0
-            );
+            const controlnetPreprocessorIds = effectiveItems.map((item) => item.preprocessorId || null);
+            const hasAllPreprocessorIds = controlnetPreprocessorIds.every((value) => typeof value === "string" && value.length > 0);
+
             const inputs = {
                 control_image: controlImages[0],
                 prompt,
@@ -384,6 +383,7 @@ async function generate() {
                 control_guidance_end,
                 controlnet_compat_mode,
             };
+
             if (effectiveItems.length > 1) {
                 inputs.control_images = controlImages;
                 inputs.controlnet_models = controlnetModels;
@@ -398,11 +398,15 @@ async function generate() {
                     inputs.controlnet_preprocessor_id = controlnetPreprocessorIds[0];
                 }
             }
+
             if (loraAdapters.length > 0) {
                 inputs.lora_adapters = loraAdapters;
             }
+
             tasks.push({ id: "t1", type: "sd15.controlnet.text2img", inputs });
+        
         } else {
+
             const inputs = {
                 prompt,
                 negative_prompt,
@@ -417,9 +421,11 @@ async function generate() {
                 clip_skip,
                 weighting_policy,
             };
+
             if (loraAdapters.length > 0) {
                 inputs.lora_adapters = loraAdapters;
             }
+
             tasks.push({ id: "t1", type: "sd15.text2img", inputs });
         }
 
@@ -460,6 +466,7 @@ async function generate() {
             isStale: () => token !== activeJobToken,
             onDone: (job) => {
                 const status = job?.status ?? "unknown";
+
                 if (status === "succeeded") {
                     const images = job?.result?.outputs;
                     gallery.setImages(Array.isArray(images) ? images : []);
@@ -475,6 +482,7 @@ async function generate() {
                     gallery.setImages([]);
                 }
             },
+            
             onError: () => {
                 if (token !== activeJobToken) {
                     return;
