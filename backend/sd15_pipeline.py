@@ -54,11 +54,9 @@ from backend.lora_utils import apply_lora_adapters_with_validation, write_lora_c
 logger = logging.getLogger(__name__)
 configure_logging()
 
-
-##
-# Helper functions
-##
-
+"""
+    Helper functions
+"""
 def create_blur_mask(mask_image, blur_factor: int):
     """
     Return a blurred copy of `mask_image` with a bounded Gaussian blur radius.
@@ -151,85 +149,6 @@ def _resize_control_image_to_target(
     return _resize_single(control_image)
 
 
-def apply_hires_fix(
-    image: Image.Image,
-    prompt: str,
-    negative_prompt: str,
-    steps: int,
-    cfg: float,
-    seed: int | None,
-    scheduler: str,
-    model: str | None,
-    clip_skip: int,
-    hires_scale: float,
-    hires_strength: float = 0.35,
-    lora_adapters: list[object] | None = None,
-    prompt_embeds: torch.Tensor | None = None,
-    negative_prompt_embeds: torch.Tensor | None = None,
-    lora_scale: float | None = None,
-) -> Image.Image:
-    """
-    Run a hires-fix pass by upscaling, then refining with SD1.5 img2img.
-
-    Args:
-        image: Input image to refine.
-        prompt: Positive prompt text.
-        negative_prompt: Negative prompt text.
-        steps: Number of denoising steps for img2img refinement.
-        cfg: Classifier-free guidance scale.
-        seed: Optional seed for deterministic output.
-        scheduler: Scheduler identifier used by ``create_scheduler``.
-        model: Optional model registry key.
-        clip_skip: CLIP skip value passed to Diffusers.
-        hires_scale: Upscale factor. Values ``<= 1.0`` skip hires-fix.
-        hires_strength: Img2img strength used during refinement.
-        lora_adapters: Optional LoRA adapter specs.
-        prompt_embeds: Optional precomputed positive prompt embeddings.
-        negative_prompt_embeds: Optional precomputed negative prompt embeddings.
-        lora_scale: Optional LoRA cross-attention scale.
-
-    Returns:
-        Refined image. If ``hires_scale <= 1.0``, returns input image unchanged.
-    """
-    if hires_scale <= 1.0:
-        return image
-
-    upscaled = _upscale_image(image, hires_scale)
-    pipe = load_img2img_pipeline(model)
-    pipe.scheduler = create_scheduler(scheduler, pipe)
-    adapter_names, lora_coverage = apply_lora_adapters_with_validation(
-        pipe,
-        lora_adapters,
-        expected_family="sd15",
-        validate=True,
-    )
-    report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
-    if report_path is not None:
-        logger.info("LoRA coverage report saved to %s", report_path)
-
-    generator = None
-    if seed is not None:
-        generator = torch.Generator(device="cuda").manual_seed(seed)
-
-    try:
-        return pipe(
-            prompt=None if prompt_embeds is not None else prompt,
-            negative_prompt=None if negative_prompt_embeds is not None else negative_prompt,
-            image=upscaled,
-            strength=hires_strength,
-            num_inference_steps=steps,
-            guidance_scale=cfg,
-            generator=generator,
-            clip_skip=clip_skip,
-            prompt_embeds=prompt_embeds,
-            negative_prompt_embeds=negative_prompt_embeds,
-            cross_attention_kwargs={"scale": lora_scale} if lora_scale is not None else None,
-        ).images[0]
-    finally:
-        if adapter_names and hasattr(pipe, "unload_lora_weights"):
-            pipe.unload_lora_weights()
-
-
 def _apply_lora_adapters(
     pipe,
     lora_adapters: list[object] | None,
@@ -250,129 +169,10 @@ def _apply_lora_adapters(
     )
     return adapter_names
 
-@torch.inference_mode()
-def run_sd15_hires_fix(
-    *,
-    images: list[Image.Image],
-    prompt: str,
-    negative_prompt: str,
-    steps: int,
-    cfg: float,
-    seed: int | None,
-    scheduler: str,
-    model: str | None,
-    clip_skip: int,
-    hires_scale: float,
-    hires_strength: float = 0.35,
-    lora_adapters: list[object] | None = None,
-    weighting_policy: str = "diffusers-like",
-    lora_scale: float | None = None,
-    output_dir: Path | None = None,
-    batch_id: str | None = None,
-) -> list[str]:
-    """
-    Apply SD1.5 hires-fix to each input image and write PNGs to disk.
 
-    Args:
-        images: Source images to upscale/refine.
-        prompt: Positive prompt text.
-        negative_prompt: Negative prompt text.
-        steps: Number of denoising steps.
-        cfg: Classifier-free guidance scale.
-        seed: Optional base seed. ``None`` or ``0`` selects a random base seed.
-        scheduler: Scheduler name.
-        model: Optional model registry key.
-        clip_skip: CLIP skip value.
-        hires_scale: Upscale factor. Must be ``> 1.0``.
-        hires_strength: Img2img strength for refinement.
-        lora_adapters: Optional LoRA adapter specs.
-        weighting_policy: Prompt-weighting policy for embedding construction.
-        lora_scale: Optional LoRA cross-attention scale.
-        output_dir: Optional output root. Defaults to batch folder under ``OUTPUT_DIR``.
-        batch_id: Optional batch identifier.
-
-    Returns:
-        List of output PNG paths relative to ``OUTPUT_DIR``.
-
-    Raises:
-        ValueError: If ``hires_scale <= 1.0``.
-    """
-    if hires_scale <= 1.0:
-        raise ValueError("hires_scale must be > 1.0 for sd15.hires_fix")
-    if not images:
-        return []
-
-    if seed is None or seed == 0:
-        base_seed = torch.randint(0, 2**31, (1,)).item()
-    else:
-        base_seed = int(seed)
-
-    if batch_id is None:
-        batch_id = make_batch_id()
-    batch_output_dir = output_dir or get_batch_output_dir(OUTPUT_DIR, batch_id)
-
-    pipe = load_img2img_pipeline(model)
-    pipe.scheduler = create_scheduler(scheduler, pipe)
-    adapter_names = _apply_lora_adapters(pipe, lora_adapters, validate=False)
-
-    prompt_embeds, negative_prompt_embeds, use_prompt_embeds = build_prompt_embeddings(
-        pipe,
-        prompt,
-        negative_prompt,
-        clip_skip=clip_skip,
-        lora_scale=lora_scale,
-        weighting_policy=weighting_policy,
-    )
-
-    relpaths: list[str] = []
-    try:
-        for idx, image in enumerate(images):
-            # Offset the seed per image to make batch outputs deterministic and distinct.
-            current_seed = base_seed + idx
-            generator = torch.Generator(device="cuda").manual_seed(current_seed)
-
-            upscaled = _upscale_image(image, hires_scale)
-            out_image = pipe(
-                prompt=None if use_prompt_embeds else prompt,
-                negative_prompt=None if use_prompt_embeds else negative_prompt,
-                image=upscaled,
-                strength=hires_strength,
-                num_inference_steps=steps,
-                guidance_scale=cfg,
-                generator=generator,
-                clip_skip=clip_skip,
-                prompt_embeds=prompt_embeds if use_prompt_embeds else None,
-                negative_prompt_embeds=negative_prompt_embeds if use_prompt_embeds else None,
-                cross_attention_kwargs={"scale": lora_scale} if lora_scale is not None else None,
-            ).images[0]
-
-            filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
-            # Store prompt/settings inside the PNG for later reproduction/debugging.
-            pnginfo = build_png_metadata(
-                {
-                    "mode": "hires_fix",
-                    "prompt": prompt,
-                    "negative_prompt": negative_prompt,
-                    "steps": steps,
-                    "cfg": cfg,
-                    "seed": current_seed,
-                    "scheduler": scheduler,
-                    "model": model,
-                    "clip_skip": clip_skip,
-                    "hires_scale": hires_scale,
-                    "hires_strength": hires_strength,
-                    "batch_id": batch_id,
-                }
-            )
-            out_image.save(filename, pnginfo=pnginfo)
-            relpaths.append(build_batch_output_relpath(batch_id, filename.name))
-    finally:
-        if adapter_names and hasattr(pipe, "unload_lora_weights"):
-            pipe.unload_lora_weights()
-
-    return relpaths
-
-## Load pipelines
+"""
+    Load Pipelines
+"""
 
 def load_text2img_pipeline(model_name: str | None):
     """
@@ -516,6 +316,7 @@ def load_controlnet_pipeline(model_name: str | None, controlnet_model: str | lis
     pipe.to("cuda")
     return pipe
 
+
 def load_controlnet_img2img_pipeline(model_name: str | None, controlnet_model: str | list[str]):
     """
     Load a ControlNet-enabled SD1.5 img2img pipeline on CUDA fp16.
@@ -611,12 +412,12 @@ def load_controlnet_inpaint_pipeline(model_name: str | None, controlnet_model: s
     pipe.to("cuda")
     return pipe
 
-## Generate and render images
+"""
+    Generate and render images
+"""
 
 @torch.inference_mode()
-def generate_images_controlnet(
-    params: dict[str, object],
-) -> list[str]:
+def generate_images_controlnet(params: dict[str, object],) -> list[str]:
     """
     Generate SD1.5 + ControlNet images and write PNG outputs to disk.
 
@@ -746,128 +547,7 @@ def generate_images_controlnet(
     return filenames
 
 @torch.inference_mode()
-def generate_images_img2img_controlnet(
-    params: dict[str, object],
-) -> list[str]:
-    """
-    Generate SD1.5 img2img + ControlNet outputs and write PNG files.
-
-    Returns:
-        Output PNG paths relative to ``OUTPUT_DIR``.
-    """
-    # Normalize all img2img controlnet inputs in one place for easier maintenance and tracing.
-    initial_image = cast(Image.Image, params["initial_image"])
-    strength = float(params.get("strength") or 0.75)
-    prompt = str(params["prompt"])
-    negative_prompt = str(params.get("negative_prompt") or "")
-    steps = int(params.get("steps") or 20)
-    cfg = float(params.get("cfg") or 7.5)
-    width = int(params.get("width") or initial_image.width)
-    height = int(params.get("height") or initial_image.height)
-    seed = params.get("seed")
-    scheduler = str(params.get("scheduler") or "euler")
-    model = params.get("model")
-    num_images = int(params.get("num_images") or 1)
-    clip_skip = int(params.get("clip_skip") or 1)
-    controlnet_model = cast(str | list[str], params["controlnet_model"])
-    control_image = cast(Image.Image | list[Image.Image], params["control_image"])
-    controlnet_conditioning_scale = cast(
-        float | list[float],
-        params.get("controlnet_conditioning_scale", 1.0),
-    )
-    controlnet_guess_mode = bool(params.get("controlnet_guess_mode", False))
-    control_guidance_start = float(params.get("control_guidance_start", 0.0))
-    control_guidance_end = float(params.get("control_guidance_end", 1.0))
-    lora_adapters = params.get("lora_adapters")
-    batch_id = cast(str | None, params.get("batch_id"))
-
-    logger.info("seed=%s", seed)
-    if seed is None or seed == 0:
-        base_seed = torch.randint(0, 2**31, (1,)).item()
-    else:
-        base_seed = seed
-    if batch_id is None:
-        batch_id = make_batch_id()
-    params["batch_id"] = batch_id
-
-    batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
-    image_width, image_height = initial_image.size
-    control_image = _resize_control_image_to_target(
-        control_image,
-        target_width=image_width,
-        target_height=image_height,
-    )
-
-    pipe = load_controlnet_img2img_pipeline(model, controlnet_model)
-    pipe.scheduler = create_scheduler(scheduler, pipe)
-    logger.info(
-        "ControlNet Img2Img: model=%s seed=%s scheduler=%s steps=%s cfg=%s size=%sx%s strength=%s num_images=%s",
-        model,
-        base_seed,
-        scheduler,
-        steps,
-        cfg,
-        width,
-        height,
-        strength,
-        num_images,
-    )
-    adapter_names, lora_coverage = apply_lora_adapters_with_validation(
-        pipe,
-        lora_adapters,
-        expected_family="sd15",
-        validate=True,
-    )
-    report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
-    if report_path is not None:
-        logger.info("LoRA coverage report saved to %s", report_path)
-
-    filenames = []
-    try:
-        for i in range(num_images):
-            # Offset seed per image so batches are deterministic and distinct.
-            current_seed = base_seed + i
-            generator = torch.Generator(device="cuda").manual_seed(current_seed)
-
-            image = pipe(
-                prompt=prompt,
-                negative_prompt=negative_prompt,
-                image=initial_image,
-                control_image=control_image,
-                strength=strength,
-                num_inference_steps=steps,
-                guidance_scale=cfg,
-                generator=generator,
-                clip_skip=clip_skip,
-                controlnet_conditioning_scale=controlnet_conditioning_scale,
-                guess_mode=controlnet_guess_mode,
-                control_guidance_start=control_guidance_start,
-                control_guidance_end=control_guidance_end,
-            ).images[0]
-
-            filename = batch_output_dir / f"{batch_id}_controlnet_{current_seed}.png"
-            image_params = {
-                **params,
-                "mode": "img2img_controlnet",
-                "width": image_width,
-                "height": image_height,
-                "seed": current_seed,
-                "batch_id": batch_id,
-            }
-            pnginfo = build_png_metadata(image_params)
-            image.save(filename, pnginfo=pnginfo)
-            logger.info("Image %s saved to %s", i, filename.name)
-            filenames.append(build_batch_output_relpath(batch_id, filename.name))
-    finally:
-        if adapter_names and hasattr(pipe, "unload_lora_weights"):
-            pipe.unload_lora_weights()
-
-    return filenames
-
-@torch.inference_mode()
-def generate_images(
-    params: dict[str, object],
-):
+def generate_images(params: dict[str, object],):
     """
     Generate SD1.5 txt2img images, write PNG outputs, and return relative paths.
 
@@ -911,7 +591,6 @@ def generate_images(
     if batch_id is None:
         batch_id = make_batch_id()
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
-    filenames = []
     
     # 3. Load pipeline and chosen scheduler
     pipe = load_text2img_pipeline(model)
@@ -964,7 +643,8 @@ def generate_images(
         "hires_scale": hires_scale,
         "batch_id": batch_id,
     }
-
+    
+    filenames = []    
     # 6. Loop around image generation per image
     try:
         for i in range(num_images):
@@ -1057,9 +737,7 @@ def generate_images(
     return filenames
 
 @torch.inference_mode()
-def generate_images_img2img(
-    params: dict[str, object],
-):
+def generate_images_img2img(params: dict[str, object],):
     """
     Generate SD1.5 img2img outputs from an initial image and write PNG files.
 
@@ -1205,9 +883,124 @@ def generate_images_img2img(
     return filenames
 
 @torch.inference_mode()
-def generate_images_inpaint(
-    params: dict[str, object],
-):
+def generate_images_img2img_controlnet(params: dict[str, object],) -> list[str]:
+    """
+    Generate SD1.5 img2img + ControlNet outputs and write PNG files.
+
+    Returns:
+        Output PNG paths relative to ``OUTPUT_DIR``.
+    """
+    # Normalize all img2img controlnet inputs in one place for easier maintenance and tracing.
+    initial_image = cast(Image.Image, params["initial_image"])
+    strength = float(params.get("strength") or 0.75)
+    prompt = str(params["prompt"])
+    negative_prompt = str(params.get("negative_prompt") or "")
+    steps = int(params.get("steps") or 20)
+    cfg = float(params.get("cfg") or 7.5)
+    width = int(params.get("width") or initial_image.width)
+    height = int(params.get("height") or initial_image.height)
+    seed = params.get("seed")
+    scheduler = str(params.get("scheduler") or "euler")
+    model = params.get("model")
+    num_images = int(params.get("num_images") or 1)
+    clip_skip = int(params.get("clip_skip") or 1)
+    controlnet_model = cast(str | list[str], params["controlnet_model"])
+    control_image = cast(Image.Image | list[Image.Image], params["control_image"])
+    controlnet_conditioning_scale = cast(
+        float | list[float],
+        params.get("controlnet_conditioning_scale", 1.0),
+    )
+    controlnet_guess_mode = bool(params.get("controlnet_guess_mode", False))
+    control_guidance_start = float(params.get("control_guidance_start", 0.0))
+    control_guidance_end = float(params.get("control_guidance_end", 1.0))
+    lora_adapters = params.get("lora_adapters")
+    batch_id = cast(str | None, params.get("batch_id"))
+
+    logger.info("seed=%s", seed)
+    if seed is None or seed == 0:
+        base_seed = torch.randint(0, 2**31, (1,)).item()
+    else:
+        base_seed = seed
+    if batch_id is None:
+        batch_id = make_batch_id()
+    params["batch_id"] = batch_id
+
+    batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
+    image_width, image_height = initial_image.size
+    control_image = _resize_control_image_to_target(
+        control_image,
+        target_width=image_width,
+        target_height=image_height,
+    )
+
+    pipe = load_controlnet_img2img_pipeline(model, controlnet_model)
+    pipe.scheduler = create_scheduler(scheduler, pipe)
+    logger.info(
+        "ControlNet Img2Img: model=%s seed=%s scheduler=%s steps=%s cfg=%s size=%sx%s strength=%s num_images=%s",
+        model,
+        base_seed,
+        scheduler,
+        steps,
+        cfg,
+        width,
+        height,
+        strength,
+        num_images,
+    )
+    adapter_names, lora_coverage = apply_lora_adapters_with_validation(
+        pipe,
+        lora_adapters,
+        expected_family="sd15",
+        validate=True,
+    )
+    report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
+    if report_path is not None:
+        logger.info("LoRA coverage report saved to %s", report_path)
+
+    filenames = []
+    try:
+        for i in range(num_images):
+            # Offset seed per image so batches are deterministic and distinct.
+            current_seed = base_seed + i
+            generator = torch.Generator(device="cuda").manual_seed(current_seed)
+
+            image = pipe(
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                image=initial_image,
+                control_image=control_image,
+                strength=strength,
+                num_inference_steps=steps,
+                guidance_scale=cfg,
+                generator=generator,
+                clip_skip=clip_skip,
+                controlnet_conditioning_scale=controlnet_conditioning_scale,
+                guess_mode=controlnet_guess_mode,
+                control_guidance_start=control_guidance_start,
+                control_guidance_end=control_guidance_end,
+            ).images[0]
+
+            filename = batch_output_dir / f"{batch_id}_controlnet_{current_seed}.png"
+            image_params = {
+                **params,
+                "mode": "img2img_controlnet",
+                "width": image_width,
+                "height": image_height,
+                "seed": current_seed,
+                "batch_id": batch_id,
+            }
+            pnginfo = build_png_metadata(image_params)
+            image.save(filename, pnginfo=pnginfo)
+            logger.info("Image %s saved to %s", i, filename.name)
+            filenames.append(build_batch_output_relpath(batch_id, filename.name))
+    finally:
+        if adapter_names and hasattr(pipe, "unload_lora_weights"):
+            pipe.unload_lora_weights()
+
+    return filenames
+
+@torch.inference_mode()
+def generate_images_inpaint(params: dict[str, object],):
     """
     Generate SD1.5 inpaint outputs from an initial image and mask.
 
@@ -1336,11 +1129,8 @@ def generate_images_inpaint(
 
     return filenames
 
-
 @torch.inference_mode()
-def generate_images_inpaint_controlnet(
-    params: dict[str, object],
-) -> list[str]:
+def generate_images_inpaint_controlnet(params: dict[str, object],) -> list[str]:
     """
     Generate SD1.5 inpaint + ControlNet outputs and write PNG files.
 
@@ -1459,3 +1249,203 @@ def generate_images_inpaint_controlnet(
             pipe.unload_lora_weights()
 
     return filenames
+
+@torch.inference_mode()
+def run_sd15_hires_fix(
+    *,
+    images: list[Image.Image],
+    prompt: str,
+    negative_prompt: str,
+    steps: int,
+    cfg: float,
+    seed: int | None,
+    scheduler: str,
+    model: str | None,
+    clip_skip: int,
+    hires_scale: float,
+    hires_strength: float = 0.35,
+    lora_adapters: list[object] | None = None,
+    weighting_policy: str = "diffusers-like",
+    lora_scale: float | None = None,
+    output_dir: Path | None = None,
+    batch_id: str | None = None,
+) -> list[str]:
+    """
+    Apply SD1.5 hires-fix to each input image and write PNGs to disk.
+
+    Args:
+        images: Source images to upscale/refine.
+        prompt: Positive prompt text.
+        negative_prompt: Negative prompt text.
+        steps: Number of denoising steps.
+        cfg: Classifier-free guidance scale.
+        seed: Optional base seed. ``None`` or ``0`` selects a random base seed.
+        scheduler: Scheduler name.
+        model: Optional model registry key.
+        clip_skip: CLIP skip value.
+        hires_scale: Upscale factor. Must be ``> 1.0``.
+        hires_strength: Img2img strength for refinement.
+        lora_adapters: Optional LoRA adapter specs.
+        weighting_policy: Prompt-weighting policy for embedding construction.
+        lora_scale: Optional LoRA cross-attention scale.
+        output_dir: Optional output root. Defaults to batch folder under ``OUTPUT_DIR``.
+        batch_id: Optional batch identifier.
+
+    Returns:
+        List of output PNG paths relative to ``OUTPUT_DIR``.
+
+    Raises:
+        ValueError: If ``hires_scale <= 1.0``.
+    """
+    if hires_scale <= 1.0:
+        raise ValueError("hires_scale must be > 1.0 for sd15.hires_fix")
+    if not images:
+        return []
+
+    if seed is None or seed == 0:
+        base_seed = torch.randint(0, 2**31, (1,)).item()
+    else:
+        base_seed = int(seed)
+
+    if batch_id is None:
+        batch_id = make_batch_id()
+    batch_output_dir = output_dir or get_batch_output_dir(OUTPUT_DIR, batch_id)
+
+    pipe = load_img2img_pipeline(model)
+    pipe.scheduler = create_scheduler(scheduler, pipe)
+    adapter_names = _apply_lora_adapters(pipe, lora_adapters, validate=False)
+
+    prompt_embeds, negative_prompt_embeds, use_prompt_embeds = build_prompt_embeddings(
+        pipe,
+        prompt,
+        negative_prompt,
+        clip_skip=clip_skip,
+        lora_scale=lora_scale,
+        weighting_policy=weighting_policy,
+    )
+
+    relpaths: list[str] = []
+    try:
+        for idx, image in enumerate(images):
+            # Offset the seed per image to make batch outputs deterministic and distinct.
+            current_seed = base_seed + idx
+            generator = torch.Generator(device="cuda").manual_seed(current_seed)
+
+            upscaled = _upscale_image(image, hires_scale)
+            out_image = pipe(
+                prompt=None if use_prompt_embeds else prompt,
+                negative_prompt=None if use_prompt_embeds else negative_prompt,
+                image=upscaled,
+                strength=hires_strength,
+                num_inference_steps=steps,
+                guidance_scale=cfg,
+                generator=generator,
+                clip_skip=clip_skip,
+                prompt_embeds=prompt_embeds if use_prompt_embeds else None,
+                negative_prompt_embeds=negative_prompt_embeds if use_prompt_embeds else None,
+                cross_attention_kwargs={"scale": lora_scale} if lora_scale is not None else None,
+            ).images[0]
+
+            filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
+            # Store prompt/settings inside the PNG for later reproduction/debugging.
+            pnginfo = build_png_metadata(
+                {
+                    "mode": "hires_fix",
+                    "prompt": prompt,
+                    "negative_prompt": negative_prompt,
+                    "steps": steps,
+                    "cfg": cfg,
+                    "seed": current_seed,
+                    "scheduler": scheduler,
+                    "model": model,
+                    "clip_skip": clip_skip,
+                    "hires_scale": hires_scale,
+                    "hires_strength": hires_strength,
+                    "batch_id": batch_id,
+                }
+            )
+            out_image.save(filename, pnginfo=pnginfo)
+            relpaths.append(build_batch_output_relpath(batch_id, filename.name))
+    finally:
+        if adapter_names and hasattr(pipe, "unload_lora_weights"):
+            pipe.unload_lora_weights()
+
+    return relpaths
+
+def apply_hires_fix(
+    image: Image.Image,
+    prompt: str,
+    negative_prompt: str,
+    steps: int,
+    cfg: float,
+    seed: int | None,
+    scheduler: str,
+    model: str | None,
+    clip_skip: int,
+    hires_scale: float,
+    hires_strength: float = 0.35,
+    lora_adapters: list[object] | None = None,
+    prompt_embeds: torch.Tensor | None = None,
+    negative_prompt_embeds: torch.Tensor | None = None,
+    lora_scale: float | None = None,
+) -> Image.Image:
+    """
+    Run a hires-fix pass by upscaling, then refining with SD1.5 img2img.
+
+    Args:
+        image: Input image to refine.
+        prompt: Positive prompt text.
+        negative_prompt: Negative prompt text.
+        steps: Number of denoising steps for img2img refinement.
+        cfg: Classifier-free guidance scale.
+        seed: Optional seed for deterministic output.
+        scheduler: Scheduler identifier used by ``create_scheduler``.
+        model: Optional model registry key.
+        clip_skip: CLIP skip value passed to Diffusers.
+        hires_scale: Upscale factor. Values ``<= 1.0`` skip hires-fix.
+        hires_strength: Img2img strength used during refinement.
+        lora_adapters: Optional LoRA adapter specs.
+        prompt_embeds: Optional precomputed positive prompt embeddings.
+        negative_prompt_embeds: Optional precomputed negative prompt embeddings.
+        lora_scale: Optional LoRA cross-attention scale.
+
+    Returns:
+        Refined image. If ``hires_scale <= 1.0``, returns input image unchanged.
+    """
+    if hires_scale <= 1.0:
+        return image
+
+    upscaled = _upscale_image(image, hires_scale)
+    pipe = load_img2img_pipeline(model)
+    pipe.scheduler = create_scheduler(scheduler, pipe)
+    adapter_names, lora_coverage = apply_lora_adapters_with_validation(
+        pipe,
+        lora_adapters,
+        expected_family="sd15",
+        validate=True,
+    )
+    report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
+    if report_path is not None:
+        logger.info("LoRA coverage report saved to %s", report_path)
+
+    generator = None
+    if seed is not None:
+        generator = torch.Generator(device="cuda").manual_seed(seed)
+
+    try:
+        return pipe(
+            prompt=None if prompt_embeds is not None else prompt,
+            negative_prompt=None if negative_prompt_embeds is not None else negative_prompt,
+            image=upscaled,
+            strength=hires_strength,
+            num_inference_steps=steps,
+            guidance_scale=cfg,
+            generator=generator,
+            clip_skip=clip_skip,
+            prompt_embeds=prompt_embeds,
+            negative_prompt_embeds=negative_prompt_embeds,
+            cross_attention_kwargs={"scale": lora_scale} if lora_scale is not None else None,
+        ).images[0]
+    finally:
+        if adapter_names and hasattr(pipe, "unload_lora_weights"):
+            pipe.unload_lora_weights()
