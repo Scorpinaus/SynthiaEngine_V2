@@ -667,15 +667,47 @@ button {
     letter-spacing: 0.08em;
 }
 
+.preset-toggle-label {
+    text-align: left;
+}
+
+.preset-toggle-meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.preset-active-indicator {
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: #3a5a40;
+    color: #f7f4ee;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: none;
+    max-width: 240px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .preset-content {
-    display: none;
+    display: grid;
     padding: 12px 14px 16px;
     gap: 12px;
     background: #ffffff;
 }
 
-.preset-content.is-open {
+#preset-modal .modal-content {
+    width: min(680px, 92vw);
+    max-height: 90vh;
+}
+
+#preset-modal #preset-content {
     display: grid;
+    padding: 0;
+    background: transparent;
 }
 
 .modal {

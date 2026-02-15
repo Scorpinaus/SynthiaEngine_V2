@@ -7,6 +7,7 @@
         applySettings: null,
         presets: [],
         selectedId: null,
+        loadedPresetId: null,
         uiMode: "default",
     };
 
@@ -59,14 +60,47 @@
         return await res.json();
     }
 
-    function togglePresetPanel() {
-        const content = document.getElementById("preset-content");
-        const chevron = document.getElementById("preset-chevron");
-        if (!content || !chevron) {
+    function getPresetModal() {
+        return document.getElementById("preset-modal");
+    }
+
+    function closePresetDialog() {
+        const modal = getPresetModal();
+        if (!modal) {
             return;
         }
-        const isOpen = content.classList.toggle("is-open");
-        chevron.textContent = isOpen ? "\u25b4" : "\u25be";
+        modal.classList.add("hidden");
+    }
+
+    function openPresetDialog() {
+        const modal = getPresetModal();
+        if (!modal) {
+            return;
+        }
+        modal.classList.remove("hidden");
+    }
+
+    function ensureDialogShell() {
+        const content = document.getElementById("preset-content");
+        if (!content || getPresetModal()) {
+            return;
+        }
+
+        const modal = document.createElement("div");
+        modal.id = "preset-modal";
+        modal.className = "modal hidden";
+        modal.innerHTML = `
+            <div class="modal-overlay" id="preset-modal-overlay"></div>
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Prompt + Generation Presets</h2>
+                    <button class="secondary" id="preset-modal-close" type="button">Close</button>
+                </div>
+                <div class="modal-body" id="preset-modal-body"></div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        modal.querySelector("#preset-modal-body")?.appendChild(content);
     }
 
     function getSelectedPreset() {
@@ -135,6 +169,7 @@
                 setUiMode(UI_MODES.DEFAULT);
             }
             setStatus("No preset selected.");
+            updateLoadedIndicator();
             return;
         }
 
@@ -158,6 +193,18 @@
         }
         const selected = getSelectedPreset();
         setStatus(selected ? `Selected "${selected.name}".` : "No preset selected.");
+        updateLoadedIndicator();
+    }
+
+    function updateLoadedIndicator() {
+        const indicator = document.getElementById("preset-active-indicator");
+        if (!indicator) {
+            return;
+        }
+        const loaded = state.presets.find((entry) => entry.preset_id === state.loadedPresetId) ?? null;
+        const isActive = Boolean(loaded);
+        indicator.classList.toggle("is-hidden", !isActive);
+        indicator.textContent = loaded ? `Preset Active: ${loaded.name}` : "Preset Active";
     }
 
     async function fetchPresets() {
@@ -172,6 +219,9 @@
         const url = `${state.apiBase}/api/presets${query ? `?${query}` : ""}`;
         const presets = await requestJson(url);
         state.presets = Array.isArray(presets) ? presets : [];
+        if (!state.presets.some((entry) => entry.preset_id === state.loadedPresetId)) {
+            state.loadedPresetId = null;
+        }
         if (!state.presets.some((entry) => entry.preset_id === state.selectedId)) {
             state.selectedId = state.presets.length > 0 ? state.presets[0].preset_id : null;
         }
@@ -259,6 +309,9 @@
                 method: "DELETE",
             });
             state.selectedId = null;
+            if (state.loadedPresetId === selected.preset_id) {
+                state.loadedPresetId = null;
+            }
             await fetchPresets();
             setUiMode(getSelectedPreset() ? UI_MODES.MANAGE : UI_MODES.DEFAULT);
             setStatus(`Deleted preset "${selected.name}".`);
@@ -279,15 +332,31 @@
         }
         try {
             await Promise.resolve(state.applySettings(selected.settings ?? {}));
+            state.loadedPresetId = selected.preset_id;
+            updateLoadedIndicator();
             setUiMode(UI_MODES.MANAGE);
             setStatus(`Loaded preset "${selected.name}".`);
+            closePresetDialog();
         } catch (error) {
             setStatus(getErrorMessage(error, "Failed to load preset."));
         }
     }
 
+    function onPresetToggleClick() {
+        openPresetDialog();
+    }
+
+    function onPresetModalKeydown(event) {
+        if (event.key === "Escape") {
+            closePresetDialog();
+        }
+    }
+
     function bindEvents() {
-        document.getElementById("preset-toggle")?.addEventListener("click", togglePresetPanel);
+        document.getElementById("preset-toggle")?.addEventListener("click", onPresetToggleClick);
+        document.getElementById("preset-modal-close")?.addEventListener("click", closePresetDialog);
+        document.getElementById("preset-modal-overlay")?.addEventListener("click", closePresetDialog);
+        document.addEventListener("keydown", onPresetModalKeydown);
         document.getElementById("preset-refresh")?.addEventListener("click", () => {
             void fetchPresets().catch((error) => {
                 setStatus(getErrorMessage(error, "Failed to refresh presets."));
@@ -337,6 +406,7 @@
         state.applySettings = applySettings ?? null;
         state.presets = [];
         state.selectedId = null;
+        state.loadedPresetId = null;
         state.uiMode = UI_MODES.DEFAULT;
 
         try {
@@ -350,6 +420,7 @@
             return;
         }
 
+        ensureDialogShell();
         bindEvents();
         setUiMode(UI_MODES.DEFAULT);
         try {
