@@ -176,6 +176,48 @@ def test_preset_validation_errors(tmp_path):
     assert invalid_filter.json()["detail"] == "Unsupported task_type 'sd15.unknown'."
 
 
+def test_sd15_controlnet_preset_accepts_new_contract_fields(tmp_path):
+    _reset_preset_registry_paths(tmp_path)
+    client = TestClient(app)
+
+    created = client.post(
+        "/api/presets",
+        json={
+            "name": "sd15 contract fields",
+            "family": "sd15",
+            "task_type": "sd15.controlnet.text2img",
+            "settings": {
+                "prompt": "portrait",
+                "controlNetEnabled": True,
+                "effectiveItems": [
+                    {
+                        "control_image": "@artifact:a0123456789abcdef0123456789abcdef",
+                        "model_id": "lllyasviel/control_v11p_sd15_canny",
+                        "conditioning_scale": 0.9,
+                        "preprocessor_id": "canny",
+                    }
+                ],
+                "Lora": {
+                    "loraStatus": True,
+                    "adapters": [{"lora_id": 101, "strength": 0.7}],
+                },
+                "hires": {
+                    "hiresEnabled": True,
+                    "hires_scale": 1.4,
+                },
+            },
+        },
+    )
+
+    assert created.status_code == 201
+    body = created.json()
+    assert body["task_type"] == "sd15.controlnet.text2img"
+    assert body["settings"]["controlNetEnabled"] is True
+    assert body["settings"]["effectiveItems"][0]["model_id"] == "lllyasviel/control_v11p_sd15_canny"
+    assert body["settings"]["Lora"]["loraStatus"] is True
+    assert body["settings"]["hires"]["hiresEnabled"] is True
+
+
 def test_sdxl_preset_allows_frontend_extra_fields(tmp_path):
     _reset_preset_registry_paths(tmp_path)
     client = TestClient(app)

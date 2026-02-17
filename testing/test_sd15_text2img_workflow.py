@@ -56,6 +56,35 @@ class Sd15Text2ImgWorkflowPlumbingTests(unittest.TestCase):
         self.assertEqual(captured["batch_id"], "batch123")
         self.assertEqual(captured["lora_scale"], 0.9)
 
+    def test_sd15_text2img_accepts_contract_lora_and_hires_fields(self):
+        captured = {}
+
+        def _fake_generate_images(params):
+            captured.update(params)
+            return ["batch/out.png"]
+
+        with patch("backend.workflow.make_batch_id", return_value="batch123"):
+            with patch("backend.workflow.generate_images", side_effect=_fake_generate_images):
+                result = _sd15_text2img(
+                    {
+                        "prompt": "test prompt",
+                        "Lora": {
+                            "loraStatus": True,
+                            "adapters": [{"lora_id": 303, "strength": 0.6}],
+                        },
+                        "hires": {
+                            "hiresEnabled": True,
+                            "hires_scale": 1.8,
+                        },
+                    },
+                    _ctx=None,
+                )
+
+        self.assertEqual(result["batch_id"], "batch123")
+        self.assertEqual(captured["lora_adapters"], [{"lora_id": 303, "strength": 0.6}])
+        self.assertTrue(captured["hires_enabled"])
+        self.assertEqual(captured["hires_scale"], 1.8)
+
 
 if __name__ == "__main__":
     unittest.main()

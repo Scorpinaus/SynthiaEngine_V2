@@ -494,6 +494,14 @@ This same matrix is available in machine-readable form at `GET /api/workflow/cat
 Task inputs/outputs are task-specific. As a convention, image-generating tasks return:
 - `images`: list of `"/outputs/..."` URLs
 
+`sd15.text2img` contract-extension input notes:
+- Existing flat input fields remain valid and are still recommended for backward compatibility.
+- `controlNetEnabled`: optional boolean UI state flag.
+- `Lora`: optional object `{ "loraStatus": boolean, "adapters": [...] }`.
+  - When `lora_adapters` is omitted, backend can derive adapters from `Lora.adapters`.
+- `hires`: optional object `{ "hiresEnabled": boolean, "hires_scale": number }`.
+  - When `hires_enabled` / `hires_scale` are omitted, backend can derive values from `hires`.
+
 `controlnet.preprocess` input notes:
 - `image`: image reference
 - `preprocessor_id`: string id
@@ -511,6 +519,12 @@ Task inputs/outputs are task-specific. As a convention, image-generating tasks r
 - `control_images`: optional list form for multi-ControlNet (backward-compatible with `control_image`)
 - `controlnet_preprocessor_id`: optional preprocessor id used for compatibility checks
 - `controlnet_preprocessor_ids`: optional list form for multi-ControlNet compatibility checks
+- `controlNetEnabled`: optional boolean UI state flag.
+- `effectiveItems`: optional list contract form for ControlNet items:
+  - item shape: `{ "control_image": <ImageRef>, "model_id": string?, "conditioning_scale": number?, "preprocessor_id": string? }`
+  - when provided, backend can derive flat fields (`control_image(s)`, `controlnet_model(s)`, `controlnet_conditioning_scale(s)`, `controlnet_preprocessor_id(s)`) if those are omitted.
+- `Lora`: optional object `{ "loraStatus": boolean, "adapters": [...] }`.
+- `hires`: optional object `{ "hiresEnabled": boolean, "hires_scale": number }`.
 - `controlnet_compat_mode`: `"warn"` (default), `"error"`, or `"off"`
   - `warn`: continue generation and add a warning in task result when pairing is mismatched
   - `error`: fail task when pairing is mismatched
@@ -536,7 +550,9 @@ Task inputs/outputs are task-specific. As a convention, image-generating tasks r
 `sd15.img2img` LoRA input notes:
 - `lora_adapters` is optional. When omitted or empty, img2img runs without LoRA adapters.
 - `lora_adapters` entries are resolved through the LoRA registry (`/lora-models`) by `lora_id`.
-- Each adapter may provide `strength` (default `1.0`) and optional per-component overrides (`unet_strength`, `text_encoder_strength`).
+- Each adapter may provide `strength` (default `1.0`), optional per-component overrides (`unet_strength`, `text_encoder_strength`), and optional fine-grained scales (`unet_scales`, `text_encoder_scales`).
+- `unet_scales` accepts Diffusers-style UNet LoRA scales (number or nested object) and is forwarded to `set_adapters(..., adapter_weights=...)` for per-layer control.
+- `text_encoder_scales` is an object mapping text-encoder module-name substrings to scale values; unmatched text-encoder LoRA layers fall back to `text_encoder_strength` when provided, otherwise `strength`.
 - Family validation is enforced: only LoRAs registered with `lora_model_family: "sd15"` are accepted for `sd15.img2img`.
 - Invalid adapter references (for example missing `lora_id`, unknown id, or incompatible family) fail the task with a validation/runtime error.
 
@@ -555,14 +571,14 @@ Task inputs/outputs are task-specific. As a convention, image-generating tasks r
 `sd15.inpaint` LoRA input notes:
 - `lora_adapters` is optional. When omitted or empty, inpaint runs without LoRA adapters.
 - `lora_adapters` entries are resolved through the LoRA registry (`/lora-models`) by `lora_id`.
-- Each adapter may provide `strength` (default `1.0`) and optional per-component overrides (`unet_strength`, `text_encoder_strength`).
+- Each adapter may provide `strength` (default `1.0`), optional per-component overrides (`unet_strength`, `text_encoder_strength`), and optional fine-grained scales (`unet_scales`, `text_encoder_scales`).
 - Family validation is enforced: only LoRAs registered with `lora_model_family: "sd15"` are accepted for `sd15.inpaint`.
 - Invalid adapter references (for example missing `lora_id`, unknown id, or incompatible family) fail the task with a validation/runtime error.
 
 `sdxl.text2img` LoRA input notes:
 - `lora_adapters` is optional. When omitted or empty, text2img runs without LoRA adapters.
 - `lora_adapters` entries are resolved through the LoRA registry (`/lora-models`) by `lora_id`.
-- Each adapter may provide `strength` (default `1.0`) and optional per-component overrides (`unet_strength`, `text_encoder_strength`).
+- Each adapter may provide `strength` (default `1.0`), optional per-component overrides (`unet_strength`, `text_encoder_strength`), and optional fine-grained scales (`unet_scales`, `text_encoder_scales`).
 - Family validation is enforced: only LoRAs registered with `lora_model_family: "sdxl"` are accepted for `sdxl.text2img`.
 - Invalid adapter references (for example missing `lora_id`, unknown id, or incompatible family) fail the task with a validation/runtime error.
 
@@ -603,7 +619,7 @@ Task inputs/outputs are task-specific. As a convention, image-generating tasks r
 `sdxl.img2img` LoRA input notes:
 - `lora_adapters` is optional. When omitted or empty, img2img runs without LoRA adapters.
 - `lora_adapters` entries are resolved through the LoRA registry (`/lora-models`) by `lora_id`.
-- Each adapter may provide `strength` (default `1.0`) and optional per-component overrides (`unet_strength`, `text_encoder_strength`).
+- Each adapter may provide `strength` (default `1.0`), optional per-component overrides (`unet_strength`, `text_encoder_strength`), and optional fine-grained scales (`unet_scales`, `text_encoder_scales`).
 - Family validation is enforced: only LoRAs registered with `lora_model_family: "sdxl"` are accepted for `sdxl.img2img`.
 - Invalid adapter references (for example missing `lora_id`, unknown id, or incompatible family) fail the task with a validation/runtime error.
 
@@ -624,28 +640,28 @@ Task inputs/outputs are task-specific. As a convention, image-generating tasks r
 `sdxl.inpaint` LoRA input notes:
 - `lora_adapters` is optional. When omitted or empty, inpaint runs without LoRA adapters.
 - `lora_adapters` entries are resolved through the LoRA registry (`/lora-models`) by `lora_id`.
-- Each adapter may provide `strength` (default `1.0`) and optional per-component overrides (`unet_strength`, `text_encoder_strength`).
+- Each adapter may provide `strength` (default `1.0`), optional per-component overrides (`unet_strength`, `text_encoder_strength`), and optional fine-grained scales (`unet_scales`, `text_encoder_scales`).
 - Family validation is enforced: only LoRAs registered with `lora_model_family: "sdxl"` are accepted for `sdxl.inpaint`.
 - Invalid adapter references (for example missing `lora_id`, unknown id, or incompatible family) fail the task with a validation/runtime error.
 
 `flux.text2img` LoRA input notes:
 - `lora_adapters` is optional. When omitted or empty, text2img runs without LoRA adapters.
 - `lora_adapters` entries are resolved through the LoRA registry (`/lora-models`) by `lora_id`.
-- Each adapter may provide `strength` (default `1.0`) and optional per-component overrides (`unet_strength`, `text_encoder_strength`).
+- Each adapter may provide `strength` (default `1.0`), optional per-component overrides (`unet_strength`, `text_encoder_strength`), and optional fine-grained scales (`unet_scales`, `text_encoder_scales`).
 - Family validation is enforced: only LoRAs registered with `lora_model_family: "flux"` are accepted for `flux.text2img`.
 - Invalid adapter references (for example missing `lora_id`, unknown id, or incompatible family) fail the task with a validation/runtime error.
 
 `flux.img2img` LoRA input notes:
 - `lora_adapters` is optional. When omitted or empty, img2img runs without LoRA adapters.
 - `lora_adapters` entries are resolved through the LoRA registry (`/lora-models`) by `lora_id`.
-- Each adapter may provide `strength` (default `1.0`) and optional per-component overrides (`unet_strength`, `text_encoder_strength`).
+- Each adapter may provide `strength` (default `1.0`), optional per-component overrides (`unet_strength`, `text_encoder_strength`), and optional fine-grained scales (`unet_scales`, `text_encoder_scales`).
 - Family validation is enforced: only LoRAs registered with `lora_model_family: "flux"` are accepted for `flux.img2img`.
 - Invalid adapter references (for example missing `lora_id`, unknown id, or incompatible family) fail the task with a validation/runtime error.
 
 `flux.inpaint` LoRA input notes:
 - `lora_adapters` is optional. When omitted or empty, inpaint runs without LoRA adapters.
 - `lora_adapters` entries are resolved through the LoRA registry (`/lora-models`) by `lora_id`.
-- Each adapter may provide `strength` (default `1.0`) and optional per-component overrides (`unet_strength`, `text_encoder_strength`).
+- Each adapter may provide `strength` (default `1.0`), optional per-component overrides (`unet_strength`, `text_encoder_strength`), and optional fine-grained scales (`unet_scales`, `text_encoder_scales`).
 - Family validation is enforced: only LoRAs registered with `lora_model_family: "flux"` are accepted for `flux.inpaint`.
 - Invalid adapter references (for example missing `lora_id`, unknown id, or incompatible family) fail the task with a validation/runtime error.
 - Runtime selects a Fill-compatible Flux inpaint backend automatically when the selected Flux model metadata indicates a Fill variant.

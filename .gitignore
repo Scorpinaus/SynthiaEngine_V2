@@ -4,9 +4,12 @@ database/
 .tmp-sd-embed/
 backend/model_registry.json
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
 !database/.gitkeep
 AGENTS.md
 .vscode/
 .pytest_cache/
 next_steps.txt
+anima_preview_report.json
+inspect_safetensors.py

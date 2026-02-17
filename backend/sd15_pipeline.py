@@ -574,11 +574,8 @@ def generate_images(params: dict[str, object],):
     num_images = int(params.get("num_images") or 1)
     clip_skip = int(params.get("clip_skip") or 1)
     lora_adapters = params.get("lora_adapters")
-    hires_scale = float(params.get("hires_scale") or 1.0)
-    hires_enabled = bool(params.get("hires_enabled") or False)
     weighting_policy = str(params.get("weighting_policy") or "diffusers-like")
     batch_id = params.get("batch_id")
-    lora_scale = params.get("lora_scale")
 
     # 1. Check and set seed number(if not present, set random seed)
     logger.info("seed=%s", seed)
@@ -623,26 +620,9 @@ def generate_images(params: dict[str, object],):
             prompt,
             negative_prompt,
             clip_skip=clip_skip,
-            lora_scale=lora_scale,
             weighting_policy=weighting_policy,
         )
         prompt_embeds_ready = True
-
-    metadata_base = {
-        "mode": "txt2img",
-        "prompt": prompt,
-        "negative_prompt": negative_prompt,
-        "steps": steps,
-        "cfg": cfg,
-        "width": width,
-        "height": height,
-        "scheduler": scheduler,
-        "model": model,
-        "clip_skip": clip_skip,
-        "hires_enabled": hires_enabled,
-        "hires_scale": hires_scale,
-        "batch_id": batch_id,
-    }
     
     filenames = []    
     # 6. Loop around image generation per image
@@ -663,7 +643,6 @@ def generate_images(params: dict[str, object],):
                         prompt,
                         negative_prompt,
                         clip_skip=clip_skip,
-                        lora_scale=lora_scale,
                         weighting_policy=weighting_policy,
                     )
                     prompt_embeds_ready = True
@@ -679,7 +658,6 @@ def generate_images(params: dict[str, object],):
                         clip_skip=clip_skip,
                         prompt_embeds=prompt_embeds if use_prompt_embeds else None,
                         negative_prompt_embeds=negative_prompt_embeds if use_prompt_embeds else None,
-                        cross_attention_kwargs={"scale": lora_scale} if lora_scale is not None else None,
                     ).images[0]
 
                 # Log layers to report
@@ -702,7 +680,6 @@ def generate_images(params: dict[str, object],):
                         prompt,
                         negative_prompt,
                         clip_skip=clip_skip,
-                        lora_scale=lora_scale,
                         weighting_policy=weighting_policy,
                     )
                     prompt_embeds_ready = True
@@ -718,12 +695,11 @@ def generate_images(params: dict[str, object],):
                     clip_skip=clip_skip,
                     prompt_embeds=prompt_embeds if use_prompt_embeds else None,
                     negative_prompt_embeds=negative_prompt_embeds if use_prompt_embeds else None,
-                    cross_attention_kwargs={"scale": lora_scale} if lora_scale is not None else None,
                 ).images[0]
 
             # Write the PNG and embed all inputs/settings for later inspection.
             filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
-            metadata = {**metadata_base, "seed": current_seed}
+            metadata = {**params, "seed": current_seed}
             pnginfo = build_png_metadata(metadata)
             image.save(filename, pnginfo=pnginfo)
             logger.info("Image %s saved to %s", i, filename.name)

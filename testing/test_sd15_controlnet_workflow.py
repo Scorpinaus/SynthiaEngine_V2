@@ -233,6 +233,54 @@ class Sd15ControlNetWorkflowPlumbingTests(unittest.TestCase):
                     _ctx=None,
                 )
 
+    def test_effective_items_contract_maps_to_controlnet_inputs(self):
+        captured = {}
+
+        def _fake_generate_images_controlnet(params):
+            captured.update(params)
+            return ["batch/out.png"]
+
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+                with patch(
+                    "backend.workflow.generate_images_controlnet",
+                    side_effect=_fake_generate_images_controlnet,
+                ):
+                    result = _sd15_controlnet_text2img(
+                        {
+                            "prompt": "test prompt",
+                            "controlNetEnabled": True,
+                            "effectiveItems": [
+                                {
+                                    "control_image": {
+                                        "artifact_id": "a0123456789abcdef0123456789abcdef"
+                                    },
+                                    "model_id": "lllyasviel/control_v11p_sd15_canny",
+                                    "conditioning_scale": 0.8,
+                                    "preprocessor_id": "canny",
+                                }
+                            ],
+                        },
+                        _ctx=None,
+                    )
+
+        self.assertEqual(result["batch_id"], "batch123")
+        self.assertIn("control_image", captured)
+        self.assertEqual(captured["controlnet_model"], "lllyasviel/control_v11p_sd15_canny")
+        self.assertEqual(captured["controlnet_conditioning_scale"], 0.8)
+
+    def test_controlnet_enabled_contract_requires_control_images(self):
+        with self.assertRaisesRegex(
+            ValueError, "controlNetEnabled is true but no control image references were provided."
+        ):
+            _sd15_controlnet_text2img(
+                {
+                    "prompt": "test prompt",
+                    "controlNetEnabled": True,
+                },
+                _ctx=None,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

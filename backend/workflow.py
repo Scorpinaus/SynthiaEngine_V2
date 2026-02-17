@@ -85,6 +85,23 @@ class ArtifactInfo(BaseModel):
     path: str
 
 
+class Sd15LoraContract(BaseModel):
+    loraStatus: bool = False
+    adapters: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class Sd15HiresContract(BaseModel):
+    hiresEnabled: bool = False
+    hires_scale: float = 1.0
+
+
+class Sd15EffectiveControlNetItem(BaseModel):
+    control_image: ImageRef
+    model_id: str | None = None
+    conditioning_scale: float | None = Field(default=None, ge=0.0, le=2.0)
+    preprocessor_id: str | None = None
+
+
 class Sd15Text2ImgInputs(BaseModel):
     prompt: str
     negative_prompt: str = ""
@@ -103,6 +120,9 @@ class Sd15Text2ImgInputs(BaseModel):
     weighting_policy: str = "diffusers-like"
     lora_scale: float | None = None
     batch_id: str | None = None
+    controlNetEnabled: bool = False
+    Lora: Sd15LoraContract | None = None
+    hires: Sd15HiresContract | None = None
 
 
 class Sd15Img2ImgInputs(BaseModel):
@@ -181,8 +201,8 @@ class Sd15InpaintInputs(BaseModel):
 
 
 class Sd15ControlNetText2ImgInputs(BaseModel):
-    control_image: ImageRef = Field(
-        ...,
+    control_image: ImageRef | None = Field(
+        default=None,
         description='Control image reference: {"artifact_id":"..."} OR "@artifact:..." OR "/outputs/...".',
     )
     prompt: str
@@ -209,6 +229,10 @@ class Sd15ControlNetText2ImgInputs(BaseModel):
     control_guidance_end: float = Field(default=1.0, ge=0.0, le=1.0)
     lora_adapters: Any | None = None
     batch_id: str | None = None
+    controlNetEnabled: bool = True
+    effectiveItems: list[Sd15EffectiveControlNetItem] | None = None
+    Lora: Sd15LoraContract | None = None
+    hires: Sd15HiresContract | None = None
 
 
 class ControlNetPreprocessInputs(BaseModel):
@@ -239,6 +263,8 @@ class Sd15HiresFixInputs(BaseModel):
     weighting_policy: str = "diffusers-like"
     lora_scale: float | None = None
     batch_id: str | None = None
+    Lora: Sd15LoraContract | None = None
+    hires: Sd15HiresContract | None = None
 
 
 class SdxlText2ImgInputs(BaseModel):
@@ -1003,7 +1029,97 @@ def _resolve_refs(value: Any, task_results: dict[str, dict[str, Any]]) -> Any:
     return value
 
 
+def _normalized_lora_adapters(inputs: dict[str, Any]) -> Any:
+    lora_adapters = inputs.get("lora_adapters")
+    if lora_adapters is not None:
+        return lora_adapters
+
+    lora_contract = inputs.get("Lora")
+    if isinstance(lora_contract, dict):
+        adapters = lora_contract.get("adapters")
+        if isinstance(adapters, list):
+            return adapters
+    return None
+
+
+def _normalized_hires_settings(inputs: dict[str, Any]) -> tuple[bool, float]:
+    hires_enabled = bool(inputs.get("hires_enabled") or False)
+    hires_scale = float(inputs.get("hires_scale") or 1.0)
+
+    hires_contract = inputs.get("hires")
+    if isinstance(hires_contract, dict):
+        if "hiresEnabled" in hires_contract and "hires_enabled" not in inputs:
+            hires_enabled = bool(hires_contract.get("hiresEnabled"))
+        if "hires_scale" in hires_contract and "hires_scale" not in inputs:
+            hires_scale = float(hires_contract.get("hires_scale") or 1.0)
+
+    return hires_enabled, hires_scale
+
+
+def _normalize_sd15_controlnet_contract_inputs(inputs: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(inputs)
+    effective_items = normalized.get("effectiveItems")
+    if effective_items is not None and not isinstance(effective_items, list):
+        raise ValueError("effectiveItems must be a list of objects.")
+
+    if effective_items:
+        control_images: list[Any] = []
+        controlnet_models: list[str] = []
+        controlnet_scales: list[float] = []
+        controlnet_preprocessor_ids: list[str | None] = []
+
+        for idx, item in enumerate(effective_items):
+            if not isinstance(item, dict):
+                raise ValueError(f"effectiveItems[{idx}] must be an object.")
+            if "control_image" not in item:
+                raise ValueError(f"effectiveItems[{idx}].control_image is required.")
+
+            control_images.append(item["control_image"])
+            controlnet_models.append(
+                str(item.get("model_id") or _DEFAULT_SD15_CONTROLNET_MODEL)
+            )
+            controlnet_scales.append(float(item.get("conditioning_scale") or 1.0))
+            preprocessor_id = item.get("preprocessor_id")
+            controlnet_preprocessor_ids.append(
+                str(preprocessor_id) if preprocessor_id is not None else None
+            )
+
+        if "control_image" not in normalized and control_images:
+            normalized["control_image"] = control_images[0]
+        if "control_images" not in normalized and len(control_images) > 1:
+            normalized["control_images"] = control_images
+        if "controlnet_models" not in normalized and len(controlnet_models) > 1:
+            normalized["controlnet_models"] = controlnet_models
+        if "controlnet_model" not in normalized and controlnet_models:
+            normalized["controlnet_model"] = controlnet_models[0]
+        if "controlnet_conditioning_scales" not in normalized and len(controlnet_scales) > 1:
+            normalized["controlnet_conditioning_scales"] = controlnet_scales
+        if "controlnet_conditioning_scale" not in normalized and controlnet_scales:
+            normalized["controlnet_conditioning_scale"] = controlnet_scales[0]
+
+        has_all_preprocessor_ids = all(
+            isinstance(value, str) and len(value) > 0 for value in controlnet_preprocessor_ids
+        )
+        if has_all_preprocessor_ids:
+            if "controlnet_preprocessor_ids" not in normalized and len(controlnet_preprocessor_ids) > 1:
+                normalized["controlnet_preprocessor_ids"] = controlnet_preprocessor_ids
+            if "controlnet_preprocessor_id" not in normalized and controlnet_preprocessor_ids:
+                normalized["controlnet_preprocessor_id"] = controlnet_preprocessor_ids[0]
+
+    if bool(normalized.get("controlNetEnabled")) and not (
+        normalized.get("control_image") is not None
+        or (isinstance(normalized.get("control_images"), list) and normalized.get("control_images"))
+    ):
+        raise ValueError(
+            "controlNetEnabled is true but no control image references were provided."
+        )
+
+    return normalized
+
+
 def _sd15_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
+    hires_enabled, hires_scale = _normalized_hires_settings(inputs)
+    lora_adapters = _normalized_lora_adapters(inputs)
     batch_id = str(inputs.get("batch_id") or make_batch_id())
     generation_params = {
         "prompt": str(inputs["prompt"]),
@@ -1017,9 +1133,9 @@ def _sd15_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, A
         "model": inputs.get("model"),
         "num_images": int(inputs.get("num_images") or 1),
         "clip_skip": int(inputs.get("clip_skip") or 1),
-        "lora_adapters": inputs.get("lora_adapters"),
-        "hires_enabled": bool(inputs.get("hires_enabled") or False),
-        "hires_scale": float(inputs.get("hires_scale") or 1.0),
+        "lora_adapters": lora_adapters,
+        "hires_enabled": hires_enabled,
+        "hires_scale": hires_scale,
         "weighting_policy": str(inputs.get("weighting_policy") or "diffusers-like"),
         "batch_id": batch_id,
         "lora_scale": inputs.get("lora_scale"),
@@ -1503,6 +1619,9 @@ def _sd15_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, An
 
 
 def _sd15_controlnet_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
+    inputs = _normalize_sd15_controlnet_contract_inputs(inputs)
+    if inputs.get("control_image") is None and not inputs.get("control_images"):
+        raise ValueError("control_image is required for sd15.controlnet.text2img")
     width = int(inputs.get("width") or 512)
     height = int(inputs.get("height") or 512)
     control_image_single = _open_image_ref(inputs["control_image"]).convert("RGB")
@@ -1713,6 +1832,7 @@ def _sd15_hires_fix(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, 
     batch_id = str(inputs.get("batch_id") or make_batch_id())
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
+    lora_adapters = _normalized_lora_adapters(inputs)
     relpaths = run_sd15_hires_fix(
         images=images,
         prompt=str(inputs["prompt"]),
@@ -1725,7 +1845,7 @@ def _sd15_hires_fix(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, 
         clip_skip=int(inputs.get("clip_skip") or 1),
         hires_scale=float(inputs.get("hires_scale") or 1.0),
         hires_strength=float(inputs.get("hires_strength") or 0.35),
-        lora_adapters=inputs.get("lora_adapters"),
+        lora_adapters=lora_adapters,
         weighting_policy=str(inputs.get("weighting_policy") or "diffusers-like"),
         lora_scale=inputs.get("lora_scale"),
         output_dir=batch_output_dir,
