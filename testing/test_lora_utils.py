@@ -4,9 +4,22 @@ import backend.lora_utils as lora_utils
 
 
 class _DummyPipe:
+    class _DummyComponent:
+        def __init__(self):
+            self.loaded: list[tuple[str, str, str | None]] = []
+            self.adapter_calls: list[tuple[list[str], list[float | dict[str, object]]]] = []
+
+        def load_lora_adapter(self, file_path: str, adapter_name: str, prefix: str | None = None):
+            self.loaded.append((file_path, adapter_name, prefix))
+
+        def set_adapters(self, adapter_names: list[str], weights: list[float | dict[str, object]]):
+            self.adapter_calls.append((adapter_names, weights))
+
     def __init__(self):
         self.loaded: list[tuple[str, str]] = []
         self.adapter_calls: list[tuple[list[str], list[float | dict[str, object]]]] = []
+        self.unet = self._DummyComponent()
+        self.text_encoder = self._DummyComponent()
 
     def load_lora_weights(self, file_path: str, adapter_name: str):
         self.loaded.append((file_path, adapter_name))
@@ -135,6 +148,131 @@ def test_apply_lora_adapters_supports_unet_and_text_encoder_scales(monkeypatch):
     ]
 
 
+def test_apply_lora_adapters_supports_unet_target(monkeypatch):
+    monkeypatch.setattr(
+        lora_utils,
+        "get_lora_entry",
+        lambda _lora_id: SimpleNamespace(
+            lora_id=501,
+            lora_model_family="sd15",
+            name="UnetOnly",
+            file_path="C:/loras/unet_only.safetensors",
+        ),
+    )
+
+    pipe = _DummyPipe()
+    adapter_names, _ = lora_utils.apply_lora_adapters_with_validation(
+        pipe,
+        lora_adapters=[{"lora_id": 501, "strength": 0.6, "target": "unet"}],
+        expected_family="sd15",
+        validate=False,
+    )
+
+    assert adapter_names == ["lora_UnetOnly"]
+    assert pipe.loaded == []
+    assert pipe.unet.loaded == [("C:/loras/unet_only.safetensors", "lora_UnetOnly", "unet")]
+    assert pipe.unet.adapter_calls == [(["lora_UnetOnly"], [0.6])]
+    assert pipe.text_encoder.loaded == []
+    assert pipe.text_encoder.adapter_calls == []
+
+
+def test_apply_lora_adapters_supports_text_encoder_target(monkeypatch):
+    monkeypatch.setattr(
+        lora_utils,
+        "get_lora_entry",
+        lambda _lora_id: SimpleNamespace(
+            lora_id=502,
+            lora_model_family="sd15",
+            name="TextOnly",
+            file_path="C:/loras/text_only.safetensors",
+        ),
+    )
+
+    pipe = _DummyPipe()
+    adapter_names, _ = lora_utils.apply_lora_adapters_with_validation(
+        pipe,
+        lora_adapters=[{"lora_id": 502, "strength": 0.7, "target": "text_encoder"}],
+        expected_family="sd15",
+        validate=False,
+    )
+
+    assert adapter_names == ["lora_TextOnly"]
+    assert pipe.loaded == []
+    assert pipe.unet.loaded == []
+    assert pipe.unet.adapter_calls == []
+    assert pipe.text_encoder.loaded == [("C:/loras/text_only.safetensors", "lora_TextOnly", "text_encoder")]
+    assert pipe.text_encoder.adapter_calls == [(["lora_TextOnly"], [0.7])]
+
+
+def test_apply_lora_adapters_supports_mixed_targets(monkeypatch):
+    entries = {
+        601: SimpleNamespace(
+            lora_id=601,
+            lora_model_family="sd15",
+            name="Both",
+            file_path="C:/loras/both.safetensors",
+        ),
+        602: SimpleNamespace(
+            lora_id=602,
+            lora_model_family="sd15",
+            name="Unet",
+            file_path="C:/loras/unet.safetensors",
+        ),
+        603: SimpleNamespace(
+            lora_id=603,
+            lora_model_family="sd15",
+            name="Text",
+            file_path="C:/loras/text.safetensors",
+        ),
+    }
+    monkeypatch.setattr(lora_utils, "get_lora_entry", lambda lora_id: entries[lora_id])
+
+    pipe = _DummyPipe()
+    adapter_names, _ = lora_utils.apply_lora_adapters_with_validation(
+        pipe,
+        lora_adapters=[
+            {"lora_id": 601, "strength": 0.9, "target": "both"},
+            {"lora_id": 602, "strength": 0.6, "target": "unet"},
+            {"lora_id": 603, "strength": 0.3, "target": "text_encoder"},
+        ],
+        expected_family="sd15",
+        validate=False,
+    )
+
+    assert adapter_names == ["lora_Both", "lora_Unet", "lora_Text"]
+    assert pipe.loaded == [("C:/loras/both.safetensors", "lora_Both")]
+    assert pipe.adapter_calls == [(["lora_Both"], [0.9])]
+    assert pipe.unet.loaded == [("C:/loras/unet.safetensors", "lora_Unet", "unet")]
+    assert pipe.unet.adapter_calls == [(["lora_Unet"], [0.6])]
+    assert pipe.text_encoder.loaded == [("C:/loras/text.safetensors", "lora_Text", "text_encoder")]
+    assert pipe.text_encoder.adapter_calls == [(["lora_Text"], [0.3])]
+
+
+def test_apply_lora_adapters_rejects_invalid_target(monkeypatch):
+    monkeypatch.setattr(
+        lora_utils,
+        "get_lora_entry",
+        lambda _lora_id: SimpleNamespace(
+            lora_id=701,
+            lora_model_family="sd15",
+            name="BadTarget",
+            file_path="C:/loras/bad_target.safetensors",
+        ),
+    )
+
+    pipe = _DummyPipe()
+    try:
+        lora_utils.apply_lora_adapters_with_validation(
+            pipe,
+            lora_adapters=[{"lora_id": 701, "target": "te"}],
+            expected_family="sd15",
+            validate=False,
+        )
+        assert False, "Expected ValueError for invalid target."
+    except ValueError as exc:
+        assert str(exc) == "LoRA adapter field 'target' must be one of: both, unet, text_encoder."
+
+
 def test_apply_lora_adapters_rejects_invalid_unet_scales(monkeypatch):
     monkeypatch.setattr(
         lora_utils,
@@ -198,6 +336,7 @@ def test_apply_lora_adapters_text_encoder_scales_require_text_encoder(monkeypatc
     )
 
     pipe = _DummyPipe()
+    pipe.text_encoder = None
     try:
         lora_utils.apply_lora_adapters_with_validation(
             pipe,

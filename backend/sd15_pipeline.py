@@ -170,6 +170,36 @@ def _apply_lora_adapters(
     return adapter_names
 
 
+def _cleanup_lora_adapters(pipe, adapter_names: list[str]) -> None:
+    """Best-effort cleanup for both pipeline-level and component-level LoRA adapters."""
+    if not adapter_names:
+        return
+    logger.info("Cleaning up %s LoRA adapter(s): %s", len(adapter_names), adapter_names)
+
+    if hasattr(pipe, "unload_lora_weights"):
+        try:
+            logger.debug("Attempting pipeline-level LoRA unload via unload_lora_weights().")
+            pipe.unload_lora_weights()
+            logger.debug("Pipeline-level LoRA unload completed.")
+        except Exception:
+            logger.exception("Failed to unload pipeline LoRA weights cleanly.")
+
+    for component_name in ("unet", "text_encoder", "text_encoder_2", "transformer"):
+        component = getattr(pipe, component_name, None)
+        if component is None or not hasattr(component, "delete_adapters"):
+            continue
+        try:
+            logger.debug("Attempting adapter deletion on component '%s'.", component_name)
+            component.delete_adapters(adapter_names)
+            logger.debug("Adapter deletion succeeded on component '%s'.", component_name)
+        except Exception:
+            logger.debug(
+                "Skipping component LoRA adapter cleanup for %s; delete_adapters failed.",
+                component_name,
+                exc_info=True,
+            )
+
+
 """
     Load Pipelines
 """
@@ -706,9 +736,7 @@ def generate_images(params: dict[str, object],):
 
             filenames.append(build_batch_output_relpath(batch_id, filename.name))
     finally:
-        # Unload lora_weights at the end
-        if adapter_names and hasattr(pipe, "unload_lora_weights"):
-            pipe.unload_lora_weights()
+        _cleanup_lora_adapters(pipe, adapter_names)
     # Return list of filenames
     return filenames
 
@@ -853,8 +881,7 @@ def generate_images_img2img(params: dict[str, object],):
 
             filenames.append(build_batch_output_relpath(batch_id, filename.name))
     finally:
-        if adapter_names and hasattr(pipe, "unload_lora_weights"):
-            pipe.unload_lora_weights()
+        _cleanup_lora_adapters(pipe, adapter_names)
 
     return filenames
 
@@ -970,8 +997,7 @@ def generate_images_img2img_controlnet(params: dict[str, object],) -> list[str]:
             logger.info("Image %s saved to %s", i, filename.name)
             filenames.append(build_batch_output_relpath(batch_id, filename.name))
     finally:
-        if adapter_names and hasattr(pipe, "unload_lora_weights"):
-            pipe.unload_lora_weights()
+        _cleanup_lora_adapters(pipe, adapter_names)
 
     return filenames
 
@@ -1100,8 +1126,7 @@ def generate_images_inpaint(params: dict[str, object],):
 
             filenames.append(build_batch_output_relpath(batch_id, filename.name))
     finally:
-        if adapter_names and hasattr(pipe, "unload_lora_weights"):
-            pipe.unload_lora_weights()
+        _cleanup_lora_adapters(pipe, adapter_names)
 
     return filenames
 
@@ -1221,8 +1246,7 @@ def generate_images_inpaint_controlnet(params: dict[str, object],) -> list[str]:
 
             filenames.append(build_batch_output_relpath(batch_id, filename.name))
     finally:
-        if adapter_names and hasattr(pipe, "unload_lora_weights"):
-            pipe.unload_lora_weights()
+        _cleanup_lora_adapters(pipe, adapter_names)
 
     return filenames
 
@@ -1343,8 +1367,7 @@ def run_sd15_hires_fix(
             out_image.save(filename, pnginfo=pnginfo)
             relpaths.append(build_batch_output_relpath(batch_id, filename.name))
     finally:
-        if adapter_names and hasattr(pipe, "unload_lora_weights"):
-            pipe.unload_lora_weights()
+        _cleanup_lora_adapters(pipe, adapter_names)
 
     return relpaths
 
@@ -1423,5 +1446,4 @@ def apply_hires_fix(
             cross_attention_kwargs={"scale": lora_scale} if lora_scale is not None else None,
         ).images[0]
     finally:
-        if adapter_names and hasattr(pipe, "unload_lora_weights"):
-            pipe.unload_lora_weights()
+        _cleanup_lora_adapters(pipe, adapter_names)

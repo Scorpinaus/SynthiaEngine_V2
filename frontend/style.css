@@ -606,6 +606,36 @@ button {
     gap: 10px;
 }
 
+.lora-mode {
+    display: grid;
+    gap: 8px;
+    padding: 10px;
+    border-radius: 12px;
+    border: 1px solid #ece4d6;
+    background: #fdf9f2;
+}
+
+.lora-mode-label {
+    font-size: 12px;
+    color: #6b645c;
+    font-weight: 600;
+}
+
+.lora-mode-toggle {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.lora-mode-toggle label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #4b453d;
+}
+
 .lora-list {
     display: grid;
     gap: 10px;
@@ -636,6 +666,23 @@ button {
 }
 
 .lora-strength input[type="range"] {
+    width: 100%;
+}
+
+.lora-strength-grid {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.lora-target {
+    display: grid;
+    gap: 6px;
+    font-size: 12px;
+    color: #6b645c;
+}
+
+.lora-target select {
     width: 100%;
 }
 

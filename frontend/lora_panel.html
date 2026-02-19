@@ -13,10 +13,25 @@
             </label>
             <button class="secondary" type="button" id="add-lora">Add LoRA</button>
         </div>
+        <div class="lora-mode is-hidden" id="lora-weight-mode-row">
+            <span class="lora-mode-label">Weight Mode</span>
+            <div class="lora-mode-toggle" role="radiogroup" aria-label="LoRA Weight Mode">
+                <label>
+                    <input type="radio" name="lora-weight-mode" id="lora-weight-mode-basic" value="basic" checked>
+                    <span>Basic</span>
+                </label>
+                <label>
+                    <input type="radio" name="lora-weight-mode" id="lora-weight-mode-advanced" value="advanced">
+                    <span>Advanced</span>
+                </label>
+            </div>
+            <div class="field-hint">Basic uses one strength for both UNet and text encoder. Advanced sets each separately (SD1.5).</div>
+        </div>
         <div class="lora-selected">
             <div class="field-hint" id="lora-empty">No LoRAs selected.</div>
             <div id="lora-list" class="lora-list"></div>
         </div>
         <div class="field-hint">LoRA strength ranges from 0.0 to 1.0.</div>
+        <div class="field-hint">Target controls where each adapter is applied: UNet, text encoder, or both.</div>
     </div>
 </div>

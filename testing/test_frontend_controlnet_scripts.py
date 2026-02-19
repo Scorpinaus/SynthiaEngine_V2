@@ -127,6 +127,19 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("gridTemplateColumns", preprocessor_js)
         self.assertIn("window.innerWidth <= 700", preprocessor_js)
 
+    def test_lora_panel_html_has_weight_mode_toggle(self):
+        lora_html = (ROOT / "frontend" / "lora_panel.html").read_text(encoding="utf-8")
+        self.assertIn('id="lora-weight-mode-row"', lora_html)
+        self.assertIn('id="lora-weight-mode-basic"', lora_html)
+        self.assertIn('id="lora-weight-mode-advanced"', lora_html)
+
+    def test_lora_panel_script_supports_sd15_advanced_component_strengths(self):
+        lora_js = (ROOT / "frontend" / "lora_panel.js").read_text(encoding="utf-8")
+        self.assertIn("weightMode", lora_js)
+        self.assertIn("lora-weight-mode-advanced", lora_js)
+        self.assertIn("unet_strength", lora_js)
+        self.assertIn("text_encoder_strength", lora_js)
+
     def test_preset_panel_html_has_mode_specific_controls(self):
         preset_html = (ROOT / "frontend" / "preset_panel.html").read_text(encoding="utf-8")
         self.assertIn('id="preset-load"', preset_html)

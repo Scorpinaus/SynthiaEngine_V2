@@ -103,7 +103,6 @@ def load_flux_pipeline(model_name: str | None) -> Any:
 
     return pipe
 
-
 def load_flux_img2img_pipeline(model_name: str | None) -> FluxImg2ImgPipeline:
     
     #1. Check input model_name is valid and load valid path

@@ -2,7 +2,7 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from backend.lora_registry import get_lora_entry
 
@@ -12,7 +12,7 @@ _ADAPTER_NAME_SANITIZE_RE = re.compile(r"[^0-9A-Za-z_-]+")
 
 def _extract_lora_params(
     adapter: Any,
-) -> tuple[int | None, float, float | None, float | None, Any, Any]:
+) -> tuple[int | None, float, float | None, float | None, Any, Any, str]:
     if isinstance(adapter, dict):
         lora_id = adapter.get("lora_id")
         strength = adapter.get("strength", 1.0)
@@ -20,6 +20,7 @@ def _extract_lora_params(
         text_encoder_strength = adapter.get("text_encoder_strength")
         unet_scales = adapter.get("unet_scales")
         text_encoder_scales = adapter.get("text_encoder_scales")
+        target = adapter.get("target", "both")
     else:
         lora_id = getattr(adapter, "lora_id", None)
         strength = getattr(adapter, "strength", 1.0)
@@ -27,6 +28,7 @@ def _extract_lora_params(
         text_encoder_strength = getattr(adapter, "text_encoder_strength", None)
         unet_scales = getattr(adapter, "unet_scales", None)
         text_encoder_scales = getattr(adapter, "text_encoder_scales", None)
+        target = getattr(adapter, "target", "both")
 
     return (
         lora_id,
@@ -35,6 +37,7 @@ def _extract_lora_params(
         _coerce_optional_float(text_encoder_strength),
         unet_scales,
         text_encoder_scales,
+        _normalize_lora_target(target),
     )
 
 
@@ -45,6 +48,13 @@ def _coerce_optional_float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _normalize_lora_target(value: Any) -> str:
+    target = str(value or "both").strip().lower().replace("-", "_")
+    if target not in {"both", "unet", "text_encoder"}:
+        raise ValueError("LoRA adapter field 'target' must be one of: both, unet, text_encoder.")
+    return target
 
 
 def _is_number(value: Any) -> bool:
@@ -305,6 +315,11 @@ def apply_lora_adapters_with_validation(
 
     adapter_names: list[str] = []
     adapter_weights: list[float | dict[str, Any]] = []
+    both_names: list[str] = []
+    unet_only_names: list[str] = []
+    unet_only_weights: list[float | dict[str, Any]] = []
+    text_only_names: list[str] = []
+    text_only_weights: list[float | dict[str, Any]] = []
     coverage: dict[str, dict[str, object]] = {}
     used_adapter_names: set[str] = set()
 
@@ -316,9 +331,17 @@ def apply_lora_adapters_with_validation(
             text_encoder_strength,
             unet_scales_raw,
             text_encoder_scales_raw,
+            target,
         ) = _extract_lora_params(adapter)
         if lora_id is None:
             raise ValueError("LoRA adapter missing lora_id.")
+        logger.debug(
+            "Parsed LoRA adapter[%s]: lora_id=%s strength=%s target=%s",
+            adapter_index,
+            lora_id,
+            strength,
+            target,
+        )
 
         unet_scales = _normalize_unet_scales(unet_scales_raw, adapter_index)
         text_encoder_scales = _normalize_text_encoder_scales(text_encoder_scales_raw, adapter_index)
@@ -328,19 +351,60 @@ def apply_lora_adapters_with_validation(
             raise ValueError(f"LoRA {entry.name} is not compatible with {expected_family}.")
 
         adapter_name = _build_adapter_name(entry.lora_id, entry.name, used_adapter_names)
-        pipe.load_lora_weights(entry.file_path, adapter_name=adapter_name)
+        if target == "both":
+            logger.info("Loading LoRA '%s' via pipeline.load_lora_weights", adapter_name)
+            pipe.load_lora_weights(entry.file_path, adapter_name=adapter_name)
+        elif target == "unet":
+            if not hasattr(pipe, "unet") or not hasattr(pipe.unet, "load_lora_adapter"):
+                raise ValueError(
+                    "LoRA adapter target 'unet' requires pipeline.unet.load_lora_adapter support."
+                )
+            logger.info("Loading LoRA '%s' via unet.load_lora_adapter", adapter_name)
+            pipe.unet.load_lora_adapter(entry.file_path, adapter_name=adapter_name, prefix="unet")
+        else:
+            text_encoder = getattr(pipe, "text_encoder", None)
+            if text_encoder is None or not hasattr(text_encoder, "load_lora_adapter"):
+                raise ValueError(
+                    "LoRA adapter target 'text_encoder' requires pipeline.text_encoder.load_lora_adapter support."
+                )
+            logger.info("Loading LoRA '%s' via text_encoder.load_lora_adapter", adapter_name)
+            text_encoder.load_lora_adapter(entry.file_path, adapter_name=adapter_name, prefix="text_encoder")
+
         adapter_names.append(adapter_name)
-        adapter_weights.append(
-            _build_adapter_weight(
-                pipe,
-                adapter_name=adapter_name,
-                adapter_index=adapter_index,
-                strength=strength,
-                unet_strength=unet_strength,
-                text_encoder_strength=text_encoder_strength,
-                unet_scales=unet_scales,
-                text_encoder_scales=text_encoder_scales,
-            )
+        adapter_weight = _build_adapter_weight(
+            pipe,
+            adapter_name=adapter_name,
+            adapter_index=adapter_index,
+            strength=strength,
+            unet_strength=unet_strength,
+            text_encoder_strength=text_encoder_strength,
+            unet_scales=unet_scales,
+            text_encoder_scales=text_encoder_scales,
+        )
+        if target == "both":
+            adapter_weights.append(adapter_weight)
+            both_names.append(adapter_name)
+        elif target == "unet":
+            if isinstance(adapter_weight, dict):
+                unet_weight = cast(float | dict[str, Any], adapter_weight.get("unet", strength))
+            else:
+                unet_weight = adapter_weight
+            unet_only_names.append(adapter_name)
+            unet_only_weights.append(unet_weight)
+        else:
+            if isinstance(adapter_weight, dict):
+                text_weight = cast(float | dict[str, Any], adapter_weight.get("text_encoder", strength))
+            else:
+                text_weight = adapter_weight
+            text_only_names.append(adapter_name)
+            text_only_weights.append(text_weight)
+
+        logger.info(
+            "lora_name: %s , lora_id: %s, lora_weight: %s, target: %s",
+            adapter_name,
+            entry.lora_id,
+            strength,
+            target,
         )
 
         if validate:
@@ -349,12 +413,28 @@ def apply_lora_adapters_with_validation(
                 "text_encoder": _summarize_lora_coverage(pipe.text_encoder, adapter_name, "text_encoder"),
             }
 
-        logger.info(
-            "lora_name: %s , lora_id: %s, lora_weight: %s",
-            adapter_name, entry.lora_id, strength,)
+    if both_names and hasattr(pipe, "set_adapters"):
+        logger.info("Activating %s pipeline-level LoRA adapters: %s", len(both_names), both_names)
+        pipe.set_adapters(both_names, adapter_weights=adapter_weights)
 
-    if hasattr(pipe, "set_adapters"):
-        pipe.set_adapters(adapter_names, adapter_weights=adapter_weights)
+    if unet_only_names:
+        if not hasattr(pipe, "unet") or not hasattr(pipe.unet, "set_adapters"):
+            raise ValueError("LoRA adapter target 'unet' requires pipeline.unet.set_adapters support.")
+        logger.info("Activating %s UNet-only LoRA adapters: %s", len(unet_only_names), unet_only_names)
+        pipe.unet.set_adapters(unet_only_names, weights=unet_only_weights)
+
+    if text_only_names:
+        text_encoder = getattr(pipe, "text_encoder", None)
+        if text_encoder is None or not hasattr(text_encoder, "set_adapters"):
+            raise ValueError(
+                "LoRA adapter target 'text_encoder' requires pipeline.text_encoder.set_adapters support."
+            )
+        logger.info(
+            "Activating %s text-encoder-only LoRA adapters: %s",
+            len(text_only_names),
+            text_only_names,
+        )
+        text_encoder.set_adapters(text_only_names, weights=text_only_weights)
 
     if validate:
         for adapter_name, report in coverage.items():

@@ -79,6 +79,66 @@ class Sd15ControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertEqual(captured["control_guidance_start"], 0.1)
         self.assertEqual(captured["control_guidance_end"], 0.9)
 
+    def test_controlnet_task_prefers_unified_lora_contract(self):
+        captured = {}
+
+        def _fake_generate_images_controlnet(params):
+            captured.update(params)
+            return ["batch/out.png"]
+
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+                with patch(
+                    "backend.workflow.generate_images_controlnet",
+                    side_effect=_fake_generate_images_controlnet,
+                ):
+                    _sd15_controlnet_text2img(
+                        {
+                            "control_image": {
+                                "artifact_id": "a0123456789abcdef0123456789abcdef"
+                            },
+                            "prompt": "test prompt",
+                            "lora": {
+                                "lora_enabled": True,
+                                "lora_adapters": [{"lora_id": 131, "strength": 0.7}],
+                            },
+                            "lora_adapters": [{"lora_id": 999, "strength": 0.1}],
+                        },
+                        _ctx=None,
+                    )
+
+        self.assertEqual(captured["lora_adapters"], [{"lora_id": 131, "strength": 0.7}])
+
+    def test_controlnet_task_disables_lora_when_unified_flag_is_false(self):
+        captured = {}
+
+        def _fake_generate_images_controlnet(params):
+            captured.update(params)
+            return ["batch/out.png"]
+
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+                with patch(
+                    "backend.workflow.generate_images_controlnet",
+                    side_effect=_fake_generate_images_controlnet,
+                ):
+                    _sd15_controlnet_text2img(
+                        {
+                            "control_image": {
+                                "artifact_id": "a0123456789abcdef0123456789abcdef"
+                            },
+                            "prompt": "test prompt",
+                            "lora": {
+                                "lora_enabled": False,
+                                "lora_adapters": [{"lora_id": 131, "strength": 0.7}],
+                            },
+                            "lora_adapters": [{"lora_id": 999, "strength": 0.1}],
+                        },
+                        _ctx=None,
+                    )
+
+        self.assertEqual(captured["lora_adapters"], [])
+
     def test_control_guidance_start_must_be_lte_end(self):
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(

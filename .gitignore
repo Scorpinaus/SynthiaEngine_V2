@@ -13,3 +13,7 @@ AGENTS.md
 next_steps.txt
 anima_preview_report.json
 inspect_safetensors.py
+anima_forward_spike.py
+anima_pipeline_test.py
+anima_spike.py
+memory-bank/

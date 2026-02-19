@@ -64,6 +64,72 @@ class Sd15InpaintControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertEqual(captured["lora_adapters"], lora_adapters)
         self.assertEqual(captured["batch_id"], "batch123")
 
+    def test_non_controlnet_path_prefers_unified_lora_contract(self):
+        captured = {}
+
+        def _fake_generate_images_inpaint(params):
+            captured.update(params)
+            return ["batch/out.png"]
+
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+                with patch(
+                    "backend.workflow.generate_images_inpaint",
+                    side_effect=_fake_generate_images_inpaint,
+                ):
+                    _sd15_inpaint(
+                        {
+                            "initial_image": {
+                                "artifact_id": "a0123456789abcdef0123456789abcdef"
+                            },
+                            "mask_image": {
+                                "artifact_id": "a0123456789abcdef0123456789abcdef"
+                            },
+                            "prompt": "test prompt",
+                            "lora": {
+                                "lora_enabled": True,
+                                "lora_adapters": [{"lora_id": 121, "strength": 0.65}],
+                            },
+                            "lora_adapters": [{"lora_id": 999, "strength": 0.1}],
+                        },
+                        _ctx=None,
+                    )
+
+        self.assertEqual(captured["lora_adapters"], [{"lora_id": 121, "strength": 0.65}])
+
+    def test_non_controlnet_path_disables_lora_when_unified_flag_is_false(self):
+        captured = {}
+
+        def _fake_generate_images_inpaint(params):
+            captured.update(params)
+            return ["batch/out.png"]
+
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+                with patch(
+                    "backend.workflow.generate_images_inpaint",
+                    side_effect=_fake_generate_images_inpaint,
+                ):
+                    _sd15_inpaint(
+                        {
+                            "initial_image": {
+                                "artifact_id": "a0123456789abcdef0123456789abcdef"
+                            },
+                            "mask_image": {
+                                "artifact_id": "a0123456789abcdef0123456789abcdef"
+                            },
+                            "prompt": "test prompt",
+                            "lora": {
+                                "lora_enabled": False,
+                                "lora_adapters": [{"lora_id": 121, "strength": 0.65}],
+                            },
+                            "lora_adapters": [{"lora_id": 999, "strength": 0.1}],
+                        },
+                        _ctx=None,
+                    )
+
+        self.assertEqual(captured["lora_adapters"], [])
+
     def test_non_controlnet_path_preserves_zero_padding_mask_crop(self):
         captured = {}
 
