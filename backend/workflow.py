@@ -124,22 +124,28 @@ _CONTROLNET_PREPROCESSOR_REGISTRY_BY_ID = {
 _MAX_CONTROLNET_MODELS = 2
 
 TASK_INPUT_MODELS: dict[str, type[BaseModel]] = {
+    # SD15 tasks
     "sd15.text2img": Sd15Text2ImgInputs,
     "sd15.img2img": Sd15Img2ImgInputs,
     "sd15.inpaint": Sd15InpaintInputs,
     "sd15.controlnet.text2img": Sd15ControlNetText2ImgInputs,
     "sd15.hires_fix": Sd15HiresFixInputs,
+    # ControlNet utility tasks
     "controlnet.preprocess": ControlNetPreprocessInputs,
+    # SDXL tasks
     "sdxl.text2img": SdxlText2ImgInputs,
     "sdxl.controlnet.text2img": SdxlControlNetText2ImgInputs,
     "sdxl.img2img": SdxlImg2ImgInputs,
     "sdxl.inpaint": SdxlInpaintInputs,
+    # Flux tasks
     "flux.text2img": FluxText2ImgInputs,
     "flux.img2img": FluxImg2ImgInputs,
     "flux.inpaint": FluxInpaintInputs,
+    # Qwen-Image tasks
     "qwen-image.text2img": QwenImageText2ImgInputs,
     "qwen-image.img2img": QwenImageImg2ImgInputs,
     "qwen-image.inpaint": QwenImageInpaintInputs,
+    # Z-Image tasks
     "z-image.text2img": ZImageText2ImgInputs,
     "z-image.img2img": ZImageImg2ImgInputs,
     "z-image.inpaint": ZImageInpaintInputs,
@@ -147,22 +153,28 @@ TASK_INPUT_MODELS: dict[str, type[BaseModel]] = {
 
 
 TASK_OUTPUT_MODELS: dict[str, type[BaseModel]] = {
+    # SD15 tasks
     "sd15.text2img": ImagesWithBatchOutput,
     "sd15.img2img": Sd15Img2ImgOutput,
     "sd15.inpaint": Sd15InpaintOutput,
     "sd15.controlnet.text2img": Sd15ControlNetText2ImgOutput,
     "sd15.hires_fix": ImagesWithBatchOutput,
+    # ControlNet utility tasks
     "controlnet.preprocess": ControlNetPreprocessOutput,
+    # SDXL tasks
     "sdxl.text2img": ImagesOutput,
     "sdxl.controlnet.text2img": SdxlControlNetText2ImgOutput,
     "sdxl.img2img": SdxlImg2ImgOutput,
     "sdxl.inpaint": SdxlInpaintOutput,
+    # Flux tasks
     "flux.text2img": ImagesOutput,
     "flux.img2img": ImagesOutput,
     "flux.inpaint": ImagesOutput,
+    # Qwen-Image tasks
     "qwen-image.text2img": ImagesOutput,
     "qwen-image.img2img": ImagesOutput,
     "qwen-image.inpaint": ImagesOutput,
+    # Z-Image tasks
     "z-image.text2img": ImagesOutput,
     "z-image.img2img": ImagesOutput,
     "z-image.inpaint": ImagesOutput,
@@ -175,6 +187,7 @@ def build_workflow_catalog() -> dict[str, Any]:
 
 
 
+# SD15 task handlers and dependencies
 def _sd15_runtime_deps() -> dict[str, Any]:
     return {
         "normalized_hires_settings": _normalized_hires_settings,
@@ -218,6 +231,7 @@ def _sd15_controlnet_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> 
 
 
 
+# ControlNet utility task handlers
 def _controlnet_preprocess(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
     source = _open_image_ref(inputs["image"]).convert("RGB")
     preprocessor_id = str(inputs["preprocessor_id"])
@@ -246,6 +260,7 @@ def _sd15_hires_fix(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, 
 
 
 
+# SDXL task handlers and dependencies
 def _sdxl_runtime_deps() -> dict[str, Any]:
     return {
         "open_image_ref": _open_image_ref,
@@ -254,12 +269,12 @@ def _sdxl_runtime_deps() -> dict[str, Any]:
         "max_controlnet_models": _MAX_CONTROLNET_MODELS,
         "controlnet_preprocessor_registry_by_id": _CONTROLNET_PREPROCESSOR_REGISTRY_BY_ID,
         "logger": logger,
-        "run_sdxl_text2img": sdxl_pipeline_module.run_sdxl_text2img,
-        "run_sdxl_controlnet_text2img": sdxl_pipeline_module.run_sdxl_controlnet_text2img,
-        "run_sdxl_img2img": sdxl_pipeline_module.run_sdxl_img2img,
-        "run_sdxl_img2img_controlnet": sdxl_pipeline_module.run_sdxl_img2img_controlnet,
-        "run_sdxl_inpaint": sdxl_pipeline_module.run_sdxl_inpaint,
-        "run_sdxl_inpaint_controlnet": sdxl_pipeline_module.run_sdxl_inpaint_controlnet,
+        "generate_text2img": sdxl_pipeline_module.generate_text2img,
+        "generate_controlnet_text2img": sdxl_pipeline_module.generate_controlnet_text2img,
+        "generate_img2img": sdxl_pipeline_module.generate_img2img,
+        "generate_img2img_controlnet": sdxl_pipeline_module.generate_img2img_controlnet,
+        "generate_inpaint": sdxl_pipeline_module.generate_inpaint,
+        "generate_inpaint_controlnet": sdxl_pipeline_module.generate_inpaint_controlnet,
     }
 
 def _sdxl_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
@@ -282,10 +297,11 @@ def _sdxl_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, An
 
 
 
+# Flux task handlers and dependencies
 def _flux_runtime_deps() -> dict[str, Any]:
     flux_pipeline_module = importlib.import_module("backend.flux_pipeline")
     deps: dict[str, Any] = {"open_image_ref": _open_image_ref}
-    for name in ("run_flux_text2img", "run_flux_img2img", "run_flux_inpaint"):
+    for name in ("generate_text2img", "generate_img2img", "generate_inpaint"):
         func = getattr(flux_pipeline_module, name, None)
         if func is not None:
             deps[name] = func
@@ -304,13 +320,14 @@ def _flux_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, An
     return _run_flux_inpaint(inputs, _flux_runtime_deps())
 
 
+# Qwen-Image task handlers and dependencies
 def _qwen_image_runtime_deps() -> dict[str, Any]:
     qwen_image_pipeline_module = importlib.import_module("backend.qwen_image_pipeline")
     deps: dict[str, Any] = {
         "open_image_ref": _open_image_ref,
         "remap_img2img_strength": _remap_img2img_strength,
     }
-    for name in ("run_qwen_image_text2img", "run_qwen_image_img2img", "run_qwen_image_inpaint"):
+    for name in ("generate_text2img", "generate_img2img", "generate_inpaint"):
         func = getattr(qwen_image_pipeline_module, name, None)
         if func is not None:
             deps[name] = func
@@ -329,13 +346,14 @@ def _qwen_image_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[s
     return _run_qwen_image_inpaint(inputs, _qwen_image_runtime_deps())
 
 
+# Z-Image task handlers and dependencies
 def _z_image_runtime_deps() -> dict[str, Any]:
     z_image_pipeline_module = importlib.import_module("backend.z_image_pipeline")
     deps: dict[str, Any] = {
         "open_image_ref": _open_image_ref,
         "remap_img2img_strength": _remap_img2img_strength,
     }
-    for name in ("run_z_image_text2img", "run_z_image_img2img", "run_z_image_inpaint"):
+    for name in ("generate_text2img", "generate_img2img", "generate_inpaint"):
         func = getattr(z_image_pipeline_module, name, None)
         if func is not None:
             deps[name] = func
@@ -355,22 +373,28 @@ def _z_image_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str,
 
 
 TASK_REGISTRY: dict[str, Callable[[dict[str, Any], WorkflowContext], dict[str, Any]]] = {
+    # SD15 tasks
     "sd15.text2img": _sd15_text2img,
     "sd15.img2img": _sd15_img2img,
     "sd15.inpaint": _sd15_inpaint,
     "sd15.controlnet.text2img": _sd15_controlnet_text2img,
     "sd15.hires_fix": _sd15_hires_fix,
+    # ControlNet utility tasks
     "controlnet.preprocess": _controlnet_preprocess,
+    # SDXL tasks
     "sdxl.text2img": _sdxl_text2img,
     "sdxl.controlnet.text2img": _sdxl_controlnet_text2img,
     "sdxl.img2img": _sdxl_img2img,
     "sdxl.inpaint": _sdxl_inpaint,
+    # Flux tasks
     "flux.text2img": _flux_text2img,
     "flux.img2img": _flux_img2img,
     "flux.inpaint": _flux_inpaint,
+    # Qwen-Image tasks
     "qwen-image.text2img": _qwen_image_text2img,
     "qwen-image.img2img": _qwen_image_img2img,
     "qwen-image.inpaint": _qwen_image_inpaint,
+    # Z-Image tasks
     "z-image.text2img": _z_image_text2img,
     "z-image.img2img": _z_image_img2img,
     "z-image.inpaint": _z_image_inpaint,

@@ -24,6 +24,8 @@ logger = logging.getLogger(__name__)
 configure_logging()
 _ADAPTER_NAME_SANITIZE_RE = re.compile(r"[^0-9A-Za-z_-]+")
 
+""" Private helper functions
+"""
 
 def _sanitize_adapter_fragment(raw_name: str | None) -> str:
     if not raw_name:
@@ -102,8 +104,9 @@ def _apply_qwen_image_lora_adapters(
 
     return adapter_names
 
+""" Methods involving loading of pipelines"""
 
-def load_qwen_image_pipeline(model_name: str | None) -> QwenImagePipeline:
+def load_text2img_pipeline(model_name: str | None) -> QwenImagePipeline:
     entry = get_model_entry(model_name)
 
     source = resolve_model_source(entry)
@@ -132,7 +135,7 @@ def load_qwen_image_pipeline(model_name: str | None) -> QwenImagePipeline:
     return pipe
 
 
-def load_qwen_image_img2img_pipeline(model_name: str | None) -> QwenImageImg2ImgPipeline:
+def load_img2img_pipeline(model_name: str | None) -> QwenImageImg2ImgPipeline:
     entry = get_model_entry(model_name)
 
     source = resolve_model_source(entry)
@@ -161,7 +164,7 @@ def load_qwen_image_img2img_pipeline(model_name: str | None) -> QwenImageImg2Img
     return pipe
 
 
-def load_qwen_image_inpaint_pipeline(model_name: str | None) -> QwenImageInpaintPipeline:
+def load_inpaint_pipeline(model_name: str | None) -> QwenImageInpaintPipeline:
     entry = get_model_entry(model_name)
 
     source = resolve_model_source(entry)
@@ -190,8 +193,10 @@ def load_qwen_image_inpaint_pipeline(model_name: str | None) -> QwenImageInpaint
     return pipe
 
 
+""" Methods involving generation using Qwen_Image related pipelines """
+
 @torch.inference_mode()
-def run_qwen_image_text2img(params: dict[str, object]) -> dict[str, list[str]]:
+def generate_text2img(params: dict[str, object]) -> dict[str, list[str]]:
     prompt = str(params.get("prompt") or "")
     negative_prompt = str(params.get("negative_prompt") or "").strip()
     steps = int(params.get("steps", 30))
@@ -214,7 +219,7 @@ def run_qwen_image_text2img(params: dict[str, object]) -> dict[str, list[str]]:
     batch_id = make_batch_id()
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
-    pipe = load_qwen_image_pipeline(model)
+    pipe = load_text2img_pipeline(model)
     logger.info(
         "Qwen-Image Generate: model=%s seed=%s steps=%s true_cfg_scale=%s guidance_scale=%s size=%sx%s num_images=%s",
         model,
@@ -275,7 +280,7 @@ def run_qwen_image_text2img(params: dict[str, object]) -> dict[str, list[str]]:
 
 
 @torch.inference_mode()
-def run_qwen_image_img2img(params: dict[str, object]) -> dict[str, list[str]]:
+def generate_img2img(params: dict[str, object]) -> dict[str, list[str]]:
     initial_image = params.get("initial_image")
     if initial_image is None:
         raise ValueError("initial_image is required")
@@ -302,7 +307,7 @@ def run_qwen_image_img2img(params: dict[str, object]) -> dict[str, list[str]]:
     batch_id = make_batch_id()
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
-    pipe = load_qwen_image_img2img_pipeline(model)
+    pipe = load_img2img_pipeline(model)
     logger.info(
         "Qwen-Image Img2Img: model=%s seed=%s steps=%s true_cfg_scale=%s guidance_scale=%s size=%sx%s strength=%s num_images=%s",
         model,
@@ -370,7 +375,7 @@ def run_qwen_image_img2img(params: dict[str, object]) -> dict[str, list[str]]:
 
 
 @torch.inference_mode()
-def run_qwen_image_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
+def generate_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
     initial_image = params.get("initial_image")
     if initial_image is None:
         raise ValueError("initial_image is required")
@@ -398,7 +403,7 @@ def run_qwen_image_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
     batch_id = make_batch_id()
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
-    pipe = load_qwen_image_inpaint_pipeline(model)
+    pipe = load_inpaint_pipeline(model)
     width, height = initial_image.size
     logger.info(
         "Qwen-Image Inpaint: model=%s seed=%s steps=%s true_cfg_scale=%s guidance_scale=%s size=%sx%s strength=%s num_images=%s",

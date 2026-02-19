@@ -39,7 +39,7 @@ def _get_pipe_device(
     return getattr(pipe, "_execution_device", None) or pipe.device
 
 
-def _decode_sdxl_latents_to_pil(
+def _decode_latents_to_pil(
     pipe: StableDiffusionXLPipeline | StableDiffusionXLImg2ImgPipeline | StableDiffusionXLInpaintPipeline,
     latents: torch.Tensor,
 ) -> Image.Image:
@@ -59,7 +59,7 @@ def _decode_sdxl_latents_to_pil(
     return Image.fromarray((image[0] * 255).round().astype("uint8"))
 
 
-def render_sdxl_text2img_latents(
+def render_text2img_latents(
     pipe: StableDiffusionXLPipeline,
     *,
     prompt: str,
@@ -86,7 +86,7 @@ def render_sdxl_text2img_latents(
     ).images[0]
 
 
-def render_sdxl_img2img_latents(
+def render_img2img_latents(
     pipe: StableDiffusionXLImg2ImgPipeline,
     *,
     initial_image: Image.Image,
@@ -113,7 +113,7 @@ def render_sdxl_img2img_latents(
     ).images[0]
 
 
-def render_sdxl_inpaint_image(
+def render_inpaint_image(
     pipe: StableDiffusionXLInpaintPipeline,
     *,
     initial_image: Image.Image,
@@ -143,7 +143,7 @@ def render_sdxl_inpaint_image(
     ).images[0]
 
 
-def save_sdxl_image(
+def save_image(
     *,
     image: Image.Image,
     batch_output_dir: Path,
@@ -176,7 +176,7 @@ def _resize_control_image_to_target(
 """
     Load SDXL Pipeline Functions
 """
-def load_sdxl_pipeline(model_name: str | None) -> StableDiffusionXLPipeline:
+def load_text2img_pipeline(model_name: str | None) -> StableDiffusionXLPipeline:
     entry = get_model_entry(model_name)
 
     source = resolve_model_source(entry)
@@ -201,7 +201,7 @@ def load_sdxl_pipeline(model_name: str | None) -> StableDiffusionXLPipeline:
     return pipe
 
 
-def load_sdxl_controlnet_pipeline(
+def load_controlnet_text2img_pipeline(
     model_name: str | None,
     controlnet_model: str | list[str],
 ) -> StableDiffusionXLControlNetPipeline:
@@ -243,7 +243,7 @@ def load_sdxl_controlnet_pipeline(
     return pipe
 
 
-def load_sdxl_img2img_pipeline(model_name: str | None) -> StableDiffusionXLImg2ImgPipeline:
+def load_img2img_pipeline(model_name: str | None) -> StableDiffusionXLImg2ImgPipeline:
     entry = get_model_entry(model_name)
     source = resolve_model_source(entry)
     logger.info("SDXL img2img model source: %s", source)
@@ -267,7 +267,7 @@ def load_sdxl_img2img_pipeline(model_name: str | None) -> StableDiffusionXLImg2I
     return pipe
 
 
-def load_sdxl_controlnet_img2img_pipeline(
+def load_controlnet_img2img_pipeline(
     model_name: str | None,
     controlnet_model: str | list[str],
 ) -> StableDiffusionXLControlNetImg2ImgPipeline:
@@ -308,7 +308,7 @@ def load_sdxl_controlnet_img2img_pipeline(
     return pipe
 
 
-def load_sdxl_inpaint_pipeline(model_name: str | None) -> StableDiffusionXLInpaintPipeline:
+def load_inpaint_pipeline(model_name: str | None) -> StableDiffusionXLInpaintPipeline:
     entry = get_model_entry(model_name)
     source = resolve_model_source(entry)
     logger.info("SDXL inpaint model source: %s", source)
@@ -332,7 +332,7 @@ def load_sdxl_inpaint_pipeline(model_name: str | None) -> StableDiffusionXLInpai
     return pipe
 
 
-def load_sdxl_controlnet_inpaint_pipeline(
+def load_controlnet_inpaint_pipeline(
     model_name: str | None,
     controlnet_model: str | list[str],
 ) -> StableDiffusionXLControlNetInpaintPipeline:
@@ -378,7 +378,7 @@ def load_sdxl_controlnet_inpaint_pipeline(
 """
 
 @torch.inference_mode()
-def run_sdxl_controlnet_text2img(params: dict[str, object],) -> dict[str, list[str]]:
+def generate_controlnet_text2img(params: dict[str, object],) -> dict[str, list[str]]:
     #1. Load and create local method variables + ensure correct formatting from input dict
     prompt = str(params["prompt"])
     negative_prompt = str(params["negative_prompt"])
@@ -418,7 +418,7 @@ def run_sdxl_controlnet_text2img(params: dict[str, object],) -> dict[str, list[s
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
     #4. Load and create pipeline and scheduler
-    pipe = load_sdxl_controlnet_pipeline(model, controlnet_model)
+    pipe = load_controlnet_text2img_pipeline(model, controlnet_model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
 
     #5. Load lora into pipeline
@@ -457,7 +457,7 @@ def run_sdxl_controlnet_text2img(params: dict[str, object],) -> dict[str, list[s
         image_params["batch_id"] = batch_id
         
         # Save image with metadata
-        relpath = save_sdxl_image(
+        relpath = save_image(
             image=image,
             batch_output_dir=batch_output_dir,
             batch_id=batch_id,
@@ -472,7 +472,7 @@ def run_sdxl_controlnet_text2img(params: dict[str, object],) -> dict[str, list[s
 
 
 @torch.inference_mode()
-def run_sdxl_img2img_controlnet(params: dict[str, object],) -> dict[str, list[str]]:
+def generate_img2img_controlnet(params: dict[str, object],) -> dict[str, list[str]]:
     #1. Load and create local method variables + ensure correct formatting from input dict
     initial_image = params["initial_image"]
     strength = float(params["strength"])
@@ -517,7 +517,7 @@ def run_sdxl_img2img_controlnet(params: dict[str, object],) -> dict[str, list[st
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
     #4. Load and create pipeline and scheduler
-    pipe = load_sdxl_controlnet_img2img_pipeline(model, controlnet_model)
+    pipe = load_controlnet_img2img_pipeline(model, controlnet_model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
 
     #5. Load lora into pipeline
@@ -569,7 +569,7 @@ def run_sdxl_img2img_controlnet(params: dict[str, object],) -> dict[str, list[st
             image_params["height"] = image_height
             
             # Save image + metadata
-            relpath = save_sdxl_image(
+            relpath = save_image(
                 image=image,
                 batch_output_dir=batch_output_dir,
                 batch_id=batch_id,
@@ -588,7 +588,7 @@ def run_sdxl_img2img_controlnet(params: dict[str, object],) -> dict[str, list[st
 
 
 @torch.inference_mode()
-def run_sdxl_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
+def generate_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
     
     #1. Load and create local method variables + ensure correct formatting from input dict
     prompt = str(payload["prompt"])
@@ -616,7 +616,7 @@ def run_sdxl_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
     #4. Load and create pipeline and scheduler
-    pipe = load_sdxl_pipeline(model)
+    pipe = load_text2img_pipeline(model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
     
     #5. Load lora into pipeline
@@ -638,7 +638,7 @@ def run_sdxl_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
         for i in range(num_images):
             current_seed = base_seed + i
             # Render latents and add to list
-            latents = render_sdxl_text2img_latents(
+            latents = render_text2img_latents(
                 pipe,
                 prompt=prompt,
                 negative_prompt=negative_prompt,
@@ -656,7 +656,7 @@ def run_sdxl_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
         # Decode latents to images
         images: list[Image.Image] = []
         for latents in latents_batch:
-            images.append(_decode_sdxl_latents_to_pil(pipe, latents))
+            images.append(_decode_latents_to_pil(pipe, latents))
         del latents_batch
 
         # Generate image metadata and append to image
@@ -665,7 +665,7 @@ def run_sdxl_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
             image_params["mode"] = "txt2img"
             image_params["seed"] = current_seed
             image_params["batch_id"] = batch_id
-            relpath = save_sdxl_image(
+            relpath = save_image(
                 image=image,
                 batch_output_dir=batch_output_dir,
                 batch_id=batch_id,
@@ -685,7 +685,7 @@ def run_sdxl_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
 
 
 @torch.inference_mode()
-def run_sdxl_img2img(params: dict[str, object],) -> dict[str, list[str]]:
+def generate_img2img(params: dict[str, object],) -> dict[str, list[str]]:
     #1. Load and create local method variables + ensure correct formatting from input dict
     initial_image = params["initial_image"]
     strength = float(params["strength"])
@@ -716,7 +716,7 @@ def run_sdxl_img2img(params: dict[str, object],) -> dict[str, list[str]]:
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
     #4. Load and create pipeline and scheduler
-    pipe = load_sdxl_img2img_pipeline(model)
+    pipe = load_img2img_pipeline(model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
     
     #5. Load lora into pipeline
@@ -736,7 +736,7 @@ def run_sdxl_img2img(params: dict[str, object],) -> dict[str, list[str]]:
 
             # timesteps = build_fixed_step_timesteps(pipe.scheduler, steps, strength, device=device)
             # Render latent images
-            latents = render_sdxl_img2img_latents(
+            latents = render_img2img_latents(
                 pipe,
                 initial_image=initial_image,
                 strength=strength,
@@ -749,7 +749,7 @@ def run_sdxl_img2img(params: dict[str, object],) -> dict[str, list[str]]:
             )
 
             # Decode latent to image and delete intermediate latents
-            image = _decode_sdxl_latents_to_pil(pipe, latents)
+            image = _decode_latents_to_pil(pipe, latents)
             del latents
 
             # Generate image metadata and append to image
@@ -762,7 +762,7 @@ def run_sdxl_img2img(params: dict[str, object],) -> dict[str, list[str]]:
             image_params["width"] = image_width
             image_params["height"] = image_height
             # Save filename to rendered image
-            relpath = save_sdxl_image(
+            relpath = save_image(
                 image=image,
                 batch_output_dir=batch_output_dir,
                 batch_id=batch_id,
@@ -781,7 +781,7 @@ def run_sdxl_img2img(params: dict[str, object],) -> dict[str, list[str]]:
 
 
 @torch.inference_mode()
-def run_sdxl_inpaint(params: dict[str, object],) -> dict[str, list[str]]:
+def generate_inpaint(params: dict[str, object],) -> dict[str, list[str]]:
     #1. Load and create local method variables + ensure correct formatting from input dict
     initial_image = params["initial_image"]
     mask_image = params["mask_image"]
@@ -812,7 +812,7 @@ def run_sdxl_inpaint(params: dict[str, object],) -> dict[str, list[str]]:
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
     #4. Load and create pipeline and scheduler
-    pipe = load_sdxl_inpaint_pipeline(model)
+    pipe = load_inpaint_pipeline(model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
     
     #5. Load lora into pipeline
@@ -837,7 +837,7 @@ def run_sdxl_inpaint(params: dict[str, object],) -> dict[str, list[str]]:
             # device = getattr(pipe, "_execution_device", None) or pipe.device
             # timesteps = build_fixed_step_timesteps(pipe.scheduler, steps, strength, device = device)
             # Render images
-            image = render_sdxl_inpaint_image(
+            image = render_inpaint_image(
                 pipe,
                 initial_image=initial_image,
                 mask_image=mask_image,
@@ -860,7 +860,7 @@ def run_sdxl_inpaint(params: dict[str, object],) -> dict[str, list[str]]:
             image_params["batch_id"] = batch_id
             image_params["width"] = width
             image_params["height"] = height
-            relpath = save_sdxl_image(
+            relpath = save_image(
                 image=image,
                 batch_output_dir=batch_output_dir,
                 batch_id=batch_id,
@@ -880,7 +880,7 @@ def run_sdxl_inpaint(params: dict[str, object],) -> dict[str, list[str]]:
 
 
 @torch.inference_mode()
-def run_sdxl_inpaint_controlnet(params: dict[str, object],) -> dict[str, list[str]]:
+def generate_inpaint_controlnet(params: dict[str, object],) -> dict[str, list[str]]:
     #1. Load and create local method variables + ensure correct formatting from input dict
     initial_image = params["initial_image"]
     mask_image = params["mask_image"]
@@ -924,7 +924,7 @@ def run_sdxl_inpaint_controlnet(params: dict[str, object],) -> dict[str, list[st
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
     #4. Load and create pipeline and scheduler
-    pipe = load_sdxl_controlnet_inpaint_pipeline(model, controlnet_model)
+    pipe = load_controlnet_inpaint_pipeline(model, controlnet_model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
 
     #5. Load lora into pipeline
@@ -978,7 +978,7 @@ def run_sdxl_inpaint_controlnet(params: dict[str, object],) -> dict[str, list[st
             image_params["height"] = height
             
             # Save filename to rendered image
-            relpath = save_sdxl_image(
+            relpath = save_image(
                 image=image,
                 batch_output_dir=batch_output_dir,
                 batch_id=batch_id,

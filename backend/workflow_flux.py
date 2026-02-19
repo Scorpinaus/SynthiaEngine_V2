@@ -6,9 +6,9 @@ from PIL import Image
 
 
 def run_flux_text2img_task(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str, Any]:
-    run_flux_text2img = deps["run_flux_text2img"]
+    generate_text2img = deps["generate_text2img"]
 
-    result = run_flux_text2img(dict(inputs))
+    result = generate_text2img(dict(inputs))
     if not isinstance(result, dict):
         raise ValueError("flux.text2img must return an object")
     return result
@@ -16,7 +16,7 @@ def run_flux_text2img_task(inputs: dict[str, Any], deps: dict[str, Any]) -> dict
 
 def run_flux_img2img_task(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str, Any]:
     _open_image_ref = deps["open_image_ref"]
-    run_flux_img2img = deps["run_flux_img2img"]
+    generate_img2img = deps["generate_img2img"]
 
     initial_image = _open_image_ref(inputs["initial_image"]).convert("RGB")
     width = int(inputs.get("width") or 1024)
@@ -27,7 +27,7 @@ def run_flux_img2img_task(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[
     if not 0.0 <= strength <= 1.0:
         raise ValueError("strength must be between 0 and 1")
 
-    result = run_flux_img2img(
+    result = generate_img2img(
         {
             "initial_image": initial_image,
             "strength": strength,
@@ -51,7 +51,7 @@ def run_flux_img2img_task(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[
 
 def run_flux_inpaint_task(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str, Any]:
     _open_image_ref = deps["open_image_ref"]
-    run_flux_inpaint = deps["run_flux_inpaint"]
+    generate_inpaint = deps["generate_inpaint"]
 
     initial_image = _open_image_ref(inputs["initial_image"]).convert("RGB")
     mask_image = _open_image_ref(inputs["mask_image"]).convert("L")
@@ -62,7 +62,7 @@ def run_flux_inpaint_task(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[
     if not 0.0 <= strength <= 1.0:
         raise ValueError("strength must be between 0 and 1")
 
-    result = run_flux_inpaint(
+    result = generate_inpaint(
         {
             "initial_image": initial_image,
             "mask_image": mask_image,

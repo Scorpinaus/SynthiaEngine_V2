@@ -25,11 +25,11 @@ class QwenImageWorkflowTests(unittest.TestCase):
     def test_qwen_image_text2img_forwards_lora_adapters(self):
         captured = {}
 
-        def _fake_run_qwen_image_text2img(payload):
+        def _fake_generate_text2img(payload):
             captured.update(payload)
             return {"images": ["/outputs/batch/out.png"]}
 
-        fake_module = SimpleNamespace(run_qwen_image_text2img=_fake_run_qwen_image_text2img)
+        fake_module = SimpleNamespace(generate_text2img=_fake_generate_text2img)
         with patch.dict("sys.modules", {"backend.qwen_image_pipeline": fake_module}):
             result = _qwen_image_text2img(
                 {
@@ -54,11 +54,11 @@ class QwenImageWorkflowTests(unittest.TestCase):
     def test_qwen_image_img2img_forwards_lora_adapters(self):
         captured = {}
 
-        def _fake_run_qwen_image_img2img(payload):
+        def _fake_generate_img2img(payload):
             captured.update(payload)
             return {"images": ["/outputs/batch/out.png"]}
 
-        fake_module = SimpleNamespace(run_qwen_image_img2img=_fake_run_qwen_image_img2img)
+        fake_module = SimpleNamespace(generate_img2img=_fake_generate_img2img)
         with patch.dict("sys.modules", {"backend.qwen_image_pipeline": fake_module}):
             with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
                 result = _qwen_image_img2img(
@@ -86,11 +86,11 @@ class QwenImageWorkflowTests(unittest.TestCase):
     def test_qwen_image_inpaint_forwards_lora_adapters(self):
         captured = {}
 
-        def _fake_run_qwen_image_inpaint(payload):
+        def _fake_generate_inpaint(payload):
             captured.update(payload)
             return {"images": ["/outputs/batch/out.png"]}
 
-        fake_module = SimpleNamespace(run_qwen_image_inpaint=_fake_run_qwen_image_inpaint)
+        fake_module = SimpleNamespace(generate_inpaint=_fake_generate_inpaint)
         with patch.dict("sys.modules", {"backend.qwen_image_pipeline": fake_module}):
             with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
                 result = _qwen_image_inpaint(

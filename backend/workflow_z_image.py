@@ -6,9 +6,9 @@ from PIL import Image
 
 
 def run_z_image_text2img_task(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str, Any]:
-    run_z_image_text2img = deps["run_z_image_text2img"]
+    generate_text2img = deps["generate_text2img"]
 
-    result = run_z_image_text2img(dict(inputs))
+    result = generate_text2img(dict(inputs))
     if not isinstance(result, dict):
         raise ValueError("z-image.text2img must return an object")
     return result
@@ -17,7 +17,7 @@ def run_z_image_text2img_task(inputs: dict[str, Any], deps: dict[str, Any]) -> d
 def run_z_image_img2img_task(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str, Any]:
     _open_image_ref = deps["open_image_ref"]
     _remap_img2img_strength = deps["remap_img2img_strength"]
-    run_z_image_img2img = deps["run_z_image_img2img"]
+    generate_img2img = deps["generate_img2img"]
 
     initial_image = _open_image_ref(inputs["initial_image"]).convert("RGB")
     width = int(inputs.get("width") or 1024)
@@ -29,7 +29,7 @@ def run_z_image_img2img_task(inputs: dict[str, Any], deps: dict[str, Any]) -> di
         raise ValueError("strength must be between 0 and 1")
     strength = _remap_img2img_strength(strength)
 
-    result = run_z_image_img2img(
+    result = generate_img2img(
         {
             "initial_image": initial_image,
             "strength": strength,
@@ -53,7 +53,7 @@ def run_z_image_img2img_task(inputs: dict[str, Any], deps: dict[str, Any]) -> di
 
 def run_z_image_inpaint_task(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str, Any]:
     _open_image_ref = deps["open_image_ref"]
-    run_z_image_inpaint = deps["run_z_image_inpaint"]
+    generate_inpaint = deps["generate_inpaint"]
 
     initial_image = _open_image_ref(inputs["initial_image"]).convert("RGB")
     mask_image = _open_image_ref(inputs["mask_image"]).convert("L")
@@ -64,7 +64,7 @@ def run_z_image_inpaint_task(inputs: dict[str, Any], deps: dict[str, Any]) -> di
     if not 0.0 <= strength <= 1.0:
         raise ValueError("strength must be between 0 and 1")
 
-    result = run_z_image_inpaint(
+    result = generate_inpaint(
         {
             "initial_image": initial_image,
             "mask_image": mask_image,

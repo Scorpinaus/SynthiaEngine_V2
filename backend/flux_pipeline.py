@@ -62,7 +62,7 @@ def _release_pipeline(pipe: Any) -> None:
     Methods for loading flux pipelines
 """
 
-def load_flux_pipeline(model_name: str | None) -> Any:
+def load_text2img_pipeline(model_name: str | None) -> Any:
     # 1. Check input model_name is valid and load valid path
     entry = get_model_entry(model_name)
     source = resolve_model_source(entry)
@@ -103,7 +103,7 @@ def load_flux_pipeline(model_name: str | None) -> Any:
 
     return pipe
 
-def load_flux_img2img_pipeline(model_name: str | None) -> FluxImg2ImgPipeline:
+def load_img2img_pipeline(model_name: str | None) -> FluxImg2ImgPipeline:
     
     #1. Check input model_name is valid and load valid path
     entry = get_model_entry(model_name)
@@ -132,7 +132,7 @@ def load_flux_img2img_pipeline(model_name: str | None) -> FluxImg2ImgPipeline:
 
     return pipe
 
-def load_flux_inpaint_pipeline(model_name: str | None) -> Any:
+def load_inpaint_pipeline(model_name: str | None) -> Any:
     #1. Check input model_name is valid and load valid path
     entry = get_model_entry(model_name)
     source = resolve_model_source(entry)
@@ -178,7 +178,7 @@ def load_flux_inpaint_pipeline(model_name: str | None) -> Any:
 """
 
 @torch.inference_mode()
-def run_flux_text2img(params: dict[str, object]) -> dict[str, list[str]]:
+def generate_text2img(params: dict[str, object]) -> dict[str, list[str]]:
     # 1. Load and create local method variables + ensure correct formatting from input dict
     prompt = str(params["prompt"])
     negative_prompt = str(params["negative_prompt"])
@@ -207,7 +207,7 @@ def run_flux_text2img(params: dict[str, object]) -> dict[str, list[str]]:
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
     # 4. Load and create pipeline and scheduler
-    pipe = load_flux_pipeline(model)
+    pipe = load_text2img_pipeline(model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
     
     # 5. Load lora into pipeline
@@ -282,7 +282,7 @@ def run_flux_text2img(params: dict[str, object]) -> dict[str, list[str]]:
 
 
 @torch.inference_mode()
-def run_flux_img2img(params: dict[str, object]) -> dict[str, list[str]]:
+def generate_img2img(params: dict[str, object]) -> dict[str, list[str]]:
     #1. Load and create local method variables + ensure correct formatting from input dict
     initial_image = params["initial_image"]
     strength = float(params["strength"])
@@ -314,7 +314,7 @@ def run_flux_img2img(params: dict[str, object]) -> dict[str, list[str]]:
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
     #4. Load and create pipeline and scheduler
-    pipe = load_flux_img2img_pipeline(model)
+    pipe = load_img2img_pipeline(model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
     
     #5. Load lora into pipeline
@@ -394,7 +394,7 @@ def run_flux_img2img(params: dict[str, object]) -> dict[str, list[str]]:
 
 
 @torch.inference_mode()
-def run_flux_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
+def generate_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
     #1. Load and create local method variables + ensure correct formatting from input dict
     initial_image = params["initial_image"]
     mask_image = params["mask_image"]
@@ -425,7 +425,7 @@ def run_flux_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
     #4. Load and create pipeline and scheduler
-    pipe = load_flux_inpaint_pipeline(model)
+    pipe = load_inpaint_pipeline(model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
 
     #5. Load lora into pipeline

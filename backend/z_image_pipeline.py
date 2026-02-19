@@ -85,7 +85,7 @@ def _build_adapter_name(lora_id: int, display_name: str | None,used_names: set[s
         suffix += 1
 
 
-def _apply_z_image_lora_adapters(
+def _apply_lora_adapters(
     pipe: Any,
     lora_adapters: list[object] | None,
 ) -> list[str]:
@@ -133,7 +133,7 @@ def _apply_z_image_lora_adapters(
     Load Z-Image Pipelines
 """
 
-def load_z_image_pipeline(model_name: str | None) -> ZImagePipeline:
+def load_text2img_pipeline(model_name: str | None) -> ZImagePipeline:
     # 1. Check input model_name is valid and load valid path
     entry = get_model_entry(model_name)
     source = resolve_model_source(entry)
@@ -164,7 +164,7 @@ def load_z_image_pipeline(model_name: str | None) -> ZImagePipeline:
     return pipe
 
 
-def load_z_image_img2img_pipeline(model_name: str | None) -> ZImageImg2ImgPipeline:
+def load_img2img_pipeline(model_name: str | None) -> ZImageImg2ImgPipeline:
     #1. Check input model_name is valid and load valid path
     entry = get_model_entry(model_name)
     source = resolve_model_source(entry)
@@ -194,7 +194,7 @@ def load_z_image_img2img_pipeline(model_name: str | None) -> ZImageImg2ImgPipeli
     return pipe
 
 
-def load_z_image_inpaint_pipeline(model_name: str | None) -> Any:
+def load_inpaint_pipeline(model_name: str | None) -> Any:
     #1. Check input model_name is valid and load valid path
     entry = get_model_entry(model_name)
     source = resolve_model_source(entry)
@@ -235,7 +235,7 @@ def load_z_image_inpaint_pipeline(model_name: str | None) -> Any:
 """
 
 @torch.inference_mode()
-def run_z_image_text2img(params: dict[str, object]) -> dict[str, list[str]]:
+def generate_text2img(params: dict[str, object]) -> dict[str, list[str]]:
     #1. Load and create local method variables + ensure correct formatting from input dict
     prompt = str(params.get("prompt") or "")
     negative_prompt = str(params.get("negative_prompt") or "").strip()
@@ -264,11 +264,11 @@ def run_z_image_text2img(params: dict[str, object]) -> dict[str, list[str]]:
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
     #4. Load and create pipeline and scheduler
-    pipe = load_z_image_pipeline(model)
+    pipe = load_text2img_pipeline(model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
 
     #5. Load lora into pipeline
-    adapter_names = _apply_z_image_lora_adapters(pipe, lora_adapters)
+    adapter_names = _apply_lora_adapters(pipe, lora_adapters)
 
     #6. Create list of filenames
     filenames: list[str] = []
@@ -324,7 +324,7 @@ def run_z_image_text2img(params: dict[str, object]) -> dict[str, list[str]]:
 
 
 @torch.inference_mode()
-def run_z_image_img2img(params: dict[str, object]) -> dict[str, list[str]]:
+def generate_img2img(params: dict[str, object]) -> dict[str, list[str]]:
     #1. Load and create local method variables + ensure correct formatting from input dict
     initial_image = params.get("initial_image")
     strength = float(params.get("strength", 0.75))
@@ -355,11 +355,11 @@ def run_z_image_img2img(params: dict[str, object]) -> dict[str, list[str]]:
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
     #4. Load and create pipeline and scheduler
-    pipe = load_z_image_img2img_pipeline(model)
+    pipe = load_img2img_pipeline(model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
     
     #5. Load lora into pipeline
-    adapter_names = _apply_z_image_lora_adapters(pipe, lora_adapters)
+    adapter_names = _apply_lora_adapters(pipe, lora_adapters)
 
     #6. Create list of filenames
     filenames: list[str] = []
@@ -421,7 +421,7 @@ def run_z_image_img2img(params: dict[str, object]) -> dict[str, list[str]]:
 
 
 @torch.inference_mode()
-def run_z_image_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
+def generate_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
     #1. Load and create local method variables + ensure correct formatting from input dict
     initial_image = params["initial_image"]
     mask_image = params["mask_image"]
@@ -452,13 +452,13 @@ def run_z_image_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
     #4. Load and create pipeline and scheduler
-    pipe = load_z_image_inpaint_pipeline(model)
+    pipe = load_inpaint_pipeline(model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
         
     width, height = initial_image.size
     
     #5. Load lora into pipeline
-    adapter_names = _apply_z_image_lora_adapters(pipe, lora_adapters)
+    adapter_names = _apply_lora_adapters(pipe, lora_adapters)
     
     #6. Create list of filenames
     filenames: list[str] = []

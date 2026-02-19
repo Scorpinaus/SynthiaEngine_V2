@@ -5,10 +5,10 @@ from typing import Any
 from PIL import Image
 
 def run_sdxl_text2img_task(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str, Any]:
-    run_sdxl_text2img = deps["run_sdxl_text2img"]
+    generate_text2img = deps["generate_text2img"]
 
 
-    result = run_sdxl_text2img(dict(inputs))
+    result = generate_text2img(dict(inputs))
     if not isinstance(result, dict):
         raise ValueError("sdxl.text2img must return an object")
     return result
@@ -19,7 +19,7 @@ def run_sdxl_controlnet_text2img_task(inputs: dict[str, Any], deps: dict[str, An
     _MAX_CONTROLNET_MODELS = deps["max_controlnet_models"]
     _CONTROLNET_PREPROCESSOR_REGISTRY_BY_ID = deps["controlnet_preprocessor_registry_by_id"]
     logger = deps["logger"]
-    run_sdxl_controlnet_text2img = deps["run_sdxl_controlnet_text2img"]
+    generate_controlnet_text2img = deps["generate_controlnet_text2img"]
 
 
     width = int(inputs.get("width") or 1024)
@@ -172,7 +172,7 @@ def run_sdxl_controlnet_text2img_task(inputs: dict[str, Any], deps: dict[str, An
         "control_guidance_end": control_guidance_end,
     }
 
-    result = run_sdxl_controlnet_text2img(pipeline_params)
+    result = generate_controlnet_text2img(pipeline_params)
     if not isinstance(result, dict):
         raise ValueError("sdxl.controlnet.text2img must return an object")
     if warnings:
@@ -186,8 +186,8 @@ def run_sdxl_img2img_task(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[
     _MAX_CONTROLNET_MODELS = deps["max_controlnet_models"]
     _CONTROLNET_PREPROCESSOR_REGISTRY_BY_ID = deps["controlnet_preprocessor_registry_by_id"]
     logger = deps["logger"]
-    run_sdxl_img2img = deps["run_sdxl_img2img"]
-    run_sdxl_img2img_controlnet = deps["run_sdxl_img2img_controlnet"]
+    generate_img2img = deps["generate_img2img"]
+    generate_img2img_controlnet = deps["generate_img2img_controlnet"]
 
 
     initial_image = _open_image_ref(inputs["initial_image"]).convert("RGB")
@@ -352,7 +352,7 @@ def run_sdxl_img2img_task(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[
             control_image_arg = control_images
             controlnet_conditioning_scale_arg = controlnet_conditioning_scales
 
-        result = run_sdxl_img2img_controlnet(
+        result = generate_img2img_controlnet(
             {
                 "initial_image": initial_image,
                 "strength": strength,
@@ -382,7 +382,7 @@ def run_sdxl_img2img_task(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[
             result["warnings"] = warnings
         return result
 
-    result = run_sdxl_img2img(
+    result = generate_img2img(
         {
             "initial_image": initial_image,
             "strength": strength,
@@ -411,8 +411,8 @@ def run_sdxl_inpaint_task(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[
     _MAX_CONTROLNET_MODELS = deps["max_controlnet_models"]
     _CONTROLNET_PREPROCESSOR_REGISTRY_BY_ID = deps["controlnet_preprocessor_registry_by_id"]
     logger = deps["logger"]
-    run_sdxl_inpaint = deps["run_sdxl_inpaint"]
-    run_sdxl_inpaint_controlnet = deps["run_sdxl_inpaint_controlnet"]
+    generate_inpaint = deps["generate_inpaint"]
+    generate_inpaint_controlnet = deps["generate_inpaint_controlnet"]
 
 
     initial_image = _open_image_ref(inputs["initial_image"]).convert("RGB")
@@ -606,7 +606,7 @@ def run_sdxl_inpaint_task(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[
             control_image_arg = control_images
             controlnet_conditioning_scale_arg = controlnet_conditioning_scales
 
-        result = run_sdxl_inpaint_controlnet(
+        result = generate_inpaint_controlnet(
             {
                 "initial_image": initial_image,
                 "mask_image": mask_image,
@@ -636,7 +636,7 @@ def run_sdxl_inpaint_task(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[
             result["warnings"] = warnings
         return result
 
-    result = run_sdxl_inpaint(
+    result = generate_inpaint(
         {
             "initial_image": initial_image,
             "mask_image": mask_image,

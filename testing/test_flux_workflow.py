@@ -25,11 +25,11 @@ class FluxWorkflowTests(unittest.TestCase):
     def test_flux_text2img_forwards_lora_adapters(self):
         captured = {}
 
-        def _fake_run_flux_text2img(payload):
+        def _fake_generate_text2img(payload):
             captured.update(payload)
             return {"images": ["/outputs/batch/out.png"]}
 
-        fake_module = SimpleNamespace(run_flux_text2img=_fake_run_flux_text2img)
+        fake_module = SimpleNamespace(generate_text2img=_fake_generate_text2img)
         with patch.dict("sys.modules", {"backend.flux_pipeline": fake_module}):
             result = _flux_text2img(
                 {
@@ -54,11 +54,11 @@ class FluxWorkflowTests(unittest.TestCase):
     def test_flux_img2img_forwards_lora_adapters(self):
         captured = {}
 
-        def _fake_run_flux_img2img(payload):
+        def _fake_generate_img2img(payload):
             captured.update(payload)
             return {"images": ["/outputs/batch/out.png"]}
 
-        fake_module = SimpleNamespace(run_flux_img2img=_fake_run_flux_img2img)
+        fake_module = SimpleNamespace(generate_img2img=_fake_generate_img2img)
         with (
             patch.dict("sys.modules", {"backend.flux_pipeline": fake_module}),
             patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))),
@@ -90,11 +90,11 @@ class FluxWorkflowTests(unittest.TestCase):
     def test_flux_inpaint_forwards_lora_adapters(self):
         captured = {}
 
-        def _fake_run_flux_inpaint(payload):
+        def _fake_generate_inpaint(payload):
             captured.update(payload)
             return {"images": ["/outputs/batch/out.png"]}
 
-        fake_module = SimpleNamespace(run_flux_inpaint=_fake_run_flux_inpaint)
+        fake_module = SimpleNamespace(generate_inpaint=_fake_generate_inpaint)
         with (
             patch.dict("sys.modules", {"backend.flux_pipeline": fake_module}),
             patch(
