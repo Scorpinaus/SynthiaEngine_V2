@@ -139,6 +139,28 @@ class Sd15Text2ImgWorkflowPlumbingTests(unittest.TestCase):
 
         self.assertEqual(captured["lora_adapters"], [])
 
+    def test_sd15_text2img_disables_lora_when_legacy_status_is_false(self):
+        captured = {}
+
+        def _fake_generate_images(params):
+            captured.update(params)
+            return ["batch/out.png"]
+
+        with patch("backend.workflow.make_batch_id", return_value="batch123"):
+            with patch("backend.workflow.generate_images", side_effect=_fake_generate_images):
+                _sd15_text2img(
+                    {
+                        "prompt": "test prompt",
+                        "Lora": {
+                            "loraStatus": False,
+                            "adapters": [{"lora_id": 505, "strength": 0.8}],
+                        },
+                    },
+                    _ctx=None,
+                )
+
+        self.assertEqual(captured["lora_adapters"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

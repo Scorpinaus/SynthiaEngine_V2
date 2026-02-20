@@ -127,6 +127,44 @@ function resolveSdxlControlNetModel(modelId) {
     return normalized;
 }
 
+function baseInput(inputs, defaults) {
+    const prompt = WorkflowClient.readTextValue("prompt", defaults.prompt ?? "");
+    const negative_prompt = WorkflowClient.readTextValue(
+        "negative_prompt",
+        defaults.negative_prompt ?? ""
+    );
+    const steps = WorkflowClient.readNumberValue("steps", defaults.steps ?? 20, { integer: true });
+    const guidance_scale = WorkflowClient.readNumberValue("cfg", defaults.guidance_scale ?? 7.5);
+    const scheduler = WorkflowClient.readTextValue("scheduler", defaults.scheduler ?? "euler");
+    const seed = WorkflowClient.readSeedValue("seed");
+    const width = WorkflowClient.readNumberValue("width", defaults.width ?? 1024, { integer: true });
+    const height = WorkflowClient.readNumberValue("height", defaults.height ?? 1024, { integer: true });
+    const modelRaw = document.getElementById("model_select")?.value ?? "";
+    const model = modelRaw ? modelRaw : defaults.model ?? null;
+    const num_images = WorkflowClient.readNumberValue("num_images", defaults.num_images ?? 1, {
+        integer: true,
+    });
+    const clip_skip = WorkflowClient.readNumberValue("clip_skip", defaults.clip_skip ?? 1, {
+        integer: true,
+    });
+
+    Object.assign(inputs, {
+        prompt,
+        negative_prompt,
+        steps,
+        guidance_scale,
+        scheduler,
+        seed,
+        width,
+        height,
+        model,
+        num_images,
+        clip_skip,
+    });
+
+    return inputs;
+}
+
 async function loadModels() {
     const select = document.getElementById("model_select");
     select.innerHTML = "";
@@ -211,19 +249,17 @@ async function generateSdxlImg2Img() {
     const catalog = window.WorkflowCatalog?.load ? await window.WorkflowCatalog.load(API_BASE) : null;
     const defaults = catalog?.tasks?.["sdxl.img2img"]?.input_defaults ?? {};
 
-    const prompt = WorkflowClient.readTextValue("prompt", defaults.prompt ?? "");
-    const negative_prompt = WorkflowClient.readTextValue("negative_prompt", defaults.negative_prompt ?? "");
-    const steps = WorkflowClient.readNumberValue("steps", defaults.steps ?? 20, { integer: true });
-    const guidance_scale = WorkflowClient.readNumberValue("cfg", defaults.guidance_scale ?? 7.5);
-    const scheduler = WorkflowClient.readTextValue("scheduler", defaults.scheduler ?? "euler");
-    const seed = WorkflowClient.readSeedValue("seed");
-    const width = WorkflowClient.readNumberValue("width", defaults.width ?? 1024, { integer: true });
-    const height = WorkflowClient.readNumberValue("height", defaults.height ?? 1024, { integer: true });
-    const strength = WorkflowClient.readNumberValue("strength", defaults.strength ?? 0.75);
-    const num_images = WorkflowClient.readNumberValue("num_images", defaults.num_images ?? 1, { integer: true });
-    const modelRaw = document.getElementById("model_select")?.value ?? "";
-    const model = modelRaw ? modelRaw : (defaults.model ?? null);
-    const clip_skip = WorkflowClient.readNumberValue("clip_skip", defaults.clip_skip ?? 1, { integer: true });
+    const inputs = {};
+    baseInput(inputs, defaults);
+    inputs.strength = WorkflowClient.readNumberValue("strength", defaults.strength ?? 0.75);
+
+    const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
+    const loraAdaptersEnabled = Array.isArray(loraAdapters) && loraAdapters.length > 0;
+    inputs.Lora = {
+        enabled: loraAdaptersEnabled,
+        adapters: loraAdaptersEnabled ? loraAdapters : [],
+    };
+
     const controlnet_conditioning_scale = WorkflowClient.readNumberValue(
         "controlnet_conditioning_scale",
         defaults.controlnet_conditioning_scale ?? 1.0
@@ -241,7 +277,15 @@ async function generateSdxlImg2Img() {
         "controlnet_compat_mode",
         defaults.controlnet_compat_mode ?? "warn"
     );
-    const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
+
+    inputs.Controlnet = {
+        enabled: false,
+        controlnetConditioningScale: controlnet_conditioning_scale,
+        controlGuidanceStart: control_guidance_start,
+        controlGuidanceEnd: control_guidance_end,
+        controlnetGuessMode: controlnet_guess_mode,
+        controlnetPreprocessors: [],
+    };
 
     try {
         const uploaded = await WorkflowClient.uploadArtifact(
@@ -250,23 +294,12 @@ async function generateSdxlImg2Img() {
             initialFile.name || "initial.png",
         );
 
-        const taskInputs = {
-            initial_image: `@artifact:${uploaded.artifact_id}`,
-            prompt,
-            negative_prompt,
-            steps,
-            guidance_scale,
-            scheduler,
-            seed,
-            width,
-            height,
-            strength,
-            num_images,
-            model,
-            clip_skip,
-        };
-        if (loraAdapters.length > 0) {
-            taskInputs.lora_adapters = loraAdapters;
+        const taskInputs = inputs;
+        taskInputs.initial_image = `@artifact:${uploaded.artifact_id}`;
+
+        taskInputs.lora_adapters = loraAdapters;
+        if (!loraAdaptersEnabled) {
+            taskInputs.lora_adapters = [];
         }
         if (controlnetEnabled) {
             const controlItems = Array.isArray(controlnetState?.controlItems)
@@ -311,6 +344,22 @@ async function generateSdxlImg2Img() {
             const hasAllPreprocessorIds = controlnetPreprocessorIds.every(
                 (value) => typeof value === "string" && value.length > 0
             );
+
+            const controlnetPreprocessors = controlImages.map((controlImage, idx) => ({
+                control_image: controlImage,
+                model_id: controlnetModels[idx],
+                conditioning_scale: controlnetScales[idx],
+                preprocessor_id: controlnetPreprocessorIds[idx],
+            }));
+
+            inputs.Controlnet = {
+                enabled: true,
+                controlnetConditioningScale: controlnet_conditioning_scale,
+                controlGuidanceStart: control_guidance_start,
+                controlGuidanceEnd: control_guidance_end,
+                controlnetGuessMode: controlnet_guess_mode,
+                controlnetPreprocessors,
+            };
 
             taskInputs.control_image = controlImages[0];
             taskInputs.controlnet_model = controlnetModels[0];

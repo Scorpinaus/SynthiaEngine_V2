@@ -149,6 +149,9 @@ def _normalized_lora_adapters(inputs: dict[str, Any]) -> Any:
 
     lora_contract = inputs.get("Lora")
     if isinstance(lora_contract, dict):
+        lora_status_raw = lora_contract.get("loraStatus")
+        if lora_status_raw is not None and not bool(lora_status_raw):
+            return []
         adapters = lora_contract.get("adapters")
         if isinstance(adapters, list):
             return adapters

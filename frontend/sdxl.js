@@ -196,6 +196,138 @@ function resolveSdxlControlNetModel(modelId) {
     return normalized;
 }
 
+function baseInput(inputs, defaults) {
+    const prompt = WorkflowClient.readTextValue("prompt", defaults.prompt ?? "");
+    const negative_prompt = WorkflowClient.readTextValue(
+        "negative_prompt",
+        defaults.negative_prompt ?? ""
+    );
+    const steps = WorkflowClient.readNumberValue("steps", defaults.steps ?? 20, { integer: true });
+    const guidance_scale = WorkflowClient.readNumberValue("cfg", defaults.guidance_scale ?? 7.5);
+    const scheduler = WorkflowClient.readTextValue("scheduler", defaults.scheduler ?? "euler");
+    const seed = WorkflowClient.readSeedValue("seed");
+    const width = WorkflowClient.readNumberValue("width", defaults.width ?? 1024, { integer: true });
+    const height = WorkflowClient.readNumberValue("height", defaults.height ?? 1024, { integer: true });
+    const modelRaw = document.getElementById("model_select")?.value ?? "";
+    const model = modelRaw ? modelRaw : defaults.model ?? null;
+    const num_images = WorkflowClient.readNumberValue("num_images", defaults.num_images ?? 1, {
+        integer: true,
+    });
+    const clip_skip = WorkflowClient.readNumberValue("clip_skip", defaults.clip_skip ?? 1, {
+        integer: true,
+    });
+
+    Object.assign(inputs, {
+        prompt,
+        negative_prompt,
+        steps,
+        guidance_scale,
+        scheduler,
+        seed,
+        width,
+        height,
+        model,
+        num_images,
+        clip_skip,
+    });
+
+    return inputs;
+}
+
+async function setSdxlControlNetInputs(inputs, defaults, controlnetState) {
+    const controlnet_conditioning_scale = WorkflowClient.readNumberValue(
+        "controlnet_conditioning_scale",
+        defaults.controlnet_conditioning_scale ?? 1.0
+    );
+    const control_guidance_start = WorkflowClient.readNumberValue(
+        "control_guidance_start",
+        defaults.control_guidance_start ?? 0.0
+    );
+    const control_guidance_end = WorkflowClient.readNumberValue(
+        "control_guidance_end",
+        defaults.control_guidance_end ?? 1.0
+    );
+    const controlnet_guess_mode = Boolean(document.getElementById("controlnet_guess_mode")?.checked);
+    const controlnet_compat_mode = WorkflowClient.readTextValue(
+        "controlnet_compat_mode",
+        defaults.controlnet_compat_mode ?? "warn"
+    );
+
+    const controlItems = Array.isArray(controlnetState?.controlItems) ? controlnetState.controlItems : [];
+    if (controlItems.length === 0 && !controlnetState?.previewBlob) {
+        throw new Error("ControlNet enabled but no preprocessor output image is ready.");
+    }
+    const effectiveItems =
+        controlItems.length > 0
+            ? controlItems
+            : [
+                  {
+                      previewBlob: controlnetState.previewBlob,
+                      preprocessorId: controlnetState.preprocessorId ?? null,
+                      modelId: "diffusers/controlnet-canny-sdxl-1.0",
+                      conditioningScale: controlnet_conditioning_scale,
+                  },
+              ];
+
+    const uploadedArtifacts = await Promise.all(
+        effectiveItems.map((item, idx) =>
+            WorkflowClient.uploadArtifact(
+                API_BASE,
+                item.previewBlob,
+                `controlnet_${idx + 1}.png`
+            )
+        )
+    );
+    const controlImages = uploadedArtifacts.map((uploaded) => `@artifact:${uploaded.artifact_id}`);
+    const controlnetModels = effectiveItems.map((item) => resolveSdxlControlNetModel(item.modelId));
+    const controlnetScales = effectiveItems.map((item) => {
+        const parsed = Number(item.conditioningScale);
+        return Number.isFinite(parsed) ? parsed : controlnet_conditioning_scale;
+    });
+    const controlnetPreprocessorIds = effectiveItems.map((item) => item.preprocessorId || null);
+    const hasAllPreprocessorIds = controlnetPreprocessorIds.every(
+        (value) => typeof value === "string" && value.length > 0
+    );
+
+    Object.assign(inputs, {
+        control_image: controlImages[0],
+        controlnet_conditioning_scale,
+        controlnet_guess_mode,
+        control_guidance_start,
+        control_guidance_end,
+        controlnet_compat_mode,
+    });
+
+    if (effectiveItems.length > 1) {
+        inputs.control_images = controlImages;
+        inputs.controlnet_models = controlnetModels;
+        inputs.controlnet_conditioning_scales = controlnetScales;
+        if (hasAllPreprocessorIds) {
+            inputs.controlnet_preprocessor_ids = controlnetPreprocessorIds;
+        }
+    } else {
+        inputs.controlnet_model = controlnetModels[0];
+        inputs.controlnet_conditioning_scale = controlnetScales[0];
+        if (hasAllPreprocessorIds) {
+            inputs.controlnet_preprocessor_id = controlnetPreprocessorIds[0];
+        }
+    }
+
+    inputs.Controlnet = {
+        enabled: true,
+        controlnetConditioningScale: controlnet_conditioning_scale,
+        controlGuidanceStart: control_guidance_start,
+        controlGuidanceEnd: control_guidance_end,
+        controlnetGuessMode: controlnet_guess_mode,
+        controlnetPreprocessors: effectiveItems.map((item, idx) => ({
+            control_image: controlImages[idx],
+            model_id: controlnetModels[idx],
+            conditioning_scale: controlnetScales[idx],
+            preprocessor_id: controlnetPreprocessorIds[idx],
+        })),
+    };
+}
+
 function setJobUiState(isBusy, message) {
     const button = document.getElementById("generate_button");
 
@@ -215,150 +347,59 @@ function closeActiveEventSource() {
 async function generate() {
     const token = ++activeJobToken;
     closeActiveEventSource();
-    const controlnetState = getControlNetState();
     const controlnetEnabled = Boolean(document.getElementById("controlnet-enabled")?.checked);
     const primaryTaskType = controlnetEnabled ? "sdxl.controlnet.text2img" : "sdxl.text2img";
 
     const catalog = window.WorkflowCatalog?.load ? await window.WorkflowCatalog.load(API_BASE) : null;
     const defaults = catalog?.tasks?.[primaryTaskType]?.input_defaults ?? {};
 
-    const prompt = WorkflowClient.readTextValue("prompt", defaults.prompt ?? "");
-    const negative_prompt = WorkflowClient.readTextValue("negative_prompt", defaults.negative_prompt ?? "");
-    const steps = WorkflowClient.readNumberValue("steps", defaults.steps ?? 20, { integer: true });
-    const guidance_scale = WorkflowClient.readNumberValue("cfg", defaults.guidance_scale ?? 7.5);
-    const scheduler = WorkflowClient.readTextValue("scheduler", defaults.scheduler ?? "euler");
-    const seed = WorkflowClient.readSeedValue("seed");
-    const width = WorkflowClient.readNumberValue("width", defaults.width ?? 1024, { integer: true });
-    const height = WorkflowClient.readNumberValue("height", defaults.height ?? 1024, { integer: true });
-    const modelRaw = document.getElementById("model_select")?.value ?? "";
-    const model = modelRaw ? modelRaw : (defaults.model ?? null);
-    const num_images = WorkflowClient.readNumberValue("num_images", defaults.num_images ?? 1, { integer: true });
-    const clip_skip = WorkflowClient.readNumberValue("clip_skip", defaults.clip_skip ?? 1, { integer: true });
-    const hires_enabled = Boolean(document.getElementById("hires_enabled")?.checked);
-    const hires_scale = WorkflowClient.readNumberValue("hires_scale", defaults.hires_scale ?? 1.0);
-    const controlnet_conditioning_scale = WorkflowClient.readNumberValue(
-        "controlnet_conditioning_scale",
-        defaults.controlnet_conditioning_scale ?? 1.0
-    );
-    const control_guidance_start = WorkflowClient.readNumberValue(
-        "control_guidance_start",
-        defaults.control_guidance_start ?? 0.0
-    );
-    const control_guidance_end = WorkflowClient.readNumberValue(
-        "control_guidance_end",
-        defaults.control_guidance_end ?? 1.0
-    );
-    const controlnet_guess_mode = Boolean(document.getElementById("controlnet_guess_mode")?.checked);
-    const controlnet_compat_mode = WorkflowClient.readTextValue(
-        "controlnet_compat_mode",
-        defaults.controlnet_compat_mode ?? "warn"
-    );
+    await Promise.all([controlNetUiReady, loraPanelReady]);
+    const inputs = {};
+    baseInput(inputs, defaults);
+
     const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
+    const loraAdaptersEnabled = Array.isArray(loraAdapters) && loraAdapters.length > 0;
+
+    inputs.Lora = {
+        enabled: loraAdaptersEnabled,
+        adapters: loraAdaptersEnabled ? loraAdapters : [],
+    };
+
+    const hiresEnabledEl = document.getElementById("hires_enabled");
+    const hiresScaleEl = document.getElementById("hires_scale");
+    const hiresUiPresent = Boolean(hiresEnabledEl && hiresScaleEl);
+    const hires_enabled = hiresUiPresent ? Boolean(hiresEnabledEl.checked) : false;
+    const hires_scale = hiresUiPresent
+        ? WorkflowClient.readNumberValue("hires_scale", defaults.hires_scale ?? 1.0)
+        : 1.0;
+    const hiresEnabled = hiresUiPresent && hires_enabled && hires_scale > 1.0;
+    if (hiresEnabled) {
+        inputs.hires = {
+            enabled: true,
+            hires_scale,
+        };
+    }
+
+    const payload = inputs;
+    if (loraAdapters.length > 0) {
+        inputs.lora_adapters = loraAdapters;
+        payload.lora_adapters = loraAdapters;
+    }
 
     try {
         setJobUiState(true, "Submitting job...");
         let workflowPayload;
         if (controlnetEnabled) {
-            const controlItems = Array.isArray(controlnetState?.controlItems)
-                ? controlnetState.controlItems
-                : [];
-            if (controlItems.length === 0 && !controlnetState?.previewBlob) {
-                throw new Error("ControlNet enabled but no preprocessor output image is ready.");
-            }
-            const effectiveItems =
-                controlItems.length > 0
-                    ? controlItems
-                    : [
-                        {
-                            previewBlob: controlnetState.previewBlob,
-                            preprocessorId: controlnetState.preprocessorId ?? null,
-                            modelId: "diffusers/controlnet-canny-sdxl-1.0",
-                            conditioningScale: controlnet_conditioning_scale,
-                        },
-                    ];
-            const uploadedArtifacts = await Promise.all(
-                effectiveItems.map((item, idx) =>
-                    WorkflowClient.uploadArtifact(
-                        API_BASE,
-                        item.previewBlob,
-                        `controlnet_${idx + 1}.png`
-                    )
-                )
-            );
-            const controlImages = uploadedArtifacts.map(
-                (uploaded) => `@artifact:${uploaded.artifact_id}`
-            );
-            const controlnetModels = effectiveItems.map(
-                (item) => resolveSdxlControlNetModel(item.modelId)
-            );
-            const controlnetScales = effectiveItems.map((item) => {
-                const parsed = Number(item.conditioningScale);
-                return Number.isFinite(parsed) ? parsed : controlnet_conditioning_scale;
-            });
-            const controlnetPreprocessorIds = effectiveItems.map(
-                (item) => item.preprocessorId || null
-            );
-            const hasAllPreprocessorIds = controlnetPreprocessorIds.every(
-                (value) => typeof value === "string" && value.length > 0
-            );
-            const inputs = {
-                control_image: controlImages[0],
-                prompt,
-                negative_prompt,
-                steps,
-                guidance_scale,
-                scheduler,
-                seed,
-                width,
-                height,
-                model,
-                num_images,
-                clip_skip,
-                controlnet_conditioning_scale,
-                controlnet_guess_mode,
-                control_guidance_start,
-                control_guidance_end,
-                controlnet_compat_mode,
-            };
-            if (loraAdapters.length > 0) {
-                inputs.lora_adapters = loraAdapters;
-            }
-            if (effectiveItems.length > 1) {
-                inputs.control_images = controlImages;
-                inputs.controlnet_models = controlnetModels;
-                inputs.controlnet_conditioning_scales = controlnetScales;
-                if (hasAllPreprocessorIds) {
-                    inputs.controlnet_preprocessor_ids = controlnetPreprocessorIds;
-                }
-            } else {
-                inputs.controlnet_model = controlnetModels[0];
-                inputs.controlnet_conditioning_scale = controlnetScales[0];
-                if (hasAllPreprocessorIds) {
-                    inputs.controlnet_preprocessor_id = controlnetPreprocessorIds[0];
-                }
-            }
+            const controlnetState = getControlNetState();
+            await setSdxlControlNetInputs(inputs, defaults, controlnetState);
             workflowPayload = {
                 tasks: [{ id: "t1", type: "sdxl.controlnet.text2img", inputs }],
                 return: "@t1.images",
             };
         } else {
-            const payload = {
-                prompt,
-                negative_prompt,
-                steps,
-                guidance_scale,
-                scheduler,
-                seed,
-                width,
-                height,
-                model,
-                num_images,
-                clip_skip,
-                hires_enabled,
-                hires_scale,
-            };
-            if (loraAdapters.length > 0) {
-                payload.lora_adapters = loraAdapters;
+            if (hiresUiPresent) {
+                payload.hires_enabled = hires_enabled;
+                payload.hires_scale = hires_scale;
             }
             workflowPayload = {
                 tasks: [{ id: "t1", type: "sdxl.text2img", inputs: payload }],

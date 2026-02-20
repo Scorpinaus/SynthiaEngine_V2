@@ -69,6 +69,51 @@ function setModelSelection(value) {
     select.value = normalized;
 }
 
+function baseInput(inputs, defaults) {
+    const prompt = WorkflowClient.readTextValue("prompt", defaults.prompt ?? "");
+    const negative_prompt = WorkflowClient.readTextValue(
+        "negative_prompt",
+        defaults.negative_prompt ?? ""
+    );
+    const steps = WorkflowClient.readNumberValue("steps", defaults.steps ?? 20, { integer: true });
+    const guidance_scale = WorkflowClient.readNumberValue(
+        "guidance_scale",
+        defaults.guidance_scale ?? 7.5
+    );
+    const scheduler = WorkflowClient.readTextValue("scheduler", defaults.scheduler ?? "euler");
+    const seed = WorkflowClient.readSeedValue("seed");
+    const num_images = WorkflowClient.readNumberValue("num_images", defaults.num_images ?? 1, {
+        integer: true,
+    });
+    const modelRaw = document.getElementById("model_select")?.value ?? "";
+    const model = modelRaw ? modelRaw : defaults.model ?? null;
+    const strength = WorkflowClient.readNumberValue("strength", defaults.strength ?? 0.5);
+    const padding_mask_crop = WorkflowClient.readNumberValue(
+        "padding_mask_crop",
+        defaults.padding_mask_crop ?? 32,
+        { integer: true }
+    );
+    const clip_skip = WorkflowClient.readNumberValue("clip_skip", defaults.clip_skip ?? 1, {
+        integer: true,
+    });
+
+    Object.assign(inputs, {
+        prompt,
+        negative_prompt,
+        steps,
+        guidance_scale,
+        scheduler,
+        seed,
+        num_images,
+        model,
+        strength,
+        padding_mask_crop,
+        clip_skip,
+    });
+
+    return inputs;
+}
+
 function collectSdxlInpaintPresetSettings() {
     return {
         prompt: WorkflowClient.readTextValue("prompt", ""),
@@ -485,7 +530,6 @@ async function generateBlurMask() {
 async function generateSdxlInpaint() {
     const token = ++activeJobToken;
     closeActiveEventSource();
-    const controlnetState = getControlNetState();
     const controlnetEnabled = Boolean(document.getElementById("controlnet-enabled")?.checked);
 
     if (!baseImageFile) {
@@ -501,25 +545,19 @@ async function generateSdxlInpaint() {
     const catalog = window.WorkflowCatalog?.load ? await window.WorkflowCatalog.load(API_BASE) : null;
     const defaults = catalog?.tasks?.["sdxl.inpaint"]?.input_defaults ?? {};
 
-    const prompt = WorkflowClient.readTextValue("prompt", defaults.prompt ?? "");
-    const negative_prompt = WorkflowClient.readTextValue("negative_prompt", defaults.negative_prompt ?? "");
-    const steps = WorkflowClient.readNumberValue("steps", defaults.steps ?? 20, { integer: true });
-    const guidanceScale = WorkflowClient.readNumberValue(
-        "guidance_scale",
-        defaults.guidance_scale ?? 7.5,
-    );
-    const scheduler = WorkflowClient.readTextValue("scheduler", defaults.scheduler ?? "euler");
-    const seed = WorkflowClient.readSeedValue("seed");
-    const num_images = WorkflowClient.readNumberValue("num_images", defaults.num_images ?? 1, { integer: true });
-    const modelRaw = document.getElementById("model_select")?.value ?? "";
-    const model = modelRaw ? modelRaw : (defaults.model ?? null);
-    const strength = WorkflowClient.readNumberValue("strength", defaults.strength ?? 0.5);
-    const paddingMaskCrop = WorkflowClient.readNumberValue(
-        "padding_mask_crop",
-        defaults.padding_mask_crop ?? 32,
-        { integer: true }
-    );
-    const clip_skip = WorkflowClient.readNumberValue("clip_skip", defaults.clip_skip ?? 1, { integer: true });
+    await Promise.all([controlNetUiReady, loraPanelReady]);
+    const controlnetState = getControlNetState();
+
+    const inputs = {};
+    baseInput(inputs, defaults);
+
+    const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
+    const loraAdaptersEnabled = Array.isArray(loraAdapters) && loraAdapters.length > 0;
+    inputs.Lora = {
+        enabled: loraAdaptersEnabled,
+        adapters: loraAdaptersEnabled ? loraAdapters : [],
+    };
+
     const controlnet_conditioning_scale = WorkflowClient.readNumberValue(
         "controlnet_conditioning_scale",
         defaults.controlnet_conditioning_scale ?? 1.0
@@ -537,7 +575,15 @@ async function generateSdxlInpaint() {
         "controlnet_compat_mode",
         defaults.controlnet_compat_mode ?? "warn"
     );
-    const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
+
+    inputs.Controlnet = {
+        enabled: false,
+        controlnetConditioningScale: controlnet_conditioning_scale,
+        controlGuidanceStart: control_guidance_start,
+        controlGuidanceEnd: control_guidance_end,
+        controlnetGuessMode: controlnet_guess_mode,
+        controlnetPreprocessors: [],
+    };
 
     try {
         const [uploadedBase, uploadedMask] = await Promise.all([
@@ -545,24 +591,15 @@ async function generateSdxlInpaint() {
             WorkflowClient.uploadArtifact(API_BASE, activeMaskBlob, "mask.png"),
         ]);
 
-        const taskInputs = {
-            initial_image: `@artifact:${uploadedBase.artifact_id}`,
-            mask_image: `@artifact:${uploadedMask.artifact_id}`,
-            prompt,
-            negative_prompt,
-            steps,
-            guidance_scale: guidanceScale,
-            scheduler,
-            seed,
-            num_images,
-            model,
-            strength,
-            padding_mask_crop: paddingMaskCrop,
-            clip_skip,
-        };
-        if (loraAdapters.length > 0) {
-            taskInputs.lora_adapters = loraAdapters;
+        const taskInputs = inputs;
+        taskInputs.initial_image = `@artifact:${uploadedBase.artifact_id}`;
+        taskInputs.mask_image = `@artifact:${uploadedMask.artifact_id}`;
+
+        taskInputs.lora_adapters = loraAdapters;
+        if (!loraAdaptersEnabled) {
+            taskInputs.lora_adapters = [];
         }
+
         if (controlnetEnabled) {
             const controlItems = Array.isArray(controlnetState?.controlItems)
                 ? controlnetState.controlItems
@@ -606,6 +643,22 @@ async function generateSdxlInpaint() {
             const hasAllPreprocessorIds = controlnetPreprocessorIds.every(
                 (value) => typeof value === "string" && value.length > 0
             );
+
+            const controlnetPreprocessors = controlImages.map((controlImage, idx) => ({
+                control_image: controlImage,
+                model_id: controlnetModels[idx],
+                conditioning_scale: controlnetScales[idx],
+                preprocessor_id: controlnetPreprocessorIds[idx],
+            }));
+
+            inputs.Controlnet = {
+                enabled: true,
+                controlnetConditioningScale: controlnet_conditioning_scale,
+                controlGuidanceStart: control_guidance_start,
+                controlGuidanceEnd: control_guidance_end,
+                controlnetGuessMode: controlnet_guess_mode,
+                controlnetPreprocessors,
+            };
 
             taskInputs.control_image = controlImages[0];
             taskInputs.controlnet_model = controlnetModels[0];

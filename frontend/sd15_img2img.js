@@ -224,6 +224,152 @@ async function validateTaskInputsOrThrow(taskType, inputs) {
     await window.WorkflowInputValidator.assertTaskInputs(API_BASE, taskType, inputs);
 }
 
+function baseImg2ImgInputs(inputs, defaults) {
+    const prompt = WorkflowClient.readTextValue("prompt", "");
+    const negative_prompt = WorkflowClient.readTextValue(
+        "negative_prompt",
+        defaults.negative_prompt ?? ""
+    );
+    const steps = WorkflowClient.readNumberValue("steps", defaults.steps ?? 20, { integer: true });
+    const cfg = WorkflowClient.readNumberValue("cfg", defaults.cfg ?? 7.5);
+    const scheduler = WorkflowClient.readTextValue("scheduler", defaults.scheduler ?? "euler");
+    const seed = WorkflowClient.readSeedValue("seed");
+    const width = WorkflowClient.readNumberValue("width", defaults.width ?? null, { integer: true });
+    const height = WorkflowClient.readNumberValue("height", defaults.height ?? null, { integer: true });
+    const strength = WorkflowClient.readNumberValue("strength", defaults.strength ?? 0.75);
+    const num_images = WorkflowClient.readNumberValue("num_images", defaults.num_images ?? 1, {
+        integer: true,
+    });
+    const modelRaw = document.getElementById("model_select")?.value ?? "";
+    const model = modelRaw ? modelRaw : defaults.model ?? null;
+    const clip_skip = WorkflowClient.readNumberValue("clip_skip", defaults.clip_skip ?? 1, {
+        integer: true,
+    });
+
+    Object.assign(inputs, {
+        prompt,
+        negative_prompt,
+        steps,
+        cfg,
+        scheduler,
+        seed,
+        width,
+        height,
+        strength,
+        num_images,
+        model,
+        clip_skip,
+    });
+    return inputs;
+}
+
+function setLoraContract(inputs, loraAdapters) {
+    const adapters = Array.isArray(loraAdapters) ? loraAdapters : [];
+    const enabled = adapters.length > 0;
+    inputs.Lora = {
+        enabled,
+        adapters: enabled ? adapters : [],
+    };
+    inputs.lora = {
+        lora_enabled: enabled,
+        lora_adapters: enabled ? adapters : [],
+    };
+    return enabled;
+}
+
+async function setControlNetInputs(inputs, defaults, controlnetState) {
+    const controlnet_conditioning_scale = WorkflowClient.readNumberValue(
+        "controlnet_conditioning_scale",
+        defaults.controlnet_conditioning_scale ?? 1.0
+    );
+    const control_guidance_start = WorkflowClient.readNumberValue(
+        "control_guidance_start",
+        defaults.control_guidance_start ?? 0.0
+    );
+    const control_guidance_end = WorkflowClient.readNumberValue(
+        "control_guidance_end",
+        defaults.control_guidance_end ?? 1.0
+    );
+    const controlnet_guess_mode = Boolean(document.getElementById("controlnet_guess_mode")?.checked);
+    const controlnet_compat_mode = WorkflowClient.readTextValue(
+        "controlnet_compat_mode",
+        defaults.controlnet_compat_mode ?? "warn"
+    );
+
+    const controlItems = Array.isArray(controlnetState?.controlItems) ? controlnetState.controlItems : [];
+    if (controlItems.length === 0 && !controlnetState?.previewBlob) {
+        throw new Error("ControlNet enabled but no preprocessor output image is ready.");
+    }
+
+    const effectiveItemsRaw =
+        controlItems.length > 0
+            ? controlItems
+            : [
+                  {
+                      previewBlob: controlnetState.previewBlob,
+                      preprocessorId: controlnetState.preprocessorId ?? null,
+                      modelId: "lllyasviel/control_v11p_sd15_canny",
+                      conditioningScale: controlnet_conditioning_scale,
+                  },
+              ];
+
+    const uploadedArtifacts = await Promise.all(
+        effectiveItemsRaw.map((item, idx) =>
+            WorkflowClient.uploadArtifact(API_BASE, item.previewBlob, `controlnet_${idx + 1}.png`)
+        )
+    );
+    const controlImages = uploadedArtifacts.map((uploaded) => `@artifact:${uploaded.artifact_id}`);
+    const controlnetModels = effectiveItemsRaw.map(
+        (item) => item.modelId || "lllyasviel/control_v11p_sd15_canny"
+    );
+    const controlnetScales = effectiveItemsRaw.map((item) => {
+        const parsed = Number(item.conditioningScale);
+        return Number.isFinite(parsed) ? parsed : controlnet_conditioning_scale;
+    });
+    const controlnetPreprocessorIds = effectiveItemsRaw.map((item) => item.preprocessorId || null);
+    const hasAllPreprocessorIds = controlnetPreprocessorIds.every(
+        (value) => typeof value === "string" && value.length > 0
+    );
+
+    const controlnetPreprocessors = controlImages.map((controlImage, idx) => ({
+        control_image: controlImage,
+        model_id: controlnetModels[idx],
+        conditioning_scale: controlnetScales[idx],
+        preprocessor_id: controlnetPreprocessorIds[idx],
+    }));
+
+    inputs.Controlnet = {
+        enabled: true,
+        controlnetConditioningScale: controlnet_conditioning_scale,
+        controlGuidanceStart: control_guidance_start,
+        controlGuidanceEnd: control_guidance_end,
+        controlnetGuessMode: controlnet_guess_mode,
+        controlnetPreprocessors,
+    };
+
+    inputs.control_image = controlImages[0];
+    inputs.controlnet_model = controlnetModels[0];
+    inputs.controlnet_conditioning_scale = controlnetScales[0];
+    inputs.controlnet_guess_mode = controlnet_guess_mode;
+    inputs.control_guidance_start = control_guidance_start;
+    inputs.control_guidance_end = control_guidance_end;
+    inputs.controlnet_compat_mode = controlnet_compat_mode;
+    if (hasAllPreprocessorIds) {
+        inputs.controlnet_preprocessor_id = controlnetPreprocessorIds[0];
+    }
+
+    if (effectiveItemsRaw.length > 1) {
+        inputs.control_images = controlImages.slice(1);
+        inputs.controlnet_models = controlnetModels;
+        inputs.controlnet_conditioning_scales = controlnetScales;
+        if (hasAllPreprocessorIds) {
+            inputs.controlnet_preprocessor_ids = controlnetPreprocessorIds;
+        }
+    }
+
+    return inputs;
+}
+
 /**
  * Collect inputs, upload the initial image, submit an img2img job, and stream results.
  *
@@ -249,46 +395,6 @@ async function generateImg2Img() {
 
     const catalog = window.WorkflowCatalog?.load ? await window.WorkflowCatalog.load(API_BASE) : null;
     const defaults = catalog?.tasks?.["sd15.img2img"]?.input_defaults ?? {};
-
-    const prompt = WorkflowClient.readTextValue("prompt", "");
-    const negative_prompt = WorkflowClient.readTextValue(
-        "negative_prompt",
-        defaults.negative_prompt ?? ""
-    );
-    const steps = WorkflowClient.readNumberValue("steps", defaults.steps ?? 20, { integer: true });
-    const cfg = WorkflowClient.readNumberValue("cfg", defaults.cfg ?? 7.5);
-    const scheduler = WorkflowClient.readTextValue("scheduler", defaults.scheduler ?? "euler");
-    const seed = WorkflowClient.readSeedValue("seed");
-    const width = WorkflowClient.readNumberValue("width", defaults.width ?? null, { integer: true });
-    const height = WorkflowClient.readNumberValue("height", defaults.height ?? null, { integer: true });
-    const strength = WorkflowClient.readNumberValue("strength", defaults.strength ?? 0.75);
-    const num_images = WorkflowClient.readNumberValue("num_images", defaults.num_images ?? 1, {
-        integer: true,
-    });
-    const modelRaw = document.getElementById("model_select")?.value ?? "";
-    const model = modelRaw ? modelRaw : (defaults.model ?? null);
-    const clip_skip = WorkflowClient.readNumberValue("clip_skip", defaults.clip_skip ?? 1, {
-        integer: true,
-    });
-    const controlnet_conditioning_scale = WorkflowClient.readNumberValue(
-        "controlnet_conditioning_scale",
-        defaults.controlnet_conditioning_scale ?? 1.0
-    );
-    const control_guidance_start = WorkflowClient.readNumberValue(
-        "control_guidance_start",
-        defaults.control_guidance_start ?? 0.0
-    );
-    const control_guidance_end = WorkflowClient.readNumberValue(
-        "control_guidance_end",
-        defaults.control_guidance_end ?? 1.0
-    );
-    const controlnet_guess_mode = Boolean(document.getElementById("controlnet_guess_mode")?.checked);
-    const controlnet_compat_mode = WorkflowClient.readTextValue(
-        "controlnet_compat_mode",
-        defaults.controlnet_compat_mode ?? "warn"
-    );
-    const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
-
     const idempotencyKey = WorkflowClient.makeIdempotencyKey();
 
     try {
@@ -299,86 +405,19 @@ async function generateImg2Img() {
             initialFile.name || "initial.png"
         );
 
-        const taskInputs = {
-            initial_image: `@artifact:${uploaded.artifact_id}`,
-            prompt,
-            negative_prompt,
-            steps,
-            cfg,
-            scheduler,
-            seed,
-            width,
-            height,
-            strength,
-            num_images,
-            model,
-            clip_skip,
-        };
-        if (controlnetEnabled) {
-            const controlItems = Array.isArray(controlnetState?.controlItems)
-                ? controlnetState.controlItems
-                : [];
-            if (controlItems.length === 0 && !controlnetState?.previewBlob) {
-                throw new Error("ControlNet enabled but no preprocessor output image is ready.");
-            }
-            const effectiveItems =
-                controlItems.length > 0
-                    ? controlItems
-                    : [
-                        {
-                            previewBlob: controlnetState.previewBlob,
-                            preprocessorId: controlnetState.preprocessorId ?? null,
-                            modelId: "lllyasviel/control_v11p_sd15_canny",
-                            conditioningScale: controlnet_conditioning_scale,
-                        },
-                    ];
-            const uploadedArtifacts = await Promise.all(
-                effectiveItems.map((item, idx) =>
-                    WorkflowClient.uploadArtifact(
-                        API_BASE,
-                        item.previewBlob,
-                        `controlnet_${idx + 1}.png`
-                    )
-                )
-            );
-            const controlImages = uploadedArtifacts.map(
-                (controlUploaded) => `@artifact:${controlUploaded.artifact_id}`
-            );
-            const controlnetModels = effectiveItems.map(
-                (item) => item.modelId || "lllyasviel/control_v11p_sd15_canny"
-            );
-            const controlnetScales = effectiveItems.map((item) => {
-                const parsed = Number(item.conditioningScale);
-                return Number.isFinite(parsed) ? parsed : controlnet_conditioning_scale;
-            });
-            const controlnetPreprocessorIds = effectiveItems.map(
-                (item) => item.preprocessorId || null
-            );
-            const hasAllPreprocessorIds = controlnetPreprocessorIds.every(
-                (value) => typeof value === "string" && value.length > 0
-            );
+        const taskInputs = {};
+        baseImg2ImgInputs(taskInputs, defaults);
+        taskInputs.initial_image = `@artifact:${uploaded.artifact_id}`;
 
-            taskInputs.control_image = controlImages[0];
-            taskInputs.controlnet_model = controlnetModels[0];
-            taskInputs.controlnet_conditioning_scale = controlnetScales[0];
-            taskInputs.controlnet_guess_mode = controlnet_guess_mode;
-            taskInputs.control_guidance_start = control_guidance_start;
-            taskInputs.control_guidance_end = control_guidance_end;
-            taskInputs.controlnet_compat_mode = controlnet_compat_mode;
-            if (hasAllPreprocessorIds) {
-                taskInputs.controlnet_preprocessor_id = controlnetPreprocessorIds[0];
-            }
-            if (effectiveItems.length > 1) {
-                taskInputs.control_images = controlImages.slice(1);
-                taskInputs.controlnet_models = controlnetModels;
-                taskInputs.controlnet_conditioning_scales = controlnetScales;
-                if (hasAllPreprocessorIds) {
-                    taskInputs.controlnet_preprocessor_ids = controlnetPreprocessorIds;
-                }
-            }
+        const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
+        const loraAdaptersEnabled = setLoraContract(taskInputs, loraAdapters);
+        taskInputs.lora_adapters = loraAdapters;
+        if (!loraAdaptersEnabled) {
+            taskInputs.lora_adapters = [];
         }
-        if (loraAdapters.length > 0) {
-            taskInputs.lora_adapters = loraAdapters;
+
+        if (controlnetEnabled) {
+            await setControlNetInputs(taskInputs, defaults, controlnetState);
         }
 
         await validateTaskInputsOrThrow("sd15.img2img", taskInputs);
