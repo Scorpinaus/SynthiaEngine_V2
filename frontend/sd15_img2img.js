@@ -217,6 +217,13 @@ function initSd15Img2ImgPage() {
 
 initSd15Img2ImgPage();
 
+async function validateTaskInputsOrThrow(taskType, inputs) {
+    if (!window.WorkflowInputValidator?.assertTaskInputs) {
+        return;
+    }
+    await window.WorkflowInputValidator.assertTaskInputs(API_BASE, taskType, inputs);
+}
+
 /**
  * Collect inputs, upload the initial image, submit an img2img job, and stream results.
  *
@@ -374,6 +381,8 @@ async function generateImg2Img() {
             taskInputs.lora_adapters = loraAdapters;
         }
 
+        await validateTaskInputsOrThrow("sd15.img2img", taskInputs);
+
         const workflowPayload = {
             tasks: [
                 {
@@ -418,6 +427,12 @@ async function generateImg2Img() {
             },
         });
     } catch (error) {
+        if (
+            error instanceof Error &&
+            error.message.startsWith("Input validation failed for ")
+        ) {
+            alert(error.message);
+        }
         console.warn("Failed to run img2img job:", error);
         gallery.setImages([]);
     }

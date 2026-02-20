@@ -11,6 +11,89 @@
  * (typically by the hosting HTML page).
  */
 
+const { SD15_BASE_PAGE_CONFIG } = require("./SD15_BASE_PAGE_CONFIG");
+
+function isPlainObject(value) {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function deepFreeze(value) {
+    if (!isPlainObject(value) && !Array.isArray(value)) {
+        return value;
+    }
+    Object.freeze(value);
+    for (const key of Object.keys(value)) {
+        const next = value[key];
+        if ((isPlainObject(next) || Array.isArray(next)) && !Object.isFrozen(next)) {
+            deepFreeze(next);
+        }
+    }
+    return value;
+}
+
+function createSd15PageConfig(overridesRaw) {
+    const overrides = isPlainObject(overridesRaw) ? overridesRaw : {};
+    const mappingsOverride = isPlainObject(overrides.mappings) ? overrides.mappings : {};
+    const catalogDefaultsOverride = isPlainObject(mappingsOverride.catalogDefaults)
+        ? mappingsOverride.catalogDefaults
+        : {};
+
+    return deepFreeze({
+        ids: {
+            ...SD15_BASE_PAGE_CONFIG.ids,
+            ...(isPlainObject(overrides.ids) ? overrides.ids : {}),
+        },
+        tasks: {
+            ...SD15_BASE_PAGE_CONFIG.tasks,
+            ...(isPlainObject(overrides.tasks) ? overrides.tasks : {}),
+        },
+        fallbackDefaults: {
+            ...SD15_BASE_PAGE_CONFIG.fallbackDefaults,
+            ...(isPlainObject(overrides.fallbackDefaults) ? overrides.fallbackDefaults : {}),
+        },
+        mappings: {
+            catalogDefaults: {
+                text2img: {
+                    ...SD15_BASE_PAGE_CONFIG.mappings.catalogDefaults.text2img,
+                    ...(isPlainObject(catalogDefaultsOverride.text2img)
+                        ? catalogDefaultsOverride.text2img
+                        : {}),
+                },
+                controlnetText2img: {
+                    ...SD15_BASE_PAGE_CONFIG.mappings.catalogDefaults.controlnetText2img,
+                    ...(isPlainObject(catalogDefaultsOverride.controlnetText2img)
+                        ? catalogDefaultsOverride.controlnetText2img
+                        : {}),
+                },
+                hiresFix: {
+                    ...SD15_BASE_PAGE_CONFIG.mappings.catalogDefaults.hiresFix,
+                    ...(isPlainObject(catalogDefaultsOverride.hiresFix)
+                        ? catalogDefaultsOverride.hiresFix
+                        : {}),
+                },
+            },
+            presetTextOrNumberFields: {
+                ...SD15_BASE_PAGE_CONFIG.mappings.presetTextOrNumberFields,
+                ...(isPlainObject(mappingsOverride.presetTextOrNumberFields)
+                    ? mappingsOverride.presetTextOrNumberFields
+                    : {}),
+            },
+            presetBooleanFields: {
+                ...SD15_BASE_PAGE_CONFIG.mappings.presetBooleanFields,
+                ...(isPlainObject(mappingsOverride.presetBooleanFields)
+                    ? mappingsOverride.presetBooleanFields
+                    : {}),
+            },
+        },
+    });
+}
+
+const SD15_PAGE = createSd15PageConfig(window.SD15_PAGE_OVERRIDES);
+const IDS = SD15_PAGE.ids;
+const TASKS = SD15_PAGE.tasks;
+const FALLBACKS = SD15_PAGE.fallbackDefaults;
+const MAPPINGS = SD15_PAGE.mappings;
+
 // Gallery viewer for displaying generated outputs (with light cache-busting).
 const gallery = createGalleryViewer({
     buildImageUrl: (path, idx, stamp) => {
@@ -39,7 +122,10 @@ function closeActiveEventSource() {
  * Falls back to a sane default if the request fails.
  */
 async function loadModels() {
-    const select = document.getElementById("model_select");
+    const select = document.getElementById(IDS.modelSelect);
+    if (!select) {
+        return;
+    }
     select.innerHTML = "";
     try {
         const res = await fetch(`${API_BASE}/models?family=sd15`);
@@ -62,8 +148,8 @@ async function loadModels() {
         });
     } catch (error) {
         const fallback = document.createElement("option");
-        fallback.value = "stable-diffusion-v1-5";
-        fallback.textContent = "stable-diffusion-v1-5 (sd15, diffusers)";
+        fallback.value = FALLBACKS.modelSelectOption;
+        fallback.textContent = `${FALLBACKS.modelSelectOption} (sd15, diffusers)`;
         fallback.selected = true;
         select.appendChild(fallback);
         console.warn("Failed to load models:", error);
@@ -97,7 +183,7 @@ function setModelSelection(value) {
     if (value === undefined) {
         return;
     }
-    const select = document.getElementById("model_select");
+    const select = document.getElementById(IDS.modelSelect);
     if (!select) {
         return;
     }
@@ -118,29 +204,45 @@ function setModelSelection(value) {
 
 function collectSd15PresetSettings() {
     return {
-        prompt: WorkflowClient.readTextValue("prompt", ""),
-        negative_prompt: WorkflowClient.readTextValue("negative_prompt", ""),
-        steps: WorkflowClient.readNumberValue("steps", 20, { integer: true }),
-        cfg: WorkflowClient.readNumberValue("cfg", 7.5),
-        scheduler: WorkflowClient.readTextValue("scheduler", "euler"),
-        seed: WorkflowClient.readSeedValue("seed"),
-        width: WorkflowClient.readNumberValue("width", 512, { integer: true }),
-        height: WorkflowClient.readNumberValue("height", 512, { integer: true }),
-        hires_enabled: Boolean(document.getElementById("hires_enabled")?.checked),
-        hires_scale: WorkflowClient.readNumberValue("hires_scale", 1.0),
-        model: WorkflowClient.readTextValue("model_select", null),
-        clip_skip: WorkflowClient.readNumberValue("clip_skip", 1, { integer: true }),
-        num_images: WorkflowClient.readNumberValue("num_images", 1, { integer: true }),
-        weighting_policy: WorkflowClient.readTextValue("weighting_policy", "diffusers-like"),
-        controlnet_enabled: Boolean(document.getElementById("controlnet-enabled")?.checked),
-        controlnet_conditioning_scale: WorkflowClient.readNumberValue(
-            "controlnet_conditioning_scale",
-            1.0
+        prompt: WorkflowClient.readTextValue(IDS.prompt, FALLBACKS.prompt),
+        negative_prompt: WorkflowClient.readTextValue(IDS.negativePrompt, FALLBACKS.negative_prompt),
+        steps: WorkflowClient.readNumberValue(IDS.steps, FALLBACKS.steps, { integer: true }),
+        cfg: WorkflowClient.readNumberValue(IDS.cfg, FALLBACKS.cfg),
+        scheduler: WorkflowClient.readTextValue(IDS.scheduler, FALLBACKS.scheduler),
+        seed: WorkflowClient.readSeedValue(IDS.seed),
+        width: WorkflowClient.readNumberValue(IDS.width, FALLBACKS.width, { integer: true }),
+        height: WorkflowClient.readNumberValue(IDS.height, FALLBACKS.height, { integer: true }),
+        hires_enabled: Boolean(document.getElementById(IDS.hiresEnabled)?.checked),
+        hires_scale: WorkflowClient.readNumberValue(IDS.hiresScale, FALLBACKS.hires_scale),
+        model: WorkflowClient.readTextValue(IDS.modelSelect, FALLBACKS.model),
+        clip_skip: WorkflowClient.readNumberValue(IDS.clipSkip, FALLBACKS.clip_skip, {
+            integer: true,
+        }),
+        num_images: WorkflowClient.readNumberValue(IDS.numImages, FALLBACKS.num_images, {
+            integer: true,
+        }),
+        weighting_policy: WorkflowClient.readTextValue(
+            IDS.weightingPolicy,
+            FALLBACKS.weighting_policy
         ),
-        control_guidance_start: WorkflowClient.readNumberValue("control_guidance_start", 0.0),
-        control_guidance_end: WorkflowClient.readNumberValue("control_guidance_end", 1.0),
-        controlnet_guess_mode: Boolean(document.getElementById("controlnet_guess_mode")?.checked),
-        controlnet_compat_mode: WorkflowClient.readTextValue("controlnet_compat_mode", "warn"),
+        controlnet_enabled: Boolean(document.getElementById(IDS.controlnetEnabled)?.checked),
+        controlnet_conditioning_scale: WorkflowClient.readNumberValue(
+            IDS.controlnetConditioningScale,
+            FALLBACKS.controlnet_conditioning_scale
+        ),
+        control_guidance_start: WorkflowClient.readNumberValue(
+            IDS.controlGuidanceStart,
+            FALLBACKS.control_guidance_start
+        ),
+        control_guidance_end: WorkflowClient.readNumberValue(
+            IDS.controlGuidanceEnd,
+            FALLBACKS.control_guidance_end
+        ),
+        controlnet_guess_mode: Boolean(document.getElementById(IDS.controlnetGuessMode)?.checked),
+        controlnet_compat_mode: WorkflowClient.readTextValue(
+            IDS.controlnetCompatMode,
+            FALLBACKS.controlnet_compat_mode
+        ),
         lora_adapters: window.LoraPanel?.getSelectedAdapters?.() ?? [],
     };
 }
@@ -148,26 +250,13 @@ function collectSd15PresetSettings() {
 async function applySd15PresetSettings(settings) {
     await Promise.all([controlNetUiReady, loraPanelReady]);
 
-    setInputValue("prompt", settings.prompt);
-    setInputValue("negative_prompt", settings.negative_prompt);
-    setInputValue("steps", settings.steps);
-    setInputValue("cfg", settings.cfg);
-    setInputValue("scheduler", settings.scheduler);
-    setInputValue("seed", settings.seed);
-    setInputValue("width", settings.width);
-    setInputValue("height", settings.height);
-    setCheckboxValue("hires_enabled", settings.hires_enabled);
-    setInputValue("hires_scale", settings.hires_scale);
+    for (const [settingKey, elementId] of Object.entries(MAPPINGS.presetTextOrNumberFields)) {
+        setInputValue(elementId, settings[settingKey]);
+    }
+    for (const [settingKey, elementId] of Object.entries(MAPPINGS.presetBooleanFields)) {
+        setCheckboxValue(elementId, settings[settingKey]);
+    }
     setModelSelection(settings.model);
-    setInputValue("clip_skip", settings.clip_skip);
-    setInputValue("num_images", settings.num_images);
-    setInputValue("weighting_policy", settings.weighting_policy);
-    setCheckboxValue("controlnet-enabled", settings.controlnet_enabled);
-    setInputValue("controlnet_conditioning_scale", settings.controlnet_conditioning_scale);
-    setInputValue("control_guidance_start", settings.control_guidance_start);
-    setInputValue("control_guidance_end", settings.control_guidance_end);
-    setCheckboxValue("controlnet_guess_mode", settings.controlnet_guess_mode);
-    setInputValue("controlnet_compat_mode", settings.controlnet_compat_mode);
 
     if (Array.isArray(settings.lora_adapters)) {
         window.LoraPanel?.setSelectedAdapters?.(settings.lora_adapters);
@@ -191,7 +280,7 @@ function initSd15Page() {
 
     gallery.render();
 
-    const generateButton = document.getElementById("generate-button");
+    const generateButton = document.getElementById(IDS.generateButton);
     generateButton?.addEventListener("click", () => {
         generate();
     });
@@ -201,29 +290,14 @@ function initSd15Page() {
         void window.WorkflowCatalog
             .load(API_BASE)
             .then(() => {
-                window.WorkflowCatalog.applyDefaultsToForm("sd15.text2img", {
-                    steps: "steps",
-                    cfg: "cfg",
-                    width: "width",
-                    height: "height",
-                    num_images: "num_images",
-                    clip_skip: "clip_skip",
-                    weighting_policy: "weighting_policy",
+                window.WorkflowCatalog.applyDefaultsToForm(TASKS.text2img, {
+                    ...MAPPINGS.catalogDefaults.text2img,
                 });
-                window.WorkflowCatalog.applyDefaultsToForm("sd15.controlnet.text2img", {
-                    steps: "steps",
-                    cfg: "cfg",
-                    width: "width",
-                    height: "height",
-                    num_images: "num_images",
-                    clip_skip: "clip_skip",
-                    controlnet_conditioning_scale: "controlnet_conditioning_scale",
-                    control_guidance_start: "control_guidance_start",
-                    control_guidance_end: "control_guidance_end",
-                    controlnet_compat_mode: "controlnet_compat_mode",
+                window.WorkflowCatalog.applyDefaultsToForm(TASKS.controlnetText2img, {
+                    ...MAPPINGS.catalogDefaults.controlnetText2img,
                 });
-                window.WorkflowCatalog.applyDefaultsToForm("sd15.hires_fix", {
-                    hires_scale: "hires_scale",
+                window.WorkflowCatalog.applyDefaultsToForm(TASKS.hiresFix, {
+                    ...MAPPINGS.catalogDefaults.hiresFix,
                 });
             })
             .catch(() => {});
@@ -263,41 +337,45 @@ function runWhenDomReady(initFn) {
 runWhenDomReady(initSd15Page);
 
 function baseInput(primaryDefaults) {
-    const prompt = WorkflowClient.readTextValue("prompt", "");
+    const prompt = WorkflowClient.readTextValue(IDS.prompt, FALLBACKS.prompt);
     const negative_prompt = WorkflowClient.readTextValue(
-        "negative_prompt",
-        primaryDefaults.negative_prompt ?? ""
+        IDS.negativePrompt,
+        primaryDefaults.negative_prompt ?? FALLBACKS.negative_prompt
     );
-    const steps = WorkflowClient.readNumberValue("steps", primaryDefaults.steps ?? 20, {
+    const steps = WorkflowClient.readNumberValue(IDS.steps, primaryDefaults.steps ?? FALLBACKS.steps, {
         integer: true,
     });
-    const cfg = WorkflowClient.readNumberValue("cfg", primaryDefaults.cfg ?? 7.5);
+    const cfg = WorkflowClient.readNumberValue(IDS.cfg, primaryDefaults.cfg ?? FALLBACKS.cfg);
     const scheduler = WorkflowClient.readTextValue(
-        "scheduler",
-        primaryDefaults.scheduler ?? "euler"
+        IDS.scheduler,
+        primaryDefaults.scheduler ?? FALLBACKS.scheduler
     );
-    const seed = WorkflowClient.readSeedValue("seed");
-    const width = WorkflowClient.readNumberValue("width", primaryDefaults.width ?? 512, {
+    const seed = WorkflowClient.readSeedValue(IDS.seed);
+    const width = WorkflowClient.readNumberValue(IDS.width, primaryDefaults.width ?? FALLBACKS.width, {
         integer: true,
     });
-    const height = WorkflowClient.readNumberValue("height", primaryDefaults.height ?? 512, {
+    const height = WorkflowClient.readNumberValue(
+        IDS.height,
+        primaryDefaults.height ?? FALLBACKS.height,
+        {
         integer: true,
-    });
-    const modelRaw = document.getElementById("model_select")?.value ?? "";
-    const model = modelRaw ? modelRaw : primaryDefaults.model ?? null;
+        }
+    );
+    const modelRaw = document.getElementById(IDS.modelSelect)?.value ?? "";
+    const model = modelRaw ? modelRaw : primaryDefaults.model ?? FALLBACKS.model;
     const clip_skip = WorkflowClient.readNumberValue(
-        "clip_skip",
-        primaryDefaults.clip_skip ?? 1,
+        IDS.clipSkip,
+        primaryDefaults.clip_skip ?? FALLBACKS.clip_skip,
         { integer: true }
     );
     const num_images = WorkflowClient.readNumberValue(
-        "num_images",
-        primaryDefaults.num_images ?? 1,
+        IDS.numImages,
+        primaryDefaults.num_images ?? FALLBACKS.num_images,
         { integer: true }
     );
     const weighting_policy = WorkflowClient.readTextValue(
-        "weighting_policy",
-        primaryDefaults.weighting_policy ?? "diffusers-like"
+        IDS.weightingPolicy,
+        primaryDefaults.weighting_policy ?? FALLBACKS.weighting_policy
     );
 
     return {
@@ -318,14 +396,22 @@ function baseInput(primaryDefaults) {
 
 async function setControlNetInputs(inputs, primaryDefaults, controlnetState) {
     const controlnet_conditioning_scale = WorkflowClient.readNumberValue(
-        "controlnet_conditioning_scale", primaryDefaults.controlnet_conditioning_scale ?? 1.0);
+        IDS.controlnetConditioningScale,
+        primaryDefaults.controlnet_conditioning_scale ?? FALLBACKS.controlnet_conditioning_scale
+    );
     const control_guidance_start = WorkflowClient.readNumberValue(
-        "control_guidance_start", primaryDefaults.control_guidance_start ?? 0.0);
+        IDS.controlGuidanceStart,
+        primaryDefaults.control_guidance_start ?? FALLBACKS.control_guidance_start
+    );
     const control_guidance_end = WorkflowClient.readNumberValue(
-        "control_guidance_end", primaryDefaults.control_guidance_end ?? 1.0);
-    const controlnet_guess_mode = Boolean(document.getElementById("controlnet_guess_mode")?.checked);
+        IDS.controlGuidanceEnd,
+        primaryDefaults.control_guidance_end ?? FALLBACKS.control_guidance_end
+    );
+    const controlnet_guess_mode = Boolean(document.getElementById(IDS.controlnetGuessMode)?.checked);
     const controlnet_compat_mode = WorkflowClient.readTextValue(
-        "controlnet_compat_mode", primaryDefaults.controlnet_compat_mode ?? "warn");
+        IDS.controlnetCompatMode,
+        primaryDefaults.controlnet_compat_mode ?? FALLBACKS.controlnet_compat_mode
+    );
 
     const controlItems = Array.isArray(controlnetState?.controlItems) ? controlnetState.controlItems : [];
     if (controlItems.length === 0 && !controlnetState?.previewBlob) {
@@ -394,6 +480,13 @@ async function setControlNetInputs(inputs, primaryDefaults, controlnetState) {
     return inputs;
 }
 
+async function validateTaskInputsOrThrow(taskType, inputs) {
+    if (!window.WorkflowInputValidator?.assertTaskInputs) {
+        return;
+    }
+    await window.WorkflowInputValidator.assertTaskInputs(API_BASE, taskType, inputs);
+}
+
 /**
  * Collect inputs, submit a workflow job, and stream results into the gallery.
  *
@@ -408,19 +501,22 @@ async function generate() {
     closeActiveEventSource();
 
     // Check if controlNet active, hiresFix active and if loraAdapters > 0 or not
-    const controlnetEnabled = Boolean(document.getElementById("controlnet-enabled")?.checked);
-    const hires_enabled = Boolean(document.getElementById("hires_enabled")?.checked);
+    const controlnetEnabled = Boolean(document.getElementById(IDS.controlnetEnabled)?.checked);
+    const hires_enabled = Boolean(document.getElementById(IDS.hiresEnabled)?.checked);
     const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
     const loraAdaptersEnabled = Array.isArray(loraAdapters) && loraAdapters.length > 0;
 
     // Retrieve catalog and set task type
     const catalog = window.WorkflowCatalog?.load ? await window.WorkflowCatalog.load(API_BASE) : null;
-    const primaryTaskType = controlnetEnabled ? "sd15.controlnet.text2img" : "sd15.text2img";
+    const primaryTaskType = controlnetEnabled ? TASKS.controlnetText2img : TASKS.text2img;
     const primaryDefaults = catalog?.tasks?.[primaryTaskType]?.input_defaults ?? {};
     
     // Check if hires_fix enabled
-    const hiresDefaults = catalog?.tasks?.["sd15.hires_fix"]?.input_defaults ?? {};
-    const hires_scale = WorkflowClient.readNumberValue("hires_scale", hiresDefaults.hires_scale ?? 1.0);
+    const hiresDefaults = catalog?.tasks?.[TASKS.hiresFix]?.input_defaults ?? {};
+    const hires_scale = WorkflowClient.readNumberValue(
+        IDS.hiresScale,
+        hiresDefaults.hires_scale ?? FALLBACKS.hires_scale
+    );
     const idempotencyKey = WorkflowClient.makeIdempotencyKey();
 
     // Build input list and push to FastAPI backend 
@@ -448,9 +544,9 @@ async function generate() {
         if (controlnetEnabled) {
             const controlnetState = getControlNetState();
             await setControlNetInputs(primaryInputs, primaryDefaults, controlnetState);
-            tasks.push({ id: "t1", type: "sd15.controlnet.text2img", inputs: primaryInputs });
+            tasks.push({ id: "t1", type: TASKS.controlnetText2img, inputs: primaryInputs });
         } else {
-            tasks.push({ id: "t1", type: "sd15.text2img", inputs: primaryInputs });
+            tasks.push({ id: "t1", type: TASKS.text2img, inputs: primaryInputs });
         }
 
         let returnRef = "@t1.images";
@@ -461,7 +557,7 @@ async function generate() {
             };
             tasks.push({
                 id: "hires",
-                type: "sd15.hires_fix",
+                type: TASKS.hiresFix,
                 inputs: {
                     images: "@t1.images",
                     prompt: primaryInputs.prompt,
@@ -490,6 +586,10 @@ async function generate() {
             returnRef = "@hires.images";
         }
 
+        for (const task of tasks) {
+            await validateTaskInputsOrThrow(task.type, task.inputs);
+        }
+
         const workflowPayload = { tasks, return: returnRef };
         const createdJob = await WorkflowClient.submitWorkflow(API_BASE, workflowPayload, idempotencyKey);
         const jobId = createdJob?.id;
@@ -508,7 +608,7 @@ async function generate() {
                     const warnings = job?.result?.tasks?.t1?.warnings;
                     if (Array.isArray(warnings) && warnings.length > 0) {
                         console.warn("ControlNet warnings:", warnings);
-                        const statusNode = document.getElementById("controlnet-status");
+                        const statusNode = document.getElementById(IDS.controlnetStatus);
                         if (statusNode) {
                             statusNode.textContent = warnings.join(" ");
                         }
@@ -526,6 +626,12 @@ async function generate() {
             },
         });
     } catch (error) {
+        if (
+            error instanceof Error &&
+            error.message.startsWith("Input validation failed for ")
+        ) {
+            alert(error.message);
+        }
         console.warn("Failed to generate SD1.5 images:", error);
         gallery.setImages([]);
     }

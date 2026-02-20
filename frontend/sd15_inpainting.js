@@ -376,6 +376,13 @@ function runWhenDomReady(initFn) {
 
 runWhenDomReady(initSd15InpaintingPage);
 
+async function validateTaskInputsOrThrow(taskType, inputs) {
+    if (!window.WorkflowInputValidator?.assertTaskInputs) {
+        return;
+    }
+    await window.WorkflowInputValidator.assertTaskInputs(API_BASE, taskType, inputs);
+}
+
 /**
  * Resize both canvases to match the image's pixel dimensions and update their
  * CSS sizes to fit the viewport (plus user zoom).
@@ -782,6 +789,8 @@ async function generateInpaint() {
             taskInputs.lora_adapters = loraAdapters;
         }
 
+        await validateTaskInputsOrThrow("sd15.inpaint", taskInputs);
+
         const workflowPayload = {
             tasks: [
                 {
@@ -826,6 +835,12 @@ async function generateInpaint() {
             },
         });
     } catch (error) {
+        if (
+            error instanceof Error &&
+            error.message.startsWith("Input validation failed for ")
+        ) {
+            alert(error.message);
+        }
         console.warn("Failed to run inpaint job:", error);
         gallery.setImages([]);
     }
