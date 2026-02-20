@@ -139,13 +139,7 @@ if (window.WorkflowCatalog?.load) {
         .catch(() => {});
 }
 
-async function generate() {
-    const token = ++activeJobToken;
-    closeActiveEventSource();
-
-    const catalog = window.WorkflowCatalog?.load ? await window.WorkflowCatalog.load(API_BASE) : null;
-    const defaults = catalog?.tasks?.["z-image.text2img"]?.input_defaults ?? {};
-
+function baseInput(inputs, defaults) {
     const prompt = WorkflowClient.readTextValue("prompt", defaults.prompt ?? "");
     const negative_prompt = WorkflowClient.readTextValue(
         "negative_prompt",
@@ -162,9 +156,8 @@ async function generate() {
     const num_images = WorkflowClient.readNumberValue("num_images", defaults.num_images ?? 1, {
         integer: true,
     });
-    const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
 
-    const payload = {
+    Object.assign(inputs, {
         prompt,
         negative_prompt,
         steps,
@@ -175,15 +168,34 @@ async function generate() {
         height,
         model,
         num_images,
+    });
+
+    return inputs;
+}
+
+async function generate() {
+    const token = ++activeJobToken;
+    closeActiveEventSource();
+
+    const catalog = window.WorkflowCatalog?.load ? await window.WorkflowCatalog.load(API_BASE) : null;
+    const defaults = catalog?.tasks?.["z-image.text2img"]?.input_defaults ?? {};
+    const inputs = {};
+    baseInput(inputs, defaults);
+    const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
+    const loraAdaptersEnabled = Array.isArray(loraAdapters) && loraAdapters.length > 0;
+
+    inputs.Lora = {
+        enabled: loraAdaptersEnabled,
+        adapters: loraAdaptersEnabled ? loraAdapters : [],
     };
-    if (loraAdapters.length > 0) {
-        payload.lora_adapters = loraAdapters;
+    if (loraAdaptersEnabled) {
+        inputs.lora_adapters = loraAdapters;
     }
-    console.log("Generate payload", payload);
+    console.log("Generate payload", inputs);
 
     try {
         const workflowPayload = {
-            tasks: [{ id: "t1", type: "z-image.text2img", inputs: payload }],
+            tasks: [{ id: "t1", type: "z-image.text2img", inputs }],
             return: "@t1.images",
         };
         const idempotencyKey = WorkflowClient.makeIdempotencyKey();

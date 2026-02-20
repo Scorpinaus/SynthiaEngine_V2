@@ -142,13 +142,7 @@ if (window.WorkflowCatalog?.load) {
         .catch(() => {});
 }
 
-async function generateZImageImg2Img() {
-    const token = ++activeJobToken;
-    closeActiveEventSource();
-
-    const catalog = window.WorkflowCatalog?.load ? await window.WorkflowCatalog.load(API_BASE) : null;
-    const defaults = catalog?.tasks?.["z-image.img2img"]?.input_defaults ?? {};
-
+function baseInput(inputs, defaults) {
     const prompt = WorkflowClient.readTextValue("prompt", defaults.prompt ?? "");
     const negative_prompt = WorkflowClient.readTextValue(
         "negative_prompt",
@@ -166,7 +160,30 @@ async function generateZImageImg2Img() {
         integer: true,
     });
     const strength = WorkflowClient.readNumberValue("strength", defaults.strength ?? 0.75);
-    const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
+
+    Object.assign(inputs, {
+        prompt,
+        negative_prompt,
+        steps,
+        guidance_scale,
+        scheduler,
+        seed,
+        width,
+        height,
+        model,
+        num_images,
+        strength,
+    });
+
+    return inputs;
+}
+
+async function generateZImageImg2Img() {
+    const token = ++activeJobToken;
+    closeActiveEventSource();
+
+    const catalog = window.WorkflowCatalog?.load ? await window.WorkflowCatalog.load(API_BASE) : null;
+    const defaults = catalog?.tasks?.["z-image.img2img"]?.input_defaults ?? {};
     const initialImageInput = document.getElementById("initial_image");
 
     if (!initialImageInput.files || initialImageInput.files.length === 0) {
@@ -182,22 +199,18 @@ async function generateZImageImg2Img() {
             initialFile.name || "initial.png"
         );
 
-        const taskInputs = {
-            initial_image: `@artifact:${uploaded.artifact_id}`,
-            prompt,
-            negative_prompt,
-            steps,
-            guidance_scale,
-            scheduler,
-            width,
-            height,
-            seed,
-            num_images,
-            model,
-            strength,
+        const inputs = {};
+        baseInput(inputs, defaults);
+        inputs.initial_image = `@artifact:${uploaded.artifact_id}`;
+
+        const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
+        const loraAdaptersEnabled = Array.isArray(loraAdapters) && loraAdapters.length > 0;
+        inputs.Lora = {
+            enabled: loraAdaptersEnabled,
+            adapters: loraAdaptersEnabled ? loraAdapters : [],
         };
-        if (loraAdapters.length > 0) {
-            taskInputs.lora_adapters = loraAdapters;
+        if (loraAdaptersEnabled) {
+            inputs.lora_adapters = loraAdapters;
         }
 
         const workflowPayload = {
@@ -205,7 +218,7 @@ async function generateZImageImg2Img() {
                 {
                     id: "t1",
                     type: "z-image.img2img",
-                    inputs: taskInputs,
+                    inputs,
                 },
             ],
             return: "@t1.images",

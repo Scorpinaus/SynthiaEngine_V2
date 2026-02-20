@@ -307,7 +307,8 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         z_image_js = (ROOT / "frontend" / "z_image.js").read_text(encoding="utf-8")
         self.assertIn('window.LoraPanel?.init({ apiBase: API_BASE, family: "z-image" })', z_image_js)
         self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", z_image_js)
-        self.assertIn("payload.lora_adapters = loraAdapters;", z_image_js)
+        self.assertIn("inputs.Lora = {", z_image_js)
+        self.assertIn("inputs.lora_adapters = loraAdapters;", z_image_js)
 
     def test_z_image_script_wires_preset_panel(self):
         z_image_js = (ROOT / "frontend" / "z_image.js").read_text(encoding="utf-8")
