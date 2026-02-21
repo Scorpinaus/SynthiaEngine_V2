@@ -211,7 +211,8 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         img2img_js = (ROOT / "frontend" / "sd15_img2img.js").read_text(encoding="utf-8")
         self.assertIn('window.LoraPanel?.init({ apiBase: API_BASE, family: "sd15" })', img2img_js)
         self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", img2img_js)
-        self.assertIn("taskInputs.lora_adapters = loraAdapters;", img2img_js)
+        self.assertIn("inputs.lora = {", img2img_js)
+        self.assertIn("setLoraContract(taskInputs, loraAdapters);", img2img_js)
 
     def test_sd15_inpaint_script_consumes_controlnet_state(self):
         inpaint_js = (ROOT / "frontend" / "sd15_inpainting.js").read_text(encoding="utf-8")
@@ -225,7 +226,8 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         inpaint_js = (ROOT / "frontend" / "sd15_inpainting.js").read_text(encoding="utf-8")
         self.assertIn('window.LoraPanel?.init({ apiBase: API_BASE, family: "sd15" })', inpaint_js)
         self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", inpaint_js)
-        self.assertIn("taskInputs.lora_adapters = loraAdapters;", inpaint_js)
+        self.assertIn("inputs.lora = {", inpaint_js)
+        self.assertIn("setLoraContract(taskInputs, loraAdapters);", inpaint_js)
 
     def test_sdxl_script_consumes_controlnet_state(self):
         sdxl_js = (ROOT / "frontend" / "sdxl.js").read_text(encoding="utf-8")

@@ -1266,7 +1266,6 @@ def run_sd15_hires_fix(
     hires_strength: float = 0.35,
     lora_adapters: list[object] | None = None,
     weighting_policy: str = "diffusers-like",
-    lora_scale: float | None = None,
     output_dir: Path | None = None,
     batch_id: str | None = None,
 ) -> list[str]:
@@ -1287,7 +1286,6 @@ def run_sd15_hires_fix(
         hires_strength: Img2img strength for refinement.
         lora_adapters: Optional LoRA adapter specs.
         weighting_policy: Prompt-weighting policy for embedding construction.
-        lora_scale: Optional LoRA cross-attention scale.
         output_dir: Optional output root. Defaults to batch folder under ``OUTPUT_DIR``.
         batch_id: Optional batch identifier.
 
@@ -1320,7 +1318,6 @@ def run_sd15_hires_fix(
         prompt,
         negative_prompt,
         clip_skip=clip_skip,
-        lora_scale=lora_scale,
         weighting_policy=weighting_policy,
     )
 
@@ -1343,7 +1340,6 @@ def run_sd15_hires_fix(
                 clip_skip=clip_skip,
                 prompt_embeds=prompt_embeds if use_prompt_embeds else None,
                 negative_prompt_embeds=negative_prompt_embeds if use_prompt_embeds else None,
-                cross_attention_kwargs={"scale": lora_scale} if lora_scale is not None else None,
             ).images[0]
 
             filename = batch_output_dir / f"{batch_id}_{current_seed}.png"

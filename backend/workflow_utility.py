@@ -158,6 +158,37 @@ def _normalized_lora_adapters(inputs: dict[str, Any]) -> Any:
     return None
 
 
+def _normalized_sd15_lora_adapters(inputs: dict[str, Any]) -> Any:
+    if "Lora" in inputs:
+        raise ValueError(
+            "Legacy SD1.5 LoRA field `Lora` is no longer supported. "
+            "Use `lora` with `lora_enabled` and `lora_adapters`."
+        )
+
+    if "lora_adapters" in inputs:
+        raise ValueError(
+            "Top-level SD1.5 `lora_adapters` is no longer supported. "
+            "Use `lora.lora_adapters`."
+        )
+
+    unified_lora = inputs.get("lora")
+    if unified_lora is None:
+        return None
+    if not isinstance(unified_lora, dict):
+        raise ValueError("`lora` must be an object with `lora_enabled` and `lora_adapters`.")
+
+    lora_enabled_raw = unified_lora.get("lora_enabled")
+    if lora_enabled_raw is not None and not bool(lora_enabled_raw):
+        return []
+
+    unified_adapters = unified_lora.get("lora_adapters")
+    if unified_adapters is None:
+        return []
+    if not isinstance(unified_adapters, list):
+        raise ValueError("`lora.lora_adapters` must be a list.")
+    return unified_adapters
+
+
 def _normalized_hires_settings(inputs: dict[str, Any]) -> tuple[bool, float]:
     hires_enabled = bool(inputs.get("hires_enabled") or False)
     hires_scale = float(inputs.get("hires_scale") or 1.0)

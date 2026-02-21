@@ -27,11 +27,13 @@ class Sd15Text2ImgWorkflowPlumbingTests(unittest.TestCase):
                         "model": "stable-diffusion-v1-5",
                         "num_images": 2,
                         "clip_skip": 2,
-                        "lora_adapters": [{"lora_id": 101, "strength": 0.75}],
+                        "lora": {
+                            "lora_enabled": True,
+                            "lora_adapters": [{"lora_id": 101, "strength": 0.75}],
+                        },
                         "hires_enabled": True,
                         "hires_scale": 1.5,
                         "weighting_policy": "a1111-like",
-                        "lora_scale": 0.9,
                     },
                     _ctx=None,
                 )
@@ -54,9 +56,8 @@ class Sd15Text2ImgWorkflowPlumbingTests(unittest.TestCase):
         self.assertEqual(captured["hires_scale"], 1.5)
         self.assertEqual(captured["weighting_policy"], "a1111-like")
         self.assertEqual(captured["batch_id"], "batch123")
-        self.assertEqual(captured["lora_scale"], 0.9)
 
-    def test_sd15_text2img_accepts_contract_lora_and_hires_fields(self):
+    def test_sd15_text2img_accepts_unified_lora_and_hires_fields(self):
         captured = {}
 
         def _fake_generate_images(params):
@@ -68,9 +69,9 @@ class Sd15Text2ImgWorkflowPlumbingTests(unittest.TestCase):
                 result = _sd15_text2img(
                     {
                         "prompt": "test prompt",
-                        "Lora": {
-                            "loraStatus": True,
-                            "adapters": [{"lora_id": 303, "strength": 0.6}],
+                        "lora": {
+                            "lora_enabled": True,
+                            "lora_adapters": [{"lora_id": 303, "strength": 0.6}],
                         },
                         "hires": {
                             "hiresEnabled": True,
@@ -84,33 +85,6 @@ class Sd15Text2ImgWorkflowPlumbingTests(unittest.TestCase):
         self.assertEqual(captured["lora_adapters"], [{"lora_id": 303, "strength": 0.6}])
         self.assertTrue(captured["hires_enabled"])
         self.assertEqual(captured["hires_scale"], 1.8)
-
-    def test_sd15_text2img_prefers_unified_lora_contract(self):
-        captured = {}
-
-        def _fake_generate_images(params):
-            captured.update(params)
-            return ["batch/out.png"]
-
-        with patch("backend.workflow.make_batch_id", return_value="batch123"):
-            with patch("backend.workflow.generate_images", side_effect=_fake_generate_images):
-                _sd15_text2img(
-                    {
-                        "prompt": "test prompt",
-                        "lora": {
-                            "lora_enabled": True,
-                            "lora_adapters": [{"lora_id": 404, "strength": 0.55}],
-                        },
-                        "lora_adapters": [{"lora_id": 999, "strength": 0.2}],
-                        "Lora": {
-                            "loraStatus": True,
-                            "adapters": [{"lora_id": 998, "strength": 0.1}],
-                        },
-                    },
-                    _ctx=None,
-                )
-
-        self.assertEqual(captured["lora_adapters"], [{"lora_id": 404, "strength": 0.55}])
 
     def test_sd15_text2img_disables_lora_when_unified_flag_is_false(self):
         captured = {}
@@ -128,38 +102,38 @@ class Sd15Text2ImgWorkflowPlumbingTests(unittest.TestCase):
                             "lora_enabled": False,
                             "lora_adapters": [{"lora_id": 505, "strength": 0.8}],
                         },
-                        "lora_adapters": [{"lora_id": 999, "strength": 0.2}],
-                        "Lora": {
-                            "loraStatus": True,
-                            "adapters": [{"lora_id": 998, "strength": 0.1}],
-                        },
                     },
                     _ctx=None,
                 )
 
         self.assertEqual(captured["lora_adapters"], [])
 
-    def test_sd15_text2img_disables_lora_when_legacy_status_is_false(self):
-        captured = {}
+    def test_sd15_text2img_rejects_top_level_lora_adapters(self):
+        with self.assertRaisesRegex(
+            ValueError, "Top-level SD1.5 `lora_adapters` is no longer supported"
+        ):
+            _sd15_text2img(
+                {
+                    "prompt": "test prompt",
+                    "lora_adapters": [{"lora_id": 999, "strength": 0.2}],
+                },
+                _ctx=None,
+            )
 
-        def _fake_generate_images(params):
-            captured.update(params)
-            return ["batch/out.png"]
-
-        with patch("backend.workflow.make_batch_id", return_value="batch123"):
-            with patch("backend.workflow.generate_images", side_effect=_fake_generate_images):
-                _sd15_text2img(
-                    {
-                        "prompt": "test prompt",
-                        "Lora": {
-                            "loraStatus": False,
-                            "adapters": [{"lora_id": 505, "strength": 0.8}],
-                        },
+    def test_sd15_text2img_rejects_legacy_lora_wrapper(self):
+        with self.assertRaisesRegex(
+            ValueError, "Legacy SD1.5 LoRA field `Lora` is no longer supported"
+        ):
+            _sd15_text2img(
+                {
+                    "prompt": "test prompt",
+                    "Lora": {
+                        "loraStatus": True,
+                        "adapters": [{"lora_id": 505, "strength": 0.8}],
                     },
-                    _ctx=None,
-                )
-
-        self.assertEqual(captured["lora_adapters"], [])
+                },
+                _ctx=None,
+            )
 
 
 if __name__ == "__main__":

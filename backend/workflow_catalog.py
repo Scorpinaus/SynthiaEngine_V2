@@ -88,7 +88,6 @@ def _build_task_ui_hints(task_type: str, model_cls: type[BaseModel]) -> dict[str
         "padding_mask_crop": {"min": 0, "max": 128, "step": 1, "integer": True},
         "hires_scale": {"min": 1, "max": 4, "step": 0.05},
         "hires_strength": {"min": 0, "max": 1, "step": 0.01},
-        "lora_scale": {"min": 0, "max": 2, "step": 0.05},
         "controlnet_conditioning_scale": {"min": 0, "max": 2, "step": 0.05},
         "control_guidance_start": {"min": 0, "max": 1, "step": 0.01},
         "control_guidance_end": {"min": 0, "max": 1, "step": 0.01},
@@ -156,6 +155,12 @@ def _build_task_ui_hints(task_type: str, model_cls: type[BaseModel]) -> dict[str
                 advanced=True,
                 help="List of LoRA adapter objects; UI may provide a dedicated editor.",
             )
+        if field_name == "lora":
+            hint.update(
+                widget="json",
+                advanced=True,
+                help="Unified SD1.5 LoRA contract: { lora_enabled, lora_adapters }.",
+            )
 
         if field_name in common_numeric:
             hint.setdefault("widget", "number")
@@ -218,7 +223,7 @@ def _build_model_capabilities(task_input_models: dict[str, type[BaseModel]]) -> 
             features["scheduler"] = True
         if "true_cfg_scale" in field_names:
             features["true_cfg_scale"] = True
-        if "lora_adapters" in field_names:
+        if "lora_adapters" in field_names or "lora" in field_names:
             features["lora_adapters"] = True
         if (
             "controlnet_model" in field_names

@@ -58,7 +58,10 @@ class Sd15Img2ImgControlNetWorkflowPlumbingTests(unittest.TestCase):
                             "model": "stable-diffusion-v1-5",
                             "num_images": 1,
                             "clip_skip": 1,
-                            "lora_adapters": lora_adapters,
+                            "lora": {
+                                "lora_enabled": True,
+                                "lora_adapters": lora_adapters,
+                            },
                         },
                         _ctx=None,
                     )
@@ -69,7 +72,7 @@ class Sd15Img2ImgControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertEqual(captured["lora_adapters"], lora_adapters)
         self.assertEqual(captured["batch_id"], "batch123")
 
-    def test_non_controlnet_path_prefers_unified_lora_contract(self):
+    def test_non_controlnet_path_forwards_unified_lora_contract(self):
         captured = {}
 
         def _fake_generate_images_img2img(params):
@@ -92,7 +95,6 @@ class Sd15Img2ImgControlNetWorkflowPlumbingTests(unittest.TestCase):
                                 "lora_enabled": True,
                                 "lora_adapters": [{"lora_id": 111, "strength": 0.7}],
                             },
-                            "lora_adapters": [{"lora_id": 999, "strength": 0.1}],
                         },
                         _ctx=None,
                     )
@@ -122,12 +124,46 @@ class Sd15Img2ImgControlNetWorkflowPlumbingTests(unittest.TestCase):
                                 "lora_enabled": False,
                                 "lora_adapters": [{"lora_id": 111, "strength": 0.7}],
                             },
-                            "lora_adapters": [{"lora_id": 999, "strength": 0.1}],
                         },
                         _ctx=None,
                     )
 
         self.assertEqual(captured["lora_adapters"], [])
+
+    def test_non_controlnet_path_rejects_top_level_lora_adapters(self):
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with self.assertRaisesRegex(
+                ValueError, "Top-level SD1.5 `lora_adapters` is no longer supported"
+            ):
+                _sd15_img2img(
+                    {
+                        "initial_image": {
+                            "artifact_id": "a0123456789abcdef0123456789abcdef"
+                        },
+                        "prompt": "test prompt",
+                        "lora_adapters": [{"lora_id": 999, "strength": 0.1}],
+                    },
+                    _ctx=None,
+                )
+
+    def test_non_controlnet_path_rejects_legacy_lora_wrapper(self):
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with self.assertRaisesRegex(
+                ValueError, "Legacy SD1.5 LoRA field `Lora` is no longer supported"
+            ):
+                _sd15_img2img(
+                    {
+                        "initial_image": {
+                            "artifact_id": "a0123456789abcdef0123456789abcdef"
+                        },
+                        "prompt": "test prompt",
+                        "Lora": {
+                            "loraStatus": True,
+                            "adapters": [{"lora_id": 111, "strength": 0.7}],
+                        },
+                    },
+                    _ctx=None,
+                )
 
     def test_controlnet_path_passes_expected_pipeline_kwargs(self):
         captured = {}
@@ -203,7 +239,10 @@ class Sd15Img2ImgControlNetWorkflowPlumbingTests(unittest.TestCase):
                             },
                             "prompt": "test prompt",
                             "controlnet_model": "lllyasviel/sd-controlnet-canny",
-                            "lora_adapters": lora_adapters,
+                            "lora": {
+                                "lora_enabled": True,
+                                "lora_adapters": lora_adapters,
+                            },
                         },
                         _ctx=None,
                     )

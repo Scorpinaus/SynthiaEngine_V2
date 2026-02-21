@@ -497,16 +497,10 @@ async function generate() {
         const inputs = {};
         baseInput(inputs, primaryDefaults);
 
-        inputs.Lora = {
-            enabled: loraAdaptersEnabled,
-            adapters: loraAdaptersEnabled ? loraAdapters : [],
-        };
-        // Keep current API-compatible LoRA fields active alongside the new nested block.
         inputs.lora = {
             lora_enabled: loraAdaptersEnabled,
             lora_adapters: loraAdaptersEnabled ? loraAdapters : [],
         };
-        inputs.lora_adapters = loraAdaptersEnabled ? loraAdapters : [];
         inputs.hires = {
             enabled: hiresEnabled,
             hires_scale,
@@ -555,15 +549,10 @@ async function generate() {
                     hires_scale,
                 },
             };
-            hiresInputs.Lora = {
-                enabled: loraAdaptersEnabled,
-                adapters: loraAdaptersEnabled ? loraAdapters : [],
-            };
             hiresInputs.lora = {
                 lora_enabled: loraAdaptersEnabled,
                 lora_adapters: loraAdaptersEnabled ? loraAdapters : [],
             };
-            hiresInputs.lora_adapters = loraAdaptersEnabled ? loraAdapters : [];
 
             tasks.push({ id: "hires", type: TASK_HIRES_FIX, inputs: hiresInputs });
             returnRef = "@hires.images";

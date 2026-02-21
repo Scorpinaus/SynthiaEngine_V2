@@ -79,7 +79,7 @@ class Sd15ControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertEqual(captured["control_guidance_start"], 0.1)
         self.assertEqual(captured["control_guidance_end"], 0.9)
 
-    def test_controlnet_task_prefers_unified_lora_contract(self):
+    def test_controlnet_task_forwards_unified_lora_contract(self):
         captured = {}
 
         def _fake_generate_images_controlnet(params):
@@ -102,7 +102,6 @@ class Sd15ControlNetWorkflowPlumbingTests(unittest.TestCase):
                                 "lora_enabled": True,
                                 "lora_adapters": [{"lora_id": 131, "strength": 0.7}],
                             },
-                            "lora_adapters": [{"lora_id": 999, "strength": 0.1}],
                         },
                         _ctx=None,
                     )
@@ -132,12 +131,46 @@ class Sd15ControlNetWorkflowPlumbingTests(unittest.TestCase):
                                 "lora_enabled": False,
                                 "lora_adapters": [{"lora_id": 131, "strength": 0.7}],
                             },
-                            "lora_adapters": [{"lora_id": 999, "strength": 0.1}],
                         },
                         _ctx=None,
                     )
 
         self.assertEqual(captured["lora_adapters"], [])
+
+    def test_controlnet_task_rejects_top_level_lora_adapters(self):
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with self.assertRaisesRegex(
+                ValueError, "Top-level SD1.5 `lora_adapters` is no longer supported"
+            ):
+                _sd15_controlnet_text2img(
+                    {
+                        "control_image": {
+                            "artifact_id": "a0123456789abcdef0123456789abcdef"
+                        },
+                        "prompt": "test prompt",
+                        "lora_adapters": [{"lora_id": 999, "strength": 0.1}],
+                    },
+                    _ctx=None,
+                )
+
+    def test_controlnet_task_rejects_legacy_lora_wrapper(self):
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with self.assertRaisesRegex(
+                ValueError, "Legacy SD1.5 LoRA field `Lora` is no longer supported"
+            ):
+                _sd15_controlnet_text2img(
+                    {
+                        "control_image": {
+                            "artifact_id": "a0123456789abcdef0123456789abcdef"
+                        },
+                        "prompt": "test prompt",
+                        "Lora": {
+                            "loraStatus": True,
+                            "adapters": [{"lora_id": 131, "strength": 0.7}],
+                        },
+                    },
+                    _ctx=None,
+                )
 
     def test_control_guidance_start_must_be_lte_end(self):
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):

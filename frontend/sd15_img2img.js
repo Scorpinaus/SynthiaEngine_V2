@@ -266,15 +266,10 @@ function baseImg2ImgInputs(inputs, defaults) {
 function setLoraContract(inputs, loraAdapters) {
     const adapters = Array.isArray(loraAdapters) ? loraAdapters : [];
     const enabled = adapters.length > 0;
-    inputs.Lora = {
-        enabled,
-        adapters: enabled ? adapters : [],
-    };
     inputs.lora = {
         lora_enabled: enabled,
         lora_adapters: enabled ? adapters : [],
     };
-    return enabled;
 }
 
 async function setControlNetInputs(inputs, defaults, controlnetState) {
@@ -410,11 +405,7 @@ async function generateImg2Img() {
         taskInputs.initial_image = `@artifact:${uploaded.artifact_id}`;
 
         const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
-        const loraAdaptersEnabled = setLoraContract(taskInputs, loraAdapters);
-        taskInputs.lora_adapters = loraAdapters;
-        if (!loraAdaptersEnabled) {
-            taskInputs.lora_adapters = [];
-        }
+        setLoraContract(taskInputs, loraAdapters);
 
         if (controlnetEnabled) {
             await setControlNetInputs(taskInputs, defaults, controlnetState);

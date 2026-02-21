@@ -29,7 +29,6 @@ from backend.workflow_schema_input import (
     Sd15HiresContract,
     Sd15Img2ImgInputs,
     Sd15InpaintInputs,
-    Sd15LoraContract,
     Sd15Text2ImgInputs,
     Sd15UnifiedLoraContract,
     SdxlControlNetText2ImgInputs,
@@ -68,6 +67,7 @@ from backend.workflow_utility import (
     _normalize_sd15_controlnet_contract_inputs,
     _normalized_hires_settings,
     _normalized_lora_adapters,
+    _normalized_sd15_lora_adapters,
     _open_image_ref,
     _remap_img2img_strength,
     _resolve_refs,
@@ -191,7 +191,7 @@ def build_workflow_catalog() -> dict[str, Any]:
 def _sd15_runtime_deps() -> dict[str, Any]:
     return {
         "normalized_hires_settings": _normalized_hires_settings,
-        "normalized_lora_adapters": _normalized_lora_adapters,
+        "normalized_lora_adapters": _normalized_sd15_lora_adapters,
         "normalize_sd15_controlnet_contract_inputs": _normalize_sd15_controlnet_contract_inputs,
         "remap_img2img_strength": _remap_img2img_strength,
         "open_image_ref": _open_image_ref,

@@ -22,11 +22,6 @@ class ArtifactRef(BaseModel):
 ImageRef: TypeAlias = ArtifactRef | str
 
 
-class Sd15LoraContract(BaseModel):
-    loraStatus: bool = False
-    adapters: list[dict[str, Any]] = Field(default_factory=list)
-
-
 class Sd15UnifiedLoraContract(BaseModel):
     lora_enabled: bool = True
     lora_adapters: list[dict[str, Any]] = Field(default_factory=list)
@@ -56,15 +51,12 @@ class Sd15Text2ImgInputs(BaseModel):
     model: str | None = None
     num_images: int = 1
     clip_skip: int = 1
-    lora_adapters: Any | None = None
     lora: Sd15UnifiedLoraContract | None = None
     hires_enabled: bool = False
     hires_scale: float = 1.0
     weighting_policy: str = "diffusers-like"
-    lora_scale: float | None = None
     batch_id: str | None = None
     controlNetEnabled: bool = False
-    Lora: Sd15LoraContract | None = None
     hires: Sd15HiresContract | None = None
 
 
@@ -100,7 +92,6 @@ class Sd15Img2ImgInputs(BaseModel):
     controlnet_guess_mode: bool = False
     control_guidance_start: float = Field(default=0.0, ge=0.0, le=1.0)
     control_guidance_end: float = Field(default=1.0, ge=0.0, le=1.0)
-    lora_adapters: Any | None = None
     lora: Sd15UnifiedLoraContract | None = None
     batch_id: str | None = None
 
@@ -140,7 +131,6 @@ class Sd15InpaintInputs(BaseModel):
     controlnet_guess_mode: bool = False
     control_guidance_start: float = Field(default=0.0, ge=0.0, le=1.0)
     control_guidance_end: float = Field(default=1.0, ge=0.0, le=1.0)
-    lora_adapters: Any | None = None
     lora: Sd15UnifiedLoraContract | None = None
     batch_id: str | None = None
 
@@ -172,12 +162,10 @@ class Sd15ControlNetText2ImgInputs(BaseModel):
     controlnet_guess_mode: bool = False
     control_guidance_start: float = Field(default=0.0, ge=0.0, le=1.0)
     control_guidance_end: float = Field(default=1.0, ge=0.0, le=1.0)
-    lora_adapters: Any | None = None
     lora: Sd15UnifiedLoraContract | None = None
     batch_id: str | None = None
     controlNetEnabled: bool = True
     effectiveItems: list[Sd15EffectiveControlNetItem] | None = None
-    Lora: Sd15LoraContract | None = None
     hires: Sd15HiresContract | None = None
 
 
@@ -205,12 +193,9 @@ class Sd15HiresFixInputs(BaseModel):
     clip_skip: int = 1
     hires_scale: float = 1.0
     hires_strength: float = 0.35
-    lora_adapters: Any | None = None
     lora: Sd15UnifiedLoraContract | None = None
     weighting_policy: str = "diffusers-like"
-    lora_scale: float | None = None
     batch_id: str | None = None
-    Lora: Sd15LoraContract | None = None
     hires: Sd15HiresContract | None = None
 
 

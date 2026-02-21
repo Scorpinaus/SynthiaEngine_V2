@@ -30,7 +30,6 @@ def run_sd15_text2img(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str,
         "hires_scale": hires_scale,
         "weighting_policy": str(inputs.get("weighting_policy") or "diffusers-like"),
         "batch_id": batch_id,
-        "lora_scale": inputs.get("lora_scale"),
     }
     filenames = generate_images(generation_params)
     return {"batch_id": batch_id, "images": [f"/outputs/{name}" for name in filenames]}
@@ -747,7 +746,6 @@ def run_sd15_hires_fix(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str
         hires_strength=float(inputs.get("hires_strength") or 0.35),
         lora_adapters=lora_adapters,
         weighting_policy=str(inputs.get("weighting_policy") or "diffusers-like"),
-        lora_scale=inputs.get("lora_scale"),
         output_dir=batch_output_dir,
         batch_id=batch_id,
     )

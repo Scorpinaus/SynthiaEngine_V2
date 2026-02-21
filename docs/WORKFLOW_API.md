@@ -505,13 +505,12 @@ LoRA adapter targeting:
 - Existing flat input fields remain valid and are still recommended for backward compatibility.
 - `controlNetEnabled`: optional boolean UI state flag.
 - `lora`: optional object `{ "lora_enabled": boolean, "lora_adapters": [...] }`.
-  - Canonical SD1.5 LoRA contract.
+  - Canonical and only supported SD1.5 LoRA contract.
   - When `lora.lora_enabled` is `false`, SD1.5 tasks run without LoRA adapters.
-  - `lora.lora_adapters` takes precedence when provided.
-- `lora_adapters`: optional top-level fallback list.
-- `Lora`: optional object `{ "loraStatus": boolean, "adapters": [...] }`.
-  - Legacy fallback. Used when neither `lora.lora_adapters` nor top-level `lora_adapters` is provided.
-  - When `Lora.loraStatus` is `false`, the backend treats LoRA as disabled and ignores `Lora.adapters`.
+  - When omitted, or when `lora.lora_adapters` is omitted/empty, SD1.5 tasks run without LoRA adapters.
+- Deprecated SD1.5 LoRA inputs are rejected with a validation/runtime error:
+  - top-level `lora_adapters`
+  - legacy `Lora` object
 - `hires`: optional object `{ "hiresEnabled": boolean, "hires_scale": number }`.
   - When `hires_enabled` / `hires_scale` are omitted, backend can derive values from `hires`.
 
@@ -537,7 +536,6 @@ LoRA adapter targeting:
   - item shape: `{ "control_image": <ImageRef>, "model_id": string?, "conditioning_scale": number?, "preprocessor_id": string? }`
   - when provided, backend can derive flat fields (`control_image(s)`, `controlnet_model(s)`, `controlnet_conditioning_scale(s)`, `controlnet_preprocessor_id(s)`) if those are omitted.
 - `lora`: optional object `{ "lora_enabled": boolean, "lora_adapters": [...] }`.
-- `Lora`: optional object `{ "loraStatus": boolean, "adapters": [...] }`.
 - `hires`: optional object `{ "hiresEnabled": boolean, "hires_scale": number }`.
 - `controlnet_compat_mode`: `"warn"` (default), `"error"`, or `"off"`
   - `warn`: continue generation and add a warning in task result when pairing is mismatched
@@ -562,12 +560,11 @@ LoRA adapter targeting:
 - May include `warnings: string[]` when compatibility/perf warnings are produced.
 
 `sd15.img2img` LoRA input notes:
-- `lora_adapters` is optional. When omitted or empty, img2img runs without LoRA adapters.
 - `lora` is an optional SD1.5 unified object `{ "lora_enabled": boolean, "lora_adapters": [...] }`.
   - If `lora_enabled` is `false`, img2img runs without LoRA adapters.
-  - Resolution order: `lora.lora_adapters` -> top-level `lora_adapters` -> legacy `Lora.adapters`.
-- Legacy contract: when provided and `Lora.loraStatus` is `false`, img2img runs without LoRA adapters (legacy `Lora.adapters` is ignored).
-- `lora_adapters` entries are resolved through the LoRA registry (`/lora-models`) by `lora_id`.
+  - When omitted, or when `lora.lora_adapters` is omitted/empty, img2img runs without LoRA adapters.
+- Deprecated SD1.5 LoRA inputs are rejected: top-level `lora_adapters` and legacy `Lora`.
+- `lora.lora_adapters` entries are resolved through the LoRA registry (`/lora-models`) by `lora_id`.
 - Each adapter may provide `strength` (default `1.0`), optional per-component overrides (`unet_strength`, `text_encoder_strength`), and optional fine-grained scales (`unet_scales`, `text_encoder_scales`).
 - `unet_scales` accepts Diffusers-style UNet LoRA scales (number or nested object) and is forwarded to `set_adapters(..., adapter_weights=...)` for per-layer control.
 - `text_encoder_scales` is an object mapping text-encoder module-name substrings to scale values; unmatched text-encoder LoRA layers fall back to `text_encoder_strength` when provided, otherwise `strength`.
@@ -587,12 +584,11 @@ LoRA adapter targeting:
 - May include `warnings: string[]` when compatibility/perf warnings are produced.
 
 `sd15.inpaint` LoRA input notes:
-- `lora_adapters` is optional. When omitted or empty, inpaint runs without LoRA adapters.
 - `lora` is an optional SD1.5 unified object `{ "lora_enabled": boolean, "lora_adapters": [...] }`.
   - If `lora_enabled` is `false`, inpaint runs without LoRA adapters.
-  - Resolution order: `lora.lora_adapters` -> top-level `lora_adapters` -> legacy `Lora.adapters`.
-- Legacy contract: when provided and `Lora.loraStatus` is `false`, inpaint runs without LoRA adapters (legacy `Lora.adapters` is ignored).
-- `lora_adapters` entries are resolved through the LoRA registry (`/lora-models`) by `lora_id`.
+  - When omitted, or when `lora.lora_adapters` is omitted/empty, inpaint runs without LoRA adapters.
+- Deprecated SD1.5 LoRA inputs are rejected: top-level `lora_adapters` and legacy `Lora`.
+- `lora.lora_adapters` entries are resolved through the LoRA registry (`/lora-models`) by `lora_id`.
 - Each adapter may provide `strength` (default `1.0`), optional per-component overrides (`unet_strength`, `text_encoder_strength`), and optional fine-grained scales (`unet_scales`, `text_encoder_scales`).
 - Family validation is enforced: only LoRAs registered with `lora_model_family: "sd15"` are accepted for `sd15.inpaint`.
 - Invalid adapter references (for example missing `lora_id`, unknown id, or incompatible family) fail the task with a validation/runtime error.
