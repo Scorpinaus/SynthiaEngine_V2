@@ -425,6 +425,35 @@ async function generateBlurMask() {
     }
 }
 
+function baseInput(inputs, defaults, initialImage, maskImage) {
+    const prompt = WorkflowClient.readTextValue("prompt", defaults.prompt ?? "");
+    const negative_prompt = WorkflowClient.readTextValue("negative_prompt", defaults.negative_prompt ?? "");
+    const steps = WorkflowClient.readNumberValue("steps", defaults.steps ?? 20, { integer: true });
+    const guidance_scale = WorkflowClient.readNumberValue("guidance_scale", defaults.guidance_scale ?? 0.0);
+    const scheduler = WorkflowClient.readTextValue("scheduler", defaults.scheduler ?? "euler");
+    const seed = WorkflowClient.readSeedValue("seed");
+    const num_images = WorkflowClient.readNumberValue("num_images", defaults.num_images ?? 1, { integer: true });
+    const modelRaw = document.getElementById("model_select")?.value ?? "";
+    const model = modelRaw ? modelRaw : (defaults.model ?? null);
+    const strength = WorkflowClient.readNumberValue("strength", defaults.strength ?? 0.5);
+
+    Object.assign(inputs, {
+        initial_image: initialImage,
+        mask_image: maskImage,
+        prompt,
+        negative_prompt,
+        steps,
+        guidance_scale,
+        scheduler,
+        seed,
+        num_images,
+        model,
+        strength,
+    });
+
+    return inputs;
+}
+
 async function generateFluxInpaint() {
     const token = ++activeJobToken;
     closeActiveEventSource();
@@ -441,21 +470,8 @@ async function generateFluxInpaint() {
 
     const catalog = window.WorkflowCatalog?.load ? await window.WorkflowCatalog.load(API_BASE) : null;
     const defaults = catalog?.tasks?.["flux.inpaint"]?.input_defaults ?? {};
-
-    const prompt = WorkflowClient.readTextValue("prompt", defaults.prompt ?? "");
-    const negative_prompt = WorkflowClient.readTextValue("negative_prompt", defaults.negative_prompt ?? "");
-    const steps = WorkflowClient.readNumberValue("steps", defaults.steps ?? 20, { integer: true });
-    const guidanceScale = WorkflowClient.readNumberValue(
-        "guidance_scale",
-        defaults.guidance_scale ?? 0.0,
-    );
-    const scheduler = WorkflowClient.readTextValue("scheduler", defaults.scheduler ?? "euler");
-    const seed = WorkflowClient.readSeedValue("seed");
-    const num_images = WorkflowClient.readNumberValue("num_images", defaults.num_images ?? 1, { integer: true });
-    const modelRaw = document.getElementById("model_select")?.value ?? "";
-    const model = modelRaw ? modelRaw : (defaults.model ?? null);
-    const strength = WorkflowClient.readNumberValue("strength", defaults.strength ?? 0.5);
     const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
+    const loraAdaptersEnabled = Array.isArray(loraAdapters) && loraAdapters.length > 0;
 
     try {
         const [uploadedBase, uploadedMask] = await Promise.all([
@@ -463,21 +479,20 @@ async function generateFluxInpaint() {
             WorkflowClient.uploadArtifact(API_BASE, activeMaskBlob, "mask.png"),
         ]);
 
-        const taskInputs = {
-            initial_image: `@artifact:${uploadedBase.artifact_id}`,
-            mask_image: `@artifact:${uploadedMask.artifact_id}`,
-            prompt,
-            negative_prompt,
-            steps,
-            guidance_scale: guidanceScale,
-            scheduler,
-            seed,
-            num_images,
-            model,
-            strength,
+        const inputs = {};
+        baseInput(
+            inputs,
+            defaults,
+            `@artifact:${uploadedBase.artifact_id}`,
+            `@artifact:${uploadedMask.artifact_id}`,
+        );
+
+        inputs.Lora = {
+            enabled: loraAdaptersEnabled,
+            adapters: loraAdaptersEnabled ? loraAdapters : [],
         };
-        if (loraAdapters.length > 0) {
-            taskInputs.lora_adapters = loraAdapters;
+        if (loraAdaptersEnabled) {
+            inputs.lora_adapters = loraAdapters;
         }
 
         const workflowPayload = {
@@ -485,7 +500,7 @@ async function generateFluxInpaint() {
                 {
                     id: "t1",
                     type: "flux.inpaint",
-                    inputs: taskInputs,
+                    inputs,
                 },
             ],
             return: "@t1.images",
