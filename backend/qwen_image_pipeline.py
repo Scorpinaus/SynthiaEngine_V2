@@ -1,5 +1,4 @@
 import logging
-import re
 import threading
 
 import torch
@@ -7,7 +6,7 @@ from diffusers import QwenImageImg2ImgPipeline, QwenImageInpaintPipeline, QwenIm
 
 from backend.config import OUTPUT_DIR
 from backend.logging_utils import configure_logging
-from backend.lora_registry import get_lora_entry
+from backend.lora_utils import apply_lora_adapters_with_validation, write_lora_coverage_report
 from backend.model_registry import get_model_entry
 from backend.pipeline_utils import (
     build_png_metadata,
@@ -22,87 +21,6 @@ GEN_LOCK = threading.Lock()
 
 logger = logging.getLogger(__name__)
 configure_logging()
-_ADAPTER_NAME_SANITIZE_RE = re.compile(r"[^0-9A-Za-z_-]+")
-
-""" Private helper functions
-"""
-
-def _sanitize_adapter_fragment(raw_name: str | None) -> str:
-    if not raw_name:
-        return ""
-    sanitized = _ADAPTER_NAME_SANITIZE_RE.sub("_", raw_name).strip("_")
-    return re.sub(r"_+", "_", sanitized)
-
-
-def _build_adapter_name(
-    lora_id: int,
-    display_name: str | None,
-    used_names: set[str],
-) -> str:
-    fragment = _sanitize_adapter_fragment(display_name) or f"id_{lora_id}"
-    base_name = f"lora_{fragment}"
-    candidate = base_name
-    if candidate not in used_names:
-        used_names.add(candidate)
-        return candidate
-
-    candidate = f"{base_name}_{lora_id}"
-    if candidate not in used_names:
-        used_names.add(candidate)
-        return candidate
-
-    suffix = 2
-    while True:
-        candidate = f"{base_name}_{lora_id}_{suffix}"
-        if candidate not in used_names:
-            used_names.add(candidate)
-            return candidate
-        suffix += 1
-
-
-def _apply_qwen_image_lora_adapters(
-    pipe: QwenImagePipeline,
-    lora_adapters: list[object] | None,
-) -> list[str]:
-    if not lora_adapters:
-        return []
-
-    adapter_names: list[str] = []
-    adapter_weights: list[float] = []
-    used_adapter_names: set[str] = set()
-
-    for adapter in lora_adapters:
-        if isinstance(adapter, dict):
-            lora_id = adapter.get("lora_id")
-            strength = adapter.get("strength", 1.0)
-        else:
-            lora_id = getattr(adapter, "lora_id", None)
-            strength = getattr(adapter, "strength", 1.0)
-
-        if lora_id is None:
-            raise ValueError("LoRA adapter missing lora_id.")
-
-        entry = get_lora_entry(int(lora_id))
-        if entry.lora_model_family.lower() != "qwen-image":
-            raise ValueError(f"LoRA {entry.name} is not compatible with qwen-image.")
-
-        adapter_name = _build_adapter_name(entry.lora_id, entry.name, used_adapter_names)
-        adapter_weight = float(strength)
-        pipe.load_lora_weights(entry.file_path, adapter_name=adapter_name)
-        adapter_names.append(adapter_name)
-        adapter_weights.append(adapter_weight)
-
-        logger.info(
-            "qwen-image lora_name=%s lora_id=%s lora_weight=%s",
-            adapter_name,
-            entry.lora_id,
-            adapter_weight,
-        )
-
-    if hasattr(pipe, "set_adapters"):
-        pipe.set_adapters(adapter_names, adapter_weights=adapter_weights)
-
-    return adapter_names
 
 """ Methods involving loading of pipelines"""
 
@@ -234,7 +152,15 @@ def generate_text2img(params: dict[str, object]) -> dict[str, list[str]]:
 
     filenames: list[str] = []
     pipe.scheduler = create_scheduler(scheduler, pipe)
-    adapter_names = _apply_qwen_image_lora_adapters(pipe, lora_adapters)
+    adapter_names, lora_coverage = apply_lora_adapters_with_validation(
+        pipe,
+        lora_adapters,
+        expected_family="qwen-image",
+        validate=True,
+    )
+    report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
+    if report_path is not None:
+        logger.info("LoRA coverage report saved to %s", report_path)
 
     try:
         with GEN_LOCK:
@@ -323,7 +249,15 @@ def generate_img2img(params: dict[str, object]) -> dict[str, list[str]]:
 
     filenames: list[str] = []
     pipe.scheduler = create_scheduler(scheduler, pipe)
-    adapter_names = _apply_qwen_image_lora_adapters(pipe, lora_adapters)
+    adapter_names, lora_coverage = apply_lora_adapters_with_validation(
+        pipe,
+        lora_adapters,
+        expected_family="qwen-image",
+        validate=True,
+    )
+    report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
+    if report_path is not None:
+        logger.info("LoRA coverage report saved to %s", report_path)
 
     try:
         with GEN_LOCK:
@@ -420,7 +354,15 @@ def generate_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
 
     filenames: list[str] = []
     pipe.scheduler = create_scheduler(scheduler, pipe)
-    adapter_names = _apply_qwen_image_lora_adapters(pipe, lora_adapters)
+    adapter_names, lora_coverage = apply_lora_adapters_with_validation(
+        pipe,
+        lora_adapters,
+        expected_family="qwen-image",
+        validate=True,
+    )
+    report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
+    if report_path is not None:
+        logger.info("LoRA coverage report saved to %s", report_path)
 
     try:
         with GEN_LOCK:

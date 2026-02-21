@@ -326,6 +326,7 @@ def _qwen_image_runtime_deps() -> dict[str, Any]:
     deps: dict[str, Any] = {
         "open_image_ref": _open_image_ref,
         "remap_img2img_strength": _remap_img2img_strength,
+        "normalized_lora_adapters": _normalized_lora_adapters,
     }
     for name in ("generate_text2img", "generate_img2img", "generate_inpaint"):
         func = getattr(qwen_image_pipeline_module, name, None)

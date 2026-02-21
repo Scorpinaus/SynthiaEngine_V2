@@ -690,6 +690,9 @@ LoRA adapter targeting:
 
 `qwen-image.text2img` LoRA input notes:
 - `lora_adapters` is optional. When omitted or empty, text2img runs without LoRA adapters.
+- Legacy fallback `Lora` object is accepted as `{ "enabled": boolean, "adapters": [...] }` (also supports legacy `loraStatus`).
+  - When `Lora.enabled`/`Lora.loraStatus` is `false`, backend treats LoRA as disabled.
+  - If present and enabled, `Lora.adapters` is used when top-level `lora_adapters` is absent.
 - `lora_adapters` entries are resolved through the LoRA registry (`/lora-models`) by `lora_id`.
 - Each adapter may provide `strength` (default `1.0`).
 - Family validation is enforced: only LoRAs registered with `lora_model_family: "qwen-image"` are accepted for `qwen-image.text2img`.
@@ -697,6 +700,9 @@ LoRA adapter targeting:
 
 `qwen-image.img2img` LoRA input notes:
 - `lora_adapters` is optional. When omitted or empty, img2img runs without LoRA adapters.
+- Legacy fallback `Lora` object is accepted as `{ "enabled": boolean, "adapters": [...] }` (also supports legacy `loraStatus`).
+  - When `Lora.enabled`/`Lora.loraStatus` is `false`, backend treats LoRA as disabled.
+  - If present and enabled, `Lora.adapters` is used when top-level `lora_adapters` is absent.
 - `lora_adapters` entries are resolved through the LoRA registry (`/lora-models`) by `lora_id`.
 - Each adapter may provide `strength` (default `1.0`).
 - Family validation is enforced: only LoRAs registered with `lora_model_family: "qwen-image"` are accepted for `qwen-image.img2img`.
@@ -704,6 +710,9 @@ LoRA adapter targeting:
 
 `qwen-image.inpaint` LoRA input notes:
 - `lora_adapters` is optional. When omitted or empty, inpaint runs without LoRA adapters.
+- Legacy fallback `Lora` object is accepted as `{ "enabled": boolean, "adapters": [...] }` (also supports legacy `loraStatus`).
+  - When `Lora.enabled`/`Lora.loraStatus` is `false`, backend treats LoRA as disabled.
+  - If present and enabled, `Lora.adapters` is used when top-level `lora_adapters` is absent.
 - `lora_adapters` entries are resolved through the LoRA registry (`/lora-models`) by `lora_id`.
 - Each adapter may provide `strength` (default `1.0`).
 - Family validation is enforced: only LoRAs registered with `lora_model_family: "qwen-image"` are accepted for `qwen-image.inpaint`.

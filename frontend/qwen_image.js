@@ -142,15 +142,12 @@ if (window.WorkflowCatalog?.load) {
         .catch(() => {});
 }
 
-async function generate() {
-    const token = ++activeJobToken;
-    closeActiveEventSource();
-
-    const catalog = window.WorkflowCatalog?.load ? await window.WorkflowCatalog.load(API_BASE) : null;
-    const defaults = catalog?.tasks?.["qwen-image.text2img"]?.input_defaults ?? {};
-
+function baseInput(inputs, defaults) {
     const prompt = WorkflowClient.readTextValue("prompt", defaults.prompt ?? "");
-    const negative_prompt = WorkflowClient.readTextValue("negative_prompt", defaults.negative_prompt ?? "");
+    const negative_prompt = WorkflowClient.readTextValue(
+        "negative_prompt",
+        defaults.negative_prompt ?? ""
+    );
     const steps = WorkflowClient.readNumberValue("steps", defaults.steps ?? 30, { integer: true });
     const true_cfg_scale = WorkflowClient.readNumberValue("true_cfg", defaults.true_cfg_scale ?? 4.0);
     const guidance_scale = WorkflowClient.readNumberValue("cfg", defaults.guidance_scale ?? 7.5);
@@ -160,10 +157,11 @@ async function generate() {
     const height = WorkflowClient.readNumberValue("height", defaults.height ?? 1024, { integer: true });
     const modelRaw = document.getElementById("model_select")?.value ?? "";
     const model = modelRaw ? modelRaw : (defaults.model ?? null);
-    const num_images = WorkflowClient.readNumberValue("num_images", defaults.num_images ?? 1, { integer: true });
-    const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
+    const num_images = WorkflowClient.readNumberValue("num_images", defaults.num_images ?? 1, {
+        integer: true,
+    });
 
-    const payload = {
+    Object.assign(inputs, {
         prompt,
         negative_prompt,
         steps,
@@ -175,15 +173,33 @@ async function generate() {
         height,
         model,
         num_images,
+    });
+
+    return inputs;
+}
+
+async function generate() {
+    const token = ++activeJobToken;
+    closeActiveEventSource();
+
+    const catalog = window.WorkflowCatalog?.load ? await window.WorkflowCatalog.load(API_BASE) : null;
+    const defaults = catalog?.tasks?.["qwen-image.text2img"]?.input_defaults ?? {};
+    const inputs = {};
+    baseInput(inputs, defaults);
+    const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
+    const loraAdaptersEnabled = Array.isArray(loraAdapters) && loraAdapters.length > 0;
+    inputs.Lora = {
+        enabled: loraAdaptersEnabled,
+        adapters: loraAdaptersEnabled ? loraAdapters : [],
     };
-    if (loraAdapters.length > 0) {
-        payload.lora_adapters = loraAdapters;
+    if (loraAdaptersEnabled) {
+        inputs.lora_adapters = loraAdapters;
     }
-    console.log("Generate payload", payload);
+    console.log("Generate payload", inputs);
 
     try {
         const workflowPayload = {
-            tasks: [{ id: "t1", type: "qwen-image.text2img", inputs: payload }],
+            tasks: [{ id: "t1", type: "qwen-image.text2img", inputs }],
             return: "@t1.images",
         };
         const idempotencyKey = WorkflowClient.makeIdempotencyKey();

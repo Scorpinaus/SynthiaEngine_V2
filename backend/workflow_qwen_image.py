@@ -5,10 +5,43 @@ from typing import Any
 from PIL import Image
 
 
+def _normalize_qwen_lora_adapters(inputs: dict[str, Any], deps: dict[str, Any]) -> Any:
+    lora_contract = inputs.get("Lora")
+    if isinstance(lora_contract, dict) and "enabled" in lora_contract:
+        if not bool(lora_contract.get("enabled")):
+            return []
+        adapters = lora_contract.get("adapters")
+        if isinstance(adapters, list):
+            return adapters
+        return []
+
+    normalized_lora_adapters = deps.get("normalized_lora_adapters")
+    if callable(normalized_lora_adapters):
+        normalized = normalized_lora_adapters(inputs)
+        if normalized is not None:
+            return normalized
+
+    if isinstance(lora_contract, dict):
+        adapters = lora_contract.get("adapters")
+        if isinstance(adapters, list):
+            return adapters
+
+    return inputs.get("lora_adapters")
+
+
+def _with_qwen_lora_inputs(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str, Any]:
+    payload = dict(inputs)
+    normalized_lora_adapters = _normalize_qwen_lora_adapters(payload, deps)
+    if normalized_lora_adapters is not None:
+        payload["lora_adapters"] = normalized_lora_adapters
+    return payload
+
+
 def run_qwen_image_text2img_task(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str, Any]:
     generate_text2img = deps["generate_text2img"]
 
-    result = generate_text2img(dict(inputs))
+    payload = _with_qwen_lora_inputs(inputs, deps)
+    result = generate_text2img(payload)
     if not isinstance(result, dict):
         raise ValueError("qwen-image.text2img must return an object")
     return result
@@ -18,6 +51,7 @@ def run_qwen_image_img2img_task(inputs: dict[str, Any], deps: dict[str, Any]) ->
     _open_image_ref = deps["open_image_ref"]
     _remap_img2img_strength = deps["remap_img2img_strength"]
     generate_img2img = deps["generate_img2img"]
+    normalized_lora_adapters = _normalize_qwen_lora_adapters(inputs, deps)
 
     initial_image = _open_image_ref(inputs["initial_image"]).convert("RGB")
     width = int(inputs.get("width") or 1024)
@@ -44,7 +78,7 @@ def run_qwen_image_img2img_task(inputs: dict[str, Any], deps: dict[str, Any]) ->
             "scheduler": str(inputs.get("scheduler") or "euler"),
             "model": inputs.get("model"),
             "num_images": int(inputs.get("num_images") or 1),
-            "lora_adapters": inputs.get("lora_adapters"),
+            "lora_adapters": normalized_lora_adapters,
         }
     )
     if not isinstance(result, dict):
@@ -55,6 +89,7 @@ def run_qwen_image_img2img_task(inputs: dict[str, Any], deps: dict[str, Any]) ->
 def run_qwen_image_inpaint_task(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str, Any]:
     _open_image_ref = deps["open_image_ref"]
     generate_inpaint = deps["generate_inpaint"]
+    normalized_lora_adapters = _normalize_qwen_lora_adapters(inputs, deps)
 
     initial_image = _open_image_ref(inputs["initial_image"]).convert("RGB")
     mask_image = _open_image_ref(inputs["mask_image"]).convert("L")
@@ -79,7 +114,7 @@ def run_qwen_image_inpaint_task(inputs: dict[str, Any], deps: dict[str, Any]) ->
             "scheduler": str(inputs.get("scheduler") or "euler"),
             "model": inputs.get("model"),
             "num_images": int(inputs.get("num_images") or 1),
-            "lora_adapters": inputs.get("lora_adapters"),
+            "lora_adapters": normalized_lora_adapters,
         }
     )
     if not isinstance(result, dict):

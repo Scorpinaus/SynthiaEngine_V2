@@ -429,6 +429,45 @@ async function generateBlurMask() {
     }
 }
 
+function baseInput(inputs, defaults, initialImageArtifactId, maskImageArtifactId) {
+    const prompt = WorkflowClient.readTextValue("prompt", defaults.prompt ?? "");
+    const negative_prompt = WorkflowClient.readTextValue(
+        "negative_prompt",
+        defaults.negative_prompt ?? ""
+    );
+    const steps = WorkflowClient.readNumberValue("steps", defaults.steps ?? 30, { integer: true });
+    const true_cfg_scale = WorkflowClient.readNumberValue("true_cfg", defaults.true_cfg_scale ?? 4.0);
+    const guidance_scale = WorkflowClient.readNumberValue(
+        "guidance_scale",
+        defaults.guidance_scale ?? 7.5,
+    );
+    const scheduler = WorkflowClient.readTextValue("scheduler", defaults.scheduler ?? "euler");
+    const seed = WorkflowClient.readSeedValue("seed");
+    const num_images = WorkflowClient.readNumberValue("num_images", defaults.num_images ?? 1, {
+        integer: true,
+    });
+    const modelRaw = document.getElementById("model_select")?.value ?? "";
+    const model = modelRaw ? modelRaw : (defaults.model ?? null);
+    const strength = WorkflowClient.readNumberValue("strength", defaults.strength ?? 0.5);
+
+    Object.assign(inputs, {
+        initial_image: `@artifact:${initialImageArtifactId}`,
+        mask_image: `@artifact:${maskImageArtifactId}`,
+        prompt,
+        negative_prompt,
+        steps,
+        true_cfg_scale,
+        guidance_scale,
+        scheduler,
+        seed,
+        num_images,
+        model,
+        strength,
+    });
+
+    return inputs;
+}
+
 async function generateQwenImageInpaint() {
     const token = ++activeJobToken;
     closeActiveEventSource();
@@ -446,44 +485,23 @@ async function generateQwenImageInpaint() {
     const catalog = window.WorkflowCatalog?.load ? await window.WorkflowCatalog.load(API_BASE) : null;
     const defaults = catalog?.tasks?.["qwen-image.inpaint"]?.input_defaults ?? {};
 
-    const prompt = WorkflowClient.readTextValue("prompt", defaults.prompt ?? "");
-    const negative_prompt = WorkflowClient.readTextValue("negative_prompt", defaults.negative_prompt ?? "");
-    const steps = WorkflowClient.readNumberValue("steps", defaults.steps ?? 30, { integer: true });
-    const trueCfgScale = WorkflowClient.readNumberValue("true_cfg", defaults.true_cfg_scale ?? 4.0);
-    const guidanceScale = WorkflowClient.readNumberValue(
-        "guidance_scale",
-        defaults.guidance_scale ?? 7.5,
-    );
-    const scheduler = WorkflowClient.readTextValue("scheduler", defaults.scheduler ?? "euler");
-    const seed = WorkflowClient.readSeedValue("seed");
-    const num_images = WorkflowClient.readNumberValue("num_images", defaults.num_images ?? 1, { integer: true });
-    const modelRaw = document.getElementById("model_select")?.value ?? "";
-    const model = modelRaw ? modelRaw : (defaults.model ?? null);
-    const strength = WorkflowClient.readNumberValue("strength", defaults.strength ?? 0.5);
-    const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
-
     try {
         const [uploadedBase, uploadedMask] = await Promise.all([
             WorkflowClient.uploadArtifact(API_BASE, baseImageFile, baseImageFile.name || "initial.png"),
             WorkflowClient.uploadArtifact(API_BASE, activeMaskBlob, "mask.png"),
         ]);
 
-        const taskInputs = {
-            initial_image: `@artifact:${uploadedBase.artifact_id}`,
-            mask_image: `@artifact:${uploadedMask.artifact_id}`,
-            prompt,
-            negative_prompt,
-            steps,
-            true_cfg_scale: trueCfgScale,
-            guidance_scale: guidanceScale,
-            scheduler,
-            seed,
-            num_images,
-            model,
-            strength,
+        const inputs = {};
+        baseInput(inputs, defaults, uploadedBase.artifact_id, uploadedMask.artifact_id);
+
+        const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
+        const loraAdaptersEnabled = Array.isArray(loraAdapters) && loraAdapters.length > 0;
+        inputs.Lora = {
+            enabled: loraAdaptersEnabled,
+            adapters: loraAdaptersEnabled ? loraAdapters : [],
         };
-        if (loraAdapters.length > 0) {
-            taskInputs.lora_adapters = loraAdapters;
+        if (loraAdaptersEnabled) {
+            inputs.lora_adapters = loraAdapters;
         }
 
         const workflowPayload = {
@@ -491,7 +509,7 @@ async function generateQwenImageInpaint() {
                 {
                     id: "t1",
                     type: "qwen-image.inpaint",
-                    inputs: taskInputs,
+                    inputs,
                 },
             ],
             return: "@t1.images",

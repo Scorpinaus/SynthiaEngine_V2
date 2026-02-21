@@ -43,6 +43,46 @@ class QwenImageWorkflowTests(unittest.TestCase):
         self.assertIn("lora_adapters", captured)
         self.assertEqual(captured["lora_adapters"], [{"lora_id": 101, "strength": 0.8}])
 
+    def test_qwen_image_text2img_accepts_legacy_lora_contract_enabled(self):
+        captured = {}
+
+        def _fake_generate_text2img(payload):
+            captured.update(payload)
+            return {"images": ["/outputs/batch/out.png"]}
+
+        fake_module = SimpleNamespace(generate_text2img=_fake_generate_text2img)
+        with patch.dict("sys.modules", {"backend.qwen_image_pipeline": fake_module}):
+            result = _qwen_image_text2img(
+                {
+                    "prompt": "test prompt",
+                    "Lora": {"enabled": True, "adapters": [{"lora_id": 102, "strength": 0.6}]},
+                },
+                _ctx=None,
+            )
+
+        self.assertEqual(result["images"], ["/outputs/batch/out.png"])
+        self.assertEqual(captured.get("lora_adapters"), [{"lora_id": 102, "strength": 0.6}])
+
+    def test_qwen_image_text2img_honors_legacy_lora_contract_disabled(self):
+        captured = {}
+
+        def _fake_generate_text2img(payload):
+            captured.update(payload)
+            return {"images": ["/outputs/batch/out.png"]}
+
+        fake_module = SimpleNamespace(generate_text2img=_fake_generate_text2img)
+        with patch.dict("sys.modules", {"backend.qwen_image_pipeline": fake_module}):
+            result = _qwen_image_text2img(
+                {
+                    "prompt": "test prompt",
+                    "Lora": {"enabled": False, "adapters": [{"lora_id": 103, "strength": 1.0}]},
+                },
+                _ctx=None,
+            )
+
+        self.assertEqual(result["images"], ["/outputs/batch/out.png"])
+        self.assertEqual(captured.get("lora_adapters"), [])
+
     def test_qwen_image_img2img_accepts_lora_adapters(self):
         inputs = QwenImageImg2ImgInputs(
             initial_image="@artifact:abc123",

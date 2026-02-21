@@ -145,15 +145,12 @@ if (window.WorkflowCatalog?.load) {
         .catch(() => {});
 }
 
-async function generateQwenImageImg2Img() {
-    const token = ++activeJobToken;
-    closeActiveEventSource();
-
-    const catalog = window.WorkflowCatalog?.load ? await window.WorkflowCatalog.load(API_BASE) : null;
-    const defaults = catalog?.tasks?.["qwen-image.img2img"]?.input_defaults ?? {};
-
+function baseInput(inputs, defaults) {
     const prompt = WorkflowClient.readTextValue("prompt", defaults.prompt ?? "");
-    const negative_prompt = WorkflowClient.readTextValue("negative_prompt", defaults.negative_prompt ?? "");
+    const negative_prompt = WorkflowClient.readTextValue(
+        "negative_prompt",
+        defaults.negative_prompt ?? ""
+    );
     const steps = WorkflowClient.readNumberValue("steps", defaults.steps ?? 30, { integer: true });
     const true_cfg_scale = WorkflowClient.readNumberValue("true_cfg", defaults.true_cfg_scale ?? 4.0);
     const guidance_scale = WorkflowClient.readNumberValue("cfg", defaults.guidance_scale ?? 7.5);
@@ -163,9 +160,46 @@ async function generateQwenImageImg2Img() {
     const height = WorkflowClient.readNumberValue("height", defaults.height ?? 1024, { integer: true });
     const modelRaw = document.getElementById("model_select")?.value ?? "";
     const model = modelRaw ? modelRaw : (defaults.model ?? null);
-    const num_images = WorkflowClient.readNumberValue("num_images", defaults.num_images ?? 1, { integer: true });
+    const num_images = WorkflowClient.readNumberValue("num_images", defaults.num_images ?? 1, {
+        integer: true,
+    });
     const strength = WorkflowClient.readNumberValue("strength", defaults.strength ?? 0.75);
+
+    Object.assign(inputs, {
+        prompt,
+        negative_prompt,
+        steps,
+        true_cfg_scale,
+        guidance_scale,
+        scheduler,
+        seed,
+        width,
+        height,
+        model,
+        num_images,
+        strength,
+    });
+
+    return inputs;
+}
+
+async function generateQwenImageImg2Img() {
+    const token = ++activeJobToken;
+    closeActiveEventSource();
+
+    const catalog = window.WorkflowCatalog?.load ? await window.WorkflowCatalog.load(API_BASE) : null;
+    const defaults = catalog?.tasks?.["qwen-image.img2img"]?.input_defaults ?? {};
+    const inputs = {};
+    baseInput(inputs, defaults);
     const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
+    const loraAdaptersEnabled = Array.isArray(loraAdapters) && loraAdapters.length > 0;
+    inputs.Lora = {
+        enabled: loraAdaptersEnabled,
+        adapters: loraAdaptersEnabled ? loraAdapters : [],
+    };
+    if (loraAdaptersEnabled) {
+        inputs.lora_adapters = loraAdapters;
+    }
     const initialImageInput = document.getElementById("initial_image");
 
     if (!initialImageInput.files || initialImageInput.files.length === 0) {
@@ -180,32 +214,14 @@ async function generateQwenImageImg2Img() {
             initialFile,
             initialFile.name || "initial.png",
         );
-
-        const taskInputs = {
-            initial_image: `@artifact:${uploaded.artifact_id}`,
-            prompt,
-            negative_prompt,
-            steps,
-            true_cfg_scale,
-            guidance_scale,
-            scheduler,
-            width,
-            height,
-            seed,
-            num_images,
-            model,
-            strength,
-        };
-        if (loraAdapters.length > 0) {
-            taskInputs.lora_adapters = loraAdapters;
-        }
+        inputs.initial_image = `@artifact:${uploaded.artifact_id}`;
 
         const workflowPayload = {
             tasks: [
                 {
                     id: "t1",
                     type: "qwen-image.img2img",
-                    inputs: taskInputs,
+                    inputs,
                 },
             ],
             return: "@t1.images",
