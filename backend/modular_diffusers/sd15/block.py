@@ -76,13 +76,17 @@ class SD15Text2ImgBlocks(ModularPipelineBlocks):
     @property
     def inputs(self) -> list[InputParam]:
         return [
-            InputParam("prompt", type_hint=str | list[str], required=True),
+            InputParam("prompt", type_hint=str | list[str]),
             InputParam("negative_prompt", type_hint=str | list[str]),
+            InputParam("prompt_embeds", type_hint=torch.Tensor | None),
+            InputParam("negative_prompt_embeds", type_hint=torch.Tensor | None),
+            InputParam("image", type_hint=PIL.Image.Image | list[PIL.Image.Image] | torch.Tensor | None),
             InputParam("height", type_hint=int),
             InputParam("width", type_hint=int),
             InputParam("num_inference_steps", type_hint=int, default=50),
             InputParam("guidance_scale", type_hint=float, default=7.5),
             InputParam("num_images_per_prompt", type_hint=int, default=1),
+            InputParam("strength", type_hint=float, default=0.8),
             InputParam("eta", type_hint=float, default=0.0),
             InputParam("generator", type_hint=torch.Generator | list[torch.Generator] | None),
             InputParam("latents", type_hint=torch.Tensor | None),
@@ -127,6 +131,91 @@ class SD15Text2ImgBlocks(ModularPipelineBlocks):
         if isinstance(negative_prompt, list) and len(negative_prompt) != batch_size:
             raise ValueError(
                 "When providing `negative_prompt` as a list, it must have the same batch size as `prompt`."
+            )
+
+    @staticmethod
+    def _validate_inputs(block_state) -> None:
+        has_prompt = block_state.prompt is not None
+        has_prompt_embeds = block_state.prompt_embeds is not None
+
+        if not has_prompt and not has_prompt_embeds:
+            raise ValueError("Provide either `prompt` or `prompt_embeds`.")
+
+        if has_prompt and has_prompt_embeds:
+            raise ValueError("Pass either `prompt` or `prompt_embeds`, not both.")
+
+        if block_state.prompt_embeds is not None and block_state.prompt_embeds.ndim != 3:
+            raise ValueError("`prompt_embeds` must be a 3D tensor of shape [batch, sequence, hidden].")
+
+        if block_state.negative_prompt_embeds is not None and block_state.negative_prompt_embeds.ndim != 3:
+            raise ValueError("`negative_prompt_embeds` must be a 3D tensor of shape [batch, sequence, hidden].")
+
+        if (
+            block_state.prompt_embeds is not None
+            and block_state.negative_prompt_embeds is not None
+            and block_state.prompt_embeds.shape != block_state.negative_prompt_embeds.shape
+        ):
+            raise ValueError("`negative_prompt_embeds` must have the same shape as `prompt_embeds`.")
+
+        if isinstance(block_state.prompt, list):
+            SD15Text2ImgBlocks._check_prompt_batch(
+                block_state.prompt,
+                block_state.negative_prompt,
+                len(block_state.prompt),
+            )
+
+        if block_state.image is not None and not 0 < block_state.strength <= 1:
+            raise ValueError("`strength` must be greater than 0 and less than or equal to 1 for img2img.")
+
+    @staticmethod
+    def _batch_size(block_state) -> int:
+        if isinstance(block_state.prompt, list):
+            return len(block_state.prompt)
+        if block_state.prompt is not None:
+            return 1
+        if block_state.prompt_embeds is not None:
+            return int(block_state.prompt_embeds.shape[0])
+        raise ValueError("Unable to determine batch size from inputs.")
+
+    @staticmethod
+    def _prepare_prompt_embeds(
+        prompt_embeds: torch.Tensor,
+        negative_prompt_embeds: torch.Tensor | None,
+        device: torch.device,
+        dtype: torch.dtype,
+        num_images_per_prompt: int,
+        guidance_scale: float,
+    ) -> torch.Tensor:
+        prompt_embeds = prompt_embeds.to(device=device, dtype=dtype)
+        prompt_embeds = prompt_embeds.repeat_interleave(num_images_per_prompt, dim=0)
+
+        if guidance_scale <= 1.0:
+            return prompt_embeds
+
+        if negative_prompt_embeds is None:
+            negative_prompt_embeds = torch.zeros_like(prompt_embeds[: prompt_embeds.shape[0] // num_images_per_prompt])
+        negative_prompt_embeds = negative_prompt_embeds.to(device=device, dtype=dtype)
+        negative_prompt_embeds = negative_prompt_embeds.repeat_interleave(num_images_per_prompt, dim=0)
+
+        return torch.cat([negative_prompt_embeds, prompt_embeds], dim=0)
+
+    @staticmethod
+    def _get_batch_size_for_image(image: PIL.Image.Image | list[PIL.Image.Image] | torch.Tensor) -> int:
+        if isinstance(image, list):
+            return len(image)
+        if isinstance(image, torch.Tensor):
+            return int(image.shape[0])
+        return 1
+
+    @staticmethod
+    def _validate_image_batch(block_state, batch_size: int) -> None:
+        if block_state.image is None:
+            return
+
+        image_batch_size = SD15Text2ImgBlocks._get_batch_size_for_image(block_state.image)
+        if image_batch_size not in (1, batch_size):
+            raise ValueError(
+                "`image` batch size must be 1 or match the prompt batch size for img2img."
             )
 
     @staticmethod
@@ -177,6 +266,123 @@ class SD15Text2ImgBlocks(ModularPipelineBlocks):
         negative_prompt_embeds = negative_prompt_embeds.repeat_interleave(num_images_per_prompt, dim=0)
 
         return torch.cat([negative_prompt_embeds, prompt_embeds], dim=0)
+
+    @staticmethod
+    def _validate_latents(
+        components,
+        latents: torch.Tensor | None,
+        batch_size: int,
+        height: int,
+        width: int,
+    ) -> None:
+        if latents is None:
+            return
+
+        in_channels = 4
+        if getattr(components, "unet", None) is not None:
+            in_channels = components.unet.config.in_channels
+        expected_shape = (
+            batch_size,
+            in_channels,
+            height // SD15Text2ImgBlocks._vae_scale_factor(components),
+            width // SD15Text2ImgBlocks._vae_scale_factor(components),
+        )
+        if tuple(latents.shape) != expected_shape:
+            raise ValueError(f"`latents` must have shape {expected_shape}, got {tuple(latents.shape)}.")
+
+    @staticmethod
+    def _preprocess_image(
+        components,
+        image: PIL.Image.Image | list[PIL.Image.Image] | torch.Tensor,
+        height: int,
+        width: int,
+        device: torch.device,
+        dtype: torch.dtype,
+    ) -> torch.Tensor:
+        image_processor = VaeImageProcessor(vae_scale_factor=SD15Text2ImgBlocks._vae_scale_factor(components))
+        image_tensor = image_processor.preprocess(image, height=height, width=width)
+        return image_tensor.to(device=device, dtype=dtype)
+
+    @staticmethod
+    def _get_timesteps_img2img(
+        scheduler,
+        num_inference_steps: int,
+        strength: float,
+        device: torch.device,
+    ) -> tuple[torch.Tensor, int]:
+        init_timestep = min(int(num_inference_steps * strength), num_inference_steps)
+        init_timestep = max(init_timestep, 1)
+        t_start = max(num_inference_steps - init_timestep, 0)
+        timesteps = scheduler.timesteps[t_start:]
+        return timesteps, len(timesteps)
+
+    @staticmethod
+    def _encode_image_latents(
+        components,
+        image_tensor: torch.Tensor,
+        generator: torch.Generator | list[torch.Generator] | None,
+        dtype: torch.dtype,
+    ) -> torch.Tensor:
+        needs_upcast = bool(getattr(components.vae.config, "force_upcast", False))
+        if needs_upcast:
+            image_tensor = image_tensor.float()
+            components.vae.to(dtype=torch.float32)
+
+        if isinstance(generator, list):
+            image_latents = []
+            for index in range(image_tensor.shape[0]):
+                latent = components.vae.encode(image_tensor[index : index + 1]).latent_dist.sample(generator[index])
+                image_latents.append(latent)
+            image_latents = torch.cat(image_latents, dim=0)
+        else:
+            image_latents = components.vae.encode(image_tensor).latent_dist.sample(generator)
+
+        if needs_upcast:
+            components.vae.to(dtype=dtype)
+
+        image_latents = image_latents.to(dtype=dtype)
+        return image_latents * components.vae.config.scaling_factor
+
+    @staticmethod
+    def _prepare_img2img_latents(
+        components,
+        image: PIL.Image.Image | list[PIL.Image.Image] | torch.Tensor,
+        batch_size: int,
+        num_images_per_prompt: int,
+        height: int,
+        width: int,
+        dtype: torch.dtype,
+        device: torch.device,
+        generator: torch.Generator | list[torch.Generator] | None,
+        timestep: torch.Tensor,
+    ) -> torch.Tensor:
+        image_tensor = SD15Text2ImgBlocks._preprocess_image(
+            components=components,
+            image=image,
+            height=height,
+            width=width,
+            device=device,
+            dtype=dtype,
+        )
+        image_latents = SD15Text2ImgBlocks._encode_image_latents(
+            components=components,
+            image_tensor=image_tensor,
+            generator=generator,
+            dtype=dtype,
+        )
+
+        effective_batch_size = batch_size * num_images_per_prompt
+        if image_latents.shape[0] == 1 and effective_batch_size > 1:
+            image_latents = image_latents.repeat(effective_batch_size, 1, 1, 1)
+        elif image_latents.shape[0] != effective_batch_size:
+            if effective_batch_size % image_latents.shape[0] != 0:
+                raise ValueError(
+                    f"Cannot duplicate image latents of batch size {image_latents.shape[0]} to {effective_batch_size}."
+                )
+            image_latents = image_latents.repeat(effective_batch_size // image_latents.shape[0], 1, 1, 1)
+
+        noise = randn_tensor(image_latents.shape, generator=generator, device=device, dtype=dtype)
+        return components.scheduler.add_noise(image_latents, noise, timestep)
 
     @staticmethod
     def _prepare_latents(
@@ -235,6 +441,7 @@ class SD15Text2ImgBlocks(ModularPipelineBlocks):
     @torch.no_grad()
     def __call__(self, components, state: PipelineState):
         block_state = self.get_block_state(state)
+        self._validate_inputs(block_state)
 
         device = self._execution_device(components)
         default_size = self._default_size(components)
@@ -244,18 +451,36 @@ class SD15Text2ImgBlocks(ModularPipelineBlocks):
         if height % 8 != 0 or width % 8 != 0:
             raise ValueError("`height` and `width` must be divisible by 8 for SD1.5 latents.")
 
-        prompt_batch = [block_state.prompt] if isinstance(block_state.prompt, str) else block_state.prompt
-        batch_size = len(prompt_batch)
+        batch_size = self._batch_size(block_state)
+        self._validate_image_batch(block_state, batch_size)
         image_batch_size = batch_size * block_state.num_images_per_prompt
-
-        prompt_embeds = self._encode_prompt(
+        self._validate_latents(
             components=components,
-            prompt=block_state.prompt,
-            negative_prompt=block_state.negative_prompt,
-            device=device,
-            num_images_per_prompt=block_state.num_images_per_prompt,
-            guidance_scale=block_state.guidance_scale,
+            latents=block_state.latents,
+            batch_size=image_batch_size,
+            height=height,
+            width=width,
         )
+
+        text_encoder_dtype = getattr(components.text_encoder, "dtype", torch.float32)
+        if block_state.prompt_embeds is not None:
+            prompt_embeds = self._prepare_prompt_embeds(
+                prompt_embeds=block_state.prompt_embeds,
+                negative_prompt_embeds=block_state.negative_prompt_embeds,
+                device=device,
+                dtype=text_encoder_dtype,
+                num_images_per_prompt=block_state.num_images_per_prompt,
+                guidance_scale=block_state.guidance_scale,
+            )
+        else:
+            prompt_embeds = self._encode_prompt(
+                components=components,
+                prompt=block_state.prompt,
+                negative_prompt=block_state.negative_prompt,
+                device=device,
+                num_images_per_prompt=block_state.num_images_per_prompt,
+                guidance_scale=block_state.guidance_scale,
+            )
 
         timesteps, num_inference_steps = retrieve_timesteps(
             components.scheduler,
@@ -264,16 +489,50 @@ class SD15Text2ImgBlocks(ModularPipelineBlocks):
             timesteps=block_state.timesteps,
             sigmas=block_state.sigmas,
         )
-        latents = self._prepare_latents(
-            components=components,
-            batch_size=image_batch_size,
-            height=height,
-            width=width,
-            dtype=prompt_embeds.dtype,
-            device=device,
-            generator=block_state.generator,
-            latents=block_state.latents,
-        )
+
+        if block_state.image is not None:
+            timesteps, num_inference_steps = self._get_timesteps_img2img(
+                scheduler=components.scheduler,
+                num_inference_steps=num_inference_steps,
+                strength=block_state.strength,
+                device=device,
+            )
+            latent_timestep = timesteps[:1].repeat(image_batch_size)
+            if block_state.latents is not None:
+                latents = self._prepare_latents(
+                    components=components,
+                    batch_size=image_batch_size,
+                    height=height,
+                    width=width,
+                    dtype=prompt_embeds.dtype,
+                    device=device,
+                    generator=block_state.generator,
+                    latents=block_state.latents,
+                )
+            else:
+                latents = self._prepare_img2img_latents(
+                    components=components,
+                    image=block_state.image,
+                    batch_size=batch_size,
+                    num_images_per_prompt=block_state.num_images_per_prompt,
+                    height=height,
+                    width=width,
+                    dtype=prompt_embeds.dtype,
+                    device=device,
+                    generator=block_state.generator,
+                    timestep=latent_timestep,
+                )
+        else:
+            latents = self._prepare_latents(
+                components=components,
+                batch_size=image_batch_size,
+                height=height,
+                width=width,
+                dtype=prompt_embeds.dtype,
+                device=device,
+                generator=block_state.generator,
+                latents=block_state.latents,
+            )
         extra_step_kwargs = self._prepare_extra_step_kwargs(
             components=components,
             generator=block_state.generator,

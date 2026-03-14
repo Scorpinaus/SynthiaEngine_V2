@@ -1,0 +1,78 @@
+"""Run a simple text-to-image inference with the local SD1.5 modular repo."""
+
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+
+import torch
+from diffusers import ModularPipeline
+
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+DEFAULT_REPO_PATH = SCRIPT_DIR
+DEFAULT_OUTPUT_PATH = SCRIPT_DIR / "outputs" / "sd15_modular_text2img.png"
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Run SD1.5 Modular Diffusers text-to-image inference.")
+    parser.add_argument("--prompt", default="a cinematic portrait of a robot explorer", help="Positive prompt text.")
+    parser.add_argument("--negative-prompt", default="blurry, distorted, low quality", help="Negative prompt text.")
+    parser.add_argument("--steps", type=int, default=30, help="Number of denoising steps.")
+    parser.add_argument("--guidance-scale", type=float, default=7.5, help="Classifier-free guidance scale.")
+    parser.add_argument("--width", type=int, default=512, help="Output image width.")
+    parser.add_argument("--height", type=int, default=512, help="Output image height.")
+    parser.add_argument("--seed", type=int, default=1234, help="Random seed.")
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=DEFAULT_OUTPUT_PATH,
+        help="Path where the generated image will be saved.",
+    )
+    parser.add_argument(
+        "--repo-path",
+        type=Path,
+        default=DEFAULT_REPO_PATH,
+        help="Path to the local modular SD1.5 repo.",
+    )
+    parser.add_argument(
+        "--model",
+        default="runwayml/stable-diffusion-v1-5",
+        help="Model repo used for loading tokenizer/text_encoder/unet/vae/scheduler.",
+    )
+    return parser
+
+
+def main() -> None:
+    args = build_parser().parse_args()
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    dtype = torch.float16 if device == "cuda" else torch.float32
+    generator = torch.Generator(device=device).manual_seed(args.seed)
+
+    pipe = ModularPipeline.from_pretrained(str(args.repo_path), trust_remote_code=True)
+    pipe.load_components(
+        torch_dtype=dtype,
+        pretrained_model_name_or_path={"default": args.model},
+    )
+    pipe.to(device)
+
+    image = pipe(
+        prompt=args.prompt,
+        negative_prompt=args.negative_prompt,
+        num_inference_steps=args.steps,
+        guidance_scale=args.guidance_scale,
+        width=args.width,
+        height=args.height,
+        generator=generator,
+        output="images",
+    )[0]
+
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    image.save(args.output)
+
+    print(f"Saved image to: {args.output}")
+
+
+if __name__ == "__main__":
+    main()
