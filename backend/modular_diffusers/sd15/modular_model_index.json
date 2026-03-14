@@ -1,0 +1,74 @@
+{
+  "_class_name": "ModularPipeline",
+  "_blocks_class_name": "SD15Text2ImgBlocks",
+  "tokenizer": [
+    "transformers",
+    "CLIPTokenizer",
+    {
+      "type_hint": [
+        "transformers",
+        "CLIPTokenizer"
+      ],
+      "pretrained_model_name_or_path": "runwayml/stable-diffusion-v1-5",
+      "subfolder": "tokenizer",
+      "variant": null,
+      "revision": null
+    }
+  ],
+  "text_encoder": [
+    "transformers",
+    "CLIPTextModel",
+    {
+      "type_hint": [
+        "transformers",
+        "CLIPTextModel"
+      ],
+      "pretrained_model_name_or_path": "runwayml/stable-diffusion-v1-5",
+      "subfolder": "text_encoder",
+      "variant": null,
+      "revision": null
+    }
+  ],
+  "unet": [
+    "diffusers",
+    "UNet2DConditionModel",
+    {
+      "type_hint": [
+        "diffusers",
+        "UNet2DConditionModel"
+      ],
+      "pretrained_model_name_or_path": "runwayml/stable-diffusion-v1-5",
+      "subfolder": "unet",
+      "variant": null,
+      "revision": null
+    }
+  ],
+  "vae": [
+    "diffusers",
+    "AutoencoderKL",
+    {
+      "type_hint": [
+        "diffusers",
+        "AutoencoderKL"
+      ],
+      "pretrained_model_name_or_path": "runwayml/stable-diffusion-v1-5",
+      "subfolder": "vae",
+      "variant": null,
+      "revision": null
+    }
+  ],
+  "scheduler": [
+    "diffusers",
+    "PNDMScheduler",
+    {
+      "type_hint": [
+        "diffusers",
+        "PNDMScheduler"
+      ],
+      "pretrained_model_name_or_path": "runwayml/stable-diffusion-v1-5",
+      "subfolder": "scheduler",
+      "variant": null,
+      "revision": null
+    }
+  ]
+}
