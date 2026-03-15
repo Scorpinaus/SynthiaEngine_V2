@@ -4,7 +4,7 @@ This folder is a local Modular Diffusers repository for Phase 1 SD1.5 migration 
 
 ## Scope
 
-- Text-to-image and img2img
+- Text-to-image, img2img, and inpaint
 - Custom `ModularPipelineBlocks` implementation
 - SD1.5 component layout referenced from `runwayml/stable-diffusion-v1-5`
 - Supports either text prompts or precomputed prompt embeddings
@@ -73,9 +73,9 @@ Example with custom prompt and output path:
   --output backend\modular_diffusers\sd15\outputs\img2img_result.png
 ```
 
-## Img2Img
+## Img2Img / Inpaint
 
-The modular block now also supports img2img by passing:
+The modular block supports img2img by passing:
 
 - `image`
 - `strength`
@@ -109,9 +109,40 @@ images = pipe(
 )
 ```
 
+For inpaint, also pass `mask_image`:
+
+```python
+from PIL import Image
+import torch
+from diffusers import ModularPipeline
+
+pipe = ModularPipeline.from_pretrained(
+    r"C:\Users\Admin\DiffusersProject\SynthaEngine_codex\backend\modular_diffusers\sd15",
+    trust_remote_code=True,
+)
+pipe.load_components(torch_dtype=torch.float16)
+pipe.to("cuda")
+
+init_image = Image.open("input.png").convert("RGB")
+mask_image = Image.open("mask.png").convert("L")
+images = pipe(
+    prompt="replace the masked area with a glowing portal",
+    negative_prompt="blurry, distorted",
+    image=init_image,
+    mask_image=mask_image,
+    strength=0.75,
+    num_inference_steps=30,
+    guidance_scale=7.5,
+    height=512,
+    width=512,
+    generator=torch.Generator(device="cuda").manual_seed(1234),
+    output="images",
+)
+```
+
 ## Notes
 
 - This Diffusers installation expects `modular_config.json` for custom block loading.
 - `ModularPipeline.from_pretrained(...)` is lazy; call `load_components()` before inference.
 - You can replace `pipe.scheduler` after `load_components()` if you want to test scheduler variants.
-- Inpaint, ControlNet, LoRA, and file-output orchestration are still not implemented in this modular test repo.
+- ControlNet, LoRA, and file-output orchestration are still not implemented in this modular test repo.

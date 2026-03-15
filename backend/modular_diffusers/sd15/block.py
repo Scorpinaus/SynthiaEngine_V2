@@ -5,6 +5,7 @@ from typing import Any
 
 import PIL.Image
 import torch
+import torch.nn.functional as F
 from transformers import CLIPTextModel, CLIPTokenizer
 
 from diffusers.image_processor import VaeImageProcessor
@@ -81,6 +82,7 @@ class SD15Text2ImgBlocks(ModularPipelineBlocks):
             InputParam("prompt_embeds", type_hint=torch.Tensor | None),
             InputParam("negative_prompt_embeds", type_hint=torch.Tensor | None),
             InputParam("image", type_hint=PIL.Image.Image | list[PIL.Image.Image] | torch.Tensor | None),
+            InputParam("mask_image", type_hint=PIL.Image.Image | list[PIL.Image.Image] | torch.Tensor | None),
             InputParam("height", type_hint=int),
             InputParam("width", type_hint=int),
             InputParam("num_inference_steps", type_hint=int, default=50),
@@ -164,8 +166,20 @@ class SD15Text2ImgBlocks(ModularPipelineBlocks):
                 len(block_state.prompt),
             )
 
+        if block_state.mask_image is not None and block_state.image is None:
+            raise ValueError("`mask_image` requires `image` for inpaint.")
+
         if block_state.image is not None and not 0 < block_state.strength <= 1:
-            raise ValueError("`strength` must be greater than 0 and less than or equal to 1 for img2img.")
+            raise ValueError("`strength` must be greater than 0 and less than or equal to 1 for img2img/inpaint.")
+
+        if (
+            block_state.image is not None
+            and block_state.mask_image is not None
+            and isinstance(block_state.image, PIL.Image.Image)
+            and isinstance(block_state.mask_image, PIL.Image.Image)
+            and block_state.image.size != block_state.mask_image.size
+        ):
+            raise ValueError("`image` and `mask_image` must have the same size for inpaint.")
 
     @staticmethod
     def _batch_size(block_state) -> int:
@@ -217,6 +231,11 @@ class SD15Text2ImgBlocks(ModularPipelineBlocks):
             raise ValueError(
                 "`image` batch size must be 1 or match the prompt batch size for img2img."
             )
+
+        if block_state.mask_image is not None:
+            mask_batch_size = SD15Text2ImgBlocks._get_batch_size_for_image(block_state.mask_image)
+            if mask_batch_size not in (1, batch_size):
+                raise ValueError("`mask_image` batch size must be 1 or match the prompt batch size for inpaint.")
 
     @staticmethod
     def _encode_prompt(
@@ -304,6 +323,28 @@ class SD15Text2ImgBlocks(ModularPipelineBlocks):
         return image_tensor.to(device=device, dtype=dtype)
 
     @staticmethod
+    def _preprocess_mask(
+        components,
+        mask_image: PIL.Image.Image | list[PIL.Image.Image] | torch.Tensor,
+        height: int,
+        width: int,
+        device: torch.device,
+        dtype: torch.dtype,
+    ) -> torch.Tensor:
+        mask_processor = VaeImageProcessor(
+            vae_scale_factor=SD15Text2ImgBlocks._vae_scale_factor(components),
+            do_normalize=False,
+            do_binarize=True,
+            do_convert_grayscale=True,
+        )
+        mask = mask_processor.preprocess(mask_image, height=height, width=width)
+        latent_height = height // SD15Text2ImgBlocks._vae_scale_factor(components)
+        latent_width = width // SD15Text2ImgBlocks._vae_scale_factor(components)
+        if mask.shape[-2:] != (latent_height, latent_width):
+            mask = F.interpolate(mask, size=(latent_height, latent_width), mode="nearest")
+        return mask.to(device=device, dtype=dtype)
+
+    @staticmethod
     def _get_timesteps_img2img(
         scheduler,
         num_inference_steps: int,
@@ -355,7 +396,7 @@ class SD15Text2ImgBlocks(ModularPipelineBlocks):
         device: torch.device,
         generator: torch.Generator | list[torch.Generator] | None,
         timestep: torch.Tensor,
-    ) -> torch.Tensor:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         image_tensor = SD15Text2ImgBlocks._preprocess_image(
             components=components,
             image=image,
@@ -382,7 +423,35 @@ class SD15Text2ImgBlocks(ModularPipelineBlocks):
             image_latents = image_latents.repeat(effective_batch_size // image_latents.shape[0], 1, 1, 1)
 
         noise = randn_tensor(image_latents.shape, generator=generator, device=device, dtype=dtype)
-        return components.scheduler.add_noise(image_latents, noise, timestep)
+        return components.scheduler.add_noise(image_latents, noise, timestep), image_latents, noise
+
+    @staticmethod
+    def _prepare_mask_latents(
+        components,
+        mask_image: PIL.Image.Image | list[PIL.Image.Image] | torch.Tensor,
+        batch_size: int,
+        num_images_per_prompt: int,
+        height: int,
+        width: int,
+        dtype: torch.dtype,
+        device: torch.device,
+    ) -> torch.Tensor:
+        mask = SD15Text2ImgBlocks._preprocess_mask(
+            components=components,
+            mask_image=mask_image,
+            height=height,
+            width=width,
+            device=device,
+            dtype=dtype,
+        )
+        effective_batch_size = batch_size * num_images_per_prompt
+        if mask.shape[0] == 1 and effective_batch_size > 1:
+            mask = mask.repeat(effective_batch_size, 1, 1, 1)
+        elif mask.shape[0] != effective_batch_size:
+            if effective_batch_size % mask.shape[0] != 0:
+                raise ValueError(f"Cannot duplicate mask batch size {mask.shape[0]} to {effective_batch_size}.")
+            mask = mask.repeat(effective_batch_size // mask.shape[0], 1, 1, 1)
+        return mask
 
     @staticmethod
     def _prepare_latents(
@@ -490,6 +559,9 @@ class SD15Text2ImgBlocks(ModularPipelineBlocks):
             sigmas=block_state.sigmas,
         )
 
+        image_latents = None
+        latent_noise = None
+        mask = None
         if block_state.image is not None:
             timesteps, num_inference_steps = self._get_timesteps_img2img(
                 scheduler=components.scheduler,
@@ -510,7 +582,7 @@ class SD15Text2ImgBlocks(ModularPipelineBlocks):
                     latents=block_state.latents,
                 )
             else:
-                latents = self._prepare_img2img_latents(
+                latents, image_latents, latent_noise = self._prepare_img2img_latents(
                     components=components,
                     image=block_state.image,
                     batch_size=batch_size,
@@ -521,6 +593,17 @@ class SD15Text2ImgBlocks(ModularPipelineBlocks):
                     device=device,
                     generator=block_state.generator,
                     timestep=latent_timestep,
+                )
+            if block_state.mask_image is not None:
+                mask = self._prepare_mask_latents(
+                    components=components,
+                    mask_image=block_state.mask_image,
+                    batch_size=batch_size,
+                    num_images_per_prompt=block_state.num_images_per_prompt,
+                    height=height,
+                    width=width,
+                    dtype=prompt_embeds.dtype,
+                    device=device,
                 )
         else:
             latents = self._prepare_latents(
@@ -540,7 +623,7 @@ class SD15Text2ImgBlocks(ModularPipelineBlocks):
         )
 
         do_classifier_free_guidance = block_state.guidance_scale > 1.0
-        for timestep in timesteps:
+        for timestep_index, timestep in enumerate(timesteps):
             latent_model_input = torch.cat([latents] * 2) if do_classifier_free_guidance else latents
             if hasattr(components.scheduler, "scale_model_input"):
                 latent_model_input = components.scheduler.scale_model_input(latent_model_input, timestep)
@@ -563,6 +646,14 @@ class SD15Text2ImgBlocks(ModularPipelineBlocks):
                 return_dict=False,
                 **extra_step_kwargs,
             )[0]
+
+            if mask is not None and image_latents is not None and latent_noise is not None:
+                if timestep_index < len(timesteps) - 1:
+                    next_timestep = timesteps[timestep_index + 1]
+                    init_latents_proper = components.scheduler.add_noise(image_latents, latent_noise, next_timestep)
+                else:
+                    init_latents_proper = image_latents
+                latents = init_latents_proper * (1 - mask) + latents * mask
 
         block_state.timesteps = timesteps
         block_state.latents = latents

@@ -283,3 +283,91 @@ def test_sd15_modular_repo_rejects_invalid_img2img_strength_high():
             height=64,
             width=64,
         )
+
+
+@pytest.mark.integration
+def test_sd15_modular_repo_runs_tiny_inpaint_smoke_inference():
+    pipe = ModularPipeline.from_pretrained(str(SD15_MODULAR_REPO), trust_remote_code=True)
+    pipe.load_components(
+        torch_dtype=torch.float32,
+        pretrained_model_name_or_path={"default": "hf-internal-testing/tiny-stable-diffusion-pipe"},
+    )
+    pipe.to("cpu")
+
+    image = Image.new("RGB", (64, 64), color=(120, 160, 200))
+    mask_image = Image.new("L", (64, 64), color=0)
+    mask_image.paste(255, (16, 16, 48, 48))
+
+    outputs = pipe(
+        prompt="replace the center with a glowing lighthouse",
+        negative_prompt="blurry",
+        image=image,
+        mask_image=mask_image,
+        height=64,
+        width=64,
+        strength=0.75,
+        num_inference_steps=10,
+        guidance_scale=7.5,
+        generator=torch.Generator(device="cpu").manual_seed(0),
+        output=["images", "latents"],
+    )
+
+    assert len(outputs["images"]) == 1
+    assert outputs["images"][0].size == (64, 64)
+    assert outputs["latents"].ndim == 4
+
+
+@pytest.mark.integration
+def test_sd15_modular_repo_inpaint_is_deterministic_for_same_seed():
+    pipe = ModularPipeline.from_pretrained(str(SD15_MODULAR_REPO), trust_remote_code=True)
+    pipe.load_components(
+        torch_dtype=torch.float32,
+        pretrained_model_name_or_path={"default": "hf-internal-testing/tiny-stable-diffusion-pipe"},
+    )
+    pipe.to("cpu")
+
+    image = Image.new("RGB", (64, 64), color=(80, 90, 100))
+    mask_image = Image.new("L", (64, 64), color=0)
+    mask_image.paste(255, (20, 20, 44, 44))
+    kwargs = dict(
+        prompt="paint a bright portal in the center",
+        negative_prompt="blurry",
+        image=image,
+        mask_image=mask_image,
+        height=64,
+        width=64,
+        strength=0.6,
+        num_inference_steps=10,
+        guidance_scale=7.5,
+        output="latents",
+    )
+
+    latents_a = pipe(generator=torch.Generator(device="cpu").manual_seed(5678), **kwargs)
+    latents_b = pipe(generator=torch.Generator(device="cpu").manual_seed(5678), **kwargs)
+
+    assert torch.allclose(latents_a, latents_b)
+
+
+def test_sd15_modular_repo_rejects_mask_without_image():
+    pipe = ModularPipeline.from_pretrained(str(SD15_MODULAR_REPO), trust_remote_code=True)
+
+    with pytest.raises(ValueError, match="mask_image"):
+        pipe(
+            prompt="missing base image",
+            mask_image=Image.new("L", (64, 64), color=255),
+            height=64,
+            width=64,
+        )
+
+
+def test_sd15_modular_repo_rejects_mismatched_mask_size():
+    pipe = ModularPipeline.from_pretrained(str(SD15_MODULAR_REPO), trust_remote_code=True)
+
+    with pytest.raises(ValueError, match="same size"):
+        pipe(
+            prompt="bad mask size",
+            image=Image.new("RGB", (64, 64), color=(0, 0, 0)),
+            mask_image=Image.new("L", (32, 32), color=255),
+            height=64,
+            width=64,
+        )
