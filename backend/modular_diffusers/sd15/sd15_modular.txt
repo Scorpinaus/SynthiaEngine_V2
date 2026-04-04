@@ -1,0 +1,65 @@
+SD1.5 Modular Diffusers decisions
+
+Scope decisions
+- This local modular repo is a testbed for migrating SD1.5 from classic Diffusers pipelines to Modular Diffusers.
+- Current workflow coverage includes text2img, img2img, and inpaint.
+- ControlNet, LoRA lifecycle, and backend workflow/job integration are intentionally deferred.
+
+Structure decisions
+- The public top-level block is `SD15AutoBlocks`.
+- `SD15AutoBlocks` uses `AutoPipelineBlocks` to route by workflow:
+  - inpaint when `mask_image` is present
+  - img2img when `image` is present
+  - text2img otherwise
+- Each workflow is now represented by its own sequential block:
+  - `SD15Text2ImgBlocks`
+  - `SD15Img2ImgBlocks`
+  - `SD15InpaintBlocks`
+- Each sequential workflow is decomposed into smaller step blocks:
+  - prompt encoding
+  - latent preparation
+  - denoise
+  - decode
+
+Implementation decisions
+- Shared helper logic stays inside `SD15WorkflowUtils` instead of being duplicated across workflow blocks.
+- Prompt encoding supports either plain text prompts or precomputed prompt embeddings.
+- Output handling supports `pil`, `np`, and `latent`.
+- Img2img and inpaint both use the image-latent initialization path with `strength`-based timestep trimming.
+- Inpaint uses mask preprocessing plus latent-space mask blending during the denoise loop.
+- The design currently targets the standard 4-channel SD1.5 latent workflow rather than a separate 9-channel inpaint UNet design.
+
+Packaging and runtime decisions
+- The installed Diffusers runtime in this environment expects `modular_config.json` for custom block loading.
+- The repo currently uses:
+  - `block.py`
+  - `modular_config.json`
+  - `modular_model_index.json`
+- Components are loaded lazily through `ModularPipeline.load_components()`.
+- Local custom code loading requires `trust_remote_code=True`.
+
+Validation decisions
+- Focused validation has been done with tiny official test components from `hf-internal-testing/tiny-stable-diffusion-pipe`.
+- Real SD1.5 smoke validation has been done with the local model repo when needed.
+- `pytest` is not installed in the venv, so validation has relied on:
+  - `python -m compileall backend`
+  - direct `.venv\Scripts\python` smoke scripts
+
+Standalone script decisions
+- `sd15_modular_text2img.py` is the simple text2img smoke entrypoint.
+- `sd15_modular_img2img.py` is the simple img2img smoke entrypoint.
+- Both scripts:
+  - load the local modular repo
+  - load components from a specified model repo
+  - select `cuda`/`float16` when available, otherwise `cpu`/`float32`
+  - save generated outputs to the local `outputs` folder by default
+
+Known issues and constraints
+- Local `trust_remote_code` dynamic module loading can be a little finicky in repeated or parallel validation runs.
+- The repo structure is closer to current Modular Diffusers guidance now, but still simpler than the shipped SDXL modular implementation.
+- Step blocks are intentionally minimal and focused on preserving working SD1.5 behavior rather than matching every internal abstraction used by newer official modular pipelines.
+
+Likely next decisions
+- Add a standalone inpaint smoke script.
+- Decide whether to support ControlNet in the modular repo or keep it out of scope.
+- Decide whether to further split denoise preparation into even smaller before-denoise step blocks.

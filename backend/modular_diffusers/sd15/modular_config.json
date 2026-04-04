@@ -1,6 +1,6 @@
 {
-  "_class_name": "SD15Text2ImgBlocks",
+  "_class_name": "SD15AutoBlocks",
   "auto_map": {
-    "ModularPipelineBlocks": "block.SD15Text2ImgBlocks"
+    "ModularPipelineBlocks": "block.SD15AutoBlocks"
   }
 }

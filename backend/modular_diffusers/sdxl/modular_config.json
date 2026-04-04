@@ -1,0 +1,6 @@
+{
+  "_class_name": "SDXLText2ImageBlocks",
+  "auto_map": {
+    "ModularPipelineBlocks": "block.SDXLText2ImageBlocks"
+  }
+}

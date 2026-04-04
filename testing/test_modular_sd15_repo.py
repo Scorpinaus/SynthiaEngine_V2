@@ -20,8 +20,11 @@ SD15_MODULAR_REPO = REPO_ROOT / "backend" / "modular_diffusers" / "sd15"
 def test_sd15_modular_repo_loads_custom_blocks():
     pipe = ModularPipeline.from_pretrained(str(SD15_MODULAR_REPO), trust_remote_code=True)
 
-    assert pipe.blocks.__class__.__name__ == "SD15Text2ImgBlocks"
+    assert pipe.blocks.__class__.__name__ == "SD15AutoBlocks"
     assert set(pipe.components.keys()) == {"tokenizer", "text_encoder", "unet", "vae", "scheduler"}
+    assert pipe.blocks.get_execution_blocks().__class__.__name__ == "SD15Text2ImgBlocks"
+    assert pipe.blocks.get_execution_blocks(image=True).__class__.__name__ == "SD15Img2ImgBlocks"
+    assert pipe.blocks.get_execution_blocks(image=True, mask_image=True).__class__.__name__ == "SD15InpaintBlocks"
 
 
 @pytest.mark.integration

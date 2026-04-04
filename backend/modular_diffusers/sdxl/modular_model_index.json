@@ -1,0 +1,105 @@
+{
+  "_class_name": "StableDiffusionXLModularPipeline",
+  "_blocks_class_name": "SDXLText2ImageBlocks",
+  "_diffusers_version": "0.37.0",
+  "force_zeros_for_empty_prompt": true,
+  "requires_aesthetics_score": false,
+  "scheduler": [
+    "diffusers",
+    "EulerDiscreteScheduler",
+    {
+      "type_hint": [
+        "diffusers",
+        "EulerDiscreteScheduler"
+      ],
+      "pretrained_model_name_or_path": "stabilityai/stable-diffusion-xl-base-1.0",
+      "subfolder": "scheduler",
+      "variant": null,
+      "revision": null
+    }
+  ],
+  "text_encoder": [
+    "transformers",
+    "CLIPTextModel",
+    {
+      "type_hint": [
+        "transformers",
+        "CLIPTextModel"
+      ],
+      "pretrained_model_name_or_path": "stabilityai/stable-diffusion-xl-base-1.0",
+      "subfolder": "text_encoder",
+      "variant": null,
+      "revision": null
+    }
+  ],
+  "text_encoder_2": [
+    "transformers",
+    "CLIPTextModelWithProjection",
+    {
+      "type_hint": [
+        "transformers",
+        "CLIPTextModelWithProjection"
+      ],
+      "pretrained_model_name_or_path": "stabilityai/stable-diffusion-xl-base-1.0",
+      "subfolder": "text_encoder_2",
+      "variant": null,
+      "revision": null
+    }
+  ],
+  "tokenizer": [
+    "transformers",
+    "CLIPTokenizer",
+    {
+      "type_hint": [
+        "transformers",
+        "CLIPTokenizer"
+      ],
+      "pretrained_model_name_or_path": "stabilityai/stable-diffusion-xl-base-1.0",
+      "subfolder": "tokenizer",
+      "variant": null,
+      "revision": null
+    }
+  ],
+  "tokenizer_2": [
+    "transformers",
+    "CLIPTokenizer",
+    {
+      "type_hint": [
+        "transformers",
+        "CLIPTokenizer"
+      ],
+      "pretrained_model_name_or_path": "stabilityai/stable-diffusion-xl-base-1.0",
+      "subfolder": "tokenizer_2",
+      "variant": null,
+      "revision": null
+    }
+  ],
+  "unet": [
+    "diffusers",
+    "UNet2DConditionModel",
+    {
+      "type_hint": [
+        "diffusers",
+        "UNet2DConditionModel"
+      ],
+      "pretrained_model_name_or_path": "stabilityai/stable-diffusion-xl-base-1.0",
+      "subfolder": "unet",
+      "variant": null,
+      "revision": null
+    }
+  ],
+  "vae": [
+    "diffusers",
+    "AutoencoderKL",
+    {
+      "type_hint": [
+        "diffusers",
+        "AutoencoderKL"
+      ],
+      "pretrained_model_name_or_path": "stabilityai/stable-diffusion-xl-base-1.0",
+      "subfolder": "vae",
+      "variant": null,
+      "revision": null
+    }
+  ]
+}

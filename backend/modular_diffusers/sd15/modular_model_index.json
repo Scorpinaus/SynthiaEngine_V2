@@ -1,6 +1,6 @@
 {
   "_class_name": "ModularPipeline",
-  "_blocks_class_name": "SD15Text2ImgBlocks",
+  "_blocks_class_name": "SD15AutoBlocks",
   "tokenizer": [
     "transformers",
     "CLIPTokenizer",

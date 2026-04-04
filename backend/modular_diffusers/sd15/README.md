@@ -5,14 +5,14 @@ This folder is a local Modular Diffusers repository for Phase 1 SD1.5 migration 
 ## Scope
 
 - Text-to-image, img2img, and inpaint
-- Custom `ModularPipelineBlocks` implementation
+- Custom sequential workflow blocks with `AutoPipelineBlocks` routing
 - SD1.5 component layout referenced from `runwayml/stable-diffusion-v1-5`
 - Supports either text prompts or precomputed prompt embeddings
 - Supports `pil`, `np`, and `latent` output modes
 
 ## Files
 
-- `block.py`: custom SD1.5 text-to-image block
+- `block.py`: prompt/latents/denoise/decode step blocks, sequential workflow blocks, and auto-routing block selection
 - `modular_config.json`: block loading config for the installed Diffusers modular runtime
 - `modular_model_index.json`: component loading specs for the local modular repo
 
