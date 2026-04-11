@@ -9,7 +9,15 @@ set PYTORCH_ALLOC_CONF=expandable_segments:True
 REM --- Hugging Face cache + disable symlinks (fixes WinError 1314) ---
 set HF_HUB_DISABLE_SYMLINKS=1
 
-start "Synthia Backend" cmd /k ""%VENV_PY%" -m uvicorn backend.main:app --workers 1 --host 0.0.0.0 --port 8000"
+set SYNTHA_LOG_ROLE=api
+set SYNTHA_API_START_WORKER=0
+start "Synthia API" cmd /k ""%VENV_PY%" -m uvicorn backend.main:app --workers 1 --host 0.0.0.0 --port 8000"
+
+set SYNTHA_LOG_ROLE=render
+set SYNTHA_API_START_WORKER=
+start "Synthia Renderer" cmd /k ""%VENV_PY%" -m backend.render_worker"
+
+set SYNTHA_LOG_ROLE=
 
 rem Wait 20 seconds
 timeout /t 20 /nobreak >nul

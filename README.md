@@ -74,7 +74,25 @@ run_app.bat
 
 This launches:
 - Backend API: `http://127.0.0.1:8000`
+- Renderer worker: a separate command window for generation/job logs
 - Frontend: `http://127.0.0.1:4173` (opens `sd15.html` by default)
+
+The API and renderer are split so request/access logs stay separate from
+generation warnings and errors. For manual startup, run the API with the
+embedded worker disabled:
+
+```bat
+set SYNTHA_LOG_ROLE=api
+set SYNTHA_API_START_WORKER=0
+.venv\Scripts\python.exe -m uvicorn backend.main:app --workers 1 --host 0.0.0.0 --port 8000
+```
+
+Then start the renderer in another terminal:
+
+```bat
+set SYNTHA_LOG_ROLE=render
+.venv\Scripts\python.exe -m backend.render_worker
+```
 
 Note: `requirements.txt` currently references a local editable dependency `-e ./controlnet_aux`. If you don't have that folder in this repo checkout, `pip install -r requirements.txt` will fail; either add it (if you use it) or remove/replace that line.
 

@@ -10,6 +10,7 @@ Keep business logic in the `backend/*` modules; handlers here should remain thin
 and focused on validation, serialization, and HTTP concerns.
 """
 import logging
+import os
 import re
 import shutil
 import tempfile
@@ -50,6 +51,7 @@ from backend.lora_registry import (
     list_lora_entries,
     update_lora_entry,
 )
+from backend.logging_utils import configure_logging
 from backend.preset_registry import (
     PresetRegistryCreate,
     PresetRegistryEntry,
@@ -79,10 +81,10 @@ from backend.workflow import (
     save_artifact_png,
 )
 
+configure_logging(role=os.getenv("SYNTHA_LOG_ROLE", "api"))
+
 app = FastAPI(title="SynthiaEngine API")
 logger = logging.getLogger(__name__)
-if not logger.handlers:
-    logging.basicConfig(level=logging.INFO)
 
 app.add_middleware(
     CORSMiddleware,
@@ -305,14 +307,32 @@ def _get_job_sessionmaker():
     return sessionmaker
 
 
+def _env_flag_enabled(name: str, *, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _api_embedded_worker_enabled() -> bool:
+    return _env_flag_enabled("SYNTHA_API_START_WORKER", default=True)
+
+
 @app.on_event("startup")
 def _startup_job_queue() -> None:
-    """Initialize the job queue and start the background worker thread."""
+    """Initialize the job queue and optionally start the embedded worker thread."""
     engine, sessionmaker, worker = create_job_queue(JobQueueConfig())
-    worker.start()
     app.state.job_engine = engine
     app.state.job_sessionmaker = sessionmaker
     app.state.job_worker = worker
+    app.state.job_worker_started = False
+
+    if _api_embedded_worker_enabled():
+        worker.start()
+        app.state.job_worker_started = True
+        logger.info("Embedded API job worker started.")
+    else:
+        logger.info("Embedded API job worker disabled; external render worker expected.")
 
 
 @app.on_event("shutdown")
@@ -321,6 +341,9 @@ def _shutdown_job_queue() -> None:
     worker = getattr(app.state, "job_worker", None)
     if worker is not None:
         worker.stop()
+    engine = getattr(app.state, "job_engine", None)
+    if engine is not None:
+        engine.dispose()
 
 
 def _extract_png_metadata(path: Path) -> dict[str, str]:
