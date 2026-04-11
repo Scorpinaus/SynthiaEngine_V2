@@ -11,6 +11,9 @@ const ANIMATEDIFF_DEFAULTS = {
     num_frames: 16,
     fps: 8,
     num_videos: 1,
+    free_noise_enabled: false,
+    free_noise_context_length: 16,
+    free_noise_context_stride: 4,
     clip_skip: 1,
     weighting_policy: "diffusers-like",
     motion_adapter: "guoyww/animatediff-motion-adapter-v1-5-2",
@@ -40,6 +43,22 @@ function setInputValue(elementId, value) {
         return;
     }
     el.value = value === null ? "" : String(value);
+}
+
+function setCheckboxValue(elementId, value) {
+    const el = document.getElementById(elementId);
+    if (!el || value === undefined) {
+        return;
+    }
+    el.checked = Boolean(value);
+}
+
+function readCheckboxValue(elementId, fallback = false) {
+    const el = document.getElementById(elementId);
+    if (!el) {
+        return fallback;
+    }
+    return Boolean(el.checked);
 }
 
 function setModelSelection(value) {
@@ -131,6 +150,20 @@ function collectAnimateDiffPresetSettings() {
             ANIMATEDIFF_DEFAULTS.num_videos,
             { integer: true }
         ),
+        free_noise_enabled: readCheckboxValue(
+            "free_noise_enabled",
+            ANIMATEDIFF_DEFAULTS.free_noise_enabled
+        ),
+        free_noise_context_length: WorkflowClient.readNumberValue(
+            "free_noise_context_length",
+            ANIMATEDIFF_DEFAULTS.free_noise_context_length,
+            { integer: true }
+        ),
+        free_noise_context_stride: WorkflowClient.readNumberValue(
+            "free_noise_context_stride",
+            ANIMATEDIFF_DEFAULTS.free_noise_context_stride,
+            { integer: true }
+        ),
         clip_skip: WorkflowClient.readNumberValue(
             "clip_skip",
             ANIMATEDIFF_DEFAULTS.clip_skip,
@@ -163,6 +196,9 @@ async function applyAnimateDiffPresetSettings(settings) {
     setInputValue("num_frames", settings.num_frames);
     setInputValue("fps", settings.fps);
     setInputValue("num_videos", settings.num_videos);
+    setCheckboxValue("free_noise_enabled", settings.free_noise_enabled);
+    setInputValue("free_noise_context_length", settings.free_noise_context_length);
+    setInputValue("free_noise_context_stride", settings.free_noise_context_stride);
     setInputValue("clip_skip", settings.clip_skip);
     setInputValue("weighting_policy", settings.weighting_policy);
     setInputValue("motion_adapter", settings.motion_adapter);
@@ -228,6 +264,20 @@ function collectAnimateDiffInputs(defaults) {
         num_videos: WorkflowClient.readNumberValue(
             "num_videos",
             defaults.num_videos ?? ANIMATEDIFF_DEFAULTS.num_videos,
+            { integer: true }
+        ),
+        free_noise_enabled: readCheckboxValue(
+            "free_noise_enabled",
+            defaults.free_noise_enabled ?? ANIMATEDIFF_DEFAULTS.free_noise_enabled
+        ),
+        free_noise_context_length: WorkflowClient.readNumberValue(
+            "free_noise_context_length",
+            defaults.free_noise_context_length ?? ANIMATEDIFF_DEFAULTS.free_noise_context_length,
+            { integer: true }
+        ),
+        free_noise_context_stride: WorkflowClient.readNumberValue(
+            "free_noise_context_stride",
+            defaults.free_noise_context_stride ?? ANIMATEDIFF_DEFAULTS.free_noise_context_stride,
             { integer: true }
         ),
         clip_skip: WorkflowClient.readNumberValue(
@@ -334,6 +384,8 @@ function initAnimateDiffPage() {
                     num_frames: "num_frames",
                     fps: "fps",
                     num_videos: "num_videos",
+                    free_noise_context_length: "free_noise_context_length",
+                    free_noise_context_stride: "free_noise_context_stride",
                     clip_skip: "clip_skip",
                     weighting_policy: "weighting_policy",
                 });

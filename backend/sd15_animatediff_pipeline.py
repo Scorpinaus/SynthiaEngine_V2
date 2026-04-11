@@ -31,6 +31,88 @@ configure_logging()
 _DEFAULT_MOTION_ADAPTER = "guoyww/animatediff-motion-adapter-v1-5-2"
 
 
+def _coerce_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def _int_param(params: dict[str, object], key: str, default: int) -> int:
+    value = params.get(key, default)
+    if value is None:
+        return default
+    return int(value)
+
+
+def _motion_adapter_max_seq_length(adapter: MotionAdapter) -> int | None:
+    config = getattr(adapter, "config", None)
+    raw_value = None
+    if isinstance(config, dict):
+        raw_value = config.get("motion_max_seq_length")
+    elif config is not None:
+        raw_value = getattr(config, "motion_max_seq_length", None)
+    try:
+        max_seq_length = int(raw_value)
+    except (TypeError, ValueError):
+        return None
+    return max_seq_length if max_seq_length > 0 else None
+
+
+def _validate_animatediff_frame_settings(
+    *,
+    num_frames: int,
+    free_noise_enabled: bool,
+    free_noise_context_length: int,
+    free_noise_context_stride: int,
+    motion_max_seq_length: int | None,
+) -> None:
+    if num_frames < 1:
+        raise ValueError("num_frames must be >= 1")
+    if free_noise_context_length < 1:
+        raise ValueError("free_noise_context_length must be >= 1")
+    if free_noise_context_stride < 1:
+        raise ValueError("free_noise_context_stride must be >= 1")
+    if free_noise_context_stride > free_noise_context_length:
+        raise ValueError("free_noise_context_stride must be <= free_noise_context_length")
+    if motion_max_seq_length is None:
+        return
+    if num_frames > motion_max_seq_length and not free_noise_enabled:
+        raise ValueError(
+            f"num_frames={num_frames} exceeds motion adapter temporal limit "
+            f"{motion_max_seq_length}. Enable FreeNoise or use num_frames <= "
+            f"{motion_max_seq_length}."
+        )
+    if free_noise_enabled and min(num_frames, free_noise_context_length) > motion_max_seq_length:
+        raise ValueError(
+            f"free_noise_context_length={free_noise_context_length} exceeds motion adapter "
+            f"temporal limit {motion_max_seq_length}. Use a context length <= "
+            f"{motion_max_seq_length}."
+        )
+
+
+def _enable_free_noise(
+    pipe: AnimateDiffPipeline,
+    *,
+    context_length: int,
+    context_stride: int,
+) -> None:
+    if not hasattr(pipe, "enable_free_noise"):
+        raise RuntimeError("This diffusers version does not support AnimateDiff FreeNoise.")
+    pipe.enable_free_noise(context_length=context_length, context_stride=context_stride)
+
+    if hasattr(pipe, "enable_free_noise_split_inference"):
+        try:
+            pipe.enable_free_noise_split_inference(temporal_split_size=context_length)
+        except TypeError:
+            pipe.enable_free_noise_split_inference()
+
+    unet = getattr(pipe, "unet", None)
+    if unet is not None and hasattr(unet, "enable_forward_chunking"):
+        unet.enable_forward_chunking(min(16, context_length))
+
+
 def _load_motion_adapter(motion_adapter: str | None) -> MotionAdapter:
     adapter_source = str(motion_adapter or _DEFAULT_MOTION_ADAPTER).strip()
     if not adapter_source:
@@ -89,6 +171,7 @@ def load_text2video_pipeline(
     entry = get_model_entry(model_name)
     source = resolve_model_source(entry)
     adapter = _load_motion_adapter(motion_adapter)
+    motion_max_seq_length = _motion_adapter_max_seq_length(adapter)
 
     logger.info("AnimateDiff base model: %s", source)
     logger.info("AnimateDiff motion adapter: %s", motion_adapter or _DEFAULT_MOTION_ADAPTER)
@@ -110,6 +193,7 @@ def load_text2video_pipeline(
         raise ValueError(f"Unsupported model type: {entry.model_type}")
 
     pipe.enable_vae_slicing()
+    setattr(pipe, "_syntha_motion_max_seq_length", motion_max_seq_length)
     pipe.to("cuda")
     return pipe
 
@@ -130,6 +214,9 @@ def generate_videos_text2video(params: dict[str, object]) -> list[str]:
     num_frames = int(params.get("num_frames") or 16)
     fps = int(params.get("fps") or 8)
     num_videos = int(params.get("num_videos") or 1)
+    free_noise_enabled = _coerce_bool(params.get("free_noise_enabled", False))
+    free_noise_context_length = _int_param(params, "free_noise_context_length", 16)
+    free_noise_context_stride = _int_param(params, "free_noise_context_stride", 4)
     clip_skip = int(params.get("clip_skip") or 1)
     lora_adapters = params.get("lora_adapters")
     weighting_policy = str(params.get("weighting_policy") or "diffusers-like")
@@ -157,10 +244,27 @@ def generate_videos_text2video(params: dict[str, object]) -> list[str]:
         str(model) if model is not None else None,
         motion_adapter,
     )
+    motion_max_seq_length = getattr(pipe, "_syntha_motion_max_seq_length", None)
+    _validate_animatediff_frame_settings(
+        num_frames=num_frames,
+        free_noise_enabled=free_noise_enabled,
+        free_noise_context_length=free_noise_context_length,
+        free_noise_context_stride=free_noise_context_stride,
+        motion_max_seq_length=motion_max_seq_length,
+    )
+    if free_noise_enabled:
+        active_context_length = min(num_frames, free_noise_context_length)
+        active_context_stride = min(free_noise_context_stride, active_context_length)
+        _enable_free_noise(
+            pipe,
+            context_length=active_context_length,
+            context_stride=active_context_stride,
+        )
     _apply_animatediff_scheduler(pipe, scheduler)
     logger.info(
         "Generate AnimateDiff: model=%s motion_adapter=%s seed=%s scheduler=%s "
-        "steps=%s cfg=%s size=%sx%s num_frames=%s fps=%s num_videos=%s",
+        "steps=%s cfg=%s size=%sx%s num_frames=%s fps=%s num_videos=%s "
+        "free_noise=%s free_noise_context_length=%s free_noise_context_stride=%s",
         model,
         motion_adapter,
         base_seed,
@@ -172,6 +276,9 @@ def generate_videos_text2video(params: dict[str, object]) -> list[str]:
         num_frames,
         fps,
         num_videos,
+        free_noise_enabled,
+        free_noise_context_length,
+        free_noise_context_stride,
     )
 
     adapter_names, lora_coverage = apply_lora_adapters_with_validation(

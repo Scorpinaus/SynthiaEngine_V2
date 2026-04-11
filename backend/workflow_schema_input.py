@@ -74,6 +74,9 @@ class Sd15AnimateDiffText2VideoInputs(BaseModel):
     num_frames: int = 16
     fps: int = 8
     num_videos: int = 1
+    free_noise_enabled: bool = False
+    free_noise_context_length: int = Field(default=16, ge=1)
+    free_noise_context_stride: int = Field(default=4, ge=1)
     clip_skip: int = 1
     lora: Sd15UnifiedLoraContract | None = None
     weighting_policy: str = "diffusers-like"

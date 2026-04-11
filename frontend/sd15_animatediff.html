@@ -78,11 +78,27 @@
                 <div class="field-row">
                     <label class="field">
                         <span>Frames</span>
-                        <input id="num_frames" type="number" value="16" step="1" min="1" />
+                        <input id="num_frames" type="number" value="16" step="1" min="1" max="256" />
                     </label>
                     <label class="field">
                         <span>FPS</span>
                         <input id="fps" type="number" value="8" step="1" min="1" />
+                    </label>
+                </div>
+
+                <label class="field">
+                    <span>Long Video FreeNoise</span>
+                    <input id="free_noise_enabled" type="checkbox" />
+                </label>
+
+                <div class="field-row">
+                    <label class="field">
+                        <span>FreeNoise Context</span>
+                        <input id="free_noise_context_length" type="number" value="16" step="1" min="1" max="32" />
+                    </label>
+                    <label class="field">
+                        <span>FreeNoise Stride</span>
+                        <input id="free_noise_context_stride" type="number" value="4" step="1" min="1" max="32" />
                     </label>
                 </div>
 

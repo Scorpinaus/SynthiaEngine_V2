@@ -528,9 +528,12 @@ LoRA adapter targeting:
 - `scheduler`: defaults to `ddim`; the backend applies AnimateDiff-friendly DDIM settings (`clip_sample=false`, `timestep_spacing=linspace`, `beta_schedule=linear`, `steps_offset=1`).
 - `model`: SD1.5 base model registry name.
 - `motion_adapter`: MotionAdapter hub id, local directory, or local single-file adapter path. Default: `guoyww/animatediff-motion-adapter-v1-5-2`.
-- `num_frames`: number of generated frames per video (default `16`).
+- `num_frames`: number of generated frames per video (default `16`). The default `guoyww/animatediff-motion-adapter-v1-5-2` adapter has a 32-frame temporal context limit for normal AnimateDiff generation.
 - `fps`: MP4 export frame rate (default `8`).
 - `num_videos`: number of videos to generate (default `1`).
+- `free_noise_enabled`: optional boolean (default `false`). Enable FreeNoise for longer videos where `num_frames` exceeds the motion adapter temporal context limit.
+- `free_noise_context_length`: FreeNoise temporal window length (default `16`, minimum `1`). Keep this value within the motion adapter temporal context limit.
+- `free_noise_context_stride`: FreeNoise temporal window stride (default `4`, minimum `1`). Must be `<= free_noise_context_length`.
 - `clip_skip`: CLIP skip value (default `1`).
 - `weighting_policy`: prompt-weighting parser policy.
 - `lora`: optional SD1.5 unified LoRA contract `{ "lora_enabled": boolean, "lora_adapters": [...] }`.

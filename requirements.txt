@@ -10,7 +10,7 @@ Pillow>=10.4.0
 
 psutil>=6.1.0
 
-diffusers>=0.36.0
+diffusers>=0.37.0
 transformers>=4.47.0
 sentencepiece>=0.2.0
 protobuf >=6.33.2
@@ -19,4 +19,4 @@ safetensors>=0.4.5
 peft>=0.13.2
 controlnet-aux>=0.0.10
 
-imageio-ffmpeg = 0.6.0
+imageio-ffmpeg == 0.6.0

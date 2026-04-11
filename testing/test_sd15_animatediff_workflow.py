@@ -8,6 +8,7 @@ from backend.workflow import (
     _sd15_animatediff_text2video,
     build_workflow_catalog,
 )
+from backend.sd15_animatediff_pipeline import _validate_animatediff_frame_settings
 
 
 class Sd15AnimateDiffText2VideoSchemaTests(unittest.TestCase):
@@ -20,6 +21,9 @@ class Sd15AnimateDiffText2VideoSchemaTests(unittest.TestCase):
         self.assertEqual(inputs.num_frames, 16)
         self.assertEqual(inputs.fps, 8)
         self.assertEqual(inputs.num_videos, 1)
+        self.assertFalse(inputs.free_noise_enabled)
+        self.assertEqual(inputs.free_noise_context_length, 16)
+        self.assertEqual(inputs.free_noise_context_stride, 4)
 
     def test_prompt_is_required(self):
         with self.assertRaises(ValidationError):
@@ -54,6 +58,9 @@ class Sd15AnimateDiffText2VideoWorkflowTests(unittest.TestCase):
                         "num_frames": 24,
                         "fps": 12,
                         "num_videos": 2,
+                        "free_noise_enabled": True,
+                        "free_noise_context_length": 16,
+                        "free_noise_context_stride": 4,
                         "clip_skip": 2,
                         "lora": {
                             "lora_enabled": True,
@@ -79,6 +86,9 @@ class Sd15AnimateDiffText2VideoWorkflowTests(unittest.TestCase):
         self.assertEqual(captured["num_frames"], 24)
         self.assertEqual(captured["fps"], 12)
         self.assertEqual(captured["num_videos"], 2)
+        self.assertTrue(captured["free_noise_enabled"])
+        self.assertEqual(captured["free_noise_context_length"], 16)
+        self.assertEqual(captured["free_noise_context_stride"], 4)
         self.assertEqual(captured["clip_skip"], 2)
         self.assertEqual(captured["lora_adapters"], [{"lora_id": 101, "strength": 0.75}])
         self.assertEqual(captured["weighting_policy"], "a1111-like")
@@ -118,6 +128,41 @@ class Sd15AnimateDiffText2VideoWorkflowTests(unittest.TestCase):
             catalog["capabilities"]["sd15"]["task_types"],
         )
         self.assertTrue(catalog["capabilities"]["sd15"]["features"]["text2video"])
+
+    def test_animatediff_frame_limit_requires_free_noise_for_longer_video(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            "num_frames=48 exceeds motion adapter temporal limit 32",
+        ):
+            _validate_animatediff_frame_settings(
+                num_frames=48,
+                free_noise_enabled=False,
+                free_noise_context_length=16,
+                free_noise_context_stride=4,
+                motion_max_seq_length=32,
+            )
+
+    def test_animatediff_free_noise_allows_longer_video_with_short_context(self):
+        _validate_animatediff_frame_settings(
+            num_frames=48,
+            free_noise_enabled=True,
+            free_noise_context_length=16,
+            free_noise_context_stride=4,
+            motion_max_seq_length=32,
+        )
+
+    def test_animatediff_free_noise_stride_must_not_exceed_context(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            "free_noise_context_stride must be <= free_noise_context_length",
+        ):
+            _validate_animatediff_frame_settings(
+                num_frames=48,
+                free_noise_enabled=True,
+                free_noise_context_length=16,
+                free_noise_context_stride=24,
+                motion_max_seq_length=32,
+            )
 
 
 if __name__ == "__main__":

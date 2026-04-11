@@ -35,6 +35,16 @@ class FrontendSd15AnimateDiffScriptTests(unittest.TestCase):
         self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", js)
         self.assertIn("return: \"@t1.videos\"", js)
         self.assertIn("WorkflowInputValidator?.assertTaskInputs", js)
+        self.assertIn("free_noise_enabled", js)
+        self.assertIn("free_noise_context_length", js)
+        self.assertIn("free_noise_context_stride", js)
+
+    def test_animatediff_page_includes_free_noise_controls(self):
+        html = (ROOT / "frontend" / "sd15_animatediff.html").read_text(encoding="utf-8")
+
+        self.assertIn('id="free_noise_enabled"', html)
+        self.assertIn('id="free_noise_context_length"', html)
+        self.assertIn('id="free_noise_context_stride"', html)
 
     def test_video_gallery_exposes_expected_api(self):
         js = (ROOT / "frontend" / "video_gallery.js").read_text(encoding="utf-8")
