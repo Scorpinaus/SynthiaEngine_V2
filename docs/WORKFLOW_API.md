@@ -27,6 +27,38 @@ Response (201):
 }
 ```
 
+### List render history
+
+`GET /history`
+
+- Returns generated media records from `outputs/`.
+- Includes PNG image records and video records such as MP4/WebM/MOV.
+- Existing fields are preserved for compatibility. New consumers can use `media_type` to choose image or video rendering.
+- PNG records include embedded text metadata when available.
+- Video records load adjacent AnimateDiff JSON sidecars named `video_<batch_id>.mp4.json` when present.
+- Video records still infer `metadata.batch_id` from `outputs/batch_<batch_id>/...` paths when no sidecar is available.
+
+Response (200):
+```json
+[
+  {
+    "filename": "batch_abc123/abc123_42.mp4",
+    "url": "/outputs/batch_abc123/abc123_42.mp4",
+    "timestamp": 1710000000.0,
+    "created_at": "2024-03-09T16:00:00+00:00",
+    "media_type": "video",
+    "metadata": {
+      "prompt": "waves rolling under moonlight",
+      "negative_prompt": "jitter",
+      "steps": 25,
+      "cfg": 7.5,
+      "seed": 42,
+      "batch_id": "abc123"
+    }
+  }
+]
+```
+
 ### Submit a workflow job (the only generation entrypoint)
 
 `POST /api/jobs`
@@ -534,6 +566,7 @@ LoRA adapter targeting:
 - `free_noise_enabled`: optional boolean (default `false`). Enable FreeNoise for longer videos where `num_frames` exceeds the motion adapter temporal context limit.
 - `free_noise_context_length`: FreeNoise temporal window length (default `16`, minimum `1`). Keep this value within the motion adapter temporal context limit.
 - `free_noise_context_stride`: FreeNoise temporal window stride (default `4`, minimum `1`). Must be `<= free_noise_context_length`.
+- FreeNoise mode uses Diffusers raw prompt encoding. Custom prompt-weight embedding expansion is disabled in FreeNoise mode because Diffusers FreeNoise does not support direct `prompt_embeds`.
 - `clip_skip`: CLIP skip value (default `1`).
 - `weighting_policy`: prompt-weighting parser policy.
 - `lora`: optional SD1.5 unified LoRA contract `{ "lora_enabled": boolean, "lora_adapters": [...] }`.
@@ -541,6 +574,7 @@ LoRA adapter targeting:
 
 `sd15.animatediff.text2video` output notes:
 - Returns `{ "batch_id": "...", "videos": ["/outputs/...mp4"] }`.
+- Writes batch video metadata to `outputs/batch_<batch_id>/video_<batch_id>.mp4.json`; `/history` uses this sidecar to show prompt and generation settings for SD1.5 AnimateDiff videos.
 
 `controlnet.preprocess` input notes:
 - `image`: image reference

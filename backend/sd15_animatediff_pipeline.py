@@ -8,8 +8,10 @@ pipelines.
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
+from typing import Any
 
 import torch
 from diffusers import AnimateDiffPipeline
@@ -29,6 +31,27 @@ logger = logging.getLogger(__name__)
 configure_logging()
 
 _DEFAULT_MOTION_ADAPTER = "guoyww/animatediff-motion-adapter-v1-5-2"
+
+
+def _animatediff_video_metadata_path(batch_output_dir: Path, batch_id: str) -> Path:
+    return batch_output_dir / f"video_{batch_id}.mp4.json"
+
+
+def _json_safe_metadata(value: object) -> object:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, dict):
+        return {str(key): _json_safe_metadata(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe_metadata(item) for item in value]
+    return str(value)
+
+
+def _write_animatediff_video_metadata(path: Path, metadata: dict[str, Any]) -> None:
+    path.write_text(
+        json.dumps(_json_safe_metadata(metadata), indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
 
 
 def _coerce_bool(value: object) -> bool:
@@ -111,6 +134,42 @@ def _enable_free_noise(
     unet = getattr(pipe, "unet", None)
     if unet is not None and hasattr(unet, "enable_forward_chunking"):
         unet.enable_forward_chunking(min(16, context_length))
+
+
+def _prepare_animatediff_prompt_inputs(
+    pipe: AnimateDiffPipeline,
+    *,
+    prompt: str,
+    negative_prompt: str,
+    clip_skip: int,
+    weighting_policy: str,
+    free_noise_enabled: bool,
+) -> tuple[str | None, str | None, torch.Tensor | None, torch.Tensor | None]:
+    if free_noise_enabled:
+        return prompt, negative_prompt, None, None
+
+    prompt_embeds, negative_prompt_embeds, use_prompt_embeds = build_prompt_embeddings(
+        pipe,
+        prompt,
+        negative_prompt,
+        clip_skip=clip_skip,
+        weighting_policy=weighting_policy,
+    )
+    return (
+        None if use_prompt_embeds else prompt,
+        None if use_prompt_embeds else negative_prompt,
+        prompt_embeds if use_prompt_embeds else None,
+        negative_prompt_embeds if use_prompt_embeds else None,
+    )
+
+
+def _make_animatediff_generator(
+    *,
+    seed: int,
+    free_noise_enabled: bool,
+) -> torch.Generator:
+    device = "cpu" if free_noise_enabled else "cuda"
+    return torch.Generator(device=device).manual_seed(seed)
 
 
 def _load_motion_adapter(motion_adapter: str | None) -> MotionAdapter:
@@ -291,24 +350,58 @@ def generate_videos_text2video(params: dict[str, object]) -> list[str]:
     if report_path is not None:
         logger.info("LoRA coverage report saved to %s", report_path)
 
-    prompt_embeds, negative_prompt_embeds, use_prompt_embeds = build_prompt_embeddings(
+    (
+        prompt_input,
+        negative_prompt_input,
+        prompt_embeds,
+        negative_prompt_embeds,
+    ) = _prepare_animatediff_prompt_inputs(
         pipe,
-        prompt,
-        negative_prompt,
+        prompt=prompt,
+        negative_prompt=negative_prompt,
         clip_skip=clip_skip,
         weighting_policy=weighting_policy,
+        free_noise_enabled=free_noise_enabled,
     )
 
     filenames: list[str] = []
+    metadata_path = _animatediff_video_metadata_path(batch_output_dir, batch_id)
+    metadata: dict[str, Any] = {
+        "mode": "sd15.animatediff.text2video",
+        "prompt": prompt,
+        "negative_prompt": negative_prompt,
+        "steps": steps,
+        "cfg": cfg,
+        "width": width,
+        "height": height,
+        "scheduler": scheduler,
+        "model": model,
+        "motion_adapter": motion_adapter,
+        "num_frames": num_frames,
+        "fps": fps,
+        "num_videos": num_videos,
+        "free_noise_enabled": free_noise_enabled,
+        "free_noise_context_length": free_noise_context_length,
+        "free_noise_context_stride": free_noise_context_stride,
+        "clip_skip": clip_skip,
+        "lora_adapters": lora_adapters,
+        "weighting_policy": weighting_policy,
+        "batch_id": batch_id,
+        "base_seed": base_seed,
+        "videos": [],
+    }
     try:
         for i in range(num_videos):
             current_seed = base_seed + i
-            generator = torch.Generator(device="cuda").manual_seed(current_seed)
+            generator = _make_animatediff_generator(
+                seed=current_seed,
+                free_noise_enabled=free_noise_enabled,
+            )
             result = pipe(
-                prompt=None if use_prompt_embeds else prompt,
-                negative_prompt=None if use_prompt_embeds else negative_prompt,
-                prompt_embeds=prompt_embeds if use_prompt_embeds else None,
-                negative_prompt_embeds=negative_prompt_embeds if use_prompt_embeds else None,
+                prompt=prompt_input,
+                negative_prompt=negative_prompt_input,
+                prompt_embeds=prompt_embeds,
+                negative_prompt_embeds=negative_prompt_embeds,
                 num_inference_steps=steps,
                 guidance_scale=cfg,
                 width=width,
@@ -316,11 +409,24 @@ def generate_videos_text2video(params: dict[str, object]) -> list[str]:
                 num_frames=num_frames,
                 clip_skip=clip_skip,
                 generator=generator,
+                decode_chunk_size=8,
             )
             output_name = f"{batch_id}_{current_seed}.mp4"
             export_to_video(result.frames[0], batch_output_dir / output_name, fps=fps)
+            relative_path = build_batch_output_relpath(batch_id, output_name)
+            metadata["videos"].append(
+                {
+                    "filename": output_name,
+                    "path": relative_path,
+                    "seed": current_seed,
+                    "index": i,
+                }
+            )
+            if num_videos == 1:
+                metadata["seed"] = current_seed
+            _write_animatediff_video_metadata(metadata_path, metadata)
             logger.info("Video %s saved to %s", i, output_name)
-            filenames.append(build_batch_output_relpath(batch_id, output_name))
+            filenames.append(relative_path)
     finally:
         _cleanup_lora_adapters(pipe, adapter_names)
 

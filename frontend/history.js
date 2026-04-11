@@ -13,6 +13,9 @@ const METADATA_FIELDS = [
     { key: "batch_id", label: "Batch ID" },
 ];
 
+const HISTORY_IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp"]);
+const HISTORY_VIDEO_EXTENSIONS = new Set([".mp4", ".webm", ".mov"]);
+
 const state = {
     loading: false,
     error: null,
@@ -63,6 +66,50 @@ function formatTimestamp(timestamp) {
         return "Unknown time";
     }
     return new Date(timestamp * 1000).toLocaleString();
+}
+
+function getPathExtension(record) {
+    const path = String(record?.filename || record?.url || "").split("?")[0].split("#")[0];
+    const dotIndex = path.lastIndexOf(".");
+    return dotIndex >= 0 ? path.slice(dotIndex).toLowerCase() : "";
+}
+
+function getMediaType(record) {
+    const mediaType = String(record?.media_type || "").toLowerCase();
+    if (mediaType === "image" || mediaType === "video") {
+        return mediaType;
+    }
+
+    const extension = getPathExtension(record);
+    if (HISTORY_VIDEO_EXTENSIONS.has(extension)) {
+        return "video";
+    }
+    if (HISTORY_IMAGE_EXTENSIONS.has(extension)) {
+        return "image";
+    }
+    return "render";
+}
+
+function getMediaLabel(record) {
+    const mediaType = getMediaType(record);
+    if (mediaType === "video") {
+        return "Video";
+    }
+    if (mediaType === "image") {
+        return "Image";
+    }
+    return "Render";
+}
+
+function buildMediaUrl(record) {
+    const url = String(record?.url || "");
+    if (!url) {
+        return "";
+    }
+    if (/^(https?:)?\/\//.test(url) || url.startsWith("data:") || url.startsWith("blob:")) {
+        return url;
+    }
+    return `${API_BASE}${url}`;
 }
 
 function buildMetadata(metadata) {
@@ -179,11 +226,19 @@ function renderBatchList() {
 
         const preview = document.createElement("div");
         preview.className = "history-batch-preview";
-        const previewImage = document.createElement("img");
-        previewImage.loading = "lazy";
-        previewImage.src = `${API_BASE}${batch.items[0].url}`;
-        previewImage.alt = batch.items[0].filename || `Batch ${batch.id}`;
-        preview.appendChild(previewImage);
+        const firstItem = batch.items[0];
+        if (getMediaType(firstItem) === "video") {
+            const previewVideo = document.createElement("div");
+            previewVideo.className = "history-video-preview";
+            previewVideo.textContent = "Video";
+            preview.appendChild(previewVideo);
+        } else {
+            const previewImage = document.createElement("img");
+            previewImage.loading = "lazy";
+            previewImage.src = buildMediaUrl(firstItem);
+            previewImage.alt = firstItem.filename || `Batch ${batch.id}`;
+            preview.appendChild(previewImage);
+        }
 
         batchButton.appendChild(preview);
         historyBatchList.appendChild(batchButton);
@@ -207,6 +262,7 @@ function renderViewer() {
 
     const batch = state.batches.find((item) => item.id === state.selectedBatchId);
     if (!batch || !batch.items.length) {
+        viewerTitle.textContent = "";
         viewerSubtitle.textContent = "Pick a batch to inspect prompt metadata.";
         viewerCount.textContent = "";
         const empty = document.createElement("div");
@@ -219,15 +275,28 @@ function renderViewer() {
 
     const selectedIndex = Math.min(state.selectedIndex, batch.items.length - 1);
     const record = batch.items[selectedIndex];
+    const mediaLabel = getMediaLabel(record);
+    const mediaType = getMediaType(record);
 
-    viewerSubtitle.textContent = `Image ${selectedIndex + 1} of ${batch.items.length} | ${formatTimestamp(record.timestamp)}`;
-    viewerCount.textContent = `Image ${selectedIndex + 1} of ${batch.items.length}`;
+    viewerTitle.textContent = batch.id === "Unbatched" ? "Unbatched renders" : `Batch ${batch.id}`;
+    viewerSubtitle.textContent = `${mediaLabel} ${selectedIndex + 1} of ${batch.items.length} | ${formatTimestamp(record.timestamp)}`;
+    viewerCount.textContent = `${mediaLabel} ${selectedIndex + 1} of ${batch.items.length}`;
 
-    const img = document.createElement("img");
-    img.loading = "lazy";
-    img.src = `${API_BASE}${record.url}`;
-    img.alt = record.filename || `Render ${selectedIndex + 1}`;
-    viewerFrame.appendChild(img);
+    if (mediaType === "video") {
+        const video = document.createElement("video");
+        video.controls = true;
+        video.muted = true;
+        video.playsInline = true;
+        video.preload = "metadata";
+        video.src = buildMediaUrl(record);
+        viewerFrame.appendChild(video);
+    } else {
+        const img = document.createElement("img");
+        img.loading = "lazy";
+        img.src = buildMediaUrl(record);
+        img.alt = record.filename || `Render ${selectedIndex + 1}`;
+        viewerFrame.appendChild(img);
+    }
 
     const metadataList = buildMetadata(record.metadata || {});
     if (metadataList) {
@@ -240,14 +309,20 @@ function renderViewer() {
     }
 
     batch.items.forEach((item, index) => {
-        const thumb = document.createElement("img");
-        thumb.className = "viewer-thumb";
+        const itemMediaType = getMediaType(item);
+        const thumb = document.createElement(itemMediaType === "video" ? "button" : "img");
+        thumb.className = itemMediaType === "video" ? "viewer-thumb history-video-thumb" : "viewer-thumb";
         if (index === selectedIndex) {
             thumb.classList.add("is-active");
         }
-        thumb.loading = "lazy";
-        thumb.src = `${API_BASE}${item.url}`;
-        thumb.alt = item.filename || `Render ${index + 1}`;
+        if (itemMediaType === "video") {
+            thumb.type = "button";
+            thumb.textContent = `Video ${index + 1}`;
+        } else {
+            thumb.loading = "lazy";
+            thumb.src = buildMediaUrl(item);
+            thumb.alt = item.filename || `Render ${index + 1}`;
+        }
         thumb.addEventListener("click", () => selectBatch(batch.id, index));
         viewerThumbs.appendChild(thumb);
     });
@@ -274,7 +349,7 @@ function render() {
     }
 
     if (!state.records.length) {
-        historyState.textContent = "No renders yet. Generate an image to populate the gallery.";
+        historyState.textContent = "No renders yet. Generate an image or video to populate the gallery.";
         historyState.style.display = "block";
         historyLayout.style.display = "none";
         return;

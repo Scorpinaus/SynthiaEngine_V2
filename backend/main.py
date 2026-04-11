@@ -96,6 +96,8 @@ app.add_middleware(
 app.mount("/outputs", StaticFiles(directory=OUTPUT_DIR), name="outputs")
 
 ALLOWED_JOB_KINDS = {"workflow"}
+HISTORY_IMAGE_EXTENSIONS = {".png"}
+HISTORY_VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov"}
 
 
 def _validate_lora_name(name: str | None) -> str | None:
@@ -346,11 +348,11 @@ def _shutdown_job_queue() -> None:
         engine.dispose()
 
 
-def _extract_png_metadata(path: Path) -> dict[str, str]:
+def _extract_png_metadata(path: Path) -> dict[str, object]:
     """Extract embedded PNG text metadata in a safe, best-effort way."""
     try:
         with Image.open(path) as image:
-            metadata: dict[str, str] = {}
+            metadata: dict[str, object] = {}
             if hasattr(image, "text"):
                 metadata.update(image.text)
             for key, value in (image.info or {}).items():
@@ -360,6 +362,87 @@ def _extract_png_metadata(path: Path) -> dict[str, str]:
     except Exception as exc:
         logger.warning("Failed to read metadata for %s: %s", path.name, exc)
         return {}
+
+
+def _extract_json_metadata(path: Path) -> dict[str, object]:
+    """Extract JSON sidecar metadata in a safe, best-effort way."""
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        logger.warning("Failed to read metadata sidecar for %s: %s", path.name, exc)
+        return {}
+    if not isinstance(payload, dict):
+        logger.warning("Ignoring metadata sidecar with non-object payload: %s", path.name)
+        return {}
+    return payload
+
+
+def _infer_batch_id_from_outputs_path(relative_path: Path) -> str | None:
+    """Infer a batch id from outputs/batch_<id>/... media paths."""
+    for part in relative_path.parts[:-1]:
+        if part.startswith("batch_") and len(part) > len("batch_"):
+            return part.removeprefix("batch_")
+    return None
+
+
+def _video_metadata_sidecar_path(media_path: Path, relative_path: Path) -> Path | None:
+    batch_id = _infer_batch_id_from_outputs_path(relative_path)
+    if not batch_id:
+        return None
+    return media_path.parent / f"video_{batch_id}.mp4.json"
+
+
+def _matching_video_sidecar_entry(
+    videos: object,
+    *,
+    media_name: str,
+    relative_path: str,
+) -> dict[str, object]:
+    if not isinstance(videos, list):
+        return {}
+    for entry in videos:
+        if not isinstance(entry, dict):
+            continue
+        entry_filename = str(entry.get("filename") or "")
+        entry_path = str(entry.get("path") or "")
+        if entry_filename == media_name or entry_path == relative_path:
+            return {
+                key: value
+                for key, value in entry.items()
+                if key not in {"filename", "path"}
+            }
+    return {}
+
+
+def _extract_video_metadata(media_path: Path, relative_path: Path) -> dict[str, object]:
+    """Extract adjacent video sidecar metadata, falling back to path-derived batch id."""
+    metadata: dict[str, object] = {}
+    relative_path_text = relative_path.as_posix()
+    sidecar_path = _video_metadata_sidecar_path(media_path, relative_path)
+    if sidecar_path is not None and sidecar_path.exists():
+        metadata.update(_extract_json_metadata(sidecar_path))
+        videos = metadata.pop("videos", None)
+        metadata.update(
+            _matching_video_sidecar_entry(
+                videos,
+                media_name=media_path.name,
+                relative_path=relative_path_text,
+            )
+        )
+
+    batch_id = _infer_batch_id_from_outputs_path(relative_path)
+    if batch_id and not metadata.get("batch_id"):
+        metadata["batch_id"] = batch_id
+    return metadata
+
+
+def _history_media_type(path: Path) -> str | None:
+    suffix = path.suffix.lower()
+    if suffix in HISTORY_IMAGE_EXTENSIONS:
+        return "image"
+    if suffix in HISTORY_VIDEO_EXTENSIONS:
+        return "video"
+    return None
 
 
 @app.get("/health")
@@ -880,24 +963,35 @@ async def remove_model(model_name: str):
 
 @app.get("/history")
 async def list_history():
-    """List generated images from `OUTPUT_DIR` along with embedded metadata."""
+    """List generated media from `OUTPUT_DIR` along with embedded metadata."""
     if not OUTPUT_DIR.exists():
         return []
 
     records: list[dict[str, object]] = []
     # Walk the outputs folder to produce a lightweight generation history feed.
-    for image_path in OUTPUT_DIR.rglob("*.png"):
-        stat = image_path.stat()
+    for media_path in OUTPUT_DIR.rglob("*"):
+        if not media_path.is_file():
+            continue
+        media_type = _history_media_type(media_path)
+        if media_type is None:
+            continue
+
+        stat = media_path.stat()
         timestamp = stat.st_mtime
         created_at = datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat()
-        metadata = _extract_png_metadata(image_path)
-        relative_path = image_path.relative_to(OUTPUT_DIR).as_posix()
+        relative_path_obj = media_path.relative_to(OUTPUT_DIR)
+        if media_type == "image":
+            metadata = _extract_png_metadata(media_path)
+        else:
+            metadata = _extract_video_metadata(media_path, relative_path_obj)
+        relative_path = relative_path_obj.as_posix()
         records.append(
             {
                 "filename": relative_path,
                 "url": f"/outputs/{relative_path}",
                 "timestamp": timestamp,
                 "created_at": created_at,
+                "media_type": media_type,
                 "metadata": metadata,
             }
         )

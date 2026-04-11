@@ -1,6 +1,10 @@
+import json
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
+import torch
 from pydantic import ValidationError
 
 from backend.workflow import (
@@ -8,7 +12,11 @@ from backend.workflow import (
     _sd15_animatediff_text2video,
     build_workflow_catalog,
 )
+from backend.sd15_animatediff_pipeline import _make_animatediff_generator
 from backend.sd15_animatediff_pipeline import _validate_animatediff_frame_settings
+from backend.sd15_animatediff_pipeline import _prepare_animatediff_prompt_inputs
+from backend.sd15_animatediff_pipeline import _animatediff_video_metadata_path
+from backend.sd15_animatediff_pipeline import _write_animatediff_video_metadata
 
 
 class Sd15AnimateDiffText2VideoSchemaTests(unittest.TestCase):
@@ -31,6 +39,26 @@ class Sd15AnimateDiffText2VideoSchemaTests(unittest.TestCase):
 
 
 class Sd15AnimateDiffText2VideoWorkflowTests(unittest.TestCase):
+    def test_animatediff_video_metadata_sidecar_uses_batch_filename(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            metadata_path = _animatediff_video_metadata_path(Path(temp_dir), "batch123")
+
+            _write_animatediff_video_metadata(
+                metadata_path,
+                {
+                    "prompt": "test prompt",
+                    "batch_id": "batch123",
+                    "source_path": Path("local/model"),
+                },
+            )
+
+            payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(metadata_path.name, "video_batch123.mp4.json")
+        self.assertEqual(payload["prompt"], "test prompt")
+        self.assertEqual(payload["batch_id"], "batch123")
+        self.assertEqual(payload["source_path"], str(Path("local") / "model"))
+
     def test_animatediff_task_passes_expected_generation_params(self):
         captured = {}
 
@@ -163,6 +191,54 @@ class Sd15AnimateDiffText2VideoWorkflowTests(unittest.TestCase):
                 free_noise_context_stride=24,
                 motion_max_seq_length=32,
             )
+
+    def test_animatediff_free_noise_generator_is_cpu_for_randperm(self):
+        generator = _make_animatediff_generator(seed=123, free_noise_enabled=True)
+
+        self.assertEqual(generator.device.type, "cpu")
+        shuffled = torch.randperm(4, generator=generator)
+        self.assertEqual(shuffled.device.type, "cpu")
+
+    def test_animatediff_free_noise_uses_raw_prompt_inputs(self):
+        with patch("backend.sd15_animatediff_pipeline.build_prompt_embeddings") as mocked:
+            prompt_input, negative_prompt_input, prompt_embeds, negative_prompt_embeds = (
+                _prepare_animatediff_prompt_inputs(
+                    pipe=object(),
+                    prompt="long prompt",
+                    negative_prompt="long negative",
+                    clip_skip=1,
+                    weighting_policy="diffusers-like",
+                    free_noise_enabled=True,
+                )
+            )
+
+        mocked.assert_not_called()
+        self.assertEqual(prompt_input, "long prompt")
+        self.assertEqual(negative_prompt_input, "long negative")
+        self.assertIsNone(prompt_embeds)
+        self.assertIsNone(negative_prompt_embeds)
+
+    def test_animatediff_normal_mode_keeps_prompt_embedding_path(self):
+        with patch(
+            "backend.sd15_animatediff_pipeline.build_prompt_embeddings",
+            return_value=("pos", "neg", True),
+        ) as mocked:
+            prompt_input, negative_prompt_input, prompt_embeds, negative_prompt_embeds = (
+                _prepare_animatediff_prompt_inputs(
+                    pipe=object(),
+                    prompt="weighted prompt",
+                    negative_prompt="weighted negative",
+                    clip_skip=1,
+                    weighting_policy="a1111-like",
+                    free_noise_enabled=False,
+                )
+            )
+
+        mocked.assert_called_once()
+        self.assertIsNone(prompt_input)
+        self.assertIsNone(negative_prompt_input)
+        self.assertEqual(prompt_embeds, "pos")
+        self.assertEqual(negative_prompt_embeds, "neg")
 
 
 if __name__ == "__main__":

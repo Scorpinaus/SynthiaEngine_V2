@@ -12,7 +12,7 @@ class FrontendSd15AnimateDiffScriptTests(unittest.TestCase):
         lora_tag = '<script src="lora_panel.js?v=1"></script>'
         preset_tag = '<script src="preset_panel.js?v=1"></script>'
         validator_tag = '<script src="workflow_input_validator.js?v=1"></script>'
-        animatediff_tag = '<script src="sd15_animatediff.js?v=1"></script>'
+        animatediff_tag = '<script src="sd15_animatediff.js?v=2"></script>'
 
         self.assertIn(viewer_tag, html)
         self.assertIn(lora_tag, html)
