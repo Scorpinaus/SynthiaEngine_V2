@@ -34,6 +34,42 @@ def run_sd15_text2img(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str,
     filenames = generate_images(generation_params)
     return {"batch_id": batch_id, "images": [f"/outputs/{name}" for name in filenames]}
 
+
+def run_sd15_animatediff_text2video(
+    inputs: dict[str, Any],
+    deps: dict[str, Any],
+) -> dict[str, Any]:
+    _normalized_lora_adapters = deps["normalized_lora_adapters"]
+    make_batch_id = deps["make_batch_id"]
+    generate_videos_text2video = deps["generate_videos_text2video"]
+
+    lora_adapters = _normalized_lora_adapters(inputs)
+    batch_id = str(inputs.get("batch_id") or make_batch_id())
+    generation_params = {
+        "prompt": str(inputs["prompt"]),
+        "negative_prompt": str(inputs.get("negative_prompt") or ""),
+        "steps": int(inputs.get("steps") or 25),
+        "cfg": float(inputs.get("cfg") or 7.5),
+        "width": int(inputs.get("width") or 512),
+        "height": int(inputs.get("height") or 512),
+        "seed": inputs.get("seed"),
+        "scheduler": str(inputs.get("scheduler") or "ddim"),
+        "model": inputs.get("model"),
+        "motion_adapter": str(
+            inputs.get("motion_adapter")
+            or "guoyww/animatediff-motion-adapter-v1-5-2"
+        ),
+        "num_frames": int(inputs.get("num_frames") or 16),
+        "fps": int(inputs.get("fps") or 8),
+        "num_videos": int(inputs.get("num_videos") or 1),
+        "clip_skip": int(inputs.get("clip_skip") or 1),
+        "lora_adapters": lora_adapters,
+        "weighting_policy": str(inputs.get("weighting_policy") or "diffusers-like"),
+        "batch_id": batch_id,
+    }
+    filenames = generate_videos_text2video(generation_params)
+    return {"batch_id": batch_id, "videos": [f"/outputs/{name}" for name in filenames]}
+
 def run_sd15_img2img(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str, Any]:
     _open_image_ref = deps["open_image_ref"]
     _remap_img2img_strength = deps["remap_img2img_strength"]

@@ -63,6 +63,8 @@ def _build_task_ui_hints(task_type: str, model_cls: type[BaseModel]) -> dict[str
     title = task_type
     if task_type.endswith(".text2img"):
         title = f"{task_type} (Text to Image)"
+    elif task_type.endswith(".text2video"):
+        title = f"{task_type} (Text to Video)"
     elif task_type.endswith(".img2img"):
         title = f"{task_type} (Image to Image)"
     elif task_type.endswith(".inpaint"):
@@ -84,6 +86,9 @@ def _build_task_ui_hints(task_type: str, model_cls: type[BaseModel]) -> dict[str
         "width": {"min": 64, "max": 2048, "step": 8, "integer": True},
         "height": {"min": 64, "max": 2048, "step": 8, "integer": True},
         "num_images": {"min": 1, "max": 8, "step": 1, "integer": True},
+        "num_videos": {"min": 1, "max": 8, "step": 1, "integer": True},
+        "num_frames": {"min": 1, "max": 256, "step": 1, "integer": True},
+        "fps": {"min": 1, "max": 60, "step": 1, "integer": True},
         "clip_skip": {"min": 1, "max": 4, "step": 1, "integer": True},
         "padding_mask_crop": {"min": 0, "max": 128, "step": 1, "integer": True},
         "hires_scale": {"min": 1, "max": 4, "step": 0.05},
@@ -194,6 +199,7 @@ def _build_model_capabilities(task_input_models: dict[str, type[BaseModel]]) -> 
                 "task_types": [],
                 "features": {
                     "text2img": False,
+                    "text2video": False,
                     "img2img": False,
                     "inpaint": False,
                     "controlnet": False,
@@ -211,6 +217,8 @@ def _build_model_capabilities(task_input_models: dict[str, type[BaseModel]]) -> 
         features = entry["features"]
         if task_type.endswith(".text2img"):
             features["text2img"] = True
+        if task_type.endswith(".text2video"):
+            features["text2video"] = True
         if task_type.endswith(".img2img"):
             features["img2img"] = True
         if task_type.endswith(".inpaint"):

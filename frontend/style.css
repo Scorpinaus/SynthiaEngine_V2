@@ -1504,6 +1504,16 @@ body {
     box-shadow: 0 8px 18px rgba(30, 24, 16, 0.12);
 }
 
+.viewer-frame video {
+    width: auto;
+    max-width: 100%;
+    max-height: 60vh;
+    display: block;
+    border-radius: 12px;
+    border: 1px solid #e3ddd4;
+    box-shadow: 0 8px 18px rgba(30, 24, 16, 0.12);
+}
+
 .viewer-empty {
     color: #6b645c;
     font-size: 14px;

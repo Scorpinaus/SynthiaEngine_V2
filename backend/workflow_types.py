@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 # Keeping this as a Literal enables static type checking and autocomplete.
 TaskType = Literal[
     "sd15.text2img",
+    "sd15.animatediff.text2video",
     "sd15.img2img",
     "sd15.inpaint",
     "sd15.controlnet.text2img",

@@ -28,6 +28,16 @@ class ImagesWithBatchOutput(BaseModel):
     )
 
 
+class VideosWithBatchOutput(BaseModel):
+    """Video-generating output that includes a batch id."""
+
+    batch_id: str = Field(..., description="Batch identifier used to group outputs on disk.")
+    videos: list[str] = Field(
+        ...,
+        description='List of output video URLs ("/outputs/...").',
+    )
+
+
 class Sd15ControlNetText2ImgOutput(ImagesWithBatchOutput):
     """SD1.5 ControlNet output with optional compatibility warnings."""
 

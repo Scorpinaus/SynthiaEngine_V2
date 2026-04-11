@@ -111,9 +111,10 @@ Response:
     "sd15": {
       "label": "SD 1.5",
       "aliases": ["sd1.5"],
-      "task_types": ["sd15.text2img", "sd15.img2img", "sd15.inpaint", "sd15.controlnet.text2img", "sd15.hires_fix"],
+      "task_types": ["sd15.text2img", "sd15.animatediff.text2video", "sd15.img2img", "sd15.inpaint", "sd15.controlnet.text2img", "sd15.hires_fix"],
       "features": {
         "text2img": true,
+        "text2video": true,
         "img2img": true,
         "inpaint": true,
         "controlnet": true,
@@ -386,6 +387,7 @@ Frontend note (SD1.5 page):
 - ControlNet HTML fragments are fetched with `cache: "no-store"` to avoid stale modal/panel assets.
 - `frontend/controlnet_preprocessor.html` also carries inline layout styles as a last-resort cache-resistant fallback.
 - The preprocessor modal collapses to one column only on narrow screens (`<=700px`).
+- `frontend/sd15_animatediff.html` serves SD1.5 AnimateDiff text-to-video generation and renders `videos` outputs in `frontend/video_gallery.js`.
 - `frontend/sdxl.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()` for `sdxl.controlnet.text2img`.
 - `frontend/sdxl_img2img.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()` for `sdxl.img2img` optional ControlNet usage.
 - `frontend/sdxl_inpaint.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()` for `sdxl.inpaint` optional ControlNet usage.
@@ -472,7 +474,7 @@ Resolution behavior:
 
 ## Supported task types (current)
 
-- SD1.5: `sd15.text2img`, `sd15.img2img`, `sd15.inpaint`, `sd15.controlnet.text2img`, `sd15.hires_fix`
+- SD1.5: `sd15.text2img`, `sd15.animatediff.text2video`, `sd15.img2img`, `sd15.inpaint`, `sd15.controlnet.text2img`, `sd15.hires_fix`
 - SDXL: `sdxl.text2img`, `sdxl.controlnet.text2img`, `sdxl.img2img`, `sdxl.inpaint`
 - Flux: `flux.text2img`, `flux.img2img`, `flux.inpaint`
 - Qwen-Image: `qwen-image.text2img`, `qwen-image.img2img`, `qwen-image.inpaint`
@@ -483,16 +485,19 @@ Resolution behavior:
 
 This same matrix is available in machine-readable form at `GET /api/workflow/catalog` under `capabilities`.
 
-| Family | text2img | img2img | inpaint | controlnet | hires_fix | lora_adapters | true_cfg_scale |
-|---|---|---|---|---|---|---|---|
-| `sd15` | yes | yes | yes | yes | yes | yes | no |
-| `sdxl` | yes | yes | yes | yes | no | yes | no |
-| `flux` | yes | yes | yes | no | no | yes | no |
-| `qwen-image` | yes | yes | yes | no | no | yes | yes |
-| `z-image` (`zimage`) | yes | yes | yes | no | no | yes | no |
+| Family | text2img | text2video | img2img | inpaint | controlnet | hires_fix | lora_adapters | true_cfg_scale |
+|---|---|---|---|---|---|---|---|---|
+| `sd15` | yes | yes | yes | yes | yes | yes | yes | no |
+| `sdxl` | yes | no | yes | yes | yes | no | yes | no |
+| `flux` | yes | no | yes | yes | no | no | yes | no |
+| `qwen-image` | yes | no | yes | yes | no | no | yes | yes |
+| `z-image` (`zimage`) | yes | no | yes | yes | no | no | yes | no |
 
 Task inputs/outputs are task-specific. As a convention, image-generating tasks return:
 - `images`: list of `"/outputs/..."` URLs
+
+Video-generating tasks return:
+- `videos`: list of `"/outputs/..."` URLs
 
 LoRA adapter targeting:
 - For tasks that accept `lora_adapters`, each adapter can optionally include `target` with one of:
@@ -513,6 +518,26 @@ LoRA adapter targeting:
   - legacy `Lora` object
 - `hires`: optional object `{ "hiresEnabled": boolean, "hires_scale": number }`.
   - When `hires_enabled` / `hires_scale` are omitted, backend can derive values from `hires`.
+
+`sd15.animatediff.text2video` input notes:
+- `prompt` / `negative_prompt`: prompt text.
+- `steps`: inference steps (default `25`).
+- `cfg`: guidance scale (default `7.5`).
+- `width` / `height`: output frame size (default `512x512`).
+- `seed`: optional seed; `null` or `0` selects a random base seed.
+- `scheduler`: defaults to `ddim`; the backend applies AnimateDiff-friendly DDIM settings (`clip_sample=false`, `timestep_spacing=linspace`, `beta_schedule=linear`, `steps_offset=1`).
+- `model`: SD1.5 base model registry name.
+- `motion_adapter`: MotionAdapter hub id, local directory, or local single-file adapter path. Default: `guoyww/animatediff-motion-adapter-v1-5-2`.
+- `num_frames`: number of generated frames per video (default `16`).
+- `fps`: MP4 export frame rate (default `8`).
+- `num_videos`: number of videos to generate (default `1`).
+- `clip_skip`: CLIP skip value (default `1`).
+- `weighting_policy`: prompt-weighting parser policy.
+- `lora`: optional SD1.5 unified LoRA contract `{ "lora_enabled": boolean, "lora_adapters": [...] }`.
+- `batch_id`: optional batch identifier.
+
+`sd15.animatediff.text2video` output notes:
+- Returns `{ "batch_id": "...", "videos": ["/outputs/...mp4"] }`.
 
 `controlnet.preprocess` input notes:
 - `image`: image reference

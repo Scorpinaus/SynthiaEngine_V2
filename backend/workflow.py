@@ -20,6 +20,7 @@ from backend.workflow_schema_input import (
     FluxInpaintInputs,
     FluxText2ImgInputs,
     ImageRef,
+    Sd15AnimateDiffText2VideoInputs,
     QwenImageImg2ImgInputs,
     QwenImageInpaintInputs,
     QwenImageText2ImgInputs,
@@ -52,6 +53,7 @@ from backend.workflow_schema_output import (
     SdxlControlNetText2ImgOutput,
     SdxlImg2ImgOutput,
     SdxlInpaintOutput,
+    VideosWithBatchOutput,
 )
 from backend.workflow_types import (
     TaskType,
@@ -77,6 +79,7 @@ from backend.workflow_utility import (
     save_artifact_png,
 )
 from backend.workflow_sd15 import (
+    run_sd15_animatediff_text2video as _run_sd15_animatediff_text2video,
     run_sd15_controlnet_text2img as _run_sd15_controlnet_text2img,
     run_sd15_hires_fix as _run_sd15_hires_fix,
     run_sd15_img2img as _run_sd15_img2img,
@@ -113,6 +116,7 @@ from backend.sd15_pipeline import (
     generate_images_inpaint_controlnet,
     run_sd15_hires_fix,
 )
+from backend.sd15_animatediff_pipeline import generate_videos_text2video
 import backend.sdxl_pipeline as sdxl_pipeline_module
 
 logger = logging.getLogger(__name__)
@@ -126,6 +130,7 @@ _MAX_CONTROLNET_MODELS = 2
 TASK_INPUT_MODELS: dict[str, type[BaseModel]] = {
     # SD15 tasks
     "sd15.text2img": Sd15Text2ImgInputs,
+    "sd15.animatediff.text2video": Sd15AnimateDiffText2VideoInputs,
     "sd15.img2img": Sd15Img2ImgInputs,
     "sd15.inpaint": Sd15InpaintInputs,
     "sd15.controlnet.text2img": Sd15ControlNetText2ImgInputs,
@@ -155,6 +160,7 @@ TASK_INPUT_MODELS: dict[str, type[BaseModel]] = {
 TASK_OUTPUT_MODELS: dict[str, type[BaseModel]] = {
     # SD15 tasks
     "sd15.text2img": ImagesWithBatchOutput,
+    "sd15.animatediff.text2video": VideosWithBatchOutput,
     "sd15.img2img": Sd15Img2ImgOutput,
     "sd15.inpaint": Sd15InpaintOutput,
     "sd15.controlnet.text2img": Sd15ControlNetText2ImgOutput,
@@ -197,6 +203,7 @@ def _sd15_runtime_deps() -> dict[str, Any]:
         "open_image_ref": _open_image_ref,
         "make_batch_id": make_batch_id,
         "generate_images": generate_images,
+        "generate_videos_text2video": generate_videos_text2video,
         "generate_images_img2img": generate_images_img2img,
         "generate_images_img2img_controlnet": generate_images_img2img_controlnet,
         "generate_images_inpaint": generate_images_inpaint,
@@ -213,6 +220,13 @@ def _sd15_runtime_deps() -> dict[str, Any]:
 
 def _sd15_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
     return _run_sd15_text2img(inputs, _sd15_runtime_deps())
+
+
+def _sd15_animatediff_text2video(
+    inputs: dict[str, Any],
+    _ctx: WorkflowContext,
+) -> dict[str, Any]:
+    return _run_sd15_animatediff_text2video(inputs, _sd15_runtime_deps())
 
 
 
@@ -376,6 +390,7 @@ def _z_image_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str,
 TASK_REGISTRY: dict[str, Callable[[dict[str, Any], WorkflowContext], dict[str, Any]]] = {
     # SD15 tasks
     "sd15.text2img": _sd15_text2img,
+    "sd15.animatediff.text2video": _sd15_animatediff_text2video,
     "sd15.img2img": _sd15_img2img,
     "sd15.inpaint": _sd15_inpaint,
     "sd15.controlnet.text2img": _sd15_controlnet_text2img,

@@ -3,6 +3,7 @@ const NAV_GROUPS = [
         label: "Render",
         items: [
             { href: "sd15.html", label: "SD 1.5 Text2Img" },
+            { href: "sd15_animatediff.html", label: "SD 1.5 AnimateDiff" },
             { href: "sd15_img2img.html", label: "SD 1.5 Img2Img" },
             { href: "sd15_inpainting.html", label: "SD 1.5 Inpaint" },
             { href: "sdxl.html", label: "SDXL Text2Img" },

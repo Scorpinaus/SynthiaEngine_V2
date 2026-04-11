@@ -60,6 +60,26 @@ class Sd15Text2ImgInputs(BaseModel):
     hires: Sd15HiresContract | None = None
 
 
+class Sd15AnimateDiffText2VideoInputs(BaseModel):
+    prompt: str
+    negative_prompt: str = ""
+    steps: int = 25
+    cfg: float = 7.5
+    width: int = 512
+    height: int = 512
+    seed: int | None = None
+    scheduler: str = "ddim"
+    model: str | None = None
+    motion_adapter: str = "guoyww/animatediff-motion-adapter-v1-5-2"
+    num_frames: int = 16
+    fps: int = 8
+    num_videos: int = 1
+    clip_skip: int = 1
+    lora: Sd15UnifiedLoraContract | None = None
+    weighting_policy: str = "diffusers-like"
+    batch_id: str | None = None
+
+
 class Sd15Img2ImgInputs(BaseModel):
     initial_image: ImageRef = Field(
         ...,
