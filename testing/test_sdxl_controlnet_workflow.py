@@ -97,6 +97,25 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertIn("lora_adapters", captured)
         self.assertEqual(captured["lora_adapters"], [{"lora_id": 101, "strength": 0.8}])
 
+    def test_sdxl_text2img_defaults_lora_adapters_when_missing(self):
+        captured = {}
+
+        def _fake_generate_text2img(payload):
+            captured.update(payload)
+            return {"images": ["/outputs/batch/out.png"]}
+
+        with patch("backend.sdxl_pipeline.generate_text2img", side_effect=_fake_generate_text2img):
+            result = _sdxl_text2img(
+                {
+                    "prompt": "test prompt",
+                },
+                _ctx=None,
+            )
+
+        self.assertEqual(result["images"], ["/outputs/batch/out.png"])
+        self.assertIn("lora_adapters", captured)
+        self.assertIsNone(captured["lora_adapters"])
+
     def test_controlnet_task_passes_expected_pipeline_params(self):
         captured = {}
 

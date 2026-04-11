@@ -567,6 +567,13 @@ LoRA adapter targeting:
 - `free_noise_context_length`: FreeNoise temporal window length (default `16`, minimum `1`). Keep this value within the motion adapter temporal context limit.
 - `free_noise_context_stride`: FreeNoise temporal window stride (default `4`, minimum `1`). Must be `<= free_noise_context_length`.
 - FreeNoise mode uses Diffusers raw prompt encoding. Custom prompt-weight embedding expansion is disabled in FreeNoise mode because Diffusers FreeNoise does not support direct `prompt_embeds`.
+- `free_init_enabled`: optional boolean (default `false`). Enable Diffusers FreeInit for improved temporal consistency and video quality at additional inference cost.
+- `free_init_num_iters`: FreeInit noise re-initialization iterations (default `3`, minimum `1`). Higher values increase sampling work.
+- `free_init_use_fast_sampling`: optional boolean (default `false`). Enables Diffusers coarse-to-fine FreeInit sampling for better speed at a possible quality tradeoff.
+- `free_init_method`: FreeInit low-pass filter method (default `butterworth`). Must be one of `butterworth`, `ideal`, or `gaussian`.
+- `free_init_order`: FreeInit filter order for `butterworth` mode (default `4`, minimum `1`).
+- `free_init_spatial_stop_frequency`: FreeInit spatial stop frequency (default `0.25`, range `[0, 1]`).
+- `free_init_temporal_stop_frequency`: FreeInit temporal stop frequency (default `0.25`, range `[0, 1]`).
 - `clip_skip`: CLIP skip value (default `1`).
 - `weighting_policy`: prompt-weighting parser policy.
 - `lora`: optional SD1.5 unified LoRA contract `{ "lora_enabled": boolean, "lora_adapters": [...] }`.

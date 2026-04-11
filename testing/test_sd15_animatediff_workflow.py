@@ -14,6 +14,8 @@ from backend.workflow import (
 )
 from backend.sd15_animatediff_pipeline import _make_animatediff_generator
 from backend.sd15_animatediff_pipeline import _validate_animatediff_frame_settings
+from backend.sd15_animatediff_pipeline import _validate_free_init_settings
+from backend.sd15_animatediff_pipeline import _enable_free_init
 from backend.sd15_animatediff_pipeline import _prepare_animatediff_prompt_inputs
 from backend.sd15_animatediff_pipeline import _animatediff_video_metadata_path
 from backend.sd15_animatediff_pipeline import _write_animatediff_video_metadata
@@ -32,6 +34,13 @@ class Sd15AnimateDiffText2VideoSchemaTests(unittest.TestCase):
         self.assertFalse(inputs.free_noise_enabled)
         self.assertEqual(inputs.free_noise_context_length, 16)
         self.assertEqual(inputs.free_noise_context_stride, 4)
+        self.assertFalse(inputs.free_init_enabled)
+        self.assertEqual(inputs.free_init_num_iters, 3)
+        self.assertFalse(inputs.free_init_use_fast_sampling)
+        self.assertEqual(inputs.free_init_method, "butterworth")
+        self.assertEqual(inputs.free_init_order, 4)
+        self.assertEqual(inputs.free_init_spatial_stop_frequency, 0.25)
+        self.assertEqual(inputs.free_init_temporal_stop_frequency, 0.25)
 
     def test_prompt_is_required(self):
         with self.assertRaises(ValidationError):
@@ -89,6 +98,13 @@ class Sd15AnimateDiffText2VideoWorkflowTests(unittest.TestCase):
                         "free_noise_enabled": True,
                         "free_noise_context_length": 16,
                         "free_noise_context_stride": 4,
+                        "free_init_enabled": True,
+                        "free_init_num_iters": 4,
+                        "free_init_use_fast_sampling": True,
+                        "free_init_method": "gaussian",
+                        "free_init_order": 5,
+                        "free_init_spatial_stop_frequency": 0.2,
+                        "free_init_temporal_stop_frequency": 0.3,
                         "clip_skip": 2,
                         "lora": {
                             "lora_enabled": True,
@@ -117,6 +133,13 @@ class Sd15AnimateDiffText2VideoWorkflowTests(unittest.TestCase):
         self.assertTrue(captured["free_noise_enabled"])
         self.assertEqual(captured["free_noise_context_length"], 16)
         self.assertEqual(captured["free_noise_context_stride"], 4)
+        self.assertTrue(captured["free_init_enabled"])
+        self.assertEqual(captured["free_init_num_iters"], 4)
+        self.assertTrue(captured["free_init_use_fast_sampling"])
+        self.assertEqual(captured["free_init_method"], "gaussian")
+        self.assertEqual(captured["free_init_order"], 5)
+        self.assertEqual(captured["free_init_spatial_stop_frequency"], 0.2)
+        self.assertEqual(captured["free_init_temporal_stop_frequency"], 0.3)
         self.assertEqual(captured["clip_skip"], 2)
         self.assertEqual(captured["lora_adapters"], [{"lora_id": 101, "strength": 0.75}])
         self.assertEqual(captured["weighting_policy"], "a1111-like")
@@ -198,6 +221,59 @@ class Sd15AnimateDiffText2VideoWorkflowTests(unittest.TestCase):
         self.assertEqual(generator.device.type, "cpu")
         shuffled = torch.randperm(4, generator=generator)
         self.assertEqual(shuffled.device.type, "cpu")
+
+    def test_animatediff_free_init_settings_are_validated(self):
+        _validate_free_init_settings(
+            num_iters=3,
+            method="butterworth",
+            order=4,
+            spatial_stop_frequency=0.25,
+            temporal_stop_frequency=0.25,
+        )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "free_init_method must be one of butterworth, ideal, gaussian",
+        ):
+            _validate_free_init_settings(
+                num_iters=3,
+                method="bad",
+                order=4,
+                spatial_stop_frequency=0.25,
+                temporal_stop_frequency=0.25,
+            )
+
+    def test_animatediff_enable_free_init_calls_pipeline(self):
+        class FakePipe:
+            def __init__(self):
+                self.kwargs = None
+
+            def enable_free_init(self, **kwargs):
+                self.kwargs = kwargs
+
+        pipe = FakePipe()
+
+        _enable_free_init(
+            pipe,
+            num_iters=4,
+            use_fast_sampling=True,
+            method="gaussian",
+            order=5,
+            spatial_stop_frequency=0.2,
+            temporal_stop_frequency=0.3,
+        )
+
+        self.assertEqual(
+            pipe.kwargs,
+            {
+                "num_iters": 4,
+                "use_fast_sampling": True,
+                "method": "gaussian",
+                "order": 5,
+                "spatial_stop_frequency": 0.2,
+                "temporal_stop_frequency": 0.3,
+            },
+        )
 
     def test_animatediff_free_noise_uses_raw_prompt_inputs(self):
         with patch("backend.sd15_animatediff_pipeline.build_prompt_embeddings") as mocked:

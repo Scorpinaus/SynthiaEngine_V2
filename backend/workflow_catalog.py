@@ -90,6 +90,10 @@ def _build_task_ui_hints(task_type: str, model_cls: type[BaseModel]) -> dict[str
         "num_frames": {"min": 1, "max": 256, "step": 1, "integer": True},
         "free_noise_context_length": {"min": 1, "max": 32, "step": 1, "integer": True},
         "free_noise_context_stride": {"min": 1, "max": 32, "step": 1, "integer": True},
+        "free_init_num_iters": {"min": 1, "max": 8, "step": 1, "integer": True},
+        "free_init_order": {"min": 1, "max": 16, "step": 1, "integer": True},
+        "free_init_spatial_stop_frequency": {"min": 0, "max": 1, "step": 0.01},
+        "free_init_temporal_stop_frequency": {"min": 0, "max": 1, "step": 0.01},
         "fps": {"min": 1, "max": 60, "step": 1, "integer": True},
         "clip_skip": {"min": 1, "max": 4, "step": 1, "integer": True},
         "padding_mask_crop": {"min": 0, "max": 128, "step": 1, "integer": True},
@@ -134,6 +138,9 @@ def _build_task_ui_hints(task_type: str, model_cls: type[BaseModel]) -> dict[str
 
         if field_name == "weighting_policy":
             hint.update(widget="select", options=_WEIGHTING_POLICY_OPTIONS)
+
+        if field_name == "free_init_method":
+            hint.update(widget="select", options=["butterworth", "ideal", "gaussian"])
 
         if field_name == "model":
             if family:

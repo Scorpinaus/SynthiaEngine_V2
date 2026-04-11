@@ -12,7 +12,7 @@ class FrontendSd15AnimateDiffScriptTests(unittest.TestCase):
         lora_tag = '<script src="lora_panel.js?v=1"></script>'
         preset_tag = '<script src="preset_panel.js?v=1"></script>'
         validator_tag = '<script src="workflow_input_validator.js?v=1"></script>'
-        animatediff_tag = '<script src="sd15_animatediff.js?v=2"></script>'
+        animatediff_tag = '<script src="sd15_animatediff.js?v=3"></script>'
 
         self.assertIn(viewer_tag, html)
         self.assertIn(lora_tag, html)
@@ -38,6 +38,13 @@ class FrontendSd15AnimateDiffScriptTests(unittest.TestCase):
         self.assertIn("free_noise_enabled", js)
         self.assertIn("free_noise_context_length", js)
         self.assertIn("free_noise_context_stride", js)
+        self.assertIn("free_init_enabled", js)
+        self.assertIn("free_init_num_iters", js)
+        self.assertIn("free_init_use_fast_sampling", js)
+        self.assertIn("free_init_method", js)
+        self.assertIn("free_init_order", js)
+        self.assertIn("free_init_spatial_stop_frequency", js)
+        self.assertIn("free_init_temporal_stop_frequency", js)
 
     def test_animatediff_page_includes_free_noise_controls(self):
         html = (ROOT / "frontend" / "sd15_animatediff.html").read_text(encoding="utf-8")
@@ -45,6 +52,17 @@ class FrontendSd15AnimateDiffScriptTests(unittest.TestCase):
         self.assertIn('id="free_noise_enabled"', html)
         self.assertIn('id="free_noise_context_length"', html)
         self.assertIn('id="free_noise_context_stride"', html)
+
+    def test_animatediff_page_includes_free_init_controls(self):
+        html = (ROOT / "frontend" / "sd15_animatediff.html").read_text(encoding="utf-8")
+
+        self.assertIn('id="free_init_enabled"', html)
+        self.assertIn('id="free_init_num_iters"', html)
+        self.assertIn('id="free_init_use_fast_sampling"', html)
+        self.assertIn('id="free_init_method"', html)
+        self.assertIn('id="free_init_order"', html)
+        self.assertIn('id="free_init_spatial_stop_frequency"', html)
+        self.assertIn('id="free_init_temporal_stop_frequency"', html)
 
     def test_video_gallery_exposes_expected_api(self):
         js = (ROOT / "frontend" / "video_gallery.js").read_text(encoding="utf-8")

@@ -602,7 +602,7 @@ def generate_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
     num_images = int(payload["num_images"])
     clip_skip = int(payload["clip_skip"])
     scheduler = payload["scheduler"]
-    lora_adapters = payload["lora_adapters"]
+    lora_adapters = payload.get("lora_adapters")
     
     #2. Check and set seed value
     if seed is None or seed == 0:

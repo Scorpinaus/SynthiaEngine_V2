@@ -102,6 +102,48 @@
                     </label>
                 </div>
 
+                <label class="field">
+                    <span>Quality FreeInit</span>
+                    <input id="free_init_enabled" type="checkbox" />
+                </label>
+
+                <div class="field-row">
+                    <label class="field">
+                        <span>FreeInit Iterations</span>
+                        <input id="free_init_num_iters" type="number" value="3" step="1" min="1" max="8" />
+                    </label>
+                    <label class="field">
+                        <span>FreeInit Fast Sampling</span>
+                        <input id="free_init_use_fast_sampling" type="checkbox" />
+                    </label>
+                </div>
+
+                <div class="field-row">
+                    <label class="field">
+                        <span>FreeInit Method</span>
+                        <select id="free_init_method">
+                            <option value="butterworth" selected>Butterworth</option>
+                            <option value="ideal">Ideal</option>
+                            <option value="gaussian">Gaussian</option>
+                        </select>
+                    </label>
+                    <label class="field">
+                        <span>FreeInit Order</span>
+                        <input id="free_init_order" type="number" value="4" step="1" min="1" max="16" />
+                    </label>
+                </div>
+
+                <div class="field-row">
+                    <label class="field">
+                        <span>FreeInit Spatial Stop</span>
+                        <input id="free_init_spatial_stop_frequency" type="number" value="0.25" step="0.01" min="0" max="1" />
+                    </label>
+                    <label class="field">
+                        <span>FreeInit Temporal Stop</span>
+                        <input id="free_init_temporal_stop_frequency" type="number" value="0.25" step="0.01" min="0" max="1" />
+                    </label>
+                </div>
+
                 <div id="scheduler-panel-root"></div>
 
                 <label class="field">
@@ -154,7 +196,7 @@
     <script src="workflow_catalog.js?v=1"></script>
     <script src="workflow_input_validator.js?v=1"></script>
     <script src="preset_panel.js?v=1"></script>
-    <script src="sd15_animatediff.js?v=2"></script>
+    <script src="sd15_animatediff.js?v=3"></script>
 </body>
 
 </html>

@@ -14,6 +14,13 @@ const ANIMATEDIFF_DEFAULTS = {
     free_noise_enabled: false,
     free_noise_context_length: 16,
     free_noise_context_stride: 4,
+    free_init_enabled: false,
+    free_init_num_iters: 3,
+    free_init_use_fast_sampling: false,
+    free_init_method: "butterworth",
+    free_init_order: 4,
+    free_init_spatial_stop_frequency: 0.25,
+    free_init_temporal_stop_frequency: 0.25,
     clip_skip: 1,
     weighting_policy: "diffusers-like",
     motion_adapter: "guoyww/animatediff-motion-adapter-v1-5-2",
@@ -164,6 +171,36 @@ function collectAnimateDiffPresetSettings() {
             ANIMATEDIFF_DEFAULTS.free_noise_context_stride,
             { integer: true }
         ),
+        free_init_enabled: readCheckboxValue(
+            "free_init_enabled",
+            ANIMATEDIFF_DEFAULTS.free_init_enabled
+        ),
+        free_init_num_iters: WorkflowClient.readNumberValue(
+            "free_init_num_iters",
+            ANIMATEDIFF_DEFAULTS.free_init_num_iters,
+            { integer: true }
+        ),
+        free_init_use_fast_sampling: readCheckboxValue(
+            "free_init_use_fast_sampling",
+            ANIMATEDIFF_DEFAULTS.free_init_use_fast_sampling
+        ),
+        free_init_method: WorkflowClient.readTextValue(
+            "free_init_method",
+            ANIMATEDIFF_DEFAULTS.free_init_method
+        ),
+        free_init_order: WorkflowClient.readNumberValue(
+            "free_init_order",
+            ANIMATEDIFF_DEFAULTS.free_init_order,
+            { integer: true }
+        ),
+        free_init_spatial_stop_frequency: WorkflowClient.readNumberValue(
+            "free_init_spatial_stop_frequency",
+            ANIMATEDIFF_DEFAULTS.free_init_spatial_stop_frequency
+        ),
+        free_init_temporal_stop_frequency: WorkflowClient.readNumberValue(
+            "free_init_temporal_stop_frequency",
+            ANIMATEDIFF_DEFAULTS.free_init_temporal_stop_frequency
+        ),
         clip_skip: WorkflowClient.readNumberValue(
             "clip_skip",
             ANIMATEDIFF_DEFAULTS.clip_skip,
@@ -199,6 +236,19 @@ async function applyAnimateDiffPresetSettings(settings) {
     setCheckboxValue("free_noise_enabled", settings.free_noise_enabled);
     setInputValue("free_noise_context_length", settings.free_noise_context_length);
     setInputValue("free_noise_context_stride", settings.free_noise_context_stride);
+    setCheckboxValue("free_init_enabled", settings.free_init_enabled);
+    setInputValue("free_init_num_iters", settings.free_init_num_iters);
+    setCheckboxValue("free_init_use_fast_sampling", settings.free_init_use_fast_sampling);
+    setInputValue("free_init_method", settings.free_init_method);
+    setInputValue("free_init_order", settings.free_init_order);
+    setInputValue(
+        "free_init_spatial_stop_frequency",
+        settings.free_init_spatial_stop_frequency
+    );
+    setInputValue(
+        "free_init_temporal_stop_frequency",
+        settings.free_init_temporal_stop_frequency
+    );
     setInputValue("clip_skip", settings.clip_skip);
     setInputValue("weighting_policy", settings.weighting_policy);
     setInputValue("motion_adapter", settings.motion_adapter);
@@ -279,6 +329,38 @@ function collectAnimateDiffInputs(defaults) {
             "free_noise_context_stride",
             defaults.free_noise_context_stride ?? ANIMATEDIFF_DEFAULTS.free_noise_context_stride,
             { integer: true }
+        ),
+        free_init_enabled: readCheckboxValue(
+            "free_init_enabled",
+            defaults.free_init_enabled ?? ANIMATEDIFF_DEFAULTS.free_init_enabled
+        ),
+        free_init_num_iters: WorkflowClient.readNumberValue(
+            "free_init_num_iters",
+            defaults.free_init_num_iters ?? ANIMATEDIFF_DEFAULTS.free_init_num_iters,
+            { integer: true }
+        ),
+        free_init_use_fast_sampling: readCheckboxValue(
+            "free_init_use_fast_sampling",
+            defaults.free_init_use_fast_sampling ?? ANIMATEDIFF_DEFAULTS.free_init_use_fast_sampling
+        ),
+        free_init_method: WorkflowClient.readTextValue(
+            "free_init_method",
+            defaults.free_init_method ?? ANIMATEDIFF_DEFAULTS.free_init_method
+        ),
+        free_init_order: WorkflowClient.readNumberValue(
+            "free_init_order",
+            defaults.free_init_order ?? ANIMATEDIFF_DEFAULTS.free_init_order,
+            { integer: true }
+        ),
+        free_init_spatial_stop_frequency: WorkflowClient.readNumberValue(
+            "free_init_spatial_stop_frequency",
+            defaults.free_init_spatial_stop_frequency
+                ?? ANIMATEDIFF_DEFAULTS.free_init_spatial_stop_frequency
+        ),
+        free_init_temporal_stop_frequency: WorkflowClient.readNumberValue(
+            "free_init_temporal_stop_frequency",
+            defaults.free_init_temporal_stop_frequency
+                ?? ANIMATEDIFF_DEFAULTS.free_init_temporal_stop_frequency
         ),
         clip_skip: WorkflowClient.readNumberValue(
             "clip_skip",
@@ -386,6 +468,11 @@ function initAnimateDiffPage() {
                     num_videos: "num_videos",
                     free_noise_context_length: "free_noise_context_length",
                     free_noise_context_stride: "free_noise_context_stride",
+                    free_init_num_iters: "free_init_num_iters",
+                    free_init_method: "free_init_method",
+                    free_init_order: "free_init_order",
+                    free_init_spatial_stop_frequency: "free_init_spatial_stop_frequency",
+                    free_init_temporal_stop_frequency: "free_init_temporal_stop_frequency",
                     clip_skip: "clip_skip",
                     weighting_policy: "weighting_policy",
                 });

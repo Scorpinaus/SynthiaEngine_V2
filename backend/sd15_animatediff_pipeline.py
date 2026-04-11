@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 configure_logging()
 
 _DEFAULT_MOTION_ADAPTER = "guoyww/animatediff-motion-adapter-v1-5-2"
+_FREE_INIT_METHODS = {"butterworth", "ideal", "gaussian"}
 
 
 def _animatediff_video_metadata_path(batch_output_dir: Path, batch_id: str) -> Path:
@@ -67,6 +68,13 @@ def _int_param(params: dict[str, object], key: str, default: int) -> int:
     if value is None:
         return default
     return int(value)
+
+
+def _float_param(params: dict[str, object], key: str, default: float) -> float:
+    value = params.get(key, default)
+    if value is None:
+        return default
+    return float(value)
 
 
 def _motion_adapter_max_seq_length(adapter: MotionAdapter) -> int | None:
@@ -134,6 +142,59 @@ def _enable_free_noise(
     unet = getattr(pipe, "unet", None)
     if unet is not None and hasattr(unet, "enable_forward_chunking"):
         unet.enable_forward_chunking(min(16, context_length))
+
+
+def _validate_free_init_settings(
+    *,
+    num_iters: int,
+    method: str,
+    order: int,
+    spatial_stop_frequency: float,
+    temporal_stop_frequency: float,
+) -> None:
+    if num_iters < 1:
+        raise ValueError("free_init_num_iters must be >= 1")
+    if method not in _FREE_INIT_METHODS:
+        raise ValueError(
+            "free_init_method must be one of butterworth, ideal, gaussian"
+        )
+    if order < 1:
+        raise ValueError("free_init_order must be >= 1")
+    if spatial_stop_frequency < 0.0 or spatial_stop_frequency > 1.0:
+        raise ValueError("free_init_spatial_stop_frequency must be within [0, 1]")
+    if temporal_stop_frequency < 0.0 or temporal_stop_frequency > 1.0:
+        raise ValueError("free_init_temporal_stop_frequency must be within [0, 1]")
+
+
+def _enable_free_init(
+    pipe: AnimateDiffPipeline,
+    *,
+    num_iters: int,
+    use_fast_sampling: bool,
+    method: str,
+    order: int,
+    spatial_stop_frequency: float,
+    temporal_stop_frequency: float,
+) -> None:
+    if not hasattr(pipe, "enable_free_init"):
+        raise RuntimeError("This diffusers version does not support AnimateDiff FreeInit.")
+    pipe.enable_free_init(
+        num_iters=num_iters,
+        use_fast_sampling=use_fast_sampling,
+        method=method,
+        order=order,
+        spatial_stop_frequency=spatial_stop_frequency,
+        temporal_stop_frequency=temporal_stop_frequency,
+    )
+
+
+def _disable_free_init(pipe: AnimateDiffPipeline) -> None:
+    if not hasattr(pipe, "disable_free_init"):
+        return
+    try:
+        pipe.disable_free_init()
+    except Exception:
+        logger.exception("Failed to disable AnimateDiff FreeInit cleanly.")
 
 
 def _prepare_animatediff_prompt_inputs(
@@ -276,6 +337,19 @@ def generate_videos_text2video(params: dict[str, object]) -> list[str]:
     free_noise_enabled = _coerce_bool(params.get("free_noise_enabled", False))
     free_noise_context_length = _int_param(params, "free_noise_context_length", 16)
     free_noise_context_stride = _int_param(params, "free_noise_context_stride", 4)
+    free_init_enabled = _coerce_bool(params.get("free_init_enabled", False))
+    free_init_num_iters = _int_param(params, "free_init_num_iters", 3)
+    free_init_use_fast_sampling = _coerce_bool(
+        params.get("free_init_use_fast_sampling", False)
+    )
+    free_init_method = str(params.get("free_init_method") or "butterworth").lower()
+    free_init_order = _int_param(params, "free_init_order", 4)
+    free_init_spatial_stop_frequency = _float_param(
+        params, "free_init_spatial_stop_frequency", 0.25
+    )
+    free_init_temporal_stop_frequency = _float_param(
+        params, "free_init_temporal_stop_frequency", 0.25
+    )
     clip_skip = int(params.get("clip_skip") or 1)
     lora_adapters = params.get("lora_adapters")
     weighting_policy = str(params.get("weighting_policy") or "diffusers-like")
@@ -287,6 +361,13 @@ def generate_videos_text2video(params: dict[str, object]) -> list[str]:
         raise ValueError("fps must be >= 1")
     if num_videos < 1:
         raise ValueError("num_videos must be >= 1")
+    _validate_free_init_settings(
+        num_iters=free_init_num_iters,
+        method=free_init_method,
+        order=free_init_order,
+        spatial_stop_frequency=free_init_spatial_stop_frequency,
+        temporal_stop_frequency=free_init_temporal_stop_frequency,
+    )
 
     logger.info("seed=%s", seed)
     if seed is None or seed == 0:
@@ -320,10 +401,23 @@ def generate_videos_text2video(params: dict[str, object]) -> list[str]:
             context_stride=active_context_stride,
         )
     _apply_animatediff_scheduler(pipe, scheduler)
+    if free_init_enabled:
+        _enable_free_init(
+            pipe,
+            num_iters=free_init_num_iters,
+            use_fast_sampling=free_init_use_fast_sampling,
+            method=free_init_method,
+            order=free_init_order,
+            spatial_stop_frequency=free_init_spatial_stop_frequency,
+            temporal_stop_frequency=free_init_temporal_stop_frequency,
+        )
     logger.info(
         "Generate AnimateDiff: model=%s motion_adapter=%s seed=%s scheduler=%s "
         "steps=%s cfg=%s size=%sx%s num_frames=%s fps=%s num_videos=%s "
-        "free_noise=%s free_noise_context_length=%s free_noise_context_stride=%s",
+        "free_noise=%s free_noise_context_length=%s free_noise_context_stride=%s "
+        "free_init=%s free_init_num_iters=%s free_init_use_fast_sampling=%s "
+        "free_init_method=%s free_init_order=%s free_init_spatial_stop_frequency=%s "
+        "free_init_temporal_stop_frequency=%s",
         model,
         motion_adapter,
         base_seed,
@@ -338,6 +432,13 @@ def generate_videos_text2video(params: dict[str, object]) -> list[str]:
         free_noise_enabled,
         free_noise_context_length,
         free_noise_context_stride,
+        free_init_enabled,
+        free_init_num_iters,
+        free_init_use_fast_sampling,
+        free_init_method,
+        free_init_order,
+        free_init_spatial_stop_frequency,
+        free_init_temporal_stop_frequency,
     )
 
     adapter_names, lora_coverage = apply_lora_adapters_with_validation(
@@ -383,6 +484,13 @@ def generate_videos_text2video(params: dict[str, object]) -> list[str]:
         "free_noise_enabled": free_noise_enabled,
         "free_noise_context_length": free_noise_context_length,
         "free_noise_context_stride": free_noise_context_stride,
+        "free_init_enabled": free_init_enabled,
+        "free_init_num_iters": free_init_num_iters,
+        "free_init_use_fast_sampling": free_init_use_fast_sampling,
+        "free_init_method": free_init_method,
+        "free_init_order": free_init_order,
+        "free_init_spatial_stop_frequency": free_init_spatial_stop_frequency,
+        "free_init_temporal_stop_frequency": free_init_temporal_stop_frequency,
         "clip_skip": clip_skip,
         "lora_adapters": lora_adapters,
         "weighting_policy": weighting_policy,
@@ -428,6 +536,8 @@ def generate_videos_text2video(params: dict[str, object]) -> list[str]:
             logger.info("Video %s saved to %s", i, output_name)
             filenames.append(relative_path)
     finally:
+        if free_init_enabled:
+            _disable_free_init(pipe)
         _cleanup_lora_adapters(pipe, adapter_names)
 
     return filenames

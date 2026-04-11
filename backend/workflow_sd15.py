@@ -65,6 +65,17 @@ def run_sd15_animatediff_text2video(
         "free_noise_enabled": inputs.get("free_noise_enabled", False),
         "free_noise_context_length": int(inputs.get("free_noise_context_length") or 16),
         "free_noise_context_stride": int(inputs.get("free_noise_context_stride") or 4),
+        "free_init_enabled": inputs.get("free_init_enabled", False),
+        "free_init_num_iters": int(inputs.get("free_init_num_iters") or 3),
+        "free_init_use_fast_sampling": inputs.get("free_init_use_fast_sampling", False),
+        "free_init_method": str(inputs.get("free_init_method") or "butterworth"),
+        "free_init_order": int(inputs.get("free_init_order") or 4),
+        "free_init_spatial_stop_frequency": float(
+            inputs.get("free_init_spatial_stop_frequency", 0.25)
+        ),
+        "free_init_temporal_stop_frequency": float(
+            inputs.get("free_init_temporal_stop_frequency", 0.25)
+        ),
         "clip_skip": int(inputs.get("clip_skip") or 1),
         "lora_adapters": lora_adapters,
         "weighting_policy": str(inputs.get("weighting_policy") or "diffusers-like"),

@@ -77,6 +77,13 @@ class Sd15AnimateDiffText2VideoInputs(BaseModel):
     free_noise_enabled: bool = False
     free_noise_context_length: int = Field(default=16, ge=1)
     free_noise_context_stride: int = Field(default=4, ge=1)
+    free_init_enabled: bool = False
+    free_init_num_iters: int = Field(default=3, ge=1)
+    free_init_use_fast_sampling: bool = False
+    free_init_method: Literal["butterworth", "ideal", "gaussian"] = "butterworth"
+    free_init_order: int = Field(default=4, ge=1)
+    free_init_spatial_stop_frequency: float = Field(default=0.25, ge=0.0, le=1.0)
+    free_init_temporal_stop_frequency: float = Field(default=0.25, ge=0.0, le=1.0)
     clip_skip: int = 1
     lora: Sd15UnifiedLoraContract | None = None
     weighting_policy: str = "diffusers-like"
