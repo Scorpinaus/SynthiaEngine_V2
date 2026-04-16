@@ -19,8 +19,11 @@ const DEFAULTS = {
     prompt: "",
     negative_prompt: "",
     steps: 20,
+    lcm_steps: 4,
     cfg: 7.5,
+    lcm_cfg: 0,
     scheduler: "euler",
+    lcm_scheduler: "lcm",
     width: 512,
     height: 512,
     hires_scale: 1.0,
@@ -104,6 +107,10 @@ function getControlNetState() {
 let controlNetUiReady = Promise.resolve();
 let loraPanelReady = Promise.resolve();
 
+function isLcmModeEnabled() {
+    return Boolean(document.getElementById("lcm_enabled")?.checked);
+}
+
 function setInputValue(elementId, value) {
     const el = document.getElementById(elementId);
     if (!el || value === undefined) {
@@ -118,6 +125,19 @@ function setCheckboxValue(elementId, value) {
         return;
     }
     el.checked = Boolean(value);
+}
+
+function syncLcmModeDefaults() {
+    if (!isLcmModeEnabled()) {
+        const scheduler = document.getElementById("scheduler");
+        if (scheduler?.value === DEFAULTS.lcm_scheduler) {
+            setInputValue("scheduler", DEFAULTS.scheduler);
+        }
+        return;
+    }
+    setInputValue("steps", DEFAULTS.lcm_steps);
+    setInputValue("cfg", DEFAULTS.lcm_cfg);
+    setInputValue("scheduler", DEFAULTS.lcm_scheduler);
 }
 
 function setModelSelection(value) {
@@ -185,6 +205,7 @@ function collectSd15PresetSettings() {
             DEFAULTS.controlnet_compat_mode
         ),
         lora_adapters: window.LoraPanel?.getSelectedAdapters?.() ?? [],
+        lcm_enabled: isLcmModeEnabled(),
     };
 }
 
@@ -211,7 +232,11 @@ async function applySd15PresetSettings(settings) {
     setCheckboxValue("hires_enabled", settings.hires_enabled);
     setCheckboxValue("controlnet-enabled", settings.controlnet_enabled);
     setCheckboxValue("controlnet_guess_mode", settings.controlnet_guess_mode);
+    setCheckboxValue("lcm_enabled", settings.lcm_enabled);
     setModelSelection(settings.model);
+    if (settings.lcm_enabled) {
+        syncLcmModeDefaults();
+    }
 
     if (Array.isArray(settings.lora_adapters)) {
         window.LoraPanel?.setSelectedAdapters?.(settings.lora_adapters);
@@ -239,6 +264,7 @@ function initSd15Page() {
     generateButton?.addEventListener("click", () => {
         generate();
     });
+    document.getElementById("lcm_enabled")?.addEventListener("change", syncLcmModeDefaults);
 
     void loadModels();
     if (window.WorkflowCatalog?.load) {
@@ -365,6 +391,23 @@ function baseInput(inputs, primaryDefaults) {
     return inputs;
 }
 
+function applyLcmText2ImgContract(inputs) {
+    inputs.lcm = { enabled: true };
+    inputs.scheduler = DEFAULTS.lcm_scheduler;
+    if (!Number.isFinite(inputs.steps)) {
+        inputs.steps = DEFAULTS.lcm_steps;
+    }
+    if (!Number.isFinite(inputs.cfg)) {
+        inputs.cfg = DEFAULTS.lcm_cfg;
+    }
+    if (inputs.steps < 1 || inputs.steps > 8) {
+        throw new Error("LCM mode requires steps between 1 and 8.");
+    }
+    if (inputs.cfg < 0 || inputs.cfg > 2) {
+        throw new Error("LCM mode requires CFG between 0 and 2.");
+    }
+}
+
 async function setControlNetInputs(inputs, primaryDefaults, controlnetState) {
     const controlnet_conditioning_scale = WorkflowClient.readNumberValue(
         "controlnet_conditioning_scale",
@@ -474,6 +517,7 @@ async function generate() {
     // Check which optional features are enabled in the current UI state.
     const controlnetEnabled = Boolean(document.getElementById("controlnet-enabled")?.checked);
     const hires_enabled = Boolean(document.getElementById("hires_enabled")?.checked);
+    const lcmEnabled = isLcmModeEnabled();
     const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
     const loraAdaptersEnabled = Array.isArray(loraAdapters) && loraAdapters.length > 0;
 
@@ -493,10 +537,20 @@ async function generate() {
 
     // Build input list and push to FastAPI backend.
     try {
+        if (lcmEnabled && controlnetEnabled) {
+            throw new Error("LCM mode is currently available for SD1.5 text-to-image only.");
+        }
+        if (lcmEnabled && hiresEnabled) {
+            throw new Error("LCM mode cannot be combined with Hi-Res Fix yet.");
+        }
+
         const tasks = [];
         const inputs = {};
         baseInput(inputs, primaryDefaults);
 
+        if (lcmEnabled) {
+            applyLcmText2ImgContract(inputs);
+        }
         inputs.lora = {
             lora_enabled: loraAdaptersEnabled,
             lora_adapters: loraAdaptersEnabled ? loraAdapters : [],

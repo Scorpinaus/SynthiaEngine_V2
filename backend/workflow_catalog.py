@@ -8,6 +8,7 @@ from pydantic_core import PydanticUndefined
 _SCHEDULER_OPTIONS: list[str] = [
     "euler",
     "euler_a",
+    "lcm",
     "ddim",
     "dpm++2m",
     "dpm++2m_karras",
@@ -174,6 +175,13 @@ def _build_task_ui_hints(task_type: str, model_cls: type[BaseModel]) -> dict[str
                 widget="json",
                 advanced=True,
                 help="Unified SD1.5 LoRA contract: { lora_enabled, lora_adapters }.",
+            )
+
+        if field_name == "lcm":
+            hint.update(
+                widget="json",
+                advanced=True,
+                help="SD1.5 text-to-image LCM mode: { enabled }.",
             )
 
         if field_name in common_numeric:

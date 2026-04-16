@@ -609,7 +609,7 @@ def generate_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
         base_seed = torch.randint(0, 2**31, (1,)).item()
     else:
         base_seed = int(seed)
-    logger.info("SDXL Text2Image: model=%s seed=%s steps=%s guidance_scale=%s size=%sx%s num_images=%s", model, base_seed, steps, guidance_scale, width, height, num_images)
+    logger.info("SDXL Text2Image: model=%s, seed=%s, steps=%s, guidance_scale=%s, size=%sx%s, num_images=%s", model, base_seed, steps, guidance_scale, width, height, num_images)
 
     #3. Create batch_id and output directory
     batch_id = make_batch_id()

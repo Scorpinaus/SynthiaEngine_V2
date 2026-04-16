@@ -4,6 +4,33 @@ from typing import Any
 
 from PIL import Image
 
+_LCM_LORA_MODEL_ID = "latent-consistency/lcm-lora-sdv1-5"
+_LCM_DEFAULT_STEPS = 4
+_LCM_DEFAULT_CFG = 0.0
+_LCM_MIN_STEPS = 1
+_LCM_MAX_STEPS = 8
+_LCM_MIN_CFG = 0.0
+_LCM_MAX_CFG = 2.0
+
+
+def _lcm_enabled(inputs: dict[str, Any]) -> bool:
+    lcm_contract = inputs.get("lcm")
+    if isinstance(lcm_contract, dict) and bool(lcm_contract.get("enabled", False)):
+        return True
+    return str(inputs.get("scheduler") or "").lower() == "lcm"
+
+
+def _validate_lcm_text2img_settings(steps: int, cfg: float) -> None:
+    if steps < _LCM_MIN_STEPS or steps > _LCM_MAX_STEPS:
+        raise ValueError(
+            f"sd15.text2img LCM mode requires steps within [{_LCM_MIN_STEPS}, {_LCM_MAX_STEPS}]."
+        )
+    if cfg < _LCM_MIN_CFG or cfg > _LCM_MAX_CFG:
+        raise ValueError(
+            f"sd15.text2img LCM mode requires cfg within [{_LCM_MIN_CFG:g}, {_LCM_MAX_CFG:g}]."
+        )
+
+
 def run_sd15_text2img(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str, Any]:
     _normalized_hires_settings = deps["normalized_hires_settings"]
     _normalized_lora_adapters = deps["normalized_lora_adapters"]
@@ -12,20 +39,37 @@ def run_sd15_text2img(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str,
 
     hires_enabled, hires_scale = _normalized_hires_settings(inputs)
     lora_adapters = _normalized_lora_adapters(inputs)
+    lcm_enabled = _lcm_enabled(inputs)
+    steps = int(
+        inputs["steps"]
+        if "steps" in inputs and inputs.get("steps") is not None
+        else (_LCM_DEFAULT_STEPS if lcm_enabled else 20)
+    )
+    cfg = float(
+        inputs["cfg"]
+        if "cfg" in inputs and inputs.get("cfg") is not None
+        else (_LCM_DEFAULT_CFG if lcm_enabled else 7.5)
+    )
+    scheduler = "lcm" if lcm_enabled else str(inputs.get("scheduler") or "euler")
+    if lcm_enabled:
+        _validate_lcm_text2img_settings(steps, cfg)
+
     batch_id = str(inputs.get("batch_id") or make_batch_id())
     generation_params = {
         "prompt": str(inputs["prompt"]),
         "negative_prompt": str(inputs.get("negative_prompt") or ""),
-        "steps": int(inputs.get("steps") or 20),
-        "cfg": float(inputs.get("cfg") or 7.5),
+        "steps": steps,
+        "cfg": cfg,
         "width": int(inputs.get("width") or 512),
         "height": int(inputs.get("height") or 512),
         "seed": inputs.get("seed"),
-        "scheduler": str(inputs.get("scheduler") or "euler"),
+        "scheduler": scheduler,
         "model": inputs.get("model"),
         "num_images": int(inputs.get("num_images") or 1),
         "clip_skip": int(inputs.get("clip_skip") or 1),
         "lora_adapters": lora_adapters,
+        "lcm_enabled": lcm_enabled,
+        "lcm_lora_model": _LCM_LORA_MODEL_ID if lcm_enabled else None,
         "hires_enabled": hires_enabled,
         "hires_scale": hires_scale,
         "weighting_policy": str(inputs.get("weighting_policy") or "diffusers-like"),

@@ -54,6 +54,9 @@ from backend.lora_utils import apply_lora_adapters_with_validation, write_lora_c
 logger = logging.getLogger(__name__)
 configure_logging()
 
+_LCM_LORA_MODEL_ID = "latent-consistency/lcm-lora-sdv1-5"
+_LCM_LORA_ADAPTER_NAME = "lcm_lora_sd15"
+
 """
     Helper functions
 """
@@ -168,6 +171,13 @@ def _apply_lora_adapters(
         validate=validate,
     )
     return adapter_names
+
+
+def _apply_lcm_lora(pipe) -> str:
+    """Load the hard-coded SD1.5 LCM LoRA adapter."""
+    logger.info("Loading SD1.5 LCM LoRA adapter: %s", _LCM_LORA_MODEL_ID)
+    pipe.load_lora_weights(_LCM_LORA_MODEL_ID, adapter_name=_LCM_LORA_ADAPTER_NAME)
+    return _LCM_LORA_ADAPTER_NAME
 
 
 def _cleanup_lora_adapters(pipe, adapter_names: list[str]) -> None:
@@ -604,6 +614,7 @@ def generate_images(params: dict[str, object],):
     num_images = int(params.get("num_images") or 1)
     clip_skip = int(params.get("clip_skip") or 1)
     lora_adapters = params.get("lora_adapters")
+    lcm_enabled = bool(params.get("lcm_enabled", False)) or scheduler.lower() == "lcm"
     weighting_policy = str(params.get("weighting_policy") or "diffusers-like")
     batch_id = params.get("batch_id")
 
@@ -625,12 +636,24 @@ def generate_images(params: dict[str, object],):
     logger.info("Generate: model=%s seed=%s scheduler=%s steps=%s cfg=%s size=%sx%s num_images=%s", model, base_seed, scheduler, steps, cfg, width, height, num_images,)
     
     # 4. Apply lora to pipeline and generate lora coverage report
-    adapter_names, lora_coverage = apply_lora_adapters_with_validation(
-        pipe,
-        lora_adapters,
-        expected_family="sd15",
-        validate=True,
-    )
+    adapter_names = []
+    lora_coverage = {}
+    if lcm_enabled:
+        lcm_adapter_name = _apply_lcm_lora(pipe)
+        adapter_names, lora_coverage = apply_lora_adapters_with_validation(
+            pipe,
+            lora_adapters,
+            expected_family="sd15",
+            validate=True,
+            preloaded_adapters=[(lcm_adapter_name, 1.0)],
+        )
+    else:
+        adapter_names, lora_coverage = apply_lora_adapters_with_validation(
+            pipe,
+            lora_adapters,
+            expected_family="sd15",
+            validate=True,
+        )
     report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
     if report_path is not None:
         logger.info("LoRA coverage report saved to %s", report_path)

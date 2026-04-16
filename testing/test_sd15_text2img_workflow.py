@@ -108,6 +108,100 @@ class Sd15Text2ImgWorkflowPlumbingTests(unittest.TestCase):
 
         self.assertEqual(captured["lora_adapters"], [])
 
+    def test_sd15_text2img_lcm_mode_uses_lcm_scheduler_defaults_and_adapter(self):
+        captured = {}
+
+        def _fake_generate_images(params):
+            captured.update(params)
+            return ["batch/out.png"]
+
+        with patch("backend.workflow.make_batch_id", return_value="batch123"):
+            with patch("backend.workflow.generate_images", side_effect=_fake_generate_images):
+                _sd15_text2img(
+                    {
+                        "prompt": "test prompt",
+                        "lcm": {"enabled": True},
+                    },
+                    _ctx=None,
+                )
+
+        self.assertTrue(captured["lcm_enabled"])
+        self.assertEqual(captured["scheduler"], "lcm")
+        self.assertEqual(captured["steps"], 4)
+        self.assertEqual(captured["cfg"], 0.0)
+        self.assertEqual(captured["lcm_lora_model"], "latent-consistency/lcm-lora-sdv1-5")
+        self.assertIsNone(captured["lora_adapters"])
+
+    def test_sd15_text2img_lcm_scheduler_implies_lcm_mode(self):
+        captured = {}
+
+        def _fake_generate_images(params):
+            captured.update(params)
+            return ["batch/out.png"]
+
+        with patch("backend.workflow.make_batch_id", return_value="batch123"):
+            with patch("backend.workflow.generate_images", side_effect=_fake_generate_images):
+                _sd15_text2img(
+                    {
+                        "prompt": "test prompt",
+                        "scheduler": "lcm",
+                        "steps": 8,
+                        "cfg": 1.5,
+                    },
+                    _ctx=None,
+                )
+
+        self.assertTrue(captured["lcm_enabled"])
+        self.assertEqual(captured["scheduler"], "lcm")
+        self.assertEqual(captured["steps"], 8)
+        self.assertEqual(captured["cfg"], 1.5)
+
+    def test_sd15_text2img_lcm_mode_forwards_user_loras(self):
+        captured = {}
+
+        def _fake_generate_images(params):
+            captured.update(params)
+            return ["batch/out.png"]
+
+        with patch("backend.workflow.make_batch_id", return_value="batch123"):
+            with patch("backend.workflow.generate_images", side_effect=_fake_generate_images):
+                _sd15_text2img(
+                    {
+                        "prompt": "test prompt",
+                        "lcm": {"enabled": True},
+                        "lora": {
+                            "lora_enabled": True,
+                            "lora_adapters": [{"lora_id": 505, "strength": 0.8}],
+                        },
+                    },
+                    _ctx=None,
+                )
+
+        self.assertTrue(captured["lcm_enabled"])
+        self.assertEqual(captured["scheduler"], "lcm")
+        self.assertEqual(captured["lora_adapters"], [{"lora_id": 505, "strength": 0.8}])
+
+    def test_sd15_text2img_lcm_mode_validates_steps_and_cfg(self):
+        with self.assertRaisesRegex(ValueError, r"steps within \[1, 8\]"):
+            _sd15_text2img(
+                {
+                    "prompt": "test prompt",
+                    "lcm": {"enabled": True},
+                    "steps": 12,
+                },
+                _ctx=None,
+            )
+
+        with self.assertRaisesRegex(ValueError, r"cfg within \[0, 2\]"):
+            _sd15_text2img(
+                {
+                    "prompt": "test prompt",
+                    "lcm": {"enabled": True},
+                    "cfg": 7.5,
+                },
+                _ctx=None,
+            )
+
     def test_sd15_text2img_rejects_top_level_lora_adapters(self):
         with self.assertRaisesRegex(
             ValueError, "Top-level SD1.5 `lora_adapters` is no longer supported"

@@ -12,7 +12,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         panel_tag = '<script src="controlnet_panel.js?v=2"></script>'
         preprocessor_tag = '<script src="controlnet_preprocessor.js?v=3"></script>'
         preset_tag = '<script src="preset_panel.js?v=1"></script>'
-        sd15_tag = '<script src="sd15.js?v=3"></script>'
+        sd15_tag = '<script src="sd15.js?v=4"></script>'
 
         self.assertIn(validator_tag, sd15_html)
         self.assertIn(panel_tag, sd15_html)
@@ -190,6 +190,21 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("collectSettings: collectSd15PresetSettings", sd15_js)
         self.assertIn("applySettings: applySd15PresetSettings", sd15_js)
         self.assertIn("WorkflowInputValidator?.assertTaskInputs", sd15_js)
+
+    def test_sd15_script_wires_lcm_mode_payload_and_guardrails(self):
+        sd15_html = (ROOT / "frontend" / "sd15.html").read_text(encoding="utf-8")
+        sd15_js = (ROOT / "frontend" / "sd15.js").read_text(encoding="utf-8")
+        scheduler_html = (ROOT / "frontend" / "scheduler_panel.html").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('id="lcm_enabled"', sd15_html)
+        self.assertIn('<option value="lcm">LCM (SD1.5)</option>', scheduler_html)
+        self.assertIn('inputs.lcm = { enabled: true };', sd15_js)
+        self.assertIn('inputs.scheduler = DEFAULTS.lcm_scheduler;', sd15_js)
+        self.assertIn("LCM mode is currently available for SD1.5 text-to-image only.", sd15_js)
+        self.assertIn("lora_enabled: loraAdaptersEnabled", sd15_js)
+        self.assertNotIn("cannot combine with selected LoRAs", sd15_js)
 
     def test_sd15_img2img_script_wires_preset_panel(self):
         img2img_js = (ROOT / "frontend" / "sd15_img2img.js").read_text(encoding="utf-8")

@@ -541,6 +541,13 @@ LoRA adapter targeting:
 `sd15.text2img` contract-extension input notes:
 - Existing flat input fields remain valid and are still recommended for backward compatibility.
 - `controlNetEnabled`: optional boolean UI state flag.
+- `scheduler`: supports the shared scheduler ids plus `"lcm"` for SD1.5 LCM text-to-image mode.
+- `lcm`: optional object `{ "enabled": boolean }`.
+  - When `lcm.enabled` is `true`, or when `scheduler` is `"lcm"`, backend uses `LCMScheduler` and loads the hard-coded SD1.5 LCM LoRA `latent-consistency/lcm-lora-sdv1-5`.
+  - LCM mode defaults to `steps: 4` and `cfg: 0.0` when those fields are omitted.
+  - LCM mode requires `steps` within `[1, 8]` and `cfg` within `[0, 2]`.
+  - LCM mode may be combined with user-selected SD1.5 LoRA adapters; the hard-coded LCM LoRA is loaded first and selected adapters are added to the active adapter stack.
+  - LCM mode is currently SD1.5 text-to-image only; do not combine it with ControlNet, Hi-Res Fix, img2img, inpainting, or AnimateDiff.
 - `lora`: optional object `{ "lora_enabled": boolean, "lora_adapters": [...] }`.
   - Canonical and only supported SD1.5 LoRA contract.
   - When `lora.lora_enabled` is `false`, SD1.5 tasks run without LoRA adapters.

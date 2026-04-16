@@ -32,6 +32,10 @@ class Sd15HiresContract(BaseModel):
     hires_scale: float = 1.0
 
 
+class Sd15LcmContract(BaseModel):
+    enabled: bool = False
+
+
 class Sd15EffectiveControlNetItem(BaseModel):
     control_image: ImageRef
     model_id: str | None = None
@@ -58,6 +62,7 @@ class Sd15Text2ImgInputs(BaseModel):
     batch_id: str | None = None
     controlNetEnabled: bool = False
     hires: Sd15HiresContract | None = None
+    lcm: Sd15LcmContract | None = None
 
 
 class Sd15AnimateDiffText2VideoInputs(BaseModel):

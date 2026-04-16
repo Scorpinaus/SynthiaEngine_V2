@@ -5,7 +5,7 @@ from diffusers import (EulerDiscreteScheduler,
     DPMSolverMultistepScheduler,
     DDIMScheduler,
     DPMSolverSinglestepScheduler, KDPM2DiscreteScheduler, KDPM2AncestralDiscreteScheduler, HeunDiscreteScheduler, LMSDiscreteScheduler, DEISMultistepScheduler, UniPCMultistepScheduler,
-    FlowMatchEulerDiscreteScheduler, FlowMatchHeunDiscreteScheduler)
+    FlowMatchEulerDiscreteScheduler, FlowMatchHeunDiscreteScheduler, LCMScheduler)
 
 
 class FlowMatchHeunDiscreteSchedulerWithMu(FlowMatchHeunDiscreteScheduler):
@@ -80,6 +80,9 @@ def create_scheduler(name: str, pipe):
     
     if name == "ddim":
         return DDIMScheduler.from_config(pipe.scheduler.config)
+
+    if name == "lcm":
+        return LCMScheduler.from_config(pipe.scheduler.config)
     
     if name == "dpm++2m":
         return DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
