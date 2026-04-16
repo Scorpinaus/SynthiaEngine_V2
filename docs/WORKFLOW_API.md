@@ -547,7 +547,7 @@ LoRA adapter targeting:
   - LCM mode defaults to `steps: 4` and `cfg: 0.0` when those fields are omitted.
   - LCM mode requires `steps` within `[1, 8]` and `cfg` within `[0, 2]`.
   - LCM mode may be combined with user-selected SD1.5 LoRA adapters; the hard-coded LCM LoRA is loaded first and selected adapters are added to the active adapter stack.
-  - LCM mode is currently SD1.5 text-to-image only; do not combine it with ControlNet, Hi-Res Fix, img2img, inpainting, or AnimateDiff.
+  - LCM mode is available for SD1.5 text-to-image, image-to-image, and inpainting. For `sd15.text2img`, do not combine it with ControlNet, Hi-Res Fix, or AnimateDiff.
 - `lora`: optional object `{ "lora_enabled": boolean, "lora_adapters": [...] }`.
   - Canonical and only supported SD1.5 LoRA contract.
   - When `lora.lora_enabled` is `false`, SD1.5 tasks run without LoRA adapters.
@@ -647,6 +647,15 @@ LoRA adapter targeting:
 - Family validation is enforced: only LoRAs registered with `lora_model_family: "sd15"` are accepted for `sd15.img2img`.
 - Invalid adapter references (for example missing `lora_id`, unknown id, or incompatible family) fail the task with a validation/runtime error.
 
+`sd15.img2img` LCM input notes:
+- `lcm`: optional object `{ "enabled": boolean }`.
+- `scheduler: "lcm"` also enables LCM mode.
+- When enabled, backend uses `LCMScheduler` and loads the hard-coded SD1.5 LCM LoRA `latent-consistency/lcm-lora-sdv1-5`.
+- LCM mode defaults to `steps: 4` and `cfg: 0.0` when those fields are omitted.
+- LCM mode requires `steps` within `[1, 8]` and `cfg` within `[0, 2]`.
+- LCM mode may be combined with user-selected SD1.5 LoRA adapters; the hard-coded LCM LoRA is loaded first and selected adapters are added to the active adapter stack.
+- Minimal initial support is non-ControlNet img2img only. Do not combine `sd15.img2img` LCM mode with ControlNet fields.
+
 `sd15.inpaint` optional ControlNet input notes:
 - Existing `sd15.inpaint` payloads remain valid without any ControlNet fields.
 - To enable ControlNet, provide `control_image` (single) or `control_image` + `control_images` (multi).
@@ -668,6 +677,15 @@ LoRA adapter targeting:
 - Each adapter may provide `strength` (default `1.0`), optional per-component overrides (`unet_strength`, `text_encoder_strength`), and optional fine-grained scales (`unet_scales`, `text_encoder_scales`).
 - Family validation is enforced: only LoRAs registered with `lora_model_family: "sd15"` are accepted for `sd15.inpaint`.
 - Invalid adapter references (for example missing `lora_id`, unknown id, or incompatible family) fail the task with a validation/runtime error.
+
+`sd15.inpaint` LCM input notes:
+- `lcm`: optional object `{ "enabled": boolean }`.
+- `scheduler: "lcm"` also enables LCM mode.
+- When enabled, backend uses `LCMScheduler` and loads the hard-coded SD1.5 LCM LoRA `latent-consistency/lcm-lora-sdv1-5`.
+- LCM mode defaults to `steps: 4` and `cfg: 0.0` when those fields are omitted.
+- LCM mode requires `steps` within `[1, 8]` and `cfg` within `[0, 2]`.
+- LCM mode may be combined with user-selected SD1.5 LoRA adapters; the hard-coded LCM LoRA is loaded first and selected adapters are added to the active adapter stack.
+- Minimal initial support is non-ControlNet inpaint only. Do not combine `sd15.inpaint` LCM mode with ControlNet fields.
 
 `sdxl.text2img` LoRA input notes:
 - `lora_adapters` is optional. When omitted or empty, text2img runs without LoRA adapters.

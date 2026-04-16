@@ -30,7 +30,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         panel_tag = '<script src="controlnet_panel.js?v=2"></script>'
         preprocessor_tag = '<script src="controlnet_preprocessor.js?v=3"></script>'
         preset_tag = '<script src="preset_panel.js?v=1"></script>'
-        img2img_tag = '<script src="sd15_img2img.js?v=3"></script>'
+        img2img_tag = '<script src="sd15_img2img.js?v=4"></script>'
 
         self.assertIn(validator_tag, sd15_img2img_html)
         self.assertIn(panel_tag, sd15_img2img_html)
@@ -214,6 +214,16 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("applySettings: applySd15Img2ImgPresetSettings", img2img_js)
         self.assertIn("WorkflowInputValidator?.assertTaskInputs", img2img_js)
 
+    def test_sd15_img2img_script_wires_lcm_mode_payload_and_guardrails(self):
+        img2img_html = (ROOT / "frontend" / "sd15_img2img.html").read_text(encoding="utf-8")
+        img2img_js = (ROOT / "frontend" / "sd15_img2img.js").read_text(encoding="utf-8")
+
+        self.assertIn('id="lcm_enabled"', img2img_html)
+        self.assertIn("function applyLcmImg2ImgContract(inputs)", img2img_js)
+        self.assertIn("inputs.lcm = { enabled: true };", img2img_js)
+        self.assertIn('inputs.scheduler = DEFAULTS.lcm_scheduler;', img2img_js)
+        self.assertIn("LCM mode cannot be combined with ControlNet for SD1.5 img2img yet.", img2img_js)
+
     def test_sd15_inpaint_script_wires_preset_panel(self):
         inpaint_js = (ROOT / "frontend" / "sd15_inpainting.js").read_text(encoding="utf-8")
         self.assertIn("window.PresetPanel?.init({", inpaint_js)
@@ -221,6 +231,18 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("collectSettings: collectSd15InpaintPresetSettings", inpaint_js)
         self.assertIn("applySettings: applySd15InpaintPresetSettings", inpaint_js)
         self.assertIn("WorkflowInputValidator?.assertTaskInputs", inpaint_js)
+
+    def test_sd15_inpaint_script_wires_lcm_mode_payload_and_guardrails(self):
+        inpaint_html = (ROOT / "frontend" / "sd15_inpainting.html").read_text(
+            encoding="utf-8"
+        )
+        inpaint_js = (ROOT / "frontend" / "sd15_inpainting.js").read_text(encoding="utf-8")
+
+        self.assertIn('id="lcm_enabled"', inpaint_html)
+        self.assertIn("function applyLcmInpaintContract(inputs)", inpaint_js)
+        self.assertIn("inputs.lcm = { enabled: true };", inpaint_js)
+        self.assertIn("inputs.scheduler = DEFAULTS.lcm_scheduler;", inpaint_js)
+        self.assertIn("LCM mode cannot be combined with ControlNet for SD1.5 inpaint yet.", inpaint_js)
 
     def test_sd15_img2img_script_wires_lora_panel_and_payload(self):
         img2img_js = (ROOT / "frontend" / "sd15_img2img.js").read_text(encoding="utf-8")

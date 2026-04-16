@@ -130,6 +130,146 @@ class Sd15Img2ImgControlNetWorkflowPlumbingTests(unittest.TestCase):
 
         self.assertEqual(captured["lora_adapters"], [])
 
+    def test_non_controlnet_lcm_mode_uses_lcm_scheduler_defaults_and_adapter(self):
+        captured = {}
+
+        def _fake_generate_images_img2img(params):
+            captured.update(params)
+            return ["batch/out.png"]
+
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+                with patch(
+                    "backend.workflow.generate_images_img2img",
+                    side_effect=_fake_generate_images_img2img,
+                ):
+                    _sd15_img2img(
+                        {
+                            "initial_image": {
+                                "artifact_id": "a0123456789abcdef0123456789abcdef"
+                            },
+                            "prompt": "test prompt",
+                            "lcm": {"enabled": True},
+                        },
+                        _ctx=None,
+                    )
+
+        self.assertTrue(captured["lcm_enabled"])
+        self.assertEqual(captured["scheduler"], "lcm")
+        self.assertEqual(captured["steps"], 4)
+        self.assertEqual(captured["cfg"], 0.0)
+        self.assertEqual(captured["lcm_lora_model"], "latent-consistency/lcm-lora-sdv1-5")
+
+    def test_non_controlnet_lcm_scheduler_implies_lcm_mode(self):
+        captured = {}
+
+        def _fake_generate_images_img2img(params):
+            captured.update(params)
+            return ["batch/out.png"]
+
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+                with patch(
+                    "backend.workflow.generate_images_img2img",
+                    side_effect=_fake_generate_images_img2img,
+                ):
+                    _sd15_img2img(
+                        {
+                            "initial_image": {
+                                "artifact_id": "a0123456789abcdef0123456789abcdef"
+                            },
+                            "prompt": "test prompt",
+                            "scheduler": "lcm",
+                            "steps": 8,
+                            "cfg": 1.5,
+                        },
+                        _ctx=None,
+                    )
+
+        self.assertTrue(captured["lcm_enabled"])
+        self.assertEqual(captured["scheduler"], "lcm")
+        self.assertEqual(captured["steps"], 8)
+        self.assertEqual(captured["cfg"], 1.5)
+
+    def test_non_controlnet_lcm_mode_forwards_user_loras(self):
+        captured = {}
+
+        def _fake_generate_images_img2img(params):
+            captured.update(params)
+            return ["batch/out.png"]
+
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+                with patch(
+                    "backend.workflow.generate_images_img2img",
+                    side_effect=_fake_generate_images_img2img,
+                ):
+                    _sd15_img2img(
+                        {
+                            "initial_image": {
+                                "artifact_id": "a0123456789abcdef0123456789abcdef"
+                            },
+                            "prompt": "test prompt",
+                            "lcm": {"enabled": True},
+                            "lora": {
+                                "lora_enabled": True,
+                                "lora_adapters": [{"lora_id": 111, "strength": 0.7}],
+                            },
+                        },
+                        _ctx=None,
+                    )
+
+        self.assertTrue(captured["lcm_enabled"])
+        self.assertEqual(captured["scheduler"], "lcm")
+        self.assertEqual(captured["lora_adapters"], [{"lora_id": 111, "strength": 0.7}])
+
+    def test_non_controlnet_lcm_mode_validates_steps_and_cfg(self):
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with self.assertRaisesRegex(ValueError, r"steps within \[1, 8\]"):
+                _sd15_img2img(
+                    {
+                        "initial_image": {
+                            "artifact_id": "a0123456789abcdef0123456789abcdef"
+                        },
+                        "prompt": "test prompt",
+                        "lcm": {"enabled": True},
+                        "steps": 12,
+                    },
+                    _ctx=None,
+                )
+
+            with self.assertRaisesRegex(ValueError, r"cfg within \[0, 2\]"):
+                _sd15_img2img(
+                    {
+                        "initial_image": {
+                            "artifact_id": "a0123456789abcdef0123456789abcdef"
+                        },
+                        "prompt": "test prompt",
+                        "lcm": {"enabled": True},
+                        "cfg": 7.5,
+                    },
+                    _ctx=None,
+                )
+
+    def test_lcm_mode_rejects_controlnet_combination(self):
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with self.assertRaisesRegex(
+                ValueError, "sd15.img2img LCM mode cannot be combined with ControlNet"
+            ):
+                _sd15_img2img(
+                    {
+                        "initial_image": {
+                            "artifact_id": "a0123456789abcdef0123456789abcdef"
+                        },
+                        "prompt": "test prompt",
+                        "lcm": {"enabled": True},
+                        "control_image": {
+                            "artifact_id": "a0123456789abcdef0123456789abcdef"
+                        },
+                    },
+                    _ctx=None,
+                )
+
     def test_non_controlnet_path_rejects_top_level_lora_adapters(self):
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(

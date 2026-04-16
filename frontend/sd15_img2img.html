@@ -71,7 +71,15 @@
                 </div>
 
                 <div id="scheduler-panel-root"></div>
-                
+
+                <label class="field">
+                    <span>LCM Mode</span>
+                    <span class="hires-toggle">
+                        <span>Use hard-coded SD1.5 LCM LoRA</span>
+                        <input id="lcm_enabled" type="checkbox" />
+                    </span>
+                </label>
+
                 <div class="field-row">
                     <label class="field">
                         <span>Width</span>
@@ -131,7 +139,7 @@
     <script src="controlnet_panel.js?v=2"></script>
     <script src="controlnet_preprocessor.js?v=3"></script>
     <script src="preset_panel.js?v=1"></script>
-    <script src="sd15_img2img.js?v=3"></script>
+    <script src="sd15_img2img.js?v=4"></script>
 </body>
 
 </html>

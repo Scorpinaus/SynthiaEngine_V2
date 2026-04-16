@@ -181,7 +181,7 @@ def _build_task_ui_hints(task_type: str, model_cls: type[BaseModel]) -> dict[str
             hint.update(
                 widget="json",
                 advanced=True,
-                help="SD1.5 text-to-image LCM mode: { enabled }.",
+                help="SD1.5 LCM mode: { enabled }.",
             )
 
         if field_name in common_numeric:

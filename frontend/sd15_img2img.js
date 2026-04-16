@@ -17,6 +17,15 @@ const gallery = createGalleryViewer({
     },
 });
 
+const DEFAULTS = {
+    steps: 20,
+    lcm_steps: 4,
+    cfg: 7.5,
+    lcm_cfg: 0,
+    scheduler: "euler",
+    lcm_scheduler: "lcm",
+};
+
 // Token incremented per generateImg2Img() call to ignore stale SSE events from prior jobs.
 let activeJobToken = 0;
 // Currently active SSE connection (closed on new generation).
@@ -40,6 +49,10 @@ function getControlNetState() {
 let controlNetUiReady = Promise.resolve();
 let loraPanelReady = Promise.resolve();
 
+function isLcmModeEnabled() {
+    return Boolean(document.getElementById("lcm_enabled")?.checked);
+}
+
 function setInputValue(elementId, value) {
     const el = document.getElementById(elementId);
     if (!el || value === undefined) {
@@ -54,6 +67,19 @@ function setCheckboxValue(elementId, value) {
         return;
     }
     el.checked = Boolean(value);
+}
+
+function syncLcmModeDefaults() {
+    if (!isLcmModeEnabled()) {
+        const scheduler = document.getElementById("scheduler");
+        if (scheduler?.value === DEFAULTS.lcm_scheduler) {
+            setInputValue("scheduler", DEFAULTS.scheduler);
+        }
+        return;
+    }
+    setInputValue("steps", DEFAULTS.lcm_steps);
+    setInputValue("cfg", DEFAULTS.lcm_cfg);
+    setInputValue("scheduler", DEFAULTS.lcm_scheduler);
 }
 
 function setModelSelection(value) {
@@ -103,6 +129,7 @@ function collectSd15Img2ImgPresetSettings() {
         controlnet_guess_mode: Boolean(document.getElementById("controlnet_guess_mode")?.checked),
         controlnet_compat_mode: WorkflowClient.readTextValue("controlnet_compat_mode", "warn"),
         lora_adapters: window.LoraPanel?.getSelectedAdapters?.() ?? [],
+        lcm_enabled: isLcmModeEnabled(),
     };
 }
 
@@ -122,11 +149,15 @@ async function applySd15Img2ImgPresetSettings(settings) {
     setModelSelection(settings.model);
     setInputValue("clip_skip", settings.clip_skip);
     setCheckboxValue("controlnet-enabled", settings.controlnet_enabled);
+    setCheckboxValue("lcm_enabled", settings.lcm_enabled);
     setInputValue("controlnet_conditioning_scale", settings.controlnet_conditioning_scale);
     setInputValue("control_guidance_start", settings.control_guidance_start);
     setInputValue("control_guidance_end", settings.control_guidance_end);
     setCheckboxValue("controlnet_guess_mode", settings.controlnet_guess_mode);
     setInputValue("controlnet_compat_mode", settings.controlnet_compat_mode);
+    if (settings.lcm_enabled) {
+        syncLcmModeDefaults();
+    }
 
     if (Array.isArray(settings.lora_adapters)) {
         window.LoraPanel?.setSelectedAdapters?.(settings.lora_adapters);
@@ -180,6 +211,7 @@ async function loadModels() {
  */
 function initSd15Img2ImgPage() {
     gallery.render();
+    document.getElementById("lcm_enabled")?.addEventListener("change", syncLcmModeDefaults);
     loadModels();
     if (window.WorkflowCatalog?.load) {
         void window.WorkflowCatalog
@@ -261,6 +293,23 @@ function baseImg2ImgInputs(inputs, defaults) {
         clip_skip,
     });
     return inputs;
+}
+
+function applyLcmImg2ImgContract(inputs) {
+    inputs.lcm = { enabled: true };
+    inputs.scheduler = DEFAULTS.lcm_scheduler;
+    if (!Number.isFinite(inputs.steps)) {
+        inputs.steps = DEFAULTS.lcm_steps;
+    }
+    if (!Number.isFinite(inputs.cfg)) {
+        inputs.cfg = DEFAULTS.lcm_cfg;
+    }
+    if (inputs.steps < 1 || inputs.steps > 8) {
+        throw new Error("LCM mode requires steps between 1 and 8.");
+    }
+    if (inputs.cfg < 0 || inputs.cfg > 2) {
+        throw new Error("LCM mode requires CFG between 0 and 2.");
+    }
 }
 
 function setLoraContract(inputs, loraAdapters) {
@@ -379,6 +428,7 @@ async function generateImg2Img() {
     closeActiveEventSource();
     const controlnetState = getControlNetState();
     const controlnetEnabled = Boolean(document.getElementById("controlnet-enabled")?.checked);
+    const lcmEnabled = isLcmModeEnabled();
 
     const initialImageInput = document.getElementById("initial_image");
     const initialFile = initialImageInput.files[0];
@@ -402,6 +452,13 @@ async function generateImg2Img() {
 
         const taskInputs = {};
         baseImg2ImgInputs(taskInputs, defaults);
+        const lcmRequested = lcmEnabled || taskInputs.scheduler === DEFAULTS.lcm_scheduler;
+        if (lcmRequested && controlnetEnabled) {
+            throw new Error("LCM mode cannot be combined with ControlNet for SD1.5 img2img yet.");
+        }
+        if (lcmRequested) {
+            applyLcmImg2ImgContract(taskInputs);
+        }
         taskInputs.initial_image = `@artifact:${uploaded.artifact_id}`;
 
         const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];

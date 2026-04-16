@@ -56,6 +56,8 @@ configure_logging()
 
 _LCM_LORA_MODEL_ID = "latent-consistency/lcm-lora-sdv1-5"
 _LCM_LORA_ADAPTER_NAME = "lcm_lora_sd15"
+_LCM_DEFAULT_STEPS = 4
+_LCM_DEFAULT_CFG = 0.0
 
 """
     Helper functions
@@ -793,12 +795,25 @@ def generate_images_img2img(params: dict[str, object],):
     strength = float(params.get("strength") or 0.75)
     prompt = str(params["prompt"])
     negative_prompt = str(params.get("negative_prompt") or "")
-    steps = int(params.get("steps") or 20)
-    cfg = float(params.get("cfg") or 7.5)
+    scheduler = str(params.get("scheduler") or "euler")
+    lcm_enabled = bool(params.get("lcm_enabled", False)) or scheduler.lower() == "lcm"
+    if lcm_enabled:
+        steps = int(
+            params["steps"]
+            if "steps" in params and params.get("steps") is not None
+            else _LCM_DEFAULT_STEPS
+        )
+        cfg = float(
+            params["cfg"]
+            if "cfg" in params and params.get("cfg") is not None
+            else _LCM_DEFAULT_CFG
+        )
+    else:
+        steps = int(params.get("steps") or 20)
+        cfg = float(params.get("cfg") or 7.5)
     width = int(params.get("width") or getattr(initial_image, "width", 0))
     height = int(params.get("height") or getattr(initial_image, "height", 0))
     seed = params.get("seed")
-    scheduler = str(params.get("scheduler") or "euler")
     model = params.get("model")
     num_images = int(params.get("num_images") or 1)
     clip_skip = int(params.get("clip_skip") or 1)
@@ -831,7 +846,21 @@ def generate_images_img2img(params: dict[str, object],):
     )
 
     filenames = []
-    adapter_names = _apply_lora_adapters(pipe, lora_adapters)
+    adapter_names = []
+    if lcm_enabled:
+        lcm_adapter_name = _apply_lcm_lora(pipe)
+        adapter_names, lora_coverage = apply_lora_adapters_with_validation(
+            pipe,
+            lora_adapters,
+            expected_family="sd15",
+            validate=True,
+            preloaded_adapters=[(lcm_adapter_name, 1.0)],
+        )
+        report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
+        if report_path is not None:
+            logger.info("LoRA coverage report saved to %s", report_path)
+    else:
+        adapter_names = _apply_lora_adapters(pipe, lora_adapters)
     image_width, image_height = initial_image.size
     metadata_base = {
         "mode": "img2img",
@@ -845,6 +874,8 @@ def generate_images_img2img(params: dict[str, object],):
         "model": model,
         "strength": strength,
         "clip_skip": clip_skip,
+        "lcm_enabled": lcm_enabled,
+        "lcm_lora_model": _LCM_LORA_MODEL_ID if lcm_enabled else None,
         "batch_id": batch_id,
     }
 
@@ -1040,10 +1071,24 @@ def generate_images_inpaint(params: dict[str, object],):
     mask_image = params["mask_image"]
     prompt = str(params["prompt"])
     negative_prompt = str(params.get("negative_prompt") or "")
-    steps = int(params.get("steps") or 20)
-    cfg = float(params.get("cfg") or 7.5)
     seed = params.get("seed")
     scheduler = str(params.get("scheduler") or "euler")
+    lcm_enabled = bool(params.get("lcm_enabled", False)) or scheduler.lower() == "lcm"
+    scheduler = "lcm" if lcm_enabled else scheduler
+    if lcm_enabled:
+        steps = int(
+            params["steps"]
+            if "steps" in params and params.get("steps") is not None
+            else _LCM_DEFAULT_STEPS
+        )
+        cfg = float(
+            params["cfg"]
+            if "cfg" in params and params.get("cfg") is not None
+            else _LCM_DEFAULT_CFG
+        )
+    else:
+        steps = int(params.get("steps") or 20)
+        cfg = float(params.get("cfg") or 7.5)
     model = params.get("model")
     num_images = int(params.get("num_images") or 1)
     strength = float(params.get("strength") or 0.5)
@@ -1072,7 +1117,21 @@ def generate_images_inpaint(params: dict[str, object],):
     )
 
     filenames = []
-    adapter_names = _apply_lora_adapters(pipe, lora_adapters)
+    adapter_names = []
+    if lcm_enabled:
+        lcm_adapter_name = _apply_lcm_lora(pipe)
+        adapter_names, lora_coverage = apply_lora_adapters_with_validation(
+            pipe,
+            lora_adapters,
+            expected_family="sd15",
+            validate=True,
+            preloaded_adapters=[(lcm_adapter_name, 1.0)],
+        )
+        report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
+        if report_path is not None:
+            logger.info("LoRA coverage report saved to %s", report_path)
+    else:
+        adapter_names = _apply_lora_adapters(pipe, lora_adapters)
     metadata_base = {
         "mode": "inpaint",
         "prompt": prompt,
@@ -1086,6 +1145,8 @@ def generate_images_inpaint(params: dict[str, object],):
         "strength": strength,
         "padding_mask_crop": padding_mask_crop,
         "clip_skip": clip_skip,
+        "lcm_enabled": lcm_enabled,
+        "lcm_lora_model": _LCM_LORA_MODEL_ID if lcm_enabled else None,
         "batch_id": batch_id,
     }
 

@@ -20,15 +20,27 @@ def _lcm_enabled(inputs: dict[str, Any]) -> bool:
     return str(inputs.get("scheduler") or "").lower() == "lcm"
 
 
-def _validate_lcm_text2img_settings(steps: int, cfg: float) -> None:
+def _validate_lcm_settings(task_type: str, steps: int, cfg: float) -> None:
     if steps < _LCM_MIN_STEPS or steps > _LCM_MAX_STEPS:
         raise ValueError(
-            f"sd15.text2img LCM mode requires steps within [{_LCM_MIN_STEPS}, {_LCM_MAX_STEPS}]."
+            f"{task_type} LCM mode requires steps within [{_LCM_MIN_STEPS}, {_LCM_MAX_STEPS}]."
         )
     if cfg < _LCM_MIN_CFG or cfg > _LCM_MAX_CFG:
         raise ValueError(
-            f"sd15.text2img LCM mode requires cfg within [{_LCM_MIN_CFG:g}, {_LCM_MAX_CFG:g}]."
+            f"{task_type} LCM mode requires cfg within [{_LCM_MIN_CFG:g}, {_LCM_MAX_CFG:g}]."
         )
+
+
+def _validate_lcm_text2img_settings(steps: int, cfg: float) -> None:
+    _validate_lcm_settings("sd15.text2img", steps, cfg)
+
+
+def _validate_lcm_img2img_settings(steps: int, cfg: float) -> None:
+    _validate_lcm_settings("sd15.img2img", steps, cfg)
+
+
+def _validate_lcm_inpaint_settings(steps: int, cfg: float) -> None:
+    _validate_lcm_settings("sd15.inpaint", steps, cfg)
 
 
 def run_sd15_text2img(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str, Any]:
@@ -148,6 +160,25 @@ def run_sd15_img2img(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str, 
     strength = float(inputs.get("strength") or 0.75)
     strength = _remap_img2img_strength(strength)
     lora_adapters = _normalized_lora_adapters(inputs)
+    lcm_enabled = _lcm_enabled(inputs)
+    if lcm_enabled:
+        steps = int(
+            inputs["steps"]
+            if "steps" in inputs and inputs.get("steps") is not None
+            else _LCM_DEFAULT_STEPS
+        )
+        cfg = float(
+            inputs["cfg"]
+            if "cfg" in inputs and inputs.get("cfg") is not None
+            else _LCM_DEFAULT_CFG
+        )
+    else:
+        steps = int(inputs.get("steps") or 20)
+        cfg = float(inputs.get("cfg") or 7.5)
+    scheduler = "lcm" if lcm_enabled else str(inputs.get("scheduler") or "euler")
+    if lcm_enabled:
+        _validate_lcm_img2img_settings(steps, cfg)
+
     batch_id = str(inputs.get("batch_id") or make_batch_id())
     controlnet_requested = any(
         key in inputs
@@ -167,6 +198,9 @@ def run_sd15_img2img(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str, 
         )
     )
     if controlnet_requested:
+        if lcm_enabled:
+            raise ValueError("sd15.img2img LCM mode cannot be combined with ControlNet.")
+
         control_image_input = inputs.get("control_image")
         control_images_raw = inputs.get("control_images")
         if control_images_raw is not None and not isinstance(control_images_raw, list):
@@ -322,12 +356,12 @@ def run_sd15_img2img(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str, 
             "strength": strength,
             "prompt": str(inputs["prompt"]),
             "negative_prompt": str(inputs.get("negative_prompt") or ""),
-            "steps": int(inputs.get("steps") or 20),
-            "cfg": float(inputs.get("cfg") or 7.5),
+            "steps": steps,
+            "cfg": cfg,
             "width": width,
             "height": height,
             "seed": inputs.get("seed"),
-            "scheduler": str(inputs.get("scheduler") or "euler"),
+            "scheduler": scheduler,
             "model": inputs.get("model"),
             "num_images": int(inputs.get("num_images") or 1),
             "clip_skip": int(inputs.get("clip_skip") or 1),
@@ -354,16 +388,18 @@ def run_sd15_img2img(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str, 
         "strength": strength,
         "prompt": str(inputs["prompt"]),
         "negative_prompt": str(inputs.get("negative_prompt") or ""),
-        "steps": int(inputs.get("steps") or 20),
-        "cfg": float(inputs.get("cfg") or 7.5),
+        "steps": steps,
+        "cfg": cfg,
         "width": width,
         "height": height,
         "seed": inputs.get("seed"),
-        "scheduler": str(inputs.get("scheduler") or "euler"),
+        "scheduler": scheduler,
         "model": inputs.get("model"),
         "num_images": int(inputs.get("num_images") or 1),
         "clip_skip": int(inputs.get("clip_skip") or 1),
         "lora_adapters": lora_adapters,
+        "lcm_enabled": lcm_enabled,
+        "lcm_lora_model": _LCM_LORA_MODEL_ID if lcm_enabled else None,
         "batch_id": batch_id,
     }
     filenames = generate_images_img2img(generation_params)
@@ -391,6 +427,24 @@ def run_sd15_inpaint(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str, 
     padding_mask_crop_input = inputs.get("padding_mask_crop")
     padding_mask_crop = 32 if padding_mask_crop_input is None else int(padding_mask_crop_input)
     lora_adapters = _normalized_lora_adapters(inputs)
+    lcm_enabled = _lcm_enabled(inputs)
+    if lcm_enabled:
+        steps = int(
+            inputs["steps"]
+            if "steps" in inputs and inputs.get("steps") is not None
+            else _LCM_DEFAULT_STEPS
+        )
+        cfg = float(
+            inputs["cfg"]
+            if "cfg" in inputs and inputs.get("cfg") is not None
+            else _LCM_DEFAULT_CFG
+        )
+    else:
+        steps = int(inputs.get("steps") or 20)
+        cfg = float(inputs.get("cfg") or 7.5)
+    scheduler = "lcm" if lcm_enabled else str(inputs.get("scheduler") or "euler")
+    if lcm_enabled:
+        _validate_lcm_inpaint_settings(steps, cfg)
     batch_id = str(inputs.get("batch_id") or make_batch_id())
     width, height = initial_image.size
 
@@ -412,6 +466,9 @@ def run_sd15_inpaint(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str, 
         )
     )
     if controlnet_requested:
+        if lcm_enabled:
+            raise ValueError("sd15.inpaint LCM mode cannot be combined with ControlNet.")
+
         control_image_input = inputs.get("control_image")
         control_images_raw = inputs.get("control_images")
         if control_images_raw is not None and not isinstance(control_images_raw, list):
@@ -567,10 +624,10 @@ def run_sd15_inpaint(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str, 
             "mask_image": mask_image,
             "prompt": str(inputs["prompt"]),
             "negative_prompt": str(inputs.get("negative_prompt") or ""),
-            "steps": int(inputs.get("steps") or 20),
-            "cfg": float(inputs.get("cfg") or 7.5),
+            "steps": steps,
+            "cfg": cfg,
             "seed": inputs.get("seed"),
-            "scheduler": str(inputs.get("scheduler") or "euler"),
+            "scheduler": scheduler,
             "model": inputs.get("model"),
             "num_images": int(inputs.get("num_images") or 1),
             "strength": strength,
@@ -599,16 +656,18 @@ def run_sd15_inpaint(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str, 
         "mask_image": mask_image,
         "prompt": str(inputs["prompt"]),
         "negative_prompt": str(inputs.get("negative_prompt") or ""),
-        "steps": int(inputs.get("steps") or 20),
-        "cfg": float(inputs.get("cfg") or 7.5),
+        "steps": steps,
+        "cfg": cfg,
         "seed": inputs.get("seed"),
-        "scheduler": str(inputs.get("scheduler") or "euler"),
+        "scheduler": scheduler,
         "model": inputs.get("model"),
         "num_images": int(inputs.get("num_images") or 1),
         "strength": strength,
         "padding_mask_crop": padding_mask_crop,
         "clip_skip": int(inputs.get("clip_skip") or 1),
         "lora_adapters": lora_adapters,
+        "lcm_enabled": lcm_enabled,
+        "lcm_lora_model": _LCM_LORA_MODEL_ID if lcm_enabled else None,
         "batch_id": batch_id,
     }
     filenames = generate_images_inpaint(generation_params)
