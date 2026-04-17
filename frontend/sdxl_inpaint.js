@@ -11,6 +11,10 @@ let activeEventSource = null;
 let controlNetUiReady = Promise.resolve();
 let loraPanelReady = Promise.resolve();
 
+const DEFAULTS = {
+    ip_adapter_scale: 0.6,
+};
+
 function closeActiveEventSource() {
     if (activeEventSource) {
         activeEventSource.close();
@@ -20,6 +24,10 @@ function closeActiveEventSource() {
 
 function getControlNetState() {
     return window.ControlNetPanel?.getState?.() ?? null;
+}
+
+function getIpAdapterImageFile() {
+    return document.getElementById("ip_adapter_image")?.files?.[0] ?? null;
 }
 
 function resolveSdxlControlNetModel(modelId) {
@@ -139,6 +147,11 @@ function collectSdxlInpaintPresetSettings() {
         controlnet_guess_mode: Boolean(document.getElementById("controlnet_guess_mode")?.checked),
         controlnet_compat_mode: WorkflowClient.readTextValue("controlnet_compat_mode", "warn"),
         lora_adapters: window.LoraPanel?.getSelectedAdapters?.() ?? [],
+        ip_adapter_enabled: Boolean(document.getElementById("ip_adapter_enabled")?.checked),
+        ip_adapter_scale: WorkflowClient.readNumberValue(
+            "ip_adapter_scale",
+            DEFAULTS.ip_adapter_scale
+        ),
     };
 }
 
@@ -162,6 +175,8 @@ async function applySdxlInpaintPresetSettings(settings) {
     setInputValue("control_guidance_end", settings.control_guidance_end);
     setCheckboxValue("controlnet_guess_mode", settings.controlnet_guess_mode);
     setInputValue("controlnet_compat_mode", settings.controlnet_compat_mode);
+    setCheckboxValue("ip_adapter_enabled", settings.ip_adapter_enabled);
+    setInputValue("ip_adapter_scale", settings.ip_adapter_scale);
 
     if (Array.isArray(settings.lora_adapters)) {
         window.LoraPanel?.setSelectedAdapters?.(settings.lora_adapters);
@@ -269,6 +284,7 @@ if (window.WorkflowCatalog?.load) {
                 control_guidance_start: "control_guidance_start",
                 control_guidance_end: "control_guidance_end",
                 controlnet_compat_mode: "controlnet_compat_mode",
+                ip_adapter_scale: "ip_adapter_scale",
             });
         })
         .catch(() => {});
@@ -531,6 +547,8 @@ async function generateSdxlInpaint() {
     const token = ++activeJobToken;
     closeActiveEventSource();
     const controlnetEnabled = Boolean(document.getElementById("controlnet-enabled")?.checked);
+    const ipAdapterEnabled = Boolean(document.getElementById("ip_adapter_enabled")?.checked);
+    const ipAdapterImageFile = getIpAdapterImageFile();
 
     if (!baseImageFile) {
         alert("Please upload an initial image.");
@@ -586,6 +604,13 @@ async function generateSdxlInpaint() {
     };
 
     try {
+        if (ipAdapterEnabled && controlnetEnabled) {
+            throw new Error("SDXL inpaint IP-Adapter cannot be combined with ControlNet yet.");
+        }
+        if (ipAdapterEnabled && !ipAdapterImageFile) {
+            throw new Error("IP-Adapter enabled but no reference image is selected.");
+        }
+
         const [uploadedBase, uploadedMask] = await Promise.all([
             WorkflowClient.uploadArtifact(API_BASE, baseImageFile, baseImageFile.name || "initial.png"),
             WorkflowClient.uploadArtifact(API_BASE, activeMaskBlob, "mask.png"),
@@ -598,6 +623,28 @@ async function generateSdxlInpaint() {
         taskInputs.lora_adapters = loraAdapters;
         if (!loraAdaptersEnabled) {
             taskInputs.lora_adapters = [];
+        }
+
+        if (ipAdapterEnabled) {
+            const uploadedIpAdapterImage = await WorkflowClient.uploadArtifact(
+                API_BASE,
+                ipAdapterImageFile,
+                ipAdapterImageFile.name || "ip_adapter.png"
+            );
+            if (!uploadedIpAdapterImage?.artifact_id) {
+                throw new Error("IP-Adapter image upload did not return an artifact id.");
+            }
+            taskInputs.ip_adapter = {
+                enabled: true,
+                image: `@artifact:${uploadedIpAdapterImage.artifact_id}`,
+                scale: WorkflowClient.readNumberValue(
+                    "ip_adapter_scale",
+                    defaults.ip_adapter?.scale ?? DEFAULTS.ip_adapter_scale
+                ),
+                model: "h94/IP-Adapter",
+                subfolder: "sdxl_models",
+                weight_name: "ip-adapter_sdxl.bin",
+            };
         }
 
         if (controlnetEnabled) {

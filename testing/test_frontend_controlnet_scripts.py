@@ -106,7 +106,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         preprocessor_tag = '<script src="controlnet_preprocessor.js?v=3"></script>'
         lora_tag = '<script src="lora_panel.js?v=1"></script>'
         preset_tag = '<script src="preset_panel.js?v=1"></script>'
-        sdxl_inpaint_tag = '<script src="sdxl_inpaint.js?v=3"></script>'
+        sdxl_inpaint_tag = '<script src="sdxl_inpaint.js?v=4"></script>'
 
         self.assertIn(panel_tag, sdxl_inpaint_html)
         self.assertIn(preprocessor_tag, sdxl_inpaint_html)
@@ -410,6 +410,19 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn('window.LoraPanel?.init({ apiBase: API_BASE, family: "sdxl" })', sdxl_inpaint_js)
         self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", sdxl_inpaint_js)
         self.assertIn("taskInputs.lora_adapters = loraAdapters;", sdxl_inpaint_js)
+
+    def test_sdxl_inpaint_page_and_script_wire_ip_adapter_payload(self):
+        sdxl_inpaint_html = (ROOT / "frontend" / "sdxl_inpaint.html").read_text(encoding="utf-8")
+        sdxl_inpaint_js = (ROOT / "frontend" / "sdxl_inpaint.js").read_text(encoding="utf-8")
+
+        self.assertIn('id="ip_adapter_enabled"', sdxl_inpaint_html)
+        self.assertIn('id="ip_adapter_image"', sdxl_inpaint_html)
+        self.assertIn('id="ip_adapter_scale"', sdxl_inpaint_html)
+        self.assertIn("getIpAdapterImageFile", sdxl_inpaint_js)
+        self.assertIn("taskInputs.ip_adapter = {", sdxl_inpaint_js)
+        self.assertIn('subfolder: "sdxl_models"', sdxl_inpaint_js)
+        self.assertIn('weight_name: "ip-adapter_sdxl.bin"', sdxl_inpaint_js)
+        self.assertIn("SDXL inpaint IP-Adapter cannot be combined with ControlNet yet.", sdxl_inpaint_js)
 
     def test_sdxl_inpaint_script_wires_preset_panel(self):
         sdxl_inpaint_js = (ROOT / "frontend" / "sdxl_inpaint.js").read_text(encoding="utf-8")

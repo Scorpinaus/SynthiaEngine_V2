@@ -430,6 +430,7 @@ Frontend note (SD1.5 page):
 - `frontend/sdxl_img2img.js` uploads the optional SDXL IP-Adapter reference image through `/api/artifacts` and sends it as `sdxl.img2img.inputs.ip_adapter.image`.
 - `frontend/sdxl_inpaint.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()` for `sdxl.inpaint` optional ControlNet usage.
 - `frontend/sdxl_inpaint.js` also consumes shared LoRA state via `window.LoraPanel.getSelectedAdapters()` for `sdxl.inpaint`.
+- `frontend/sdxl_inpaint.js` uploads the optional SDXL IP-Adapter reference image through `/api/artifacts` and sends it as `sdxl.inpaint.inputs.ip_adapter.image`.
 
 ## Job object
 
@@ -728,7 +729,7 @@ LoRA adapter targeting:
 - Minimal supported default adapter is `model: "h94/IP-Adapter"`, `subfolder: "sdxl_models"`, `weight_name: "ip-adapter_sdxl.bin"`.
 - `image` is required when `enabled` is `true`; accepted references match other workflow image inputs (`{"artifact_id":"..."}`, `"@artifact:..."`, or `"/outputs/..."`).
 - `scale` defaults to `0.6` and must be within `[0, 1]`; Diffusers uses this to control image-prompt influence.
-- Initial support is one SDXL base IP-Adapter for `sdxl.text2img` and `sdxl.img2img`. Inpainting, FaceID, Plus variants, multiple adapters, and ControlNet combinations are outside the initial contract.
+- Initial support is one SDXL base IP-Adapter for `sdxl.text2img`, `sdxl.img2img`, and `sdxl.inpaint`. FaceID, Plus variants, multiple adapters, and ControlNet combinations are outside the initial contract.
 
 `sdxl.controlnet.text2img` extra input notes:
 - `controlnet_conditioning_scale`: float in `[0, 2]` (default `1.0`)
@@ -799,6 +800,14 @@ LoRA adapter targeting:
 - Each adapter may provide `strength` (default `1.0`), optional per-component overrides (`unet_strength`, `text_encoder_strength`), and optional fine-grained scales (`unet_scales`, `text_encoder_scales`).
 - Family validation is enforced: only LoRAs registered with `lora_model_family: "sdxl"` are accepted for `sdxl.inpaint`.
 - Invalid adapter references (for example missing `lora_id`, unknown id, or incompatible family) fail the task with a validation/runtime error.
+
+`sdxl.inpaint` IP-Adapter input notes:
+- `ip_adapter`: optional SDXL inpainting image prompt object.
+- Shape mirrors `sdxl.text2img`: `{ "enabled": boolean, "image": ImageRef, "scale": number, "model": string, "subfolder": string, "weight_name": string }`.
+- Minimal supported default adapter is `model: "h94/IP-Adapter"`, `subfolder: "sdxl_models"`, `weight_name: "ip-adapter_sdxl.bin"`.
+- `image` is required when `enabled` is `true`; accepted references match other workflow image inputs (`{"artifact_id":"..."}`, `"@artifact:..."`, or `"/outputs/..."`).
+- `scale` defaults to `0.6` and must be within `[0, 1]`.
+- Minimal initial support is non-ControlNet `sdxl.inpaint` only. User-selected SDXL LoRA adapters may still be combined with IP-Adapter.
 
 `flux.text2img` LoRA input notes:
 - `lora_adapters` is optional. When omitted or empty, text2img runs without LoRA adapters.

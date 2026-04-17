@@ -517,6 +517,14 @@ def run_sdxl_inpaint_task(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[
     padding_mask_crop_input = inputs.get("padding_mask_crop")
     padding_mask_crop = 32 if padding_mask_crop_input is None else int(padding_mask_crop_input)
 
+    ip_adapter_raw = inputs.get("ip_adapter")
+    if ip_adapter_raw is not None and not isinstance(ip_adapter_raw, dict):
+        raise ValueError("`ip_adapter` must be an object.")
+    ip_adapter_enabled = (
+        isinstance(ip_adapter_raw, dict) and bool(ip_adapter_raw.get("enabled", False))
+    )
+    ip_adapter_settings = _normalized_ip_adapter_settings(inputs, _open_image_ref)
+
     controlnet_requested = any(
         key in inputs
         for key in (
@@ -535,6 +543,8 @@ def run_sdxl_inpaint_task(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[
         )
     )
     if controlnet_requested:
+        if ip_adapter_enabled:
+            raise ValueError("sdxl.inpaint IP-Adapter cannot be combined with ControlNet.")
         control_image_input = inputs.get("control_image")
         control_images_raw = inputs.get("control_images")
         if control_images_raw is not None and not isinstance(control_images_raw, list):
@@ -705,24 +715,26 @@ def run_sdxl_inpaint_task(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[
             result["warnings"] = warnings
         return result
 
-    result = generate_inpaint(
-        {
-            "initial_image": initial_image,
-            "mask_image": mask_image,
-            "strength": strength,
-            "prompt": str(inputs["prompt"]),
-            "negative_prompt": str(inputs.get("negative_prompt") or ""),
-            "steps": int(inputs.get("steps") or 20),
-            "guidance_scale": float(inputs.get("guidance_scale") or inputs.get("cfg") or 7.5),
-            "seed": inputs.get("seed"),
-            "scheduler": str(inputs.get("scheduler") or "euler"),
-            "model": inputs.get("model"),
-            "num_images": int(inputs.get("num_images") or 1),
-            "padding_mask_crop": padding_mask_crop,
-            "clip_skip": int(inputs.get("clip_skip") or 1),
-            "lora_adapters": inputs.get("lora_adapters"),
-        }
-    )
+    pipeline_params: dict[str, Any] = {
+        "initial_image": initial_image,
+        "mask_image": mask_image,
+        "strength": strength,
+        "prompt": str(inputs["prompt"]),
+        "negative_prompt": str(inputs.get("negative_prompt") or ""),
+        "steps": int(inputs.get("steps") or 20),
+        "guidance_scale": float(inputs.get("guidance_scale") or inputs.get("cfg") or 7.5),
+        "seed": inputs.get("seed"),
+        "scheduler": str(inputs.get("scheduler") or "euler"),
+        "model": inputs.get("model"),
+        "num_images": int(inputs.get("num_images") or 1),
+        "padding_mask_crop": padding_mask_crop,
+        "clip_skip": int(inputs.get("clip_skip") or 1),
+        "lora_adapters": inputs.get("lora_adapters"),
+    }
+    if ip_adapter_settings is not None:
+        pipeline_params.update(ip_adapter_settings)
+
+    result = generate_inpaint(pipeline_params)
     if not isinstance(result, dict):
         raise ValueError("sdxl.inpaint must return an object")
     return result

@@ -356,6 +356,7 @@ class SdxlInpaintInputs(BaseModel):
     padding_mask_crop: int = 32
     clip_skip: int = 1
     lora_adapters: Any | None = None
+    ip_adapter: SdxlIpAdapterContract | None = None
     control_image: ImageRef | None = Field(
         default=None,
         description='Optional ControlNet image reference: {"artifact_id":"..."} OR "@artifact:..." OR "/outputs/...".',

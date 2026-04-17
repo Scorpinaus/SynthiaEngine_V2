@@ -186,6 +186,77 @@ class SdxlIpAdapterPipelineTests(unittest.TestCase):
         self.assertIs(captured_render_kwargs["ip_adapter_image"], reference_image)
         self.assertTrue(fake_pipe.unloaded_ip_adapter)
 
+    def test_generate_inpaint_loads_and_passes_ip_adapter_image(self):
+        fake_pipe = _FakePipe()
+        initial_image = Image.new("RGB", (16, 16))
+        mask_image = Image.new("L", (16, 16))
+        reference_image = Image.new("RGB", (16, 16))
+        captured_render_kwargs = {}
+
+        def _fake_render_inpaint_image(pipe, **kwargs):
+            captured_render_kwargs.update(kwargs)
+            return Image.new("RGB", (8, 8))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch("backend.sdxl_pipeline.load_inpaint_pipeline", return_value=fake_pipe):
+                with patch("backend.sdxl_pipeline.create_scheduler", return_value="scheduler"):
+                    with patch(
+                        "backend.sdxl_pipeline.apply_lora_adapters_with_validation",
+                        return_value=([], {}),
+                    ):
+                        with patch("backend.sdxl_pipeline.write_lora_coverage_report", return_value=None):
+                            with patch(
+                                "backend.sdxl_pipeline.render_inpaint_image",
+                                side_effect=_fake_render_inpaint_image,
+                            ):
+                                with patch(
+                                    "backend.sdxl_pipeline.make_batch_id",
+                                    return_value="batch123",
+                                ):
+                                    with patch(
+                                        "backend.sdxl_pipeline.get_batch_output_dir",
+                                        return_value=Path(tmpdir),
+                                    ):
+                                        result = sdxl_pipeline.generate_inpaint(
+                                            {
+                                                "initial_image": initial_image,
+                                                "mask_image": mask_image,
+                                                "strength": 0.65,
+                                                "prompt": "test prompt",
+                                                "negative_prompt": "",
+                                                "steps": 2,
+                                                "guidance_scale": 7.5,
+                                                "seed": 123,
+                                                "scheduler": "euler",
+                                                "model": "stable-diffusion-xl-base-1.0",
+                                                "num_images": 1,
+                                                "padding_mask_crop": 32,
+                                                "clip_skip": 1,
+                                                "lora_adapters": [],
+                                                "ip_adapter_image": reference_image,
+                                                "ip_adapter_scale": 0.45,
+                                                "ip_adapter_model": "h94/IP-Adapter",
+                                                "ip_adapter_subfolder": "sdxl_models",
+                                                "ip_adapter_weight_name": "ip-adapter_sdxl.bin",
+                                            }
+                                        )
+
+        self.assertEqual(
+            result,
+            {"images": ["/outputs/batch_batch123/batch123_123.png"]},
+        )
+        self.assertEqual(
+            fake_pipe.loaded_ip_adapter,
+            {
+                "model": "h94/IP-Adapter",
+                "subfolder": "sdxl_models",
+                "weight_name": "ip-adapter_sdxl.bin",
+            },
+        )
+        self.assertEqual(fake_pipe.ip_adapter_scale, 0.45)
+        self.assertIs(captured_render_kwargs["ip_adapter_image"], reference_image)
+        self.assertTrue(fake_pipe.unloaded_ip_adapter)
+
 
 if __name__ == "__main__":
     unittest.main()
