@@ -323,6 +323,7 @@ class SdxlImg2ImgInputs(BaseModel):
     num_images: int = 1
     clip_skip: int = 1
     lora_adapters: Any | None = None
+    ip_adapter: SdxlIpAdapterContract | None = None
     control_image: ImageRef | None = Field(
         default=None,
         description='Optional ControlNet image reference: {"artifact_id":"..."} OR "@artifact:..." OR "/outputs/...".',

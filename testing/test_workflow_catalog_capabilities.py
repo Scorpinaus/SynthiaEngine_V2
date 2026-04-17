@@ -71,3 +71,12 @@ def test_sdxl_text2img_catalog_exposes_ip_adapter_input():
     assert "ip_adapter" in text2img["input_schema"]["properties"]
     assert "ip_adapter" in text2img["input_defaults"]
     assert "ip_adapter" in text2img["ui_hints"]["inputs"]
+
+
+def test_sdxl_img2img_catalog_exposes_ip_adapter_input():
+    catalog = build_workflow_catalog()
+    img2img = catalog["tasks"]["sdxl.img2img"]
+
+    assert "ip_adapter" in img2img["input_schema"]["properties"]
+    assert "ip_adapter" in img2img["input_defaults"]
+    assert "ip_adapter" in img2img["ui_hints"]["inputs"]

@@ -6,6 +6,10 @@ const gallery = createGalleryViewer({
 
 gallery.render();
 
+const DEFAULTS = {
+    ip_adapter_scale: 0.6,
+};
+
 let activeJobToken = 0;
 let activeEventSource = null;
 let controlNetUiReady = Promise.resolve();
@@ -20,6 +24,10 @@ function closeActiveEventSource() {
 
 function getControlNetState() {
     return window.ControlNetPanel?.getState?.() ?? null;
+}
+
+function getIpAdapterImageFile() {
+    return document.getElementById("ip_adapter_image")?.files?.[0] ?? null;
 }
 
 function setInputValue(elementId, value) {
@@ -85,6 +93,11 @@ function collectSdxlImg2ImgPresetSettings() {
         controlnet_guess_mode: Boolean(document.getElementById("controlnet_guess_mode")?.checked),
         controlnet_compat_mode: WorkflowClient.readTextValue("controlnet_compat_mode", "warn"),
         lora_adapters: window.LoraPanel?.getSelectedAdapters?.() ?? [],
+        ip_adapter_enabled: Boolean(document.getElementById("ip_adapter_enabled")?.checked),
+        ip_adapter_scale: WorkflowClient.readNumberValue(
+            "ip_adapter_scale",
+            DEFAULTS.ip_adapter_scale
+        ),
     };
 }
 
@@ -109,6 +122,8 @@ async function applySdxlImg2ImgPresetSettings(settings) {
     setInputValue("control_guidance_end", settings.control_guidance_end);
     setCheckboxValue("controlnet_guess_mode", settings.controlnet_guess_mode);
     setInputValue("controlnet_compat_mode", settings.controlnet_compat_mode);
+    setCheckboxValue("ip_adapter_enabled", settings.ip_adapter_enabled);
+    setInputValue("ip_adapter_scale", settings.ip_adapter_scale);
 
     if (Array.isArray(settings.lora_adapters)) {
         window.LoraPanel?.setSelectedAdapters?.(settings.lora_adapters);
@@ -237,6 +252,8 @@ async function generateSdxlImg2Img() {
     closeActiveEventSource();
     const controlnetState = getControlNetState();
     const controlnetEnabled = Boolean(document.getElementById("controlnet-enabled")?.checked);
+    const ipAdapterEnabled = Boolean(document.getElementById("ip_adapter_enabled")?.checked);
+    const ipAdapterImageFile = getIpAdapterImageFile();
 
     const initialImageInput = document.getElementById("initial_image");
     const initialFile = initialImageInput.files[0];
@@ -288,6 +305,13 @@ async function generateSdxlImg2Img() {
     };
 
     try {
+        if (ipAdapterEnabled && controlnetEnabled) {
+            throw new Error("SDXL img2img IP-Adapter cannot be combined with ControlNet yet.");
+        }
+        if (ipAdapterEnabled && !ipAdapterImageFile) {
+            throw new Error("IP-Adapter enabled but no reference image is selected.");
+        }
+
         const uploaded = await WorkflowClient.uploadArtifact(
             API_BASE,
             initialFile,
@@ -300,6 +324,27 @@ async function generateSdxlImg2Img() {
         taskInputs.lora_adapters = loraAdapters;
         if (!loraAdaptersEnabled) {
             taskInputs.lora_adapters = [];
+        }
+        if (ipAdapterEnabled) {
+            const uploadedIpAdapterImage = await WorkflowClient.uploadArtifact(
+                API_BASE,
+                ipAdapterImageFile,
+                ipAdapterImageFile.name || "ip_adapter.png"
+            );
+            if (!uploadedIpAdapterImage?.artifact_id) {
+                throw new Error("IP-Adapter image upload did not return an artifact id.");
+            }
+            taskInputs.ip_adapter = {
+                enabled: true,
+                image: `@artifact:${uploadedIpAdapterImage.artifact_id}`,
+                scale: WorkflowClient.readNumberValue(
+                    "ip_adapter_scale",
+                    defaults.ip_adapter?.scale ?? DEFAULTS.ip_adapter_scale
+                ),
+                model: "h94/IP-Adapter",
+                subfolder: "sdxl_models",
+                weight_name: "ip-adapter_sdxl.bin",
+            };
         }
         if (controlnetEnabled) {
             const controlItems = Array.isArray(controlnetState?.controlItems)

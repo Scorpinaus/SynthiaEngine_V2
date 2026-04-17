@@ -88,7 +88,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         preprocessor_tag = '<script src="controlnet_preprocessor.js?v=3"></script>'
         lora_tag = '<script src="lora_panel.js?v=1"></script>'
         preset_tag = '<script src="preset_panel.js?v=1"></script>'
-        sdxl_img2img_tag = '<script src="sdxl_img2img.js?v=3"></script>'
+        sdxl_img2img_tag = '<script src="sdxl_img2img.js?v=4"></script>'
 
         self.assertIn(panel_tag, sdxl_img2img_html)
         self.assertIn(preprocessor_tag, sdxl_img2img_html)
@@ -376,6 +376,19 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn('window.LoraPanel?.init({ apiBase: API_BASE, family: "sdxl" })', sdxl_img2img_js)
         self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", sdxl_img2img_js)
         self.assertIn("taskInputs.lora_adapters = loraAdapters;", sdxl_img2img_js)
+
+    def test_sdxl_img2img_page_and_script_wire_ip_adapter_payload(self):
+        sdxl_img2img_html = (ROOT / "frontend" / "sdxl_img2img.html").read_text(encoding="utf-8")
+        sdxl_img2img_js = (ROOT / "frontend" / "sdxl_img2img.js").read_text(encoding="utf-8")
+
+        self.assertIn('id="ip_adapter_enabled"', sdxl_img2img_html)
+        self.assertIn('id="ip_adapter_image"', sdxl_img2img_html)
+        self.assertIn('id="ip_adapter_scale"', sdxl_img2img_html)
+        self.assertIn("getIpAdapterImageFile", sdxl_img2img_js)
+        self.assertIn("taskInputs.ip_adapter = {", sdxl_img2img_js)
+        self.assertIn('subfolder: "sdxl_models"', sdxl_img2img_js)
+        self.assertIn('weight_name: "ip-adapter_sdxl.bin"', sdxl_img2img_js)
+        self.assertIn("SDXL img2img IP-Adapter cannot be combined with ControlNet yet.", sdxl_img2img_js)
 
     def test_sdxl_img2img_script_wires_preset_panel(self):
         sdxl_img2img_js = (ROOT / "frontend" / "sdxl_img2img.js").read_text(encoding="utf-8")

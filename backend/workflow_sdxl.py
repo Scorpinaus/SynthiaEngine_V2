@@ -247,7 +247,6 @@ def run_sdxl_img2img_task(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[
     generate_img2img = deps["generate_img2img"]
     generate_img2img_controlnet = deps["generate_img2img_controlnet"]
 
-
     initial_image = _open_image_ref(inputs["initial_image"]).convert("RGB")
     width = int(inputs.get("width") or 1024)
     height = int(inputs.get("height") or 1024)
@@ -257,6 +256,14 @@ def run_sdxl_img2img_task(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[
     if not 0.0 <= strength <= 1.0:
         raise ValueError("strength must be between 0 and 1")
     strength = _remap_img2img_strength(strength)
+
+    ip_adapter_raw = inputs.get("ip_adapter")
+    if ip_adapter_raw is not None and not isinstance(ip_adapter_raw, dict):
+        raise ValueError("`ip_adapter` must be an object.")
+    ip_adapter_enabled = (
+        isinstance(ip_adapter_raw, dict) and bool(ip_adapter_raw.get("enabled", False))
+    )
+    ip_adapter_settings = _normalized_ip_adapter_settings(inputs, _open_image_ref)
 
     controlnet_requested = any(
         key in inputs
@@ -276,6 +283,8 @@ def run_sdxl_img2img_task(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[
         )
     )
     if controlnet_requested:
+        if ip_adapter_enabled:
+            raise ValueError("sdxl.img2img IP-Adapter cannot be combined with ControlNet.")
         control_image_input = inputs.get("control_image")
         control_images_raw = inputs.get("control_images")
         if control_images_raw is not None and not isinstance(control_images_raw, list):
@@ -440,24 +449,26 @@ def run_sdxl_img2img_task(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[
             result["warnings"] = warnings
         return result
 
-    result = generate_img2img(
-        {
-            "initial_image": initial_image,
-            "strength": strength,
-            "prompt": str(inputs["prompt"]),
-            "negative_prompt": str(inputs.get("negative_prompt") or ""),
-            "steps": int(inputs.get("steps") or 20),
-            "guidance_scale": float(inputs.get("guidance_scale") or inputs.get("cfg") or 7.5),
-            "width": width,
-            "height": height,
-            "seed": inputs.get("seed"),
-            "scheduler": str(inputs.get("scheduler") or "euler"),
-            "model": inputs.get("model"),
-            "num_images": int(inputs.get("num_images") or 1),
-            "clip_skip": int(inputs.get("clip_skip") or 1),
-            "lora_adapters": inputs.get("lora_adapters"),
-        }
-    )
+    pipeline_params: dict[str, Any] = {
+        "initial_image": initial_image,
+        "strength": strength,
+        "prompt": str(inputs["prompt"]),
+        "negative_prompt": str(inputs.get("negative_prompt") or ""),
+        "steps": int(inputs.get("steps") or 20),
+        "guidance_scale": float(inputs.get("guidance_scale") or inputs.get("cfg") or 7.5),
+        "width": width,
+        "height": height,
+        "seed": inputs.get("seed"),
+        "scheduler": str(inputs.get("scheduler") or "euler"),
+        "model": inputs.get("model"),
+        "num_images": int(inputs.get("num_images") or 1),
+        "clip_skip": int(inputs.get("clip_skip") or 1),
+        "lora_adapters": inputs.get("lora_adapters"),
+    }
+    if ip_adapter_settings is not None:
+        pipeline_params.update(ip_adapter_settings)
+
+    result = generate_img2img(pipeline_params)
     if not isinstance(result, dict):
         raise ValueError("sdxl.img2img must return an object")
     return result

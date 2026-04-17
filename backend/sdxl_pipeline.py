@@ -107,9 +107,13 @@ def render_img2img_latents(
     guidance_scale: float,
     seed: int,
     clip_skip: int,
+    ip_adapter_image: Image.Image | None = None,
 ) -> torch.Tensor:
     device = _get_pipe_device(pipe)
     generator = torch.Generator(device=device).manual_seed(seed)
+    ip_adapter_kwargs = (
+        {"ip_adapter_image": ip_adapter_image} if ip_adapter_image is not None else {}
+    )
     return pipe(
         prompt=prompt,
         negative_prompt=negative_prompt,
@@ -120,6 +124,7 @@ def render_img2img_latents(
         generator=generator,
         clip_skip=clip_skip,
         output_type="latent",
+        **ip_adapter_kwargs,
     ).images[0]
 
 
@@ -780,6 +785,21 @@ def generate_img2img(params: dict[str, object],) -> dict[str, list[str]]:
     clip_skip = int(params["clip_skip"])
     scheduler = str(params["scheduler"])
     lora_adapters = params["lora_adapters"]
+    ip_adapter_image = params.get("ip_adapter_image")
+    ip_adapter_enabled = isinstance(ip_adapter_image, Image.Image)
+    ip_adapter_model = str(params.get("ip_adapter_model") or _DEFAULT_IP_ADAPTER_MODEL)
+    ip_adapter_subfolder = str(
+        params.get("ip_adapter_subfolder") or _DEFAULT_IP_ADAPTER_SUBFOLDER
+    )
+    ip_adapter_weight_name = str(
+        params.get("ip_adapter_weight_name") or _DEFAULT_IP_ADAPTER_WEIGHT_NAME
+    )
+    ip_adapter_scale_raw = params.get("ip_adapter_scale")
+    ip_adapter_scale = (
+        _DEFAULT_IP_ADAPTER_SCALE
+        if ip_adapter_scale_raw is None
+        else float(ip_adapter_scale_raw)
+    )
 
     #2. Check and set seed value
     if seed is None or seed == 0:
@@ -797,6 +817,14 @@ def generate_img2img(params: dict[str, object],) -> dict[str, list[str]]:
     #4. Load and create pipeline and scheduler
     pipe = load_img2img_pipeline(model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
+    if ip_adapter_enabled:
+        _load_ip_adapter(
+            pipe,
+            model=ip_adapter_model,
+            subfolder=ip_adapter_subfolder,
+            weight_name=ip_adapter_weight_name,
+            scale=ip_adapter_scale,
+        )
     
     #5. Load lora into pipeline
     adapter_names, lora_coverage = apply_lora_adapters_with_validation(
@@ -825,6 +853,7 @@ def generate_img2img(params: dict[str, object],) -> dict[str, list[str]]:
                 guidance_scale=guidance_scale,
                 seed=current_seed,
                 clip_skip=clip_skip,
+                ip_adapter_image=ip_adapter_image if ip_adapter_enabled else None,
             )
 
             # Decode latent to image and delete intermediate latents
@@ -833,13 +862,14 @@ def generate_img2img(params: dict[str, object],) -> dict[str, list[str]]:
 
             # Generate image metadata and append to image
             image_width, image_height = initial_image.size
-            image_params = dict(params)
+            image_params = _metadata_without_runtime_images(params)
             image_params.pop("initial_image", None)
             image_params["mode"] = "img2img"
             image_params["seed"] = current_seed
             image_params["batch_id"] = batch_id
             image_params["width"] = image_width
             image_params["height"] = image_height
+            image_params["ip_adapter_enabled"] = ip_adapter_enabled
             # Save filename to rendered image
             relpath = save_image(
                 image=image,
@@ -852,6 +882,7 @@ def generate_img2img(params: dict[str, object],) -> dict[str, list[str]]:
 
             filenames.append(relpath)
     finally:
+        _cleanup_ip_adapter(pipe, ip_adapter_enabled)
         # 8. Unload lora weights
         if adapter_names and hasattr(pipe, "unload_lora_weights"):
             pipe.unload_lora_weights()
