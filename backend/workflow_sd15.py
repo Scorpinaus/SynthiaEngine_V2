@@ -507,6 +507,14 @@ def run_sd15_inpaint(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str, 
     scheduler = "lcm" if lcm_enabled else str(inputs.get("scheduler") or "euler")
     if lcm_enabled:
         _validate_lcm_inpaint_settings(steps, cfg)
+    ip_adapter_raw = inputs.get("ip_adapter")
+    if ip_adapter_raw is not None and not isinstance(ip_adapter_raw, dict):
+        raise ValueError("`ip_adapter` must be an object.")
+    ip_adapter_enabled = (
+        isinstance(ip_adapter_raw, dict) and bool(ip_adapter_raw.get("enabled", False))
+    )
+    if lcm_enabled and ip_adapter_enabled:
+        raise ValueError("sd15.inpaint IP-Adapter cannot be combined with LCM mode.")
     batch_id = str(inputs.get("batch_id") or make_batch_id())
     width, height = initial_image.size
 
@@ -528,6 +536,8 @@ def run_sd15_inpaint(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str, 
         )
     )
     if controlnet_requested:
+        if ip_adapter_enabled:
+            raise ValueError("sd15.inpaint IP-Adapter cannot be combined with ControlNet.")
         if lcm_enabled:
             raise ValueError("sd15.inpaint LCM mode cannot be combined with ControlNet.")
 
@@ -732,6 +742,9 @@ def run_sd15_inpaint(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str, 
         "lcm_lora_model": _LCM_LORA_MODEL_ID if lcm_enabled else None,
         "batch_id": batch_id,
     }
+    ip_adapter_settings = _normalized_ip_adapter_settings(inputs, _open_image_ref)
+    if ip_adapter_settings is not None:
+        generation_params.update(ip_adapter_settings)
     filenames = generate_images_inpaint(generation_params)
     return {"batch_id": batch_id, "images": [f"/outputs/{name}" for name in filenames]}
 

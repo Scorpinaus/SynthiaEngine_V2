@@ -28,6 +28,19 @@ class Sd15InpaintControlNetInputValidationTests(unittest.TestCase):
                 control_guidance_end=1.5,
             )
 
+    def test_ip_adapter_scale_out_of_range_rejected(self):
+        with self.assertRaises(ValidationError):
+            Sd15InpaintInputs(
+                initial_image={"artifact_id": "a0123456789abcdef0123456789abcdef"},
+                mask_image={"artifact_id": "a0123456789abcdef0123456789abcdef"},
+                prompt="test",
+                ip_adapter={
+                    "enabled": True,
+                    "image": {"artifact_id": "a0123456789abcdef0123456789abcdef"},
+                    "scale": 1.5,
+                },
+            )
+
 
 class Sd15InpaintControlNetWorkflowPlumbingTests(unittest.TestCase):
     def test_non_controlnet_path_forwards_lora_adapters(self):
@@ -66,6 +79,122 @@ class Sd15InpaintControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertIn("lora_adapters", captured)
         self.assertEqual(captured["lora_adapters"], lora_adapters)
         self.assertEqual(captured["batch_id"], "batch123")
+
+    def test_non_controlnet_path_forwards_ip_adapter_settings(self):
+        captured = {}
+        reference_image = Image.new("RGBA", (32, 32))
+
+        def _fake_generate_images_inpaint(params):
+            captured.update(params)
+            return ["batch/out.png"]
+
+        with patch("backend.workflow._open_image_ref", return_value=reference_image):
+            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+                with patch(
+                    "backend.workflow.generate_images_inpaint",
+                    side_effect=_fake_generate_images_inpaint,
+                ):
+                    result = _sd15_inpaint(
+                        {
+                            "initial_image": {
+                                "artifact_id": "a0123456789abcdef0123456789abcdef"
+                            },
+                            "mask_image": {
+                                "artifact_id": "a0123456789abcdef0123456789abcdef"
+                            },
+                            "prompt": "test prompt",
+                            "ip_adapter": {
+                                "enabled": True,
+                                "image": {
+                                    "artifact_id": "a0123456789abcdef0123456789abcdef"
+                                },
+                                "scale": 0.55,
+                                "model": "h94/IP-Adapter",
+                                "subfolder": "models",
+                                "weight_name": "ip-adapter_sd15.bin",
+                            },
+                        },
+                        _ctx=None,
+                    )
+
+        self.assertEqual(result["batch_id"], "batch123")
+        self.assertEqual(result["images"], ["/outputs/batch/out.png"])
+        self.assertEqual(captured["ip_adapter_image"].mode, "RGB")
+        self.assertEqual(captured["ip_adapter_scale"], 0.55)
+        self.assertEqual(captured["ip_adapter_model"], "h94/IP-Adapter")
+        self.assertEqual(captured["ip_adapter_subfolder"], "models")
+        self.assertEqual(captured["ip_adapter_weight_name"], "ip-adapter_sd15.bin")
+
+    def test_ip_adapter_requires_image_when_enabled(self):
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with self.assertRaisesRegex(
+                ValueError, "ip_adapter.image is required when IP-Adapter is enabled"
+            ):
+                _sd15_inpaint(
+                    {
+                        "initial_image": {
+                            "artifact_id": "a0123456789abcdef0123456789abcdef"
+                        },
+                        "mask_image": {
+                            "artifact_id": "a0123456789abcdef0123456789abcdef"
+                        },
+                        "prompt": "test prompt",
+                        "ip_adapter": {"enabled": True},
+                    },
+                    _ctx=None,
+                )
+
+    def test_ip_adapter_rejects_lcm_combination(self):
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with self.assertRaisesRegex(
+                ValueError, "sd15.inpaint IP-Adapter cannot be combined with LCM mode"
+            ):
+                _sd15_inpaint(
+                    {
+                        "initial_image": {
+                            "artifact_id": "a0123456789abcdef0123456789abcdef"
+                        },
+                        "mask_image": {
+                            "artifact_id": "a0123456789abcdef0123456789abcdef"
+                        },
+                        "prompt": "test prompt",
+                        "lcm": {"enabled": True},
+                        "ip_adapter": {
+                            "enabled": True,
+                            "image": {
+                                "artifact_id": "a0123456789abcdef0123456789abcdef"
+                            },
+                        },
+                    },
+                    _ctx=None,
+                )
+
+    def test_ip_adapter_rejects_controlnet_combination(self):
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with self.assertRaisesRegex(
+                ValueError, "sd15.inpaint IP-Adapter cannot be combined with ControlNet"
+            ):
+                _sd15_inpaint(
+                    {
+                        "initial_image": {
+                            "artifact_id": "a0123456789abcdef0123456789abcdef"
+                        },
+                        "mask_image": {
+                            "artifact_id": "a0123456789abcdef0123456789abcdef"
+                        },
+                        "control_image": {
+                            "artifact_id": "a0123456789abcdef0123456789abcdef"
+                        },
+                        "prompt": "test prompt",
+                        "ip_adapter": {
+                            "enabled": True,
+                            "image": {
+                                "artifact_id": "a0123456789abcdef0123456789abcdef"
+                            },
+                        },
+                    },
+                    _ctx=None,
+                )
 
     def test_non_controlnet_path_forwards_unified_lora_contract(self):
         captured = {}

@@ -1214,6 +1214,21 @@ def generate_images_inpaint(params: dict[str, object],):
     padding_mask_crop = int(params.get("padding_mask_crop") or 32)
     clip_skip = int(params.get("clip_skip") or 1)
     lora_adapters = params.get("lora_adapters")
+    ip_adapter_image = cast(Image.Image | None, params.get("ip_adapter_image"))
+    ip_adapter_enabled = ip_adapter_image is not None
+    ip_adapter_model = str(params.get("ip_adapter_model") or _DEFAULT_IP_ADAPTER_MODEL)
+    ip_adapter_subfolder = str(
+        params.get("ip_adapter_subfolder") or _DEFAULT_IP_ADAPTER_SUBFOLDER
+    )
+    ip_adapter_weight_name = str(
+        params.get("ip_adapter_weight_name") or _DEFAULT_IP_ADAPTER_WEIGHT_NAME
+    )
+    ip_adapter_scale_raw = params.get("ip_adapter_scale")
+    ip_adapter_scale = (
+        _DEFAULT_IP_ADAPTER_SCALE
+        if ip_adapter_scale_raw is None
+        else float(ip_adapter_scale_raw)
+    )
     batch_id = params.get("batch_id")
 
     logger.info("seed=%s", seed)
@@ -1234,6 +1249,14 @@ def generate_images_inpaint(params: dict[str, object],):
         model, base_seed, scheduler, steps, cfg,
         width, height, num_images, strength, padding_mask_crop
     )
+    if ip_adapter_enabled:
+        _load_ip_adapter(
+            pipe,
+            model=ip_adapter_model,
+            subfolder=ip_adapter_subfolder,
+            weight_name=ip_adapter_weight_name,
+            scale=ip_adapter_scale,
+        )
 
     filenames = []
     adapter_names = []
@@ -1268,6 +1291,9 @@ def generate_images_inpaint(params: dict[str, object],):
         "lcm_lora_model": _LCM_LORA_MODEL_ID if lcm_enabled else None,
         "batch_id": batch_id,
     }
+    ip_adapter_kwargs = (
+        {"ip_adapter_image": ip_adapter_image} if ip_adapter_enabled else {}
+    )
 
     try:
         for i in range(num_images):
@@ -1295,6 +1321,7 @@ def generate_images_inpaint(params: dict[str, object],):
                         strength=strength,
                         padding_mask_crop=padding_mask_crop,
                         clip_skip=clip_skip,
+                        **ip_adapter_kwargs,
                     ).images[0]
                 append_layers_report(
                     output_dir=batch_output_dir,
@@ -1319,16 +1346,26 @@ def generate_images_inpaint(params: dict[str, object],):
                     strength=strength,
                     padding_mask_crop=padding_mask_crop,
                     clip_skip=clip_skip,
+                    **ip_adapter_kwargs,
                 ).images[0]
 
             filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
-            metadata = {**metadata_base, "seed": current_seed}
+            metadata = {
+                **metadata_base,
+                "seed": current_seed,
+                "ip_adapter_enabled": ip_adapter_enabled,
+                "ip_adapter_model": ip_adapter_model if ip_adapter_enabled else None,
+                "ip_adapter_subfolder": ip_adapter_subfolder if ip_adapter_enabled else None,
+                "ip_adapter_weight_name": ip_adapter_weight_name if ip_adapter_enabled else None,
+                "ip_adapter_scale": ip_adapter_scale if ip_adapter_enabled else None,
+            }
             pnginfo = build_png_metadata(metadata)
             image.save(filename, pnginfo=pnginfo)
             logger.info("Image %s saved to %s", i, filename.name)
 
             filenames.append(build_batch_output_relpath(batch_id, filename.name))
     finally:
+        _cleanup_ip_adapter(pipe, ip_adapter_enabled)
         _cleanup_lora_adapters(pipe, adapter_names)
 
     return filenames

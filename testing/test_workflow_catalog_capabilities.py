@@ -53,3 +53,12 @@ def test_workflow_capability_features_for_core_families():
     assert zimage["img2img"] is True
     assert zimage["inpaint"] is True
     assert zimage["lora_adapters"] is True
+
+
+def test_sd15_inpaint_catalog_exposes_ip_adapter_input():
+    catalog = build_workflow_catalog()
+    inpaint = catalog["tasks"]["sd15.inpaint"]
+
+    assert "ip_adapter" in inpaint["input_schema"]["properties"]
+    assert "ip_adapter" in inpaint["input_defaults"]
+    assert "ip_adapter" in inpaint["ui_hints"]["inputs"]

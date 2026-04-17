@@ -50,7 +50,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         panel_tag = '<script src="controlnet_panel.js?v=2"></script>'
         preprocessor_tag = '<script src="controlnet_preprocessor.js?v=3"></script>'
         preset_tag = '<script src="preset_panel.js?v=1"></script>'
-        inpaint_tag = '<script src="sd15_inpainting.js?v=4"></script>'
+        inpaint_tag = '<script src="sd15_inpainting.js?v=5"></script>'
 
         self.assertIn(validator_tag, sd15_inpaint_html)
         self.assertIn(panel_tag, sd15_inpaint_html)
@@ -280,6 +280,26 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("inputs.lcm = { enabled: true };", inpaint_js)
         self.assertIn("inputs.scheduler = DEFAULTS.lcm_scheduler;", inpaint_js)
         self.assertIn("LCM mode cannot be combined with ControlNet for SD1.5 inpaint yet.", inpaint_js)
+
+    def test_sd15_inpaint_page_wires_ip_adapter_controls(self):
+        inpaint_html = (ROOT / "frontend" / "sd15_inpainting.html").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('id="ip_adapter_enabled"', inpaint_html)
+        self.assertIn('id="ip_adapter_image"', inpaint_html)
+        self.assertIn('id="ip_adapter_scale"', inpaint_html)
+
+    def test_sd15_inpaint_script_wires_ip_adapter_payload_and_guardrails(self):
+        inpaint_js = (ROOT / "frontend" / "sd15_inpainting.js").read_text(encoding="utf-8")
+
+        self.assertIn("getIpAdapterImageFile", inpaint_js)
+        self.assertIn("WorkflowClient.uploadArtifact(", inpaint_js)
+        self.assertIn("taskInputs.ip_adapter = {", inpaint_js)
+        self.assertIn('model: "h94/IP-Adapter"', inpaint_js)
+        self.assertIn('weight_name: "ip-adapter_sd15.bin"', inpaint_js)
+        self.assertIn("IP-Adapter cannot be combined with ControlNet for SD1.5 inpaint yet.", inpaint_js)
+        self.assertIn("IP-Adapter cannot be combined with LCM mode for SD1.5 inpaint yet.", inpaint_js)
 
     def test_sd15_img2img_script_wires_lora_panel_and_payload(self):
         img2img_js = (ROOT / "frontend" / "sd15_img2img.js").read_text(encoding="utf-8")

@@ -416,6 +416,7 @@ Frontend note (SD1.5 page):
 - `frontend/sd15_img2img.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()`.
 - `frontend/sd15_img2img.js` uploads the optional SD1.5 IP-Adapter reference image through `/api/artifacts` and sends it as `sd15.img2img.inputs.ip_adapter.image`.
 - `frontend/sd15_inpainting.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()`.
+- `frontend/sd15_inpainting.js` uploads the optional SD1.5 IP-Adapter reference image through `/api/artifacts` and sends it as `sd15.inpaint.inputs.ip_adapter.image`.
 - `frontend/controlnet_panel.html` groups ControlNet runtime knobs (`controlnet_conditioning_scale`, `controlnet_guess_mode`, `control_guidance_start`, `control_guidance_end`).
 - The preprocessor modal layout uses a two-column split (`settings` + `preview`) and caps preview height to viewport.
 - `frontend/controlnet_preprocessor.js` applies a runtime layout fallback so stale cached modal markup is upgraded in-place.
@@ -565,7 +566,7 @@ LoRA adapter targeting:
   - Minimal supported default adapter is `model: "h94/IP-Adapter"`, `subfolder: "models"`, `weight_name: "ip-adapter_sd15.bin"`.
   - `image` is required when `enabled` is `true`; accepted references match other workflow image inputs (`{"artifact_id":"..."}`, `"@artifact:..."`, or `"/outputs/..."`).
   - `scale` defaults to `0.6` and must be within `[0, 1]`; Diffusers uses this to control image-prompt influence.
-  - Initial support is one SD1.5 base IP-Adapter for `sd15.text2img` and `sd15.img2img`. FaceID, Plus variants, multiple adapters, ControlNet combinations, LCM combinations, and Hi-Res Fix combinations are outside the initial contract.
+  - Initial support is one SD1.5 base IP-Adapter for `sd15.text2img`, `sd15.img2img`, and `sd15.inpaint`. FaceID, Plus variants, multiple adapters, ControlNet combinations, LCM combinations, and Hi-Res Fix combinations are outside the initial contract.
 
 `sd15.animatediff.text2video` input notes:
 - `prompt` / `negative_prompt`: prompt text.
@@ -703,6 +704,14 @@ LoRA adapter targeting:
 - LCM mode requires `steps` within `[1, 8]` and `cfg` within `[0, 2]`.
 - LCM mode may be combined with user-selected SD1.5 LoRA adapters; the hard-coded LCM LoRA is loaded first and selected adapters are added to the active adapter stack.
 - Minimal initial support is non-ControlNet inpaint only. Do not combine `sd15.inpaint` LCM mode with ControlNet fields.
+
+`sd15.inpaint` IP-Adapter input notes:
+- `ip_adapter`: optional SD1.5 inpainting image prompt object.
+- Shape mirrors `sd15.text2img`: `{ "enabled": boolean, "image": ImageRef, "scale": number, "model": string, "subfolder": string, "weight_name": string }`.
+- Minimal supported default adapter is `model: "h94/IP-Adapter"`, `subfolder: "models"`, `weight_name: "ip-adapter_sd15.bin"`.
+- `image` is required when `enabled` is `true`; accepted references match other workflow image inputs (`{"artifact_id":"..."}`, `"@artifact:..."`, or `"/outputs/..."`).
+- `scale` defaults to `0.6` and must be within `[0, 1]`.
+- Minimal initial support is non-ControlNet, non-LCM `sd15.inpaint` only. User-selected SD1.5 LoRA adapters may still be combined with IP-Adapter.
 
 `sdxl.text2img` LoRA input notes:
 - `lora_adapters` is optional. When omitted or empty, text2img runs without LoRA adapters.

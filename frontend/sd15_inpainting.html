@@ -40,6 +40,22 @@
                 <div id="preset-panel-root"></div>
 
                 <label class="field">
+                    <span>IP-Adapter</span>
+                    <span class="hires-toggle">
+                        <span>Use image prompt reference</span>
+                        <input id="ip_adapter_enabled" type="checkbox" />
+                    </span>
+                </label>
+                <label class="field">
+                    <span>IP-Adapter Image</span>
+                    <input id="ip_adapter_image" type="file" accept="image/*" />
+                </label>
+                <label class="field">
+                    <span>IP-Adapter Scale</span>
+                    <input id="ip_adapter_scale" type="number" value="0.6" step="0.05" min="0" max="1" />
+                </label>
+
+                <label class="field">
                     <span>Initial Image</span>
                     <input id="initial_image" type="file" accept="image/*" />
                 </label>
@@ -196,7 +212,7 @@
     <script src="controlnet_panel.js?v=2"></script>
     <script src="controlnet_preprocessor.js?v=3"></script>
     <script src="preset_panel.js?v=1"></script>
-    <script src="sd15_inpainting.js?v=4"></script>
+    <script src="sd15_inpainting.js?v=5"></script>
 </body>
 
 </html>

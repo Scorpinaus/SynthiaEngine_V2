@@ -19,3 +19,4 @@ peft>=0.13.2
 controlnet-aux>=0.0.10
 
 imageio-ffmpeg == 0.6.0
+pytest >=9.0.3

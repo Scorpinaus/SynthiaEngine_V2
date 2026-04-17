@@ -183,6 +183,7 @@ class Sd15InpaintInputs(BaseModel):
     control_guidance_end: float = Field(default=1.0, ge=0.0, le=1.0)
     lora: Sd15UnifiedLoraContract | None = None
     lcm: Sd15LcmContract | None = None
+    ip_adapter: Sd15IpAdapterContract | None = None
     batch_id: str | None = None
 
 
