@@ -153,6 +153,7 @@ Response:
         "multi_controlnet": true,
         "hires_fix": true,
         "lora_adapters": true,
+        "ip_adapter": true,
         "scheduler": true,
         "true_cfg_scale": false
       }
@@ -411,7 +412,9 @@ Frontend note (SD1.5 page):
 - `frontend/controlnet_panel.html` is loaded by `frontend/controlnet_panel.js`.
 - `frontend/controlnet_preprocessor.html` is loaded by `frontend/controlnet_preprocessor.js`.
 - `frontend/sd15.js` consumes shared ControlNet state via `window.ControlNetPanel.getState()`.
+- `frontend/sd15.js` uploads the optional SD1.5 IP-Adapter reference image through `/api/artifacts` and sends it as `sd15.text2img.inputs.ip_adapter.image`.
 - `frontend/sd15_img2img.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()`.
+- `frontend/sd15_img2img.js` uploads the optional SD1.5 IP-Adapter reference image through `/api/artifacts` and sends it as `sd15.img2img.inputs.ip_adapter.image`.
 - `frontend/sd15_inpainting.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()`.
 - `frontend/controlnet_panel.html` groups ControlNet runtime knobs (`controlnet_conditioning_scale`, `controlnet_guess_mode`, `control_guidance_start`, `control_guidance_end`).
 - The preprocessor modal layout uses a two-column split (`settings` + `preview`) and caps preview height to viewport.
@@ -517,13 +520,13 @@ Resolution behavior:
 
 This same matrix is available in machine-readable form at `GET /api/workflow/catalog` under `capabilities`.
 
-| Family | text2img | text2video | img2img | inpaint | controlnet | hires_fix | lora_adapters | true_cfg_scale |
-|---|---|---|---|---|---|---|---|---|
-| `sd15` | yes | yes | yes | yes | yes | yes | yes | no |
-| `sdxl` | yes | no | yes | yes | yes | no | yes | no |
-| `flux` | yes | no | yes | yes | no | no | yes | no |
-| `qwen-image` | yes | no | yes | yes | no | no | yes | yes |
-| `z-image` (`zimage`) | yes | no | yes | yes | no | no | yes | no |
+| Family | text2img | text2video | img2img | inpaint | controlnet | hires_fix | lora_adapters | ip_adapter | true_cfg_scale |
+|---|---|---|---|---|---|---|---|---|---|
+| `sd15` | yes | yes | yes | yes | yes | yes | yes | yes | no |
+| `sdxl` | yes | no | yes | yes | yes | no | yes | no | no |
+| `flux` | yes | no | yes | yes | no | no | yes | no | no |
+| `qwen-image` | yes | no | yes | yes | no | no | yes | no | yes |
+| `z-image` (`zimage`) | yes | no | yes | yes | no | no | yes | no | no |
 
 Task inputs/outputs are task-specific. As a convention, image-generating tasks return:
 - `images`: list of `"/outputs/..."` URLs
@@ -557,6 +560,12 @@ LoRA adapter targeting:
   - legacy `Lora` object
 - `hires`: optional object `{ "hiresEnabled": boolean, "hires_scale": number }`.
   - When `hires_enabled` / `hires_scale` are omitted, backend can derive values from `hires`.
+- `ip_adapter`: optional SD1.5 text-to-image image prompt object.
+  - Shape: `{ "enabled": boolean, "image": ImageRef, "scale": number, "model": string, "subfolder": string, "weight_name": string }`.
+  - Minimal supported default adapter is `model: "h94/IP-Adapter"`, `subfolder: "models"`, `weight_name: "ip-adapter_sd15.bin"`.
+  - `image` is required when `enabled` is `true`; accepted references match other workflow image inputs (`{"artifact_id":"..."}`, `"@artifact:..."`, or `"/outputs/..."`).
+  - `scale` defaults to `0.6` and must be within `[0, 1]`; Diffusers uses this to control image-prompt influence.
+  - Initial support is one SD1.5 base IP-Adapter for `sd15.text2img` and `sd15.img2img`. FaceID, Plus variants, multiple adapters, ControlNet combinations, LCM combinations, and Hi-Res Fix combinations are outside the initial contract.
 
 `sd15.animatediff.text2video` input notes:
 - `prompt` / `negative_prompt`: prompt text.
@@ -655,6 +664,14 @@ LoRA adapter targeting:
 - LCM mode requires `steps` within `[1, 8]` and `cfg` within `[0, 2]`.
 - LCM mode may be combined with user-selected SD1.5 LoRA adapters; the hard-coded LCM LoRA is loaded first and selected adapters are added to the active adapter stack.
 - Minimal initial support is non-ControlNet img2img only. Do not combine `sd15.img2img` LCM mode with ControlNet fields.
+
+`sd15.img2img` IP-Adapter input notes:
+- `ip_adapter`: optional SD1.5 image-to-image image prompt object.
+- Shape mirrors `sd15.text2img`: `{ "enabled": boolean, "image": ImageRef, "scale": number, "model": string, "subfolder": string, "weight_name": string }`.
+- Minimal supported default adapter is `model: "h94/IP-Adapter"`, `subfolder: "models"`, `weight_name: "ip-adapter_sd15.bin"`.
+- `image` is required when `enabled` is `true`; accepted references match other workflow image inputs (`{"artifact_id":"..."}`, `"@artifact:..."`, or `"/outputs/..."`).
+- `scale` defaults to `0.6` and must be within `[0, 1]`.
+- Minimal initial support is non-ControlNet, non-LCM `sd15.img2img` only. User-selected SD1.5 LoRA adapters may still be combined with IP-Adapter.
 
 `sd15.inpaint` optional ControlNet input notes:
 - Existing `sd15.inpaint` payloads remain valid without any ControlNet fields.

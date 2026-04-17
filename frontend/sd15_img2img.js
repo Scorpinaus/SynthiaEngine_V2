@@ -24,6 +24,7 @@ const DEFAULTS = {
     lcm_cfg: 0,
     scheduler: "euler",
     lcm_scheduler: "lcm",
+    ip_adapter_scale: 0.6,
 };
 
 // Token incremented per generateImg2Img() call to ignore stale SSE events from prior jobs.
@@ -51,6 +52,10 @@ let loraPanelReady = Promise.resolve();
 
 function isLcmModeEnabled() {
     return Boolean(document.getElementById("lcm_enabled")?.checked);
+}
+
+function getIpAdapterImageFile() {
+    return document.getElementById("ip_adapter_image")?.files?.[0] ?? null;
 }
 
 function setInputValue(elementId, value) {
@@ -130,6 +135,11 @@ function collectSd15Img2ImgPresetSettings() {
         controlnet_compat_mode: WorkflowClient.readTextValue("controlnet_compat_mode", "warn"),
         lora_adapters: window.LoraPanel?.getSelectedAdapters?.() ?? [],
         lcm_enabled: isLcmModeEnabled(),
+        ip_adapter_enabled: Boolean(document.getElementById("ip_adapter_enabled")?.checked),
+        ip_adapter_scale: WorkflowClient.readNumberValue(
+            "ip_adapter_scale",
+            DEFAULTS.ip_adapter_scale
+        ),
     };
 }
 
@@ -155,6 +165,8 @@ async function applySd15Img2ImgPresetSettings(settings) {
     setInputValue("control_guidance_end", settings.control_guidance_end);
     setCheckboxValue("controlnet_guess_mode", settings.controlnet_guess_mode);
     setInputValue("controlnet_compat_mode", settings.controlnet_compat_mode);
+    setCheckboxValue("ip_adapter_enabled", settings.ip_adapter_enabled);
+    setInputValue("ip_adapter_scale", settings.ip_adapter_scale);
     if (settings.lcm_enabled) {
         syncLcmModeDefaults();
     }
@@ -429,6 +441,8 @@ async function generateImg2Img() {
     const controlnetState = getControlNetState();
     const controlnetEnabled = Boolean(document.getElementById("controlnet-enabled")?.checked);
     const lcmEnabled = isLcmModeEnabled();
+    const ipAdapterEnabled = Boolean(document.getElementById("ip_adapter_enabled")?.checked);
+    const ipAdapterImageFile = getIpAdapterImageFile();
 
     const initialImageInput = document.getElementById("initial_image");
     const initialFile = initialImageInput.files[0];
@@ -456,6 +470,15 @@ async function generateImg2Img() {
         if (lcmRequested && controlnetEnabled) {
             throw new Error("LCM mode cannot be combined with ControlNet for SD1.5 img2img yet.");
         }
+        if (ipAdapterEnabled && controlnetEnabled) {
+            throw new Error("IP-Adapter cannot be combined with ControlNet for SD1.5 img2img yet.");
+        }
+        if (ipAdapterEnabled && lcmRequested) {
+            throw new Error("IP-Adapter cannot be combined with LCM mode for SD1.5 img2img yet.");
+        }
+        if (ipAdapterEnabled && !ipAdapterImageFile) {
+            throw new Error("IP-Adapter enabled but no reference image is selected.");
+        }
         if (lcmRequested) {
             applyLcmImg2ImgContract(taskInputs);
         }
@@ -463,6 +486,28 @@ async function generateImg2Img() {
 
         const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
         setLoraContract(taskInputs, loraAdapters);
+
+        if (ipAdapterEnabled) {
+            const uploadedIpAdapterImage = await WorkflowClient.uploadArtifact(
+                API_BASE,
+                ipAdapterImageFile,
+                ipAdapterImageFile.name || "ip_adapter.png"
+            );
+            if (!uploadedIpAdapterImage?.artifact_id) {
+                throw new Error("IP-Adapter image upload did not return an artifact id.");
+            }
+            taskInputs.ip_adapter = {
+                enabled: true,
+                image: `@artifact:${uploadedIpAdapterImage.artifact_id}`,
+                scale: WorkflowClient.readNumberValue(
+                    "ip_adapter_scale",
+                    defaults.ip_adapter?.scale ?? DEFAULTS.ip_adapter_scale
+                ),
+                model: "h94/IP-Adapter",
+                subfolder: "models",
+                weight_name: "ip-adapter_sd15.bin",
+            };
+        }
 
         if (controlnetEnabled) {
             await setControlNetInputs(taskInputs, defaults, controlnetState);

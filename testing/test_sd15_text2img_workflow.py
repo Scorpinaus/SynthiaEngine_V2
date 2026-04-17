@@ -1,7 +1,23 @@
 import unittest
 from unittest.mock import patch
 
-from backend.workflow import _sd15_text2img
+from PIL import Image
+from pydantic import ValidationError
+
+from backend.workflow import Sd15Text2ImgInputs, _sd15_text2img
+
+
+class Sd15Text2ImgInputValidationTests(unittest.TestCase):
+    def test_ip_adapter_scale_out_of_range_rejected(self):
+        with self.assertRaises(ValidationError):
+            Sd15Text2ImgInputs(
+                prompt="test",
+                ip_adapter={
+                    "enabled": True,
+                    "image": {"artifact_id": "a0123456789abcdef0123456789abcdef"},
+                    "scale": 1.5,
+                },
+            )
 
 
 class Sd15Text2ImgWorkflowPlumbingTests(unittest.TestCase):
@@ -180,6 +196,72 @@ class Sd15Text2ImgWorkflowPlumbingTests(unittest.TestCase):
         self.assertTrue(captured["lcm_enabled"])
         self.assertEqual(captured["scheduler"], "lcm")
         self.assertEqual(captured["lora_adapters"], [{"lora_id": 505, "strength": 0.8}])
+
+    def test_sd15_text2img_forwards_ip_adapter_settings(self):
+        captured = {}
+        reference_image = Image.new("RGBA", (32, 32))
+
+        def _fake_generate_images(params):
+            captured.update(params)
+            return ["batch/out.png"]
+
+        with patch("backend.workflow._open_image_ref", return_value=reference_image):
+            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+                with patch("backend.workflow.generate_images", side_effect=_fake_generate_images):
+                    result = _sd15_text2img(
+                        {
+                            "prompt": "test prompt",
+                            "ip_adapter": {
+                                "enabled": True,
+                                "image": {
+                                    "artifact_id": "a0123456789abcdef0123456789abcdef"
+                                },
+                                "scale": 0.55,
+                                "model": "h94/IP-Adapter",
+                                "subfolder": "models",
+                                "weight_name": "ip-adapter_sd15.bin",
+                            },
+                        },
+                        _ctx=None,
+                    )
+
+        self.assertEqual(result["batch_id"], "batch123")
+        self.assertEqual(result["images"], ["/outputs/batch/out.png"])
+        self.assertEqual(captured["ip_adapter_image"].mode, "RGB")
+        self.assertEqual(captured["ip_adapter_scale"], 0.55)
+        self.assertEqual(captured["ip_adapter_model"], "h94/IP-Adapter")
+        self.assertEqual(captured["ip_adapter_subfolder"], "models")
+        self.assertEqual(captured["ip_adapter_weight_name"], "ip-adapter_sd15.bin")
+
+    def test_sd15_text2img_requires_ip_adapter_image_when_enabled(self):
+        with self.assertRaisesRegex(
+            ValueError, "ip_adapter.image is required when IP-Adapter is enabled"
+        ):
+            _sd15_text2img(
+                {
+                    "prompt": "test prompt",
+                    "ip_adapter": {"enabled": True},
+                },
+                _ctx=None,
+            )
+
+    def test_sd15_text2img_rejects_ip_adapter_with_lcm(self):
+        with self.assertRaisesRegex(
+            ValueError, "sd15.text2img IP-Adapter cannot be combined with LCM mode"
+        ):
+            _sd15_text2img(
+                {
+                    "prompt": "test prompt",
+                    "lcm": {"enabled": True},
+                    "ip_adapter": {
+                        "enabled": True,
+                        "image": {
+                            "artifact_id": "a0123456789abcdef0123456789abcdef"
+                        },
+                    },
+                },
+                _ctx=None,
+            )
 
     def test_sd15_text2img_lcm_mode_validates_steps_and_cfg(self):
         with self.assertRaisesRegex(ValueError, r"steps within \[1, 8\]"):

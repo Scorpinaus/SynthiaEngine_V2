@@ -36,6 +36,18 @@ class Sd15LcmContract(BaseModel):
     enabled: bool = False
 
 
+class Sd15IpAdapterContract(BaseModel):
+    enabled: bool = False
+    image: ImageRef | None = Field(
+        default=None,
+        description='IP-Adapter reference image: {"artifact_id":"..."} OR "@artifact:..." OR "/outputs/...".',
+    )
+    scale: float = Field(default=0.6, ge=0.0, le=1.0)
+    model: str = "h94/IP-Adapter"
+    subfolder: str = "models"
+    weight_name: str = "ip-adapter_sd15.bin"
+
+
 class Sd15EffectiveControlNetItem(BaseModel):
     control_image: ImageRef
     model_id: str | None = None
@@ -63,6 +75,7 @@ class Sd15Text2ImgInputs(BaseModel):
     controlNetEnabled: bool = False
     hires: Sd15HiresContract | None = None
     lcm: Sd15LcmContract | None = None
+    ip_adapter: Sd15IpAdapterContract | None = None
 
 
 class Sd15AnimateDiffText2VideoInputs(BaseModel):
@@ -129,6 +142,7 @@ class Sd15Img2ImgInputs(BaseModel):
     control_guidance_end: float = Field(default=1.0, ge=0.0, le=1.0)
     lora: Sd15UnifiedLoraContract | None = None
     lcm: Sd15LcmContract | None = None
+    ip_adapter: Sd15IpAdapterContract | None = None
     batch_id: str | None = None
 
 

@@ -28,6 +28,7 @@ from backend.workflow_schema_input import (
     Sd15EffectiveControlNetItem,
     Sd15HiresFixInputs,
     Sd15HiresContract,
+    Sd15IpAdapterContract,
     Sd15Img2ImgInputs,
     Sd15InpaintInputs,
     Sd15Text2ImgInputs,

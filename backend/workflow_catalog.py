@@ -184,6 +184,13 @@ def _build_task_ui_hints(task_type: str, model_cls: type[BaseModel]) -> dict[str
                 help="SD1.5 LCM mode: { enabled }.",
             )
 
+        if field_name == "ip_adapter":
+            hint.update(
+                widget="json",
+                advanced=True,
+                help="SD1.5 IP-Adapter contract: { enabled, image, scale, model, subfolder, weight_name }.",
+            )
+
         if field_name in common_numeric:
             hint.setdefault("widget", "number")
             hint.update(common_numeric[field_name])
@@ -223,6 +230,7 @@ def _build_model_capabilities(task_input_models: dict[str, type[BaseModel]]) -> 
                     "multi_controlnet": False,
                     "hires_fix": False,
                     "lora_adapters": False,
+                    "ip_adapter": False,
                     "scheduler": False,
                     "true_cfg_scale": False,
                 },
@@ -250,6 +258,8 @@ def _build_model_capabilities(task_input_models: dict[str, type[BaseModel]]) -> 
             features["true_cfg_scale"] = True
         if "lora_adapters" in field_names or "lora" in field_names:
             features["lora_adapters"] = True
+        if "ip_adapter" in field_names:
+            features["ip_adapter"] = True
         if (
             "controlnet_model" in field_names
             or "controlnet_models" in field_names

@@ -12,7 +12,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         panel_tag = '<script src="controlnet_panel.js?v=2"></script>'
         preprocessor_tag = '<script src="controlnet_preprocessor.js?v=3"></script>'
         preset_tag = '<script src="preset_panel.js?v=1"></script>'
-        sd15_tag = '<script src="sd15.js?v=4"></script>'
+        sd15_tag = '<script src="sd15.js?v=5"></script>'
 
         self.assertIn(validator_tag, sd15_html)
         self.assertIn(panel_tag, sd15_html)
@@ -30,7 +30,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         panel_tag = '<script src="controlnet_panel.js?v=2"></script>'
         preprocessor_tag = '<script src="controlnet_preprocessor.js?v=3"></script>'
         preset_tag = '<script src="preset_panel.js?v=1"></script>'
-        img2img_tag = '<script src="sd15_img2img.js?v=4"></script>'
+        img2img_tag = '<script src="sd15_img2img.js?v=5"></script>'
 
         self.assertIn(validator_tag, sd15_img2img_html)
         self.assertIn(panel_tag, sd15_img2img_html)
@@ -50,7 +50,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         panel_tag = '<script src="controlnet_panel.js?v=2"></script>'
         preprocessor_tag = '<script src="controlnet_preprocessor.js?v=3"></script>'
         preset_tag = '<script src="preset_panel.js?v=1"></script>'
-        inpaint_tag = '<script src="sd15_inpainting.js?v=3"></script>'
+        inpaint_tag = '<script src="sd15_inpainting.js?v=4"></script>'
 
         self.assertIn(validator_tag, sd15_inpaint_html)
         self.assertIn(panel_tag, sd15_inpaint_html)
@@ -206,6 +206,25 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("lora_enabled: loraAdaptersEnabled", sd15_js)
         self.assertNotIn("cannot combine with selected LoRAs", sd15_js)
 
+    def test_sd15_page_wires_ip_adapter_controls(self):
+        sd15_html = (ROOT / "frontend" / "sd15.html").read_text(encoding="utf-8")
+
+        self.assertIn('id="ip_adapter_enabled"', sd15_html)
+        self.assertIn('id="ip_adapter_image"', sd15_html)
+        self.assertIn('id="ip_adapter_scale"', sd15_html)
+
+    def test_sd15_script_wires_ip_adapter_payload_and_guardrails(self):
+        sd15_js = (ROOT / "frontend" / "sd15.js").read_text(encoding="utf-8")
+
+        self.assertIn("getIpAdapterImageFile", sd15_js)
+        self.assertIn("WorkflowClient.uploadArtifact(", sd15_js)
+        self.assertIn("inputs.ip_adapter = {", sd15_js)
+        self.assertIn('model: "h94/IP-Adapter"', sd15_js)
+        self.assertIn('weight_name: "ip-adapter_sd15.bin"', sd15_js)
+        self.assertIn("IP-Adapter cannot be combined with LCM mode yet.", sd15_js)
+        self.assertIn("IP-Adapter cannot be combined with Hi-Res Fix yet.", sd15_js)
+        self.assertIn("IP-Adapter is currently available for SD1.5 text-to-image only.", sd15_js)
+
     def test_sd15_img2img_script_wires_preset_panel(self):
         img2img_js = (ROOT / "frontend" / "sd15_img2img.js").read_text(encoding="utf-8")
         self.assertIn("window.PresetPanel?.init({", img2img_js)
@@ -223,6 +242,24 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("inputs.lcm = { enabled: true };", img2img_js)
         self.assertIn('inputs.scheduler = DEFAULTS.lcm_scheduler;', img2img_js)
         self.assertIn("LCM mode cannot be combined with ControlNet for SD1.5 img2img yet.", img2img_js)
+
+    def test_sd15_img2img_page_wires_ip_adapter_controls(self):
+        img2img_html = (ROOT / "frontend" / "sd15_img2img.html").read_text(encoding="utf-8")
+
+        self.assertIn('id="ip_adapter_enabled"', img2img_html)
+        self.assertIn('id="ip_adapter_image"', img2img_html)
+        self.assertIn('id="ip_adapter_scale"', img2img_html)
+
+    def test_sd15_img2img_script_wires_ip_adapter_payload_and_guardrails(self):
+        img2img_js = (ROOT / "frontend" / "sd15_img2img.js").read_text(encoding="utf-8")
+
+        self.assertIn("getIpAdapterImageFile", img2img_js)
+        self.assertIn("WorkflowClient.uploadArtifact(", img2img_js)
+        self.assertIn("taskInputs.ip_adapter = {", img2img_js)
+        self.assertIn('model: "h94/IP-Adapter"', img2img_js)
+        self.assertIn('weight_name: "ip-adapter_sd15.bin"', img2img_js)
+        self.assertIn("IP-Adapter cannot be combined with ControlNet for SD1.5 img2img yet.", img2img_js)
+        self.assertIn("IP-Adapter cannot be combined with LCM mode for SD1.5 img2img yet.", img2img_js)
 
     def test_sd15_inpaint_script_wires_preset_panel(self):
         inpaint_js = (ROOT / "frontend" / "sd15_inpainting.js").read_text(encoding="utf-8")

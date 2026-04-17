@@ -30,6 +30,7 @@ const DEFAULTS = {
     clip_skip: 1,
     num_images: 1,
     weighting_policy: "diffusers-like",
+    ip_adapter_scale: 0.6,
     controlnet_conditioning_scale: 1.0,
     control_guidance_start: 0.0,
     control_guidance_end: 1.0,
@@ -109,6 +110,10 @@ let loraPanelReady = Promise.resolve();
 
 function isLcmModeEnabled() {
     return Boolean(document.getElementById("lcm_enabled")?.checked);
+}
+
+function getIpAdapterImageFile() {
+    return document.getElementById("ip_adapter_image")?.files?.[0] ?? null;
 }
 
 function setInputValue(elementId, value) {
@@ -205,6 +210,11 @@ function collectSd15PresetSettings() {
             DEFAULTS.controlnet_compat_mode
         ),
         lora_adapters: window.LoraPanel?.getSelectedAdapters?.() ?? [],
+        ip_adapter_enabled: Boolean(document.getElementById("ip_adapter_enabled")?.checked),
+        ip_adapter_scale: WorkflowClient.readNumberValue(
+            "ip_adapter_scale",
+            DEFAULTS.ip_adapter_scale
+        ),
         lcm_enabled: isLcmModeEnabled(),
     };
 }
@@ -223,6 +233,7 @@ async function applySd15PresetSettings(settings) {
     setInputValue("hires_scale", settings.hires_scale);
     setInputValue("clip_skip", settings.clip_skip);
     setInputValue("num_images", settings.num_images);
+    setInputValue("ip_adapter_scale", settings.ip_adapter_scale);
     setInputValue("weighting_policy", settings.weighting_policy);
     setInputValue("controlnet_conditioning_scale", settings.controlnet_conditioning_scale);
     setInputValue("control_guidance_start", settings.control_guidance_start);
@@ -232,6 +243,7 @@ async function applySd15PresetSettings(settings) {
     setCheckboxValue("hires_enabled", settings.hires_enabled);
     setCheckboxValue("controlnet-enabled", settings.controlnet_enabled);
     setCheckboxValue("controlnet_guess_mode", settings.controlnet_guess_mode);
+    setCheckboxValue("ip_adapter_enabled", settings.ip_adapter_enabled);
     setCheckboxValue("lcm_enabled", settings.lcm_enabled);
     setModelSelection(settings.model);
     if (settings.lcm_enabled) {
@@ -518,6 +530,8 @@ async function generate() {
     const controlnetEnabled = Boolean(document.getElementById("controlnet-enabled")?.checked);
     const hires_enabled = Boolean(document.getElementById("hires_enabled")?.checked);
     const lcmEnabled = isLcmModeEnabled();
+    const ipAdapterEnabled = Boolean(document.getElementById("ip_adapter_enabled")?.checked);
+    const ipAdapterImageFile = getIpAdapterImageFile();
     const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
     const loraAdaptersEnabled = Array.isArray(loraAdapters) && loraAdapters.length > 0;
 
@@ -543,6 +557,18 @@ async function generate() {
         if (lcmEnabled && hiresEnabled) {
             throw new Error("LCM mode cannot be combined with Hi-Res Fix yet.");
         }
+        if (ipAdapterEnabled && controlnetEnabled) {
+            throw new Error("IP-Adapter is currently available for SD1.5 text-to-image only.");
+        }
+        if (ipAdapterEnabled && lcmEnabled) {
+            throw new Error("IP-Adapter cannot be combined with LCM mode yet.");
+        }
+        if (ipAdapterEnabled && hiresEnabled) {
+            throw new Error("IP-Adapter cannot be combined with Hi-Res Fix yet.");
+        }
+        if (ipAdapterEnabled && !ipAdapterImageFile) {
+            throw new Error("IP-Adapter enabled but no reference image is selected.");
+        }
 
         const tasks = [];
         const inputs = {};
@@ -559,6 +585,27 @@ async function generate() {
             enabled: hiresEnabled,
             hires_scale,
         };
+        if (ipAdapterEnabled) {
+            const uploadedIpAdapterImage = await WorkflowClient.uploadArtifact(
+                API_BASE,
+                ipAdapterImageFile,
+                ipAdapterImageFile.name || "ip_adapter.png"
+            );
+            if (!uploadedIpAdapterImage?.artifact_id) {
+                throw new Error("IP-Adapter image upload did not return an artifact id.");
+            }
+            inputs.ip_adapter = {
+                enabled: true,
+                image: `@artifact:${uploadedIpAdapterImage.artifact_id}`,
+                scale: WorkflowClient.readNumberValue(
+                    "ip_adapter_scale",
+                    primaryDefaults.ip_adapter?.scale ?? DEFAULTS.ip_adapter_scale
+                ),
+                model: "h94/IP-Adapter",
+                subfolder: "models",
+                weight_name: "ip-adapter_sd15.bin",
+            };
+        }
 
         // Check if ControlNet is enabled.
         if (controlnetEnabled) {

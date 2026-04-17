@@ -11,6 +11,10 @@ _LCM_MIN_STEPS = 1
 _LCM_MAX_STEPS = 8
 _LCM_MIN_CFG = 0.0
 _LCM_MAX_CFG = 2.0
+_DEFAULT_IP_ADAPTER_MODEL = "h94/IP-Adapter"
+_DEFAULT_IP_ADAPTER_SUBFOLDER = "models"
+_DEFAULT_IP_ADAPTER_WEIGHT_NAME = "ip-adapter_sd15.bin"
+_DEFAULT_IP_ADAPTER_SCALE = 0.6
 
 
 def _lcm_enabled(inputs: dict[str, Any]) -> bool:
@@ -43,9 +47,44 @@ def _validate_lcm_inpaint_settings(steps: int, cfg: float) -> None:
     _validate_lcm_settings("sd15.inpaint", steps, cfg)
 
 
+def _normalized_ip_adapter_settings(
+    inputs: dict[str, Any],
+    open_image_ref,
+) -> dict[str, Any] | None:
+    ip_adapter = inputs.get("ip_adapter")
+    if ip_adapter is None:
+        return None
+    if not isinstance(ip_adapter, dict):
+        raise ValueError("`ip_adapter` must be an object.")
+    if not bool(ip_adapter.get("enabled", False)):
+        return None
+
+    image_ref = ip_adapter.get("image")
+    if image_ref is None:
+        raise ValueError("ip_adapter.image is required when IP-Adapter is enabled.")
+
+    scale_raw = ip_adapter.get("scale", _DEFAULT_IP_ADAPTER_SCALE)
+    scale = _DEFAULT_IP_ADAPTER_SCALE if scale_raw is None else float(scale_raw)
+    if scale < 0.0 or scale > 1.0:
+        raise ValueError("ip_adapter.scale must be within [0, 1].")
+
+    return {
+        "ip_adapter_image": open_image_ref(image_ref).convert("RGB"),
+        "ip_adapter_scale": scale,
+        "ip_adapter_model": str(ip_adapter.get("model") or _DEFAULT_IP_ADAPTER_MODEL),
+        "ip_adapter_subfolder": str(
+            ip_adapter.get("subfolder") or _DEFAULT_IP_ADAPTER_SUBFOLDER
+        ),
+        "ip_adapter_weight_name": str(
+            ip_adapter.get("weight_name") or _DEFAULT_IP_ADAPTER_WEIGHT_NAME
+        ),
+    }
+
+
 def run_sd15_text2img(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str, Any]:
     _normalized_hires_settings = deps["normalized_hires_settings"]
     _normalized_lora_adapters = deps["normalized_lora_adapters"]
+    _open_image_ref = deps["open_image_ref"]
     make_batch_id = deps["make_batch_id"]
     generate_images = deps["generate_images"]
 
@@ -65,6 +104,14 @@ def run_sd15_text2img(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str,
     scheduler = "lcm" if lcm_enabled else str(inputs.get("scheduler") or "euler")
     if lcm_enabled:
         _validate_lcm_text2img_settings(steps, cfg)
+    ip_adapter_raw = inputs.get("ip_adapter")
+    if (
+        lcm_enabled
+        and isinstance(ip_adapter_raw, dict)
+        and bool(ip_adapter_raw.get("enabled", False))
+    ):
+        raise ValueError("sd15.text2img IP-Adapter cannot be combined with LCM mode.")
+    ip_adapter_settings = _normalized_ip_adapter_settings(inputs, _open_image_ref)
 
     batch_id = str(inputs.get("batch_id") or make_batch_id())
     generation_params = {
@@ -87,6 +134,8 @@ def run_sd15_text2img(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str,
         "weighting_policy": str(inputs.get("weighting_policy") or "diffusers-like"),
         "batch_id": batch_id,
     }
+    if ip_adapter_settings is not None:
+        generation_params.update(ip_adapter_settings)
     filenames = generate_images(generation_params)
     return {"batch_id": batch_id, "images": [f"/outputs/{name}" for name in filenames]}
 
@@ -178,6 +227,14 @@ def run_sd15_img2img(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str, 
     scheduler = "lcm" if lcm_enabled else str(inputs.get("scheduler") or "euler")
     if lcm_enabled:
         _validate_lcm_img2img_settings(steps, cfg)
+    ip_adapter_raw = inputs.get("ip_adapter")
+    if ip_adapter_raw is not None and not isinstance(ip_adapter_raw, dict):
+        raise ValueError("`ip_adapter` must be an object.")
+    ip_adapter_enabled = (
+        isinstance(ip_adapter_raw, dict) and bool(ip_adapter_raw.get("enabled", False))
+    )
+    if lcm_enabled and ip_adapter_enabled:
+        raise ValueError("sd15.img2img IP-Adapter cannot be combined with LCM mode.")
 
     batch_id = str(inputs.get("batch_id") or make_batch_id())
     controlnet_requested = any(
@@ -198,6 +255,8 @@ def run_sd15_img2img(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str, 
         )
     )
     if controlnet_requested:
+        if ip_adapter_enabled:
+            raise ValueError("sd15.img2img IP-Adapter cannot be combined with ControlNet.")
         if lcm_enabled:
             raise ValueError("sd15.img2img LCM mode cannot be combined with ControlNet.")
 
@@ -402,6 +461,9 @@ def run_sd15_img2img(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str, 
         "lcm_lora_model": _LCM_LORA_MODEL_ID if lcm_enabled else None,
         "batch_id": batch_id,
     }
+    ip_adapter_settings = _normalized_ip_adapter_settings(inputs, _open_image_ref)
+    if ip_adapter_settings is not None:
+        generation_params.update(ip_adapter_settings)
     filenames = generate_images_img2img(generation_params)
     return {"batch_id": batch_id, "images": [f"/outputs/{name}" for name in filenames]}
 
