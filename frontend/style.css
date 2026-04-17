@@ -565,6 +565,53 @@ button {
     background: #f7f3ed;
 }
 
+.ip-adapter-panel {
+    border: 1px solid #e3ddd4;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #fdfbf7;
+}
+
+.ip-adapter-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: 0;
+    background: #f3eee5;
+    color: #2b2a28;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.ip-adapter-content {
+    display: none;
+    padding: 12px 14px 16px;
+    gap: 10px;
+    background: #ffffff;
+}
+
+.ip-adapter-content.is-open {
+    display: grid;
+}
+
+.ip-adapter-preview-panel {
+    display: grid;
+    gap: 8px;
+}
+
+.ip-adapter-preview {
+    width: 100%;
+    max-height: 180px;
+    object-fit: contain;
+    border-radius: 8px;
+    border: 1px solid #e3ddd4;
+    background: #f7f3ed;
+}
+
 .lora-panel {
     border: 1px solid #e3ddd4;
     border-radius: 14px;

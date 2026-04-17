@@ -294,6 +294,7 @@ if (window.ControlNetPreprocessor?.init) {
         console.warn("ControlNet init failed:", error);
     });
 }
+window.IpAdapterPanel?.init();
 loraPanelReady = window.LoraPanel?.init({ apiBase: API_BASE, family: "sdxl" }) ?? Promise.resolve();
 window.PresetPanel?.init({
     apiBase: API_BASE,

@@ -223,6 +223,7 @@ async function loadModels() {
  */
 function initSd15Img2ImgPage() {
     gallery.render();
+    window.IpAdapterPanel?.init();
     document.getElementById("lcm_enabled")?.addEventListener("change", syncLcmModeDefaults);
     loadModels();
     if (window.WorkflowCatalog?.load) {

@@ -36,23 +36,36 @@
                 <div id="controlnet-panel-root"></div>
                 <div id="lora-panel-root"></div>
 
-                <label class="field">
-                    <span>IP-Adapter</span>
-                    <span class="hires-toggle">
-                        <span>Use image prompt reference</span>
-                        <input id="ip_adapter_enabled" type="checkbox" />
-                    </span>
-                </label>
+                <div id="ip_adapter_panel" class="ip-adapter-panel">
+                    <button id="ip_adapter_toggle" class="ip-adapter-toggle" type="button" aria-expanded="false" aria-controls="ip_adapter_content">
+                        <span>IP-Adapter</span>
+                        <span id="ip_adapter_chevron" aria-hidden="true">&#9662;</span>
+                    </button>
+                    <div id="ip_adapter_content" class="ip-adapter-content">
+                        <label class="field">
+                            <span>Image Prompt Reference</span>
+                            <span class="hires-toggle">
+                                <span>Use image prompt reference</span>
+                                <input id="ip_adapter_enabled" type="checkbox" />
+                            </span>
+                        </label>
 
-                <label class="field">
-                    <span>IP-Adapter Image</span>
-                    <input id="ip_adapter_image" type="file" accept="image/*" />
-                </label>
+                        <label class="field">
+                            <span>IP-Adapter Image</span>
+                            <input id="ip_adapter_image" type="file" accept="image/*" />
+                        </label>
 
-                <label class="field">
-                    <span>IP-Adapter Scale</span>
-                    <input id="ip_adapter_scale" type="number" value="0.6" step="0.05" min="0" max="1" />
-                </label>
+                        <div id="ip_adapter_preview_panel" class="ip-adapter-preview-panel">
+                            <div id="ip_adapter_preview_empty" class="field-hint">No reference image selected.</div>
+                            <img id="ip_adapter_preview" class="ip-adapter-preview is-hidden" alt="IP-Adapter reference preview" />
+                        </div>
+
+                        <label class="field">
+                            <span>IP-Adapter Scale</span>
+                            <input id="ip_adapter_scale" type="number" value="0.6" step="0.05" min="0" max="1" />
+                        </label>
+                    </div>
+                </div>
 
                 <div id="preset-panel-root"></div>
 
@@ -158,6 +171,7 @@
     <script src="controlnet_panel.js?v=2"></script>
     <script src="controlnet_preprocessor.js?v=3"></script>
     <script src="preset_panel.js?v=1"></script>
+    <script src="ip_adapter_panel.js?v=1"></script>
     <script src="sd15_img2img.js?v=5"></script>
 </body>
 

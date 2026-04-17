@@ -271,6 +271,7 @@ function initSd15Page() {
     didInitSd15Page = true;
 
     gallery.render();
+    window.IpAdapterPanel?.init();
 
     const generateButton = document.getElementById("generate-button");
     generateButton?.addEventListener("click", () => {

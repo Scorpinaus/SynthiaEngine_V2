@@ -209,13 +209,19 @@ class FrontendControlNetScriptTests(unittest.TestCase):
     def test_sd15_page_wires_ip_adapter_controls(self):
         sd15_html = (ROOT / "frontend" / "sd15.html").read_text(encoding="utf-8")
 
+        self.assertIn('id="ip_adapter_panel"', sd15_html)
+        self.assertIn('id="ip_adapter_toggle"', sd15_html)
+        self.assertIn('id="ip_adapter_content"', sd15_html)
         self.assertIn('id="ip_adapter_enabled"', sd15_html)
         self.assertIn('id="ip_adapter_image"', sd15_html)
+        self.assertIn('id="ip_adapter_preview"', sd15_html)
         self.assertIn('id="ip_adapter_scale"', sd15_html)
+        self.assertIn("ip_adapter_panel.js?v=1", sd15_html)
 
     def test_sd15_script_wires_ip_adapter_payload_and_guardrails(self):
         sd15_js = (ROOT / "frontend" / "sd15.js").read_text(encoding="utf-8")
 
+        self.assertIn("window.IpAdapterPanel?.init()", sd15_js)
         self.assertIn("getIpAdapterImageFile", sd15_js)
         self.assertIn("WorkflowClient.uploadArtifact(", sd15_js)
         self.assertIn("inputs.ip_adapter = {", sd15_js)
@@ -246,13 +252,19 @@ class FrontendControlNetScriptTests(unittest.TestCase):
     def test_sd15_img2img_page_wires_ip_adapter_controls(self):
         img2img_html = (ROOT / "frontend" / "sd15_img2img.html").read_text(encoding="utf-8")
 
+        self.assertIn('id="ip_adapter_panel"', img2img_html)
+        self.assertIn('id="ip_adapter_toggle"', img2img_html)
+        self.assertIn('id="ip_adapter_content"', img2img_html)
         self.assertIn('id="ip_adapter_enabled"', img2img_html)
         self.assertIn('id="ip_adapter_image"', img2img_html)
+        self.assertIn('id="ip_adapter_preview"', img2img_html)
         self.assertIn('id="ip_adapter_scale"', img2img_html)
+        self.assertIn("ip_adapter_panel.js?v=1", img2img_html)
 
     def test_sd15_img2img_script_wires_ip_adapter_payload_and_guardrails(self):
         img2img_js = (ROOT / "frontend" / "sd15_img2img.js").read_text(encoding="utf-8")
 
+        self.assertIn("window.IpAdapterPanel?.init()", img2img_js)
         self.assertIn("getIpAdapterImageFile", img2img_js)
         self.assertIn("WorkflowClient.uploadArtifact(", img2img_js)
         self.assertIn("taskInputs.ip_adapter = {", img2img_js)
@@ -286,13 +298,19 @@ class FrontendControlNetScriptTests(unittest.TestCase):
             encoding="utf-8"
         )
 
+        self.assertIn('id="ip_adapter_panel"', inpaint_html)
+        self.assertIn('id="ip_adapter_toggle"', inpaint_html)
+        self.assertIn('id="ip_adapter_content"', inpaint_html)
         self.assertIn('id="ip_adapter_enabled"', inpaint_html)
         self.assertIn('id="ip_adapter_image"', inpaint_html)
+        self.assertIn('id="ip_adapter_preview"', inpaint_html)
         self.assertIn('id="ip_adapter_scale"', inpaint_html)
+        self.assertIn("ip_adapter_panel.js?v=1", inpaint_html)
 
     def test_sd15_inpaint_script_wires_ip_adapter_payload_and_guardrails(self):
         inpaint_js = (ROOT / "frontend" / "sd15_inpainting.js").read_text(encoding="utf-8")
 
+        self.assertIn("window.IpAdapterPanel?.init()", inpaint_js)
         self.assertIn("getIpAdapterImageFile", inpaint_js)
         self.assertIn("WorkflowClient.uploadArtifact(", inpaint_js)
         self.assertIn("taskInputs.ip_adapter = {", inpaint_js)
@@ -300,6 +318,15 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn('weight_name: "ip-adapter_sd15.bin"', inpaint_js)
         self.assertIn("IP-Adapter cannot be combined with ControlNet for SD1.5 inpaint yet.", inpaint_js)
         self.assertIn("IP-Adapter cannot be combined with LCM mode for SD1.5 inpaint yet.", inpaint_js)
+
+    def test_ip_adapter_panel_script_previews_selected_reference_image(self):
+        panel_js = (ROOT / "frontend" / "ip_adapter_panel.js").read_text(encoding="utf-8")
+
+        self.assertIn("URL.createObjectURL(file)", panel_js)
+        self.assertIn("URL.revokeObjectURL(previewUrl)", panel_js)
+        self.assertIn('document.getElementById("ip_adapter_image")', panel_js)
+        self.assertIn('document.getElementById("ip_adapter_preview")', panel_js)
+        self.assertIn('content.classList.toggle("is-open", isOpen)', panel_js)
 
     def test_sd15_img2img_script_wires_lora_panel_and_payload(self):
         img2img_js = (ROOT / "frontend" / "sd15_img2img.js").read_text(encoding="utf-8")
@@ -341,13 +368,19 @@ class FrontendControlNetScriptTests(unittest.TestCase):
     def test_sdxl_page_wires_ip_adapter_controls(self):
         sdxl_html = (ROOT / "frontend" / "sdxl.html").read_text(encoding="utf-8")
 
+        self.assertIn('id="ip_adapter_panel"', sdxl_html)
+        self.assertIn('id="ip_adapter_toggle"', sdxl_html)
+        self.assertIn('id="ip_adapter_content"', sdxl_html)
         self.assertIn('id="ip_adapter_enabled"', sdxl_html)
         self.assertIn('id="ip_adapter_image"', sdxl_html)
+        self.assertIn('id="ip_adapter_preview"', sdxl_html)
         self.assertIn('id="ip_adapter_scale"', sdxl_html)
+        self.assertIn("ip_adapter_panel.js?v=1", sdxl_html)
 
     def test_sdxl_script_wires_ip_adapter_payload_and_guardrails(self):
         sdxl_js = (ROOT / "frontend" / "sdxl.js").read_text(encoding="utf-8")
 
+        self.assertIn("window.IpAdapterPanel?.init()", sdxl_js)
         self.assertIn("getIpAdapterImageFile", sdxl_js)
         self.assertIn("WorkflowClient.uploadArtifact(", sdxl_js)
         self.assertIn("payload.ip_adapter = {", sdxl_js)
@@ -381,9 +414,15 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         sdxl_img2img_html = (ROOT / "frontend" / "sdxl_img2img.html").read_text(encoding="utf-8")
         sdxl_img2img_js = (ROOT / "frontend" / "sdxl_img2img.js").read_text(encoding="utf-8")
 
+        self.assertIn('id="ip_adapter_panel"', sdxl_img2img_html)
+        self.assertIn('id="ip_adapter_toggle"', sdxl_img2img_html)
+        self.assertIn('id="ip_adapter_content"', sdxl_img2img_html)
         self.assertIn('id="ip_adapter_enabled"', sdxl_img2img_html)
         self.assertIn('id="ip_adapter_image"', sdxl_img2img_html)
+        self.assertIn('id="ip_adapter_preview"', sdxl_img2img_html)
         self.assertIn('id="ip_adapter_scale"', sdxl_img2img_html)
+        self.assertIn("ip_adapter_panel.js?v=1", sdxl_img2img_html)
+        self.assertIn("window.IpAdapterPanel?.init()", sdxl_img2img_js)
         self.assertIn("getIpAdapterImageFile", sdxl_img2img_js)
         self.assertIn("taskInputs.ip_adapter = {", sdxl_img2img_js)
         self.assertIn('subfolder: "sdxl_models"', sdxl_img2img_js)
@@ -415,9 +454,15 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         sdxl_inpaint_html = (ROOT / "frontend" / "sdxl_inpaint.html").read_text(encoding="utf-8")
         sdxl_inpaint_js = (ROOT / "frontend" / "sdxl_inpaint.js").read_text(encoding="utf-8")
 
+        self.assertIn('id="ip_adapter_panel"', sdxl_inpaint_html)
+        self.assertIn('id="ip_adapter_toggle"', sdxl_inpaint_html)
+        self.assertIn('id="ip_adapter_content"', sdxl_inpaint_html)
         self.assertIn('id="ip_adapter_enabled"', sdxl_inpaint_html)
         self.assertIn('id="ip_adapter_image"', sdxl_inpaint_html)
+        self.assertIn('id="ip_adapter_preview"', sdxl_inpaint_html)
         self.assertIn('id="ip_adapter_scale"', sdxl_inpaint_html)
+        self.assertIn("ip_adapter_panel.js?v=1", sdxl_inpaint_html)
+        self.assertIn("window.IpAdapterPanel?.init()", sdxl_inpaint_js)
         self.assertIn("getIpAdapterImageFile", sdxl_inpaint_js)
         self.assertIn("taskInputs.ip_adapter = {", sdxl_inpaint_js)
         self.assertIn('subfolder: "sdxl_models"', sdxl_inpaint_js)

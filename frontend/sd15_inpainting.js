@@ -281,6 +281,7 @@ function initSd15InpaintingPage() {
 
     // Render the gallery shell immediately (images will be set after a job completes).
     gallery.render();
+    window.IpAdapterPanel?.init();
 
     updateBrushLabel();
     brushSizeInput.addEventListener("input", updateBrushLabel);
