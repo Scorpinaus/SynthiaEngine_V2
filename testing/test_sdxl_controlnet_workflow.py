@@ -24,6 +24,17 @@ class SdxlControlNetInputValidationTests(unittest.TestCase):
         )
         self.assertEqual(inputs.lora_adapters, [{"lora_id": 101, "strength": 0.8}])
 
+    def test_sdxl_text2img_ip_adapter_scale_out_of_range_rejected(self):
+        with self.assertRaises(ValidationError):
+            SdxlText2ImgInputs(
+                prompt="test",
+                ip_adapter={
+                    "enabled": True,
+                    "image": {"artifact_id": "a0123456789abcdef0123456789abcdef"},
+                    "scale": 1.5,
+                },
+            )
+
     def test_conditioning_scale_out_of_range_rejected(self):
         with self.assertRaises(ValidationError):
             SdxlControlNetText2ImgInputs(
@@ -115,6 +126,52 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertEqual(result["images"], ["/outputs/batch/out.png"])
         self.assertIn("lora_adapters", captured)
         self.assertIsNone(captured["lora_adapters"])
+
+    def test_sdxl_text2img_forwards_ip_adapter_settings(self):
+        captured = {}
+        reference_image = Image.new("RGBA", (32, 32))
+
+        def _fake_generate_text2img(payload):
+            captured.update(payload)
+            return {"images": ["/outputs/batch/out.png"]}
+
+        with patch("backend.workflow._open_image_ref", return_value=reference_image):
+            with patch("backend.sdxl_pipeline.generate_text2img", side_effect=_fake_generate_text2img):
+                result = _sdxl_text2img(
+                    {
+                        "prompt": "test prompt",
+                        "ip_adapter": {
+                            "enabled": True,
+                            "image": {
+                                "artifact_id": "a0123456789abcdef0123456789abcdef"
+                            },
+                            "scale": 0.55,
+                            "model": "h94/IP-Adapter",
+                            "subfolder": "sdxl_models",
+                            "weight_name": "ip-adapter_sdxl.bin",
+                        },
+                    },
+                    _ctx=None,
+                )
+
+        self.assertEqual(result["images"], ["/outputs/batch/out.png"])
+        self.assertEqual(captured["ip_adapter_image"].mode, "RGB")
+        self.assertEqual(captured["ip_adapter_scale"], 0.55)
+        self.assertEqual(captured["ip_adapter_model"], "h94/IP-Adapter")
+        self.assertEqual(captured["ip_adapter_subfolder"], "sdxl_models")
+        self.assertEqual(captured["ip_adapter_weight_name"], "ip-adapter_sdxl.bin")
+
+    def test_sdxl_text2img_requires_ip_adapter_image_when_enabled(self):
+        with self.assertRaisesRegex(
+            ValueError, "ip_adapter.image is required when IP-Adapter is enabled"
+        ):
+            _sdxl_text2img(
+                {
+                    "prompt": "test prompt",
+                    "ip_adapter": {"enabled": True},
+                },
+                _ctx=None,
+            )
 
     def test_controlnet_task_passes_expected_pipeline_params(self):
         captured = {}

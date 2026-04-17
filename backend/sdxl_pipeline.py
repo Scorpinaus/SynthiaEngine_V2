@@ -30,6 +30,11 @@ from backend.schedulers import create_scheduler
 logger = logging.getLogger(__name__)
 configure_logging()
 
+_DEFAULT_IP_ADAPTER_MODEL = "h94/IP-Adapter"
+_DEFAULT_IP_ADAPTER_SUBFOLDER = "sdxl_models"
+_DEFAULT_IP_ADAPTER_WEIGHT_NAME = "ip-adapter_sdxl.bin"
+_DEFAULT_IP_ADAPTER_SCALE = 0.6
+
 """ 
     Private Helper functions
 """
@@ -70,9 +75,13 @@ def render_text2img_latents(
     height: int,
     seed: int,
     clip_skip: int,
+    ip_adapter_image: Image.Image | None = None,
 ) -> torch.Tensor:
     device = _get_pipe_device(pipe)
     generator = torch.Generator(device=device).manual_seed(seed)
+    ip_adapter_kwargs = (
+        {"ip_adapter_image": ip_adapter_image} if ip_adapter_image is not None else {}
+    )
     return pipe(
         prompt=prompt,
         negative_prompt=negative_prompt,
@@ -83,6 +92,7 @@ def render_text2img_latents(
         generator=generator,
         clip_skip=clip_skip,
         output_type="latent",
+        **ip_adapter_kwargs,
     ).images[0]
 
 
@@ -171,6 +181,49 @@ def _resize_control_image_to_target(
     if isinstance(control_image, list):
         return [_resize_single(image) for image in control_image]
     return _resize_single(control_image)
+
+
+def _load_ip_adapter(
+    pipe,
+    *,
+    model: str,
+    subfolder: str,
+    weight_name: str,
+    scale: float,
+) -> None:
+    if not hasattr(pipe, "load_ip_adapter"):
+        raise RuntimeError(
+            "The installed Diffusers pipeline does not support IP-Adapter loading. "
+            "Install a Diffusers version with load_ip_adapter support."
+        )
+    logger.info(
+        "Loading SDXL IP-Adapter: model=%s subfolder=%s weight_name=%s scale=%s",
+        model,
+        subfolder,
+        weight_name,
+        scale,
+    )
+    pipe.load_ip_adapter(model, subfolder=subfolder, weight_name=weight_name)
+    if hasattr(pipe, "set_ip_adapter_scale"):
+        pipe.set_ip_adapter_scale(scale)
+    pipe.to("cuda")
+
+
+def _cleanup_ip_adapter(pipe, enabled: bool) -> None:
+    if not enabled or not hasattr(pipe, "unload_ip_adapter"):
+        return
+    try:
+        pipe.unload_ip_adapter()
+    except Exception:
+        logger.exception("Failed to unload IP-Adapter weights cleanly.")
+
+
+def _metadata_without_runtime_images(params: dict[str, object]) -> dict[str, object]:
+    return {
+        key: value
+        for key, value in params.items()
+        if key not in {"ip_adapter_image"}
+    }
 
 
 """
@@ -603,6 +656,21 @@ def generate_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
     clip_skip = int(payload["clip_skip"])
     scheduler = payload["scheduler"]
     lora_adapters = payload.get("lora_adapters")
+    ip_adapter_image = payload.get("ip_adapter_image")
+    ip_adapter_enabled = isinstance(ip_adapter_image, Image.Image)
+    ip_adapter_model = str(payload.get("ip_adapter_model") or _DEFAULT_IP_ADAPTER_MODEL)
+    ip_adapter_subfolder = str(
+        payload.get("ip_adapter_subfolder") or _DEFAULT_IP_ADAPTER_SUBFOLDER
+    )
+    ip_adapter_weight_name = str(
+        payload.get("ip_adapter_weight_name") or _DEFAULT_IP_ADAPTER_WEIGHT_NAME
+    )
+    ip_adapter_scale_raw = payload.get("ip_adapter_scale")
+    ip_adapter_scale = (
+        _DEFAULT_IP_ADAPTER_SCALE
+        if ip_adapter_scale_raw is None
+        else float(ip_adapter_scale_raw)
+    )
     
     #2. Check and set seed value
     if seed is None or seed == 0:
@@ -618,6 +686,14 @@ def generate_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
     #4. Load and create pipeline and scheduler
     pipe = load_text2img_pipeline(model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
+    if ip_adapter_enabled:
+        _load_ip_adapter(
+            pipe,
+            model=ip_adapter_model,
+            subfolder=ip_adapter_subfolder,
+            weight_name=ip_adapter_weight_name,
+            scale=ip_adapter_scale,
+        )
     
     #5. Load lora into pipeline
     adapter_names, lora_coverage = apply_lora_adapters_with_validation(
@@ -648,6 +724,7 @@ def generate_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
                 height=height,
                 seed=current_seed,
                 clip_skip=clip_skip,
+                ip_adapter_image=ip_adapter_image if ip_adapter_enabled else None,
             )
             latents_batch.append(latents.detach().cpu())
             seed_batch.append(current_seed)
@@ -661,10 +738,11 @@ def generate_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
 
         # Generate image metadata and append to image
         for i, (image, current_seed) in enumerate(zip(images, seed_batch, strict=True)):
-            image_params = dict(payload)
+            image_params = _metadata_without_runtime_images(payload)
             image_params["mode"] = "txt2img"
             image_params["seed"] = current_seed
             image_params["batch_id"] = batch_id
+            image_params["ip_adapter_enabled"] = ip_adapter_enabled
             relpath = save_image(
                 image=image,
                 batch_output_dir=batch_output_dir,
@@ -679,6 +757,7 @@ def generate_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
         # Return images list with metadata
         return {"images": [f"/outputs/{name}" for name in filenames]}
     finally:
+        _cleanup_ip_adapter(pipe, ip_adapter_enabled)
         # 8. Unload lora weights
         if adapter_names and hasattr(pipe, "unload_lora_weights"):
             pipe.unload_lora_weights()

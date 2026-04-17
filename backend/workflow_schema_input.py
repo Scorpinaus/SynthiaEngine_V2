@@ -48,6 +48,18 @@ class Sd15IpAdapterContract(BaseModel):
     weight_name: str = "ip-adapter_sd15.bin"
 
 
+class SdxlIpAdapterContract(BaseModel):
+    enabled: bool = False
+    image: ImageRef | None = Field(
+        default=None,
+        description='IP-Adapter reference image: {"artifact_id":"..."} OR "@artifact:..." OR "/outputs/...".',
+    )
+    scale: float = Field(default=0.6, ge=0.0, le=1.0)
+    model: str = "h94/IP-Adapter"
+    subfolder: str = "sdxl_models"
+    weight_name: str = "ip-adapter_sdxl.bin"
+
+
 class Sd15EffectiveControlNetItem(BaseModel):
     control_image: ImageRef
     model_id: str | None = None
@@ -264,6 +276,7 @@ class SdxlText2ImgInputs(BaseModel):
     clip_skip: int = 1
     scheduler: str = "euler"
     lora_adapters: Any | None = None
+    ip_adapter: SdxlIpAdapterContract | None = None
 
 
 class SdxlControlNetText2ImgInputs(BaseModel):

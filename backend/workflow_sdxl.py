@@ -4,8 +4,50 @@ from typing import Any
 
 from PIL import Image
 
+_DEFAULT_IP_ADAPTER_MODEL = "h94/IP-Adapter"
+_DEFAULT_IP_ADAPTER_SUBFOLDER = "sdxl_models"
+_DEFAULT_IP_ADAPTER_WEIGHT_NAME = "ip-adapter_sdxl.bin"
+_DEFAULT_IP_ADAPTER_SCALE = 0.6
+
+
+def _normalized_ip_adapter_settings(
+    inputs: dict[str, Any],
+    open_image_ref,
+) -> dict[str, Any] | None:
+    ip_adapter = inputs.get("ip_adapter")
+    if ip_adapter is None:
+        return None
+    if not isinstance(ip_adapter, dict):
+        raise ValueError("`ip_adapter` must be an object.")
+    if not bool(ip_adapter.get("enabled", False)):
+        return None
+
+    image_ref = ip_adapter.get("image")
+    if image_ref is None:
+        raise ValueError("ip_adapter.image is required when IP-Adapter is enabled.")
+
+    scale_raw = ip_adapter.get("scale", _DEFAULT_IP_ADAPTER_SCALE)
+    scale = _DEFAULT_IP_ADAPTER_SCALE if scale_raw is None else float(scale_raw)
+    if scale < 0.0 or scale > 1.0:
+        raise ValueError("ip_adapter.scale must be within [0, 1].")
+
+    return {
+        "ip_adapter_image": open_image_ref(image_ref).convert("RGB"),
+        "ip_adapter_scale": scale,
+        "ip_adapter_model": str(ip_adapter.get("model") or _DEFAULT_IP_ADAPTER_MODEL),
+        "ip_adapter_subfolder": str(
+            ip_adapter.get("subfolder") or _DEFAULT_IP_ADAPTER_SUBFOLDER
+        ),
+        "ip_adapter_weight_name": str(
+            ip_adapter.get("weight_name") or _DEFAULT_IP_ADAPTER_WEIGHT_NAME
+        ),
+    }
+
+
 def run_sdxl_text2img_task(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str, Any]:
+    _open_image_ref = deps["open_image_ref"]
     generate_text2img = deps["generate_text2img"]
+    ip_adapter_settings = _normalized_ip_adapter_settings(inputs, _open_image_ref)
 
     pipeline_params: dict[str, Any] = {
         "prompt": str(inputs.get("prompt") or ""),
@@ -21,6 +63,8 @@ def run_sdxl_text2img_task(inputs: dict[str, Any], deps: dict[str, Any]) -> dict
         "scheduler": str(inputs.get("scheduler") or "euler"),
         "lora_adapters": inputs.get("lora_adapters"),
     }
+    if ip_adapter_settings is not None:
+        pipeline_params.update(ip_adapter_settings)
 
     result = generate_text2img(pipeline_params)
     if not isinstance(result, dict):

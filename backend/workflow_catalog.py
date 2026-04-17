@@ -188,7 +188,7 @@ def _build_task_ui_hints(task_type: str, model_cls: type[BaseModel]) -> dict[str
             hint.update(
                 widget="json",
                 advanced=True,
-                help="SD1.5 IP-Adapter contract: { enabled, image, scale, model, subfolder, weight_name }.",
+                help="IP-Adapter contract: { enabled, image, scale, model, subfolder, weight_name }.",
             )
 
         if field_name in common_numeric:

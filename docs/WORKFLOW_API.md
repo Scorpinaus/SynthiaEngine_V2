@@ -425,6 +425,7 @@ Frontend note (SD1.5 page):
 - The preprocessor modal collapses to one column only on narrow screens (`<=700px`).
 - `frontend/sd15_animatediff.html` serves SD1.5 AnimateDiff text-to-video generation and renders `videos` outputs in `frontend/video_gallery.js`.
 - `frontend/sdxl.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()` for `sdxl.controlnet.text2img`.
+- `frontend/sdxl.js` uploads the optional SDXL IP-Adapter reference image through `/api/artifacts` and sends it as `sdxl.text2img.inputs.ip_adapter.image`.
 - `frontend/sdxl_img2img.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()` for `sdxl.img2img` optional ControlNet usage.
 - `frontend/sdxl_inpaint.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()` for `sdxl.inpaint` optional ControlNet usage.
 - `frontend/sdxl_inpaint.js` also consumes shared LoRA state via `window.LoraPanel.getSelectedAdapters()` for `sdxl.inpaint`.
@@ -524,7 +525,7 @@ This same matrix is available in machine-readable form at `GET /api/workflow/cat
 | Family | text2img | text2video | img2img | inpaint | controlnet | hires_fix | lora_adapters | ip_adapter | true_cfg_scale |
 |---|---|---|---|---|---|---|---|---|---|
 | `sd15` | yes | yes | yes | yes | yes | yes | yes | yes | no |
-| `sdxl` | yes | no | yes | yes | yes | no | yes | no | no |
+| `sdxl` | yes | no | yes | yes | yes | no | yes | yes | no |
 | `flux` | yes | no | yes | yes | no | no | yes | no | no |
 | `qwen-image` | yes | no | yes | yes | no | no | yes | no | yes |
 | `z-image` (`zimage`) | yes | no | yes | yes | no | no | yes | no | no |
@@ -719,6 +720,14 @@ LoRA adapter targeting:
 - Each adapter may provide `strength` (default `1.0`), optional per-component overrides (`unet_strength`, `text_encoder_strength`), and optional fine-grained scales (`unet_scales`, `text_encoder_scales`).
 - Family validation is enforced: only LoRAs registered with `lora_model_family: "sdxl"` are accepted for `sdxl.text2img`.
 - Invalid adapter references (for example missing `lora_id`, unknown id, or incompatible family) fail the task with a validation/runtime error.
+
+`sdxl.text2img` IP-Adapter input notes:
+- `ip_adapter`: optional SDXL text-to-image image prompt object.
+- Shape: `{ "enabled": boolean, "image": ImageRef, "scale": number, "model": string, "subfolder": string, "weight_name": string }`.
+- Minimal supported default adapter is `model: "h94/IP-Adapter"`, `subfolder: "sdxl_models"`, `weight_name: "ip-adapter_sdxl.bin"`.
+- `image` is required when `enabled` is `true`; accepted references match other workflow image inputs (`{"artifact_id":"..."}`, `"@artifact:..."`, or `"/outputs/..."`).
+- `scale` defaults to `0.6` and must be within `[0, 1]`; Diffusers uses this to control image-prompt influence.
+- Initial support is one SDXL base IP-Adapter for `sdxl.text2img` only. Image-to-image, inpainting, FaceID, Plus variants, multiple adapters, and ControlNet combinations are outside the initial contract.
 
 `sdxl.controlnet.text2img` extra input notes:
 - `controlnet_conditioning_scale`: float in `[0, 2]` (default `1.0`)
