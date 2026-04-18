@@ -136,6 +136,28 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("gridTemplateColumns", preprocessor_js)
         self.assertIn("window.innerWidth <= 700", preprocessor_js)
 
+    def test_sd15_controlnet_script_wires_per_item_guidance_timing(self):
+        panel_js = (ROOT / "frontend" / "controlnet_panel.js").read_text(encoding="utf-8")
+        preprocessor_js = (ROOT / "frontend" / "controlnet_preprocessor.js").read_text(
+            encoding="utf-8"
+        )
+        sd15_js = (ROOT / "frontend" / "sd15.js").read_text(encoding="utf-8")
+
+        self.assertIn("data-guidance-start-id", panel_js)
+        self.assertIn("data-guidance-end-id", panel_js)
+        self.assertIn("guidanceStart: Number(guidanceStart ?? 0.0)", panel_js)
+        self.assertIn("guidanceEnd: Number(guidanceEnd ?? 1.0)", panel_js)
+        self.assertIn("setPerItemGuidanceTimingEnabled", panel_js)
+        self.assertIn("defaultGuidanceStart", preprocessor_js)
+        self.assertIn("defaultGuidanceEnd", preprocessor_js)
+        self.assertIn("controlGuidanceStarts", sd15_js)
+        self.assertIn("controlGuidanceEnds", sd15_js)
+        self.assertIn("guidance_start: controlGuidanceStarts[idx]", sd15_js)
+        self.assertIn("guidance_end: controlGuidanceEnds[idx]", sd15_js)
+        self.assertIn("inputs.control_guidance_starts = controlGuidanceStarts", sd15_js)
+        self.assertIn("inputs.control_guidance_ends = controlGuidanceEnds", sd15_js)
+        self.assertIn("setPerItemGuidanceTimingEnabled?.(true)", sd15_js)
+
     def test_workflow_input_validator_script_exposes_expected_api(self):
         validator_js = (ROOT / "frontend" / "workflow_input_validator.js").read_text(
             encoding="utf-8"

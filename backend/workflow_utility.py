@@ -213,6 +213,8 @@ def _normalize_sd15_controlnet_contract_inputs(inputs: dict[str, Any]) -> dict[s
         control_images: list[Any] = []
         controlnet_models: list[str] = []
         controlnet_scales: list[float] = []
+        control_guidance_starts: list[float | None] = []
+        control_guidance_ends: list[float | None] = []
         controlnet_preprocessor_ids: list[str | None] = []
 
         for idx, item in enumerate(effective_items):
@@ -226,6 +228,14 @@ def _normalize_sd15_controlnet_contract_inputs(inputs: dict[str, Any]) -> dict[s
                 str(item.get("model_id") or _DEFAULT_SD15_CONTROLNET_MODEL)
             )
             controlnet_scales.append(float(item.get("conditioning_scale") or 1.0))
+            guidance_start = item.get("guidance_start")
+            guidance_end = item.get("guidance_end")
+            control_guidance_starts.append(
+                float(guidance_start) if guidance_start is not None else None
+            )
+            control_guidance_ends.append(
+                float(guidance_end) if guidance_end is not None else None
+            )
             preprocessor_id = item.get("preprocessor_id")
             controlnet_preprocessor_ids.append(
                 str(preprocessor_id) if preprocessor_id is not None else None
@@ -243,6 +253,26 @@ def _normalize_sd15_controlnet_contract_inputs(inputs: dict[str, Any]) -> dict[s
             normalized["controlnet_conditioning_scales"] = controlnet_scales
         if "controlnet_conditioning_scale" not in normalized and controlnet_scales:
             normalized["controlnet_conditioning_scale"] = controlnet_scales[0]
+
+        if any(value is not None for value in control_guidance_starts):
+            default_start = float(normalized.get("control_guidance_start", 0.0))
+            resolved_starts = [
+                default_start if value is None else value for value in control_guidance_starts
+            ]
+            if "control_guidance_starts" not in normalized and len(resolved_starts) > 1:
+                normalized["control_guidance_starts"] = resolved_starts
+            if "control_guidance_start" not in normalized and resolved_starts:
+                normalized["control_guidance_start"] = resolved_starts[0]
+
+        if any(value is not None for value in control_guidance_ends):
+            default_end = float(normalized.get("control_guidance_end", 1.0))
+            resolved_ends = [
+                default_end if value is None else value for value in control_guidance_ends
+            ]
+            if "control_guidance_ends" not in normalized and len(resolved_ends) > 1:
+                normalized["control_guidance_ends"] = resolved_ends
+            if "control_guidance_end" not in normalized and resolved_ends:
+                normalized["control_guidance_end"] = resolved_ends[0]
 
         has_all_preprocessor_ids = all(
             isinstance(value, str) and len(value) > 0 for value in controlnet_preprocessor_ids

@@ -237,6 +237,10 @@
         state.preprocessorId = selectedId;
         const defaultScaleInput = document.getElementById("controlnet_conditioning_scale");
         const defaultScale = Number(defaultScaleInput?.value ?? 1.0);
+        const defaultGuidanceStartInput = document.getElementById("control_guidance_start");
+        const defaultGuidanceStart = Number(defaultGuidanceStartInput?.value ?? 0.0);
+        const defaultGuidanceEndInput = document.getElementById("control_guidance_end");
+        const defaultGuidanceEnd = Number(defaultGuidanceEndInput?.value ?? 1.0);
         const definition = state.preprocessors.get(selectedId);
         const recommendedModel =
             definition?.recommended_sd15_control_models?.[0] ??
@@ -248,6 +252,8 @@
             preprocessorId: selectedId,
             modelId: recommendedModel,
             conditioningScale: defaultScale,
+            guidanceStart: defaultGuidanceStart,
+            guidanceEnd: defaultGuidanceEnd,
         });
         if (preview) {
             preview.src = state.previewUrl;
@@ -336,6 +342,24 @@
                 const scale = Number(target.value);
                 if (Number.isFinite(scale)) {
                     panelApi?.updateControlItem(scaleId, { conditioningScale: scale });
+                }
+                return;
+            }
+
+            const guidanceStartId = Number(target.getAttribute("data-guidance-start-id"));
+            if (Number.isFinite(guidanceStartId) && target instanceof HTMLInputElement) {
+                const guidanceStart = Number(target.value);
+                if (Number.isFinite(guidanceStart)) {
+                    panelApi?.updateControlItem(guidanceStartId, { guidanceStart });
+                }
+                return;
+            }
+
+            const guidanceEndId = Number(target.getAttribute("data-guidance-end-id"));
+            if (Number.isFinite(guidanceEndId) && target instanceof HTMLInputElement) {
+                const guidanceEnd = Number(target.value);
+                if (Number.isFinite(guidanceEnd)) {
+                    panelApi?.updateControlItem(guidanceEndId, { guidanceEnd });
                 }
             }
         });

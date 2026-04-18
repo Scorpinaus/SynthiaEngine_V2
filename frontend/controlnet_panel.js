@@ -8,6 +8,7 @@
         controlItems: [],
         nextControlItemId: 1,
         activeControlIndex: 0,
+        perItemGuidanceTimingEnabled: false,
     };
 
     function getState() {
@@ -113,6 +114,19 @@
                 return `<option value="${_escapeHtml(modelId)}"${selected}>${_escapeHtml(modelId)}</option>`;
             })
             .join("");
+        const timingControls = state.perItemGuidanceTimingEnabled
+            ? `
+                <div class="field-row">
+                    <label class="field">
+                        <span>Guidance Start</span>
+                        <input data-guidance-start-id="${item.id}" type="number" min="0" max="1" step="0.01" value="${Number(item.guidanceStart ?? 0.0)}" />
+                    </label>
+                    <label class="field">
+                        <span>Guidance End</span>
+                        <input data-guidance-end-id="${item.id}" type="number" min="0" max="1" step="0.01" value="${Number(item.guidanceEnd ?? 1.0)}" />
+                    </label>
+                </div>`
+            : "";
         container.innerHTML = `
             <div class="controlnet-item" data-control-id="${item.id}">
                 <div class="controlnet-item-head">
@@ -128,10 +142,19 @@
                     <span>Conditioning Scale</span>
                     <input data-scale-id="${item.id}" type="number" min="0" max="2" step="0.05" value="${Number(item.conditioningScale ?? 1.0)}" />
                 </label>
+                ${timingControls}
             </div>`;
     }
 
-    function addControlItem({ previewBlob, previewUrl, preprocessorId, modelId, conditioningScale }) {
+    function addControlItem({
+        previewBlob,
+        previewUrl,
+        preprocessorId,
+        modelId,
+        conditioningScale,
+        guidanceStart,
+        guidanceEnd,
+    }) {
         const item = {
             id: state.nextControlItemId++,
             previewBlob,
@@ -139,6 +162,8 @@
             preprocessorId: preprocessorId || null,
             modelId: modelId || DEFAULT_CONTROLNET_MODEL,
             conditioningScale: Number(conditioningScale ?? 1.0),
+            guidanceStart: Number(guidanceStart ?? 0.0),
+            guidanceEnd: Number(guidanceEnd ?? 1.0),
         };
         state.controlItems.push(item);
         state.activeControlIndex = state.controlItems.length - 1;
@@ -208,6 +233,11 @@
         renderControlItems();
     }
 
+    function setPerItemGuidanceTimingEnabled(enabled) {
+        state.perItemGuidanceTimingEnabled = Boolean(enabled);
+        renderControlItems();
+    }
+
     function togglePanel() {
         const content = document.getElementById("controlnet-content");
         const chevron = document.getElementById("controlnet-chevron");
@@ -245,6 +275,7 @@
         clearControlItems,
         showPrevControlItem,
         showNextControlItem,
+        setPerItemGuidanceTimingEnabled,
         togglePanel,
         loadPanel,
     };

@@ -312,6 +312,7 @@ function initSd15Page() {
             .catch(() => {});
     }
     if (window.ControlNetPreprocessor?.init) {
+        window.ControlNetPanel?.setPerItemGuidanceTimingEnabled?.(true);
         controlNetUiReady = window.ControlNetPreprocessor.init().catch((error) => {
             console.warn("ControlNet init failed:", error);
         });
@@ -454,6 +455,8 @@ async function setControlNetInputs(inputs, primaryDefaults, controlnetState) {
                       preprocessorId: controlnetState.preprocessorId ?? null,
                       modelId: "lllyasviel/control_v11p_sd15_canny",
                       conditioningScale: controlnet_conditioning_scale,
+                      guidanceStart: control_guidance_start,
+                      guidanceEnd: control_guidance_end,
                   },
               ];
 
@@ -470,6 +473,14 @@ async function setControlNetInputs(inputs, primaryDefaults, controlnetState) {
         const parsed = Number(item.conditioningScale);
         return Number.isFinite(parsed) ? parsed : controlnet_conditioning_scale;
     });
+    const controlGuidanceStarts = effectiveItemsRaw.map((item) => {
+        const parsed = Number(item.guidanceStart);
+        return Number.isFinite(parsed) ? parsed : control_guidance_start;
+    });
+    const controlGuidanceEnds = effectiveItemsRaw.map((item) => {
+        const parsed = Number(item.guidanceEnd);
+        return Number.isFinite(parsed) ? parsed : control_guidance_end;
+    });
     const controlnetPreprocessorIds = effectiveItemsRaw.map((item) => item.preprocessorId || null);
     const hasAllPreprocessorIds = controlnetPreprocessorIds.every(
         (value) => typeof value === "string" && value.length > 0
@@ -485,6 +496,8 @@ async function setControlNetInputs(inputs, primaryDefaults, controlnetState) {
         control_image: controlImage,
         model_id: controlnetModels[idx],
         conditioning_scale: controlnetScales[idx],
+        guidance_start: controlGuidanceStarts[idx],
+        guidance_end: controlGuidanceEnds[idx],
         preprocessor_id: controlnetPreprocessorIds[idx],
     }));
 
@@ -493,12 +506,16 @@ async function setControlNetInputs(inputs, primaryDefaults, controlnetState) {
         inputs.control_images = controlImages;
         inputs.controlnet_models = controlnetModels;
         inputs.controlnet_conditioning_scales = controlnetScales;
+        inputs.control_guidance_starts = controlGuidanceStarts;
+        inputs.control_guidance_ends = controlGuidanceEnds;
         if (hasAllPreprocessorIds) {
             inputs.controlnet_preprocessor_ids = controlnetPreprocessorIds;
         }
     } else {
         inputs.controlnet_model = controlnetModels[0];
         inputs.controlnet_conditioning_scale = controlnetScales[0];
+        inputs.control_guidance_start = controlGuidanceStarts[0];
+        inputs.control_guidance_end = controlGuidanceEnds[0];
         if (hasAllPreprocessorIds) {
             inputs.controlnet_preprocessor_id = controlnetPreprocessorIds[0];
         }
@@ -623,6 +640,8 @@ async function generate() {
                           control_image: item.control_image,
                           model_id: item.model_id,
                           conditioning_scale: item.conditioning_scale,
+                          guidance_start: item.guidance_start,
+                          guidance_end: item.guidance_end,
                           preprocessor_id: item.preprocessor_id,
                       }))
                     : [],

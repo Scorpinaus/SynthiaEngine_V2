@@ -64,6 +64,8 @@ class Sd15EffectiveControlNetItem(BaseModel):
     control_image: ImageRef
     model_id: str | None = None
     conditioning_scale: float | None = Field(default=None, ge=0.0, le=2.0)
+    guidance_start: float | None = Field(default=None, ge=0.0, le=1.0)
+    guidance_end: float | None = Field(default=None, ge=0.0, le=1.0)
     preprocessor_id: str | None = None
 
 
@@ -226,6 +228,8 @@ class Sd15ControlNetText2ImgInputs(BaseModel):
     controlnet_guess_mode: bool = False
     control_guidance_start: float = Field(default=0.0, ge=0.0, le=1.0)
     control_guidance_end: float = Field(default=1.0, ge=0.0, le=1.0)
+    control_guidance_starts: list[float] | None = None
+    control_guidance_ends: list[float] | None = None
     lora: Sd15UnifiedLoraContract | None = None
     batch_id: str | None = None
     controlNetEnabled: bool = True

@@ -47,6 +47,55 @@ def _validate_lcm_inpaint_settings(steps: int, cfg: float) -> None:
     _validate_lcm_settings("sd15.inpaint", steps, cfg)
 
 
+def _resolve_control_guidance_timings(
+    inputs: dict[str, Any],
+    *,
+    controlnet_count: int,
+) -> tuple[list[float], list[float]]:
+    starts_raw = inputs.get("control_guidance_starts")
+    if starts_raw is not None and not isinstance(starts_raw, list):
+        raise ValueError("control_guidance_starts must be a list of numbers")
+    if starts_raw is not None:
+        control_guidance_starts = [float(item) for item in starts_raw]
+        if len(control_guidance_starts) != controlnet_count:
+            raise ValueError(
+                "control_guidance_starts length must match controlnet_models length."
+            )
+    else:
+        control_guidance_starts = [
+            float(inputs.get("control_guidance_start", 0.0))
+        ] * controlnet_count
+
+    ends_raw = inputs.get("control_guidance_ends")
+    if ends_raw is not None and not isinstance(ends_raw, list):
+        raise ValueError("control_guidance_ends must be a list of numbers")
+    if ends_raw is not None:
+        control_guidance_ends = [float(item) for item in ends_raw]
+        if len(control_guidance_ends) != controlnet_count:
+            raise ValueError(
+                "control_guidance_ends length must match controlnet_models length."
+            )
+    else:
+        control_guidance_ends = [
+            float(inputs.get("control_guidance_end", 1.0))
+        ] * controlnet_count
+
+    using_scalar_guidance = starts_raw is None and ends_raw is None
+    for idx, (start, end) in enumerate(zip(control_guidance_starts, control_guidance_ends)):
+        if start < 0.0 or start > 1.0:
+            raise ValueError(f"control_guidance_starts[{idx}] must be within [0, 1].")
+        if end < 0.0 or end > 1.0:
+            raise ValueError(f"control_guidance_ends[{idx}] must be within [0, 1].")
+        if start > end:
+            if using_scalar_guidance:
+                raise ValueError("control_guidance_start must be <= control_guidance_end")
+            raise ValueError(
+                f"control_guidance_starts[{idx}] must be <= control_guidance_ends[{idx}]."
+            )
+
+    return control_guidance_starts, control_guidance_ends
+
+
 def _normalized_ip_adapter_settings(
     inputs: dict[str, Any],
     open_image_ref,
@@ -767,11 +816,6 @@ def run_sd15_controlnet_text2img(inputs: dict[str, Any], deps: dict[str, Any]) -
     height = int(inputs.get("height") or 512)
     control_image_single = _open_image_ref(inputs["control_image"]).convert("RGB")
     control_image_single = control_image_single.resize((width, height))
-    control_guidance_start = float(inputs.get("control_guidance_start", 0.0))
-    control_guidance_end = float(inputs.get("control_guidance_end", 1.0))
-    
-    if control_guidance_start > control_guidance_end:
-        raise ValueError("control_guidance_start must be <= control_guidance_end")
     controlnet_model_single = str(
         inputs.get("controlnet_model") or _DEFAULT_SD15_CONTROLNET_MODEL
     )
@@ -813,6 +857,10 @@ def run_sd15_controlnet_text2img(inputs: dict[str, Any], deps: dict[str, Any]) -
             )
 
     controlnet_count = len(controlnet_models)
+    control_guidance_starts, control_guidance_ends = _resolve_control_guidance_timings(
+        inputs,
+        controlnet_count=controlnet_count,
+    )
 
     controlnet_conditioning_scales_raw = inputs.get("controlnet_conditioning_scales")
     if (
@@ -904,14 +952,20 @@ def run_sd15_controlnet_text2img(inputs: dict[str, Any], deps: dict[str, Any]) -
     controlnet_model_arg: str | list[str]
     control_image_arg: Image.Image | list[Image.Image]
     controlnet_conditioning_scale_arg: float | list[float]
+    control_guidance_start_arg: float | list[float]
+    control_guidance_end_arg: float | list[float]
     if controlnet_count == 1:
         controlnet_model_arg = controlnet_models[0]
         control_image_arg = control_images[0]
         controlnet_conditioning_scale_arg = controlnet_conditioning_scales[0]
+        control_guidance_start_arg = control_guidance_starts[0]
+        control_guidance_end_arg = control_guidance_ends[0]
     else:
         controlnet_model_arg = controlnet_models
         control_image_arg = control_images
         controlnet_conditioning_scale_arg = controlnet_conditioning_scales
+        control_guidance_start_arg = control_guidance_starts
+        control_guidance_end_arg = control_guidance_ends
 
     generation_params = {
         "prompt": str(inputs["prompt"]),
@@ -929,8 +983,8 @@ def run_sd15_controlnet_text2img(inputs: dict[str, Any], deps: dict[str, Any]) -
         "controlnet_model": controlnet_model_arg,
         "controlnet_conditioning_scale": controlnet_conditioning_scale_arg,
         "controlnet_guess_mode": bool(inputs.get("controlnet_guess_mode", False)),
-        "control_guidance_start": control_guidance_start,
-        "control_guidance_end": control_guidance_end,
+        "control_guidance_start": control_guidance_start_arg,
+        "control_guidance_end": control_guidance_end_arg,
         "lora_adapters": lora_adapters,
         "batch_id": batch_id,
     }

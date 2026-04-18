@@ -266,6 +266,38 @@ class Sd15ControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertIn("warnings", result)
         self.assertTrue(any("VRAM use" in warning for warning in result["warnings"]))
 
+    def test_multi_controlnet_passes_guidance_timing_lists(self):
+        captured = {}
+
+        def _fake_generate_images_controlnet(params):
+            captured.update(params)
+            return ["batch/out.png"]
+
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+                with patch(
+                    "backend.workflow.generate_images_controlnet",
+                    side_effect=_fake_generate_images_controlnet,
+                ):
+                    _sd15_controlnet_text2img(
+                        {
+                            "control_image": {
+                                "artifact_id": "a0123456789abcdef0123456789abcdef"
+                            },
+                            "prompt": "test prompt",
+                            "controlnet_models": [
+                                "lllyasviel/control_v11p_sd15_canny",
+                                "lllyasviel/control_v11f1p_sd15_depth",
+                            ],
+                            "control_guidance_starts": [0.0, 0.25],
+                            "control_guidance_ends": [0.6, 1.0],
+                        },
+                        _ctx=None,
+                    )
+
+        self.assertEqual(captured["control_guidance_start"], [0.0, 0.25])
+        self.assertEqual(captured["control_guidance_end"], [0.6, 1.0])
+
     def test_multi_controlnet_scale_list_must_align(self):
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
@@ -326,6 +358,68 @@ class Sd15ControlNetWorkflowPlumbingTests(unittest.TestCase):
                     _ctx=None,
                 )
 
+    def test_multi_controlnet_guidance_start_list_must_align(self):
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with self.assertRaisesRegex(
+                ValueError, "control_guidance_starts length must match"
+            ):
+                _sd15_controlnet_text2img(
+                    {
+                        "control_image": {
+                            "artifact_id": "a0123456789abcdef0123456789abcdef"
+                        },
+                        "prompt": "test prompt",
+                        "controlnet_models": [
+                            "lllyasviel/control_v11p_sd15_canny",
+                            "lllyasviel/control_v11f1p_sd15_depth",
+                        ],
+                        "control_guidance_starts": [0.0],
+                    },
+                    _ctx=None,
+                )
+
+    def test_multi_controlnet_guidance_range_validation_is_indexed(self):
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with self.assertRaisesRegex(
+                ValueError, "control_guidance_ends\\[1\\] must be within \\[0, 1\\]"
+            ):
+                _sd15_controlnet_text2img(
+                    {
+                        "control_image": {
+                            "artifact_id": "a0123456789abcdef0123456789abcdef"
+                        },
+                        "prompt": "test prompt",
+                        "controlnet_models": [
+                            "lllyasviel/control_v11p_sd15_canny",
+                            "lllyasviel/control_v11f1p_sd15_depth",
+                        ],
+                        "control_guidance_ends": [1.0, 1.5],
+                    },
+                    _ctx=None,
+                )
+
+    def test_multi_controlnet_guidance_start_must_be_lte_end_by_index(self):
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with self.assertRaisesRegex(
+                ValueError,
+                "control_guidance_starts\\[1\\] must be <= control_guidance_ends\\[1\\]",
+            ):
+                _sd15_controlnet_text2img(
+                    {
+                        "control_image": {
+                            "artifact_id": "a0123456789abcdef0123456789abcdef"
+                        },
+                        "prompt": "test prompt",
+                        "controlnet_models": [
+                            "lllyasviel/control_v11p_sd15_canny",
+                            "lllyasviel/control_v11f1p_sd15_depth",
+                        ],
+                        "control_guidance_starts": [0.0, 0.8],
+                        "control_guidance_ends": [1.0, 0.4],
+                    },
+                    _ctx=None,
+                )
+
     def test_effective_items_contract_maps_to_controlnet_inputs(self):
         captured = {}
 
@@ -350,6 +444,8 @@ class Sd15ControlNetWorkflowPlumbingTests(unittest.TestCase):
                                     },
                                     "model_id": "lllyasviel/control_v11p_sd15_canny",
                                     "conditioning_scale": 0.8,
+                                    "guidance_start": 0.2,
+                                    "guidance_end": 0.7,
                                     "preprocessor_id": "canny",
                                 }
                             ],
@@ -361,6 +457,8 @@ class Sd15ControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertIn("control_image", captured)
         self.assertEqual(captured["controlnet_model"], "lllyasviel/control_v11p_sd15_canny")
         self.assertEqual(captured["controlnet_conditioning_scale"], 0.8)
+        self.assertEqual(captured["control_guidance_start"], 0.2)
+        self.assertEqual(captured["control_guidance_end"], 0.7)
 
     def test_controlnet_enabled_contract_requires_control_images(self):
         with self.assertRaisesRegex(

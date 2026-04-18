@@ -537,8 +537,14 @@ def generate_images_controlnet(params: dict[str, object],) -> list[str]:
         params.get("controlnet_conditioning_scale", 1.0),
     )
     controlnet_guess_mode = bool(params.get("controlnet_guess_mode", False))
-    control_guidance_start = float(params.get("control_guidance_start", 0.0))
-    control_guidance_end = float(params.get("control_guidance_end", 1.0))
+    control_guidance_start = cast(
+        float | list[float],
+        params.get("control_guidance_start", 0.0),
+    )
+    control_guidance_end = cast(
+        float | list[float],
+        params.get("control_guidance_end", 1.0),
+    )
     batch_id = cast(str | None, params.get("batch_id"))
 
     if not batch_id:

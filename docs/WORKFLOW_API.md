@@ -615,6 +615,9 @@ LoRA adapter targeting:
 - `control_guidance_start`: float in `[0, 1]` (default `0.0`)
 - `control_guidance_end`: float in `[0, 1]` (default `1.0`)
 - `control_guidance_start` must be `<= control_guidance_end`
+- `control_guidance_starts`: optional list form for per-ControlNet guidance start timing; length must match model/image list length
+- `control_guidance_ends`: optional list form for per-ControlNet guidance end timing; length must match model/image list length
+- each per-index guidance start/end pair must satisfy `control_guidance_starts[i] <= control_guidance_ends[i]`
 - `controlnet_model`: defaults to `lllyasviel/control_v11p_sd15_canny` (SD1.5 v1.1 family)
 - `controlnet_models`: optional list form for multi-ControlNet (backward-compatible with `controlnet_model`)
 - `control_images`: optional list form for multi-ControlNet (backward-compatible with `control_image`)
@@ -622,8 +625,8 @@ LoRA adapter targeting:
 - `controlnet_preprocessor_ids`: optional list form for multi-ControlNet compatibility checks
 - `controlNetEnabled`: optional boolean UI state flag.
 - `effectiveItems`: optional list contract form for ControlNet items:
-  - item shape: `{ "control_image": <ImageRef>, "model_id": string?, "conditioning_scale": number?, "preprocessor_id": string? }`
-  - when provided, backend can derive flat fields (`control_image(s)`, `controlnet_model(s)`, `controlnet_conditioning_scale(s)`, `controlnet_preprocessor_id(s)`) if those are omitted.
+  - item shape: `{ "control_image": <ImageRef>, "model_id": string?, "conditioning_scale": number?, "guidance_start": number?, "guidance_end": number?, "preprocessor_id": string? }`
+  - when provided, backend can derive flat fields (`control_image(s)`, `controlnet_model(s)`, `controlnet_conditioning_scale(s)`, `control_guidance_start(s)`, `control_guidance_end(s)`, `controlnet_preprocessor_id(s)`) if those are omitted.
 - `lora`: optional object `{ "lora_enabled": boolean, "lora_adapters": [...] }`.
 - `hires`: optional object `{ "hiresEnabled": boolean, "hires_scale": number }`.
 - `controlnet_compat_mode`: `"warn"` (default), `"error"`, or `"off"`
