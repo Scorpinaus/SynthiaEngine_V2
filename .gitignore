@@ -17,3 +17,5 @@ anima_forward_spike.py
 anima_pipeline_test.py
 anima_spike.py
 memory-bank/
+tools/codex-rename-vscode/node_modules/
+tools/codex-rename-vscode/out/

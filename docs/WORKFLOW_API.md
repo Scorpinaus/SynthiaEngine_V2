@@ -504,6 +504,9 @@ References are resolved at runtime:
 - Artifact reference (uploaded via `/api/artifacts`):
   - String form: `@artifact:<artifact_id>`
   - Object form: `{ "artifact_id": "<artifact_id>" }`
+- Embed artifact reference (created by `sdxl.ip_adapter.encode`):
+  - Object form: `{ "artifact_id": "e..." }`
+  - These are ephemeral `.pt` files under `outputs/artifacts/` and are deleted with workflow artifacts after the job finishes.
 - Output file reference:
   - String form: `"/outputs/<relative-path>.png"`
 
@@ -514,7 +517,7 @@ Resolution behavior:
 ## Supported task types (current)
 
 - SD1.5: `sd15.text2img`, `sd15.animatediff.text2video`, `sd15.img2img`, `sd15.inpaint`, `sd15.controlnet.text2img`, `sd15.hires_fix`
-- SDXL: `sdxl.text2img`, `sdxl.controlnet.text2img`, `sdxl.img2img`, `sdxl.inpaint`
+- SDXL: `sdxl.ip_adapter.encode`, `sdxl.text2img`, `sdxl.controlnet.text2img`, `sdxl.img2img`, `sdxl.inpaint`
 - Flux: `flux.text2img`, `flux.img2img`, `flux.inpaint`
 - Qwen-Image: `qwen-image.text2img`, `qwen-image.img2img`, `qwen-image.inpaint`
 - Z-Image: `z-image.text2img`, `z-image.img2img`, `z-image.inpaint`
@@ -728,11 +731,65 @@ LoRA adapter targeting:
 
 `sdxl.text2img` IP-Adapter input notes:
 - `ip_adapter`: optional SDXL text-to-image image prompt object.
-- Shape: `{ "enabled": boolean, "image": ImageRef, "scale": number, "model": string, "subfolder": string, "weight_name": string }`.
+- Shape: `{ "enabled": boolean, "image": ImageRef, "image_embeds": EmbedRef, "scale": number, "model": string, "subfolder": string, "weight_name": string }`.
 - Minimal supported default adapter is `model: "h94/IP-Adapter"`, `subfolder: "sdxl_models"`, `weight_name: "ip-adapter_sdxl.bin"`.
-- `image` is required when `enabled` is `true`; accepted references match other workflow image inputs (`{"artifact_id":"..."}`, `"@artifact:..."`, or `"/outputs/..."`).
+- Exactly one of `image` or `image_embeds` is required when `enabled` is `true`.
+- `image` accepts references matching other workflow image inputs (`{"artifact_id":"..."}`, `"@artifact:..."`, or `"/outputs/..."`).
+- `image_embeds` accepts an embed artifact produced by `sdxl.ip_adapter.encode`. When `image_embeds` is provided, render loads the IP-Adapter with `image_encoder_folder: null` and uses the precomputed embeds instead of the reference image.
 - `scale` defaults to `0.6` and must be within `[0, 1]`; Diffusers uses this to control image-prompt influence.
 - Initial support is one SDXL base IP-Adapter for `sdxl.text2img`, `sdxl.img2img`, and `sdxl.inpaint`. FaceID, Plus variants, multiple adapters, and ControlNet combinations are outside the initial contract.
+
+`sdxl.ip_adapter.encode` input notes:
+- Creates a temporary SDXL IP-Adapter image-embeds artifact for later use by `sdxl.text2img`.
+- The encoder loads only the IP-Adapter weights and CLIP vision image encoder; it does not load the SDXL UNet, VAE, text encoders, tokenizers, or scheduler.
+- Minimal encoder v1 supports only the default base SDXL adapter: `ip_adapter_model: "h94/IP-Adapter"`, `ip_adapter_subfolder: "sdxl_models"`, `ip_adapter_weight_name: "ip-adapter_sdxl.bin"`.
+- Plus variants, FaceID variants, multiple IP-Adapters, and custom projection formats that require hidden states are rejected by the minimal encoder.
+- CUDA is required for the minimal encode step.
+- Inputs:
+  - `image`: reference image (`ImageRef`).
+  - `model`: SDXL base model registry name saved in embed metadata for render-side compatibility checks.
+  - `guidance_scale`: render guidance scale; this determines whether classifier-free guidance embeds are created and must match the render step's guidance mode.
+  - `ip_adapter_model`, `ip_adapter_subfolder`, `ip_adapter_weight_name`, `ip_adapter_scale`: adapter settings. Defaults mirror `sdxl.text2img`.
+- Output:
+  - `{ "image_embeds": { "artifact_id": "e...", "path": "artifacts/e....pt", "url": "/outputs/artifacts/e....pt" } }`
+- Embed artifacts are ephemeral and cleaned up after the workflow finishes.
+
+Example two-step SDXL IP-Adapter workflow:
+
+```json
+{
+  "tasks": [
+    {
+      "id": "ip_embeds",
+      "type": "sdxl.ip_adapter.encode",
+      "inputs": {
+        "image": { "artifact_id": "a0123456789abcdef0123456789abcdef" },
+        "model": "stable-diffusion-xl-base-1.0",
+        "guidance_scale": 7.5
+      }
+    },
+    {
+      "id": "image_render",
+      "type": "sdxl.text2img",
+      "inputs": {
+        "prompt": "portrait photo, cinematic light",
+        "negative_prompt": "",
+        "model": "stable-diffusion-xl-base-1.0",
+        "guidance_scale": 7.5,
+        "ip_adapter": {
+          "enabled": true,
+          "image_embeds": "@ip_embeds.image_embeds",
+          "scale": 0.6,
+          "model": "h94/IP-Adapter",
+          "subfolder": "sdxl_models",
+          "weight_name": "ip-adapter_sdxl.bin"
+        }
+      }
+    }
+  ],
+  "return": "@image_render.images"
+}
+```
 
 `sdxl.controlnet.text2img` extra input notes:
 - `controlnet_conditioning_scale`: float in `[0, 2]` (default `1.0`)

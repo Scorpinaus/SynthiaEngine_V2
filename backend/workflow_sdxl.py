@@ -13,6 +13,8 @@ _DEFAULT_IP_ADAPTER_SCALE = 0.6
 def _normalized_ip_adapter_settings(
     inputs: dict[str, Any],
     open_image_ref,
+    *,
+    allow_image_embeds: bool = False,
 ) -> dict[str, Any] | None:
     ip_adapter = inputs.get("ip_adapter")
     if ip_adapter is None:
@@ -23,16 +25,24 @@ def _normalized_ip_adapter_settings(
         return None
 
     image_ref = ip_adapter.get("image")
-    if image_ref is None:
+    image_embeds_ref = ip_adapter.get("image_embeds")
+    if image_embeds_ref is not None and not allow_image_embeds:
+        raise ValueError("ip_adapter.image_embeds is only supported for sdxl.text2img.")
+    if image_ref is None and image_embeds_ref is None:
+        if allow_image_embeds:
+            raise ValueError(
+                "ip_adapter.image or ip_adapter.image_embeds is required when IP-Adapter is enabled."
+            )
         raise ValueError("ip_adapter.image is required when IP-Adapter is enabled.")
+    if image_ref is not None and image_embeds_ref is not None:
+        raise ValueError("Provide either ip_adapter.image or ip_adapter.image_embeds, not both.")
 
     scale_raw = ip_adapter.get("scale", _DEFAULT_IP_ADAPTER_SCALE)
     scale = _DEFAULT_IP_ADAPTER_SCALE if scale_raw is None else float(scale_raw)
     if scale < 0.0 or scale > 1.0:
         raise ValueError("ip_adapter.scale must be within [0, 1].")
 
-    return {
-        "ip_adapter_image": open_image_ref(image_ref).convert("RGB"),
+    settings: dict[str, Any] = {
         "ip_adapter_scale": scale,
         "ip_adapter_model": str(ip_adapter.get("model") or _DEFAULT_IP_ADAPTER_MODEL),
         "ip_adapter_subfolder": str(
@@ -42,12 +52,45 @@ def _normalized_ip_adapter_settings(
             ip_adapter.get("weight_name") or _DEFAULT_IP_ADAPTER_WEIGHT_NAME
         ),
     }
+    if image_ref is not None:
+        settings["ip_adapter_image"] = open_image_ref(image_ref).convert("RGB")
+    else:
+        settings["ip_adapter_image_embeds_ref"] = image_embeds_ref
+    return settings
+
+
+def run_sdxl_ip_adapter_encode_task(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str, Any]:
+    _open_image_ref = deps["open_image_ref"]
+    generate_ip_adapter_image_embeds = deps["generate_ip_adapter_image_embeds"]
+    image = _open_image_ref(inputs["image"]).convert("RGB")
+    result = generate_ip_adapter_image_embeds(
+        {
+            "image": image,
+            "model": inputs.get("model"),
+            "guidance_scale": float(inputs.get("guidance_scale") or 7.5),
+            "ip_adapter_model": str(inputs.get("ip_adapter_model") or _DEFAULT_IP_ADAPTER_MODEL),
+            "ip_adapter_subfolder": str(
+                inputs.get("ip_adapter_subfolder") or _DEFAULT_IP_ADAPTER_SUBFOLDER
+            ),
+            "ip_adapter_weight_name": str(
+                inputs.get("ip_adapter_weight_name") or _DEFAULT_IP_ADAPTER_WEIGHT_NAME
+            ),
+            "ip_adapter_scale": float(inputs.get("ip_adapter_scale") or _DEFAULT_IP_ADAPTER_SCALE),
+        }
+    )
+    if not isinstance(result, dict):
+        raise ValueError("sdxl.ip_adapter.encode must return an object")
+    return result
 
 
 def run_sdxl_text2img_task(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str, Any]:
     _open_image_ref = deps["open_image_ref"]
     generate_text2img = deps["generate_text2img"]
-    ip_adapter_settings = _normalized_ip_adapter_settings(inputs, _open_image_ref)
+    ip_adapter_settings = _normalized_ip_adapter_settings(
+        inputs,
+        _open_image_ref,
+        allow_image_embeds=True,
+    )
 
     pipeline_params: dict[str, Any] = {
         "prompt": str(inputs.get("prompt") or ""),

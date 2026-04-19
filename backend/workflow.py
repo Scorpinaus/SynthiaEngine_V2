@@ -36,6 +36,7 @@ from backend.workflow_schema_input import (
     SdxlControlNetText2ImgInputs,
     SdxlImg2ImgInputs,
     SdxlInpaintInputs,
+    SdxlIpAdapterEncodeInputs,
     SdxlText2ImgInputs,
     ZImageImg2ImgInputs,
     ZImageInpaintInputs,
@@ -54,6 +55,7 @@ from backend.workflow_schema_output import (
     SdxlControlNetText2ImgOutput,
     SdxlImg2ImgOutput,
     SdxlInpaintOutput,
+    SdxlIpAdapterEncodeOutput,
     VideosWithBatchOutput,
 )
 from backend.workflow_types import (
@@ -91,6 +93,7 @@ from backend.workflow_sdxl import (
     run_sdxl_controlnet_text2img_task as _run_sdxl_controlnet_text2img,
     run_sdxl_img2img_task as _run_sdxl_img2img,
     run_sdxl_inpaint_task as _run_sdxl_inpaint,
+    run_sdxl_ip_adapter_encode_task as _run_sdxl_ip_adapter_encode,
     run_sdxl_text2img_task as _run_sdxl_text2img,
 )
 from backend.workflow_flux import (
@@ -139,6 +142,7 @@ TASK_INPUT_MODELS: dict[str, type[BaseModel]] = {
     # ControlNet utility tasks
     "controlnet.preprocess": ControlNetPreprocessInputs,
     # SDXL tasks
+    "sdxl.ip_adapter.encode": SdxlIpAdapterEncodeInputs,
     "sdxl.text2img": SdxlText2ImgInputs,
     "sdxl.controlnet.text2img": SdxlControlNetText2ImgInputs,
     "sdxl.img2img": SdxlImg2ImgInputs,
@@ -169,6 +173,7 @@ TASK_OUTPUT_MODELS: dict[str, type[BaseModel]] = {
     # ControlNet utility tasks
     "controlnet.preprocess": ControlNetPreprocessOutput,
     # SDXL tasks
+    "sdxl.ip_adapter.encode": SdxlIpAdapterEncodeOutput,
     "sdxl.text2img": ImagesOutput,
     "sdxl.controlnet.text2img": SdxlControlNetText2ImgOutput,
     "sdxl.img2img": SdxlImg2ImgOutput,
@@ -285,6 +290,9 @@ def _sdxl_runtime_deps() -> dict[str, Any]:
         "controlnet_preprocessor_registry_by_id": _CONTROLNET_PREPROCESSOR_REGISTRY_BY_ID,
         "logger": logger,
         "generate_text2img": sdxl_pipeline_module.generate_text2img,
+        "generate_ip_adapter_image_embeds": importlib.import_module(
+            "backend.sdxl_ip_adapter_pipeline"
+        ).generate_ip_adapter_image_embeds,
         "generate_controlnet_text2img": sdxl_pipeline_module.generate_controlnet_text2img,
         "generate_img2img": sdxl_pipeline_module.generate_img2img,
         "generate_img2img_controlnet": sdxl_pipeline_module.generate_img2img_controlnet,
@@ -294,6 +302,10 @@ def _sdxl_runtime_deps() -> dict[str, Any]:
 
 def _sdxl_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
     return _run_sdxl_text2img(inputs, _sdxl_runtime_deps())
+
+
+def _sdxl_ip_adapter_encode(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
+    return _run_sdxl_ip_adapter_encode(inputs, _sdxl_runtime_deps())
 
 
 
@@ -399,6 +411,7 @@ TASK_REGISTRY: dict[str, Callable[[dict[str, Any], WorkflowContext], dict[str, A
     # ControlNet utility tasks
     "controlnet.preprocess": _controlnet_preprocess,
     # SDXL tasks
+    "sdxl.ip_adapter.encode": _sdxl_ip_adapter_encode,
     "sdxl.text2img": _sdxl_text2img,
     "sdxl.controlnet.text2img": _sdxl_controlnet_text2img,
     "sdxl.img2img": _sdxl_img2img,

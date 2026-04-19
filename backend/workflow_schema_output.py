@@ -71,6 +71,12 @@ class ControlNetPreprocessOutput(BaseModel):
     artifact: ArtifactInfo
 
 
+class SdxlIpAdapterEncodeOutput(BaseModel):
+    """Output of sdxl.ip_adapter.encode (produces an embed artifact)."""
+
+    image_embeds: ArtifactInfo
+
+
 class SdxlControlNetText2ImgOutput(ImagesOutput):
     """SDXL ControlNet output with optional compatibility warnings."""
 

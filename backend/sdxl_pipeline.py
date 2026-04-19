@@ -1,4 +1,5 @@
 import logging
+from contextlib import contextmanager
 from pathlib import Path
 
 import torch
@@ -14,6 +15,11 @@ from diffusers import (
 )
 
 from backend.config import OUTPUT_DIR
+from backend.ip_adapter import IpAdapterManager
+from backend.ip_adapter_embeds import (
+    load_ip_adapter_embeds_artifact,
+    validate_ip_adapter_embeds_metadata,
+)
 from backend.logging_utils import configure_logging
 from backend.lora_utils import apply_lora_adapters_with_validation, write_lora_coverage_report
 from backend.model_registry import get_model_entry
@@ -21,6 +27,7 @@ from backend.pipeline_utils import (
     build_fixed_step_timesteps,
     build_png_metadata,
     build_batch_output_relpath,
+    cleanup_memory,
     get_batch_output_dir,
     make_batch_id,
     resolve_model_source,
@@ -44,6 +51,50 @@ def _get_pipe_device(
     return getattr(pipe, "_execution_device", None) or pipe.device
 
 
+def _get_module_device(module, fallback: torch.device | str) -> torch.device | str:
+    module_device = getattr(module, "device", None)
+    if module_device is not None:
+        return module_device
+    try:
+        return next(module.parameters()).device
+    except (AttributeError, StopIteration):
+        return fallback
+
+
+def _enable_vae_memory_savers(pipe: object) -> None:
+    enable_slicing = getattr(pipe, "enable_vae_slicing", None)
+    if callable(enable_slicing):
+        enable_slicing()
+    else:
+        vae = getattr(pipe, "vae", None)
+        vae_enable_slicing = getattr(vae, "enable_slicing", None)
+        if callable(vae_enable_slicing):
+            vae_enable_slicing()
+
+    enable_tiling = getattr(pipe, "enable_vae_tiling", None)
+    if callable(enable_tiling):
+        enable_tiling()
+    else:
+        vae = getattr(pipe, "vae", None)
+        vae_enable_tiling = getattr(vae, "enable_tiling", None)
+        if callable(vae_enable_tiling):
+            vae_enable_tiling()
+
+
+@contextmanager
+def _hide_image_encoder_while_using_ip_adapter_embeds(pipe, *, enabled: bool):
+    if not enabled or pipe is None or not hasattr(pipe, "image_encoder"):
+        yield
+        return
+
+    image_encoder = pipe.image_encoder
+    pipe.image_encoder = None
+    try:
+        yield
+    finally:
+        pipe.image_encoder = image_encoder
+
+
 def _decode_latents_to_pil(
     pipe: StableDiffusionXLPipeline | StableDiffusionXLImg2ImgPipeline | StableDiffusionXLInpaintPipeline,
     latents: torch.Tensor,
@@ -51,7 +102,7 @@ def _decode_latents_to_pil(
     if latents.ndim == 3:
         latents = latents.unsqueeze(0)
 
-    latents = latents.to(device=_get_pipe_device(pipe), dtype=pipe.vae.dtype)
+    latents = latents.to(device=_get_module_device(pipe.vae, _get_pipe_device(pipe)), dtype=pipe.vae.dtype)
     latents = latents / pipe.vae.config.scaling_factor
 
     image = pipe.vae.decode(latents, return_dict=False)[0]
@@ -75,25 +126,31 @@ def render_text2img_latents(
     height: int,
     seed: int,
     clip_skip: int,
-    ip_adapter_image: Image.Image | None = None,
+    ip_adapter_image_embeds: list[torch.Tensor] | None = None,
 ) -> torch.Tensor:
-    device = _get_pipe_device(pipe)
-    generator = torch.Generator(device=device).manual_seed(seed)
     ip_adapter_kwargs = (
-        {"ip_adapter_image": ip_adapter_image} if ip_adapter_image is not None else {}
+        {"ip_adapter_image_embeds": ip_adapter_image_embeds}
+        if ip_adapter_image_embeds is not None
+        else {}
     )
-    return pipe(
-        prompt=prompt,
-        negative_prompt=negative_prompt,
-        num_inference_steps=steps,
-        guidance_scale=guidance_scale,
-        width=width,
-        height=height,
-        generator=generator,
-        clip_skip=clip_skip,
-        output_type="latent",
-        **ip_adapter_kwargs,
-    ).images[0]
+    with _hide_image_encoder_while_using_ip_adapter_embeds(
+        pipe,
+        enabled=ip_adapter_image_embeds is not None,
+    ):
+        device = _get_pipe_device(pipe)
+        generator = torch.Generator(device=device).manual_seed(seed)
+        return pipe(
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            num_inference_steps=steps,
+            guidance_scale=guidance_scale,
+            width=width,
+            height=height,
+            generator=generator,
+            clip_skip=clip_skip,
+            output_type="latent",
+            **ip_adapter_kwargs,
+        ).images[0]
 
 
 def render_img2img_latents(
@@ -193,46 +250,37 @@ def _resize_control_image_to_target(
     return _resize_single(control_image)
 
 
-def _load_ip_adapter(
-    pipe,
-    *,
-    model: str,
-    subfolder: str,
-    weight_name: str,
-    scale: float,
-) -> None:
-    if not hasattr(pipe, "load_ip_adapter"):
-        raise RuntimeError(
-            "The installed Diffusers pipeline does not support IP-Adapter loading. "
-            "Install a Diffusers version with load_ip_adapter support."
-        )
-    logger.info(
-        "Loading SDXL IP-Adapter: model=%s subfolder=%s weight_name=%s scale=%s",
-        model,
-        subfolder,
-        weight_name,
-        scale,
-    )
-    pipe.load_ip_adapter(model, subfolder=subfolder, weight_name=weight_name)
-    if hasattr(pipe, "set_ip_adapter_scale"):
-        pipe.set_ip_adapter_scale(scale)
-    pipe.to("cuda")
-
-
-def _cleanup_ip_adapter(pipe, enabled: bool) -> None:
-    if not enabled or not hasattr(pipe, "unload_ip_adapter"):
+def _cleanup_lora_adapters(pipe, adapter_names: list[str]) -> None:
+    if not adapter_names or not hasattr(pipe, "unload_lora_weights"):
         return
     try:
-        pipe.unload_ip_adapter()
+        pipe.unload_lora_weights()
     except Exception:
-        logger.exception("Failed to unload IP-Adapter weights cleanly.")
+        logger.exception("Failed to unload LoRA weights cleanly.")
+
+
+def _release_pipeline(pipe) -> None:
+    if pipe is None:
+        return
+
+    if hasattr(pipe, "maybe_free_model_hooks"):
+        try:
+            pipe.maybe_free_model_hooks()
+        except Exception:
+            logger.exception("Failed to free SDXL pipeline model hooks.")
+
+    if hasattr(pipe, "remove_all_hooks"):
+        try:
+            pipe.remove_all_hooks()
+        except Exception:
+            logger.exception("Failed to remove SDXL pipeline hooks.")
 
 
 def _metadata_without_runtime_images(params: dict[str, object]) -> dict[str, object]:
     return {
         key: value
         for key, value in params.items()
-        if key not in {"ip_adapter_image"}
+        if key not in {"ip_adapter_image", "ip_adapter_image_embeds_ref"}
     }
 
 
@@ -260,6 +308,7 @@ def load_text2img_pipeline(model_name: str | None) -> StableDiffusionXLPipeline:
     else:
         raise ValueError(f"Unsupported model type: {entry.model_type}")
 
+    _enable_vae_memory_savers(pipe)
     pipe.to("cuda")
     return pipe
 
@@ -480,55 +529,61 @@ def generate_controlnet_text2img(params: dict[str, object],) -> dict[str, list[s
     batch_id = make_batch_id()
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
-    #4. Load and create pipeline and scheduler
-    pipe = load_controlnet_text2img_pipeline(model, controlnet_model)
-    pipe.scheduler = create_scheduler(scheduler, pipe)
-
-    #5. Load lora into pipeline
-    # TBC
-    
     #6. Create list of filenames
     filenames: list[str] = []
-    
-    for i in range(num_images):
-        # Set current seed 
-        current_seed = base_seed + i
-        generator = torch.Generator(device=_get_pipe_device(pipe)).manual_seed(current_seed)
+
+    pipe = None
+    try:
+        #4. Load and create pipeline and scheduler
+        pipe = load_controlnet_text2img_pipeline(model, controlnet_model)
+        pipe.scheduler = create_scheduler(scheduler, pipe)
+
+        #5. Load lora into pipeline
+        # TBC
         
-        # Generate image
-        image = pipe(
-            prompt=prompt,
-            negative_prompt=negative_prompt,
-            num_inference_steps=steps,
-            guidance_scale=guidance_scale,
-            width=width,
-            height=height,
-            generator=generator,
-            clip_skip=clip_skip,
-            image=control_image,
-            controlnet_conditioning_scale=controlnet_conditioning_scale,
-            guess_mode=controlnet_guess_mode,
-            control_guidance_start=control_guidance_start,
-            control_guidance_end=control_guidance_end,
-        ).images[0]
-        
-        # Create meta-data dict
-        image_params = dict(params)
-        image_params.pop("control_image", None)
-        image_params["mode"] = "txt2img_controlnet"
-        image_params["seed"] = current_seed
-        image_params["batch_id"] = batch_id
-        
-        # Save image with metadata
-        relpath = save_image(
-            image=image,
-            batch_output_dir=batch_output_dir,
-            batch_id=batch_id,
-            seed=current_seed,
-            metadata=image_params,
-        )
-        logger.info("Image %s saved to %s", i, Path(relpath).name)
-        filenames.append(relpath)
+        for i in range(num_images):
+            # Set current seed
+            current_seed = base_seed + i
+            generator = torch.Generator(device=_get_pipe_device(pipe)).manual_seed(current_seed)
+
+            # Generate image
+            image = pipe(
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                num_inference_steps=steps,
+                guidance_scale=guidance_scale,
+                width=width,
+                height=height,
+                generator=generator,
+                clip_skip=clip_skip,
+                image=control_image,
+                controlnet_conditioning_scale=controlnet_conditioning_scale,
+                guess_mode=controlnet_guess_mode,
+                control_guidance_start=control_guidance_start,
+                control_guidance_end=control_guidance_end,
+            ).images[0]
+
+            # Create meta-data dict
+            image_params = dict(params)
+            image_params.pop("control_image", None)
+            image_params["mode"] = "txt2img_controlnet"
+            image_params["seed"] = current_seed
+            image_params["batch_id"] = batch_id
+
+            # Save image with metadata
+            relpath = save_image(
+                image=image,
+                batch_output_dir=batch_output_dir,
+                batch_id=batch_id,
+                seed=current_seed,
+                metadata=image_params,
+            )
+            logger.info("Image %s saved to %s", i, Path(relpath).name)
+            filenames.append(relpath)
+    finally:
+        _release_pipeline(pipe)
+        pipe = None
+        cleanup_memory()
 
     #9. Return list of image names
     return {"images": [f"/outputs/{name}" for name in filenames]}
@@ -579,25 +634,27 @@ def generate_img2img_controlnet(params: dict[str, object],) -> dict[str, list[st
     batch_id = make_batch_id()
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
-    #4. Load and create pipeline and scheduler
-    pipe = load_controlnet_img2img_pipeline(model, controlnet_model)
-    pipe.scheduler = create_scheduler(scheduler, pipe)
-
-    #5. Load lora into pipeline
-    adapter_names, lora_coverage = apply_lora_adapters_with_validation(
-        pipe,
-        lora_adapters,
-        expected_family="sdxl",
-        validate=True,
-    )
-    report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
-    if report_path is not None:
-        logger.info("LoRA coverage report saved to %s", report_path)
-
     #6. Create list of filenames
     filenames: list[str] = []
 
+    pipe = None
+    adapter_names: list[str] = []
     try:
+        #4. Load and create pipeline and scheduler
+        pipe = load_controlnet_img2img_pipeline(model, controlnet_model)
+        pipe.scheduler = create_scheduler(scheduler, pipe)
+
+        #5. Load lora into pipeline
+        adapter_names, lora_coverage = apply_lora_adapters_with_validation(
+            pipe,
+            lora_adapters,
+            expected_family="sdxl",
+            validate=True,
+        )
+        report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
+        if report_path is not None:
+            logger.info("LoRA coverage report saved to %s", report_path)
+
         #7. Render image one by one
         for i in range(num_images):
             # Set current seed
@@ -642,9 +699,10 @@ def generate_img2img_controlnet(params: dict[str, object],) -> dict[str, list[st
             logger.info("Image %s saved to %s", i, Path(relpath).name)
             filenames.append(relpath)
     finally:
-        # 8. Unload lora weights
-        if adapter_names and hasattr(pipe, "unload_lora_weights"):
-            pipe.unload_lora_weights()
+        _cleanup_lora_adapters(pipe, adapter_names)
+        _release_pipeline(pipe)
+        pipe = None
+        cleanup_memory()
 
     # 9. Return output back to workflow calling method
     return {"images": [f"/outputs/{name}" for name in filenames]}
@@ -665,9 +723,13 @@ def generate_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
     num_images = int(payload["num_images"])
     clip_skip = int(payload["clip_skip"])
     scheduler = payload["scheduler"]
+    
     lora_adapters = payload.get("lora_adapters")
     ip_adapter_image = payload.get("ip_adapter_image")
-    ip_adapter_enabled = isinstance(ip_adapter_image, Image.Image)
+    ip_adapter_image_embeds_ref = payload.get("ip_adapter_image_embeds_ref")
+    ip_adapter_enabled = isinstance(ip_adapter_image, Image.Image) or ip_adapter_image_embeds_ref is not None
+    if isinstance(ip_adapter_image, Image.Image) and ip_adapter_image_embeds_ref is not None:
+        raise ValueError("Provide either ip_adapter_image or ip_adapter_image_embeds_ref, not both.")
     ip_adapter_model = str(payload.get("ip_adapter_model") or _DEFAULT_IP_ADAPTER_MODEL)
     ip_adapter_subfolder = str(
         payload.get("ip_adapter_subfolder") or _DEFAULT_IP_ADAPTER_SUBFOLDER
@@ -693,31 +755,65 @@ def generate_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
     batch_id = make_batch_id()
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
-    #4. Load and create pipeline and scheduler
-    pipe = load_text2img_pipeline(model)
-    pipe.scheduler = create_scheduler(scheduler, pipe)
-    if ip_adapter_enabled:
-        _load_ip_adapter(
-            pipe,
-            model=ip_adapter_model,
-            subfolder=ip_adapter_subfolder,
-            weight_name=ip_adapter_weight_name,
-            scale=ip_adapter_scale,
-        )
-    
-    #5. Load lora into pipeline
-    adapter_names, lora_coverage = apply_lora_adapters_with_validation(
-        pipe, lora_adapters, expected_family="sdxl", validate=True,
-    )
-    report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
-    if report_path is not None:
-        logger.info("LoRA coverage report saved to %s", report_path)
-    
     #6. Create list of filenames
     filenames: list[str] = []
-    
+
+    pipe = None
+    adapter_names: list[str] = []
     #7. Render image one by one
     try:
+        #4. Load and create pipeline and scheduler
+        pipe = load_text2img_pipeline(model)
+        pipe.scheduler = create_scheduler(scheduler, pipe)
+        if ip_adapter_enabled:
+            if ip_adapter_image_embeds_ref is not None:
+                embeds_payload = load_ip_adapter_embeds_artifact(ip_adapter_image_embeds_ref)
+                validate_ip_adapter_embeds_metadata(
+                    embeds_payload,
+                    expected_model=ip_adapter_model,
+                    expected_subfolder=ip_adapter_subfolder,
+                    expected_weight_name=ip_adapter_weight_name,
+                    do_classifier_free_guidance=guidance_scale > 1.0,
+                )
+                ip_adapter_image_embeds = embeds_payload["embeds"]
+            else:
+                ip_adapter_image_embeds = None
+            if ip_adapter_image_embeds_ref is not None:
+                IpAdapterManager.load(
+                    pipe,
+                    model=ip_adapter_model,
+                    subfolder=ip_adapter_subfolder,
+                    weight_name=ip_adapter_weight_name,
+                    scale=ip_adapter_scale,
+                    family="SDXL",
+                    image_encoder_folder=None,
+                )
+            else:
+                IpAdapterManager.load(
+                    pipe,
+                    model=ip_adapter_model,
+                    subfolder=ip_adapter_subfolder,
+                    weight_name=ip_adapter_weight_name,
+                    scale=ip_adapter_scale,
+                    family="SDXL",
+                )
+            if ip_adapter_image_embeds_ref is None:
+                ip_adapter_image_embeds = IpAdapterManager.prepare_image_embeds(
+                    pipe,
+                    ip_adapter_image,
+                    do_classifier_free_guidance=guidance_scale > 1.0,
+                )
+        else:
+            ip_adapter_image_embeds = None
+
+        #5. Load lora into pipeline
+        adapter_names, lora_coverage = apply_lora_adapters_with_validation(
+            pipe, lora_adapters, expected_family="sdxl", validate=True,
+        )
+        report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
+        if report_path is not None:
+            logger.info("LoRA coverage report saved to %s", report_path)
+
         # Render latent images. Create latent and seed batch list
         latents_batch: list[torch.Tensor] = []
         seed_batch: list[int] = []
@@ -734,7 +830,7 @@ def generate_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
                 height=height,
                 seed=current_seed,
                 clip_skip=clip_skip,
-                ip_adapter_image=ip_adapter_image if ip_adapter_enabled else None,
+                ip_adapter_image_embeds=ip_adapter_image_embeds,
             )
             latents_batch.append(latents.detach().cpu())
             seed_batch.append(current_seed)
@@ -767,10 +863,11 @@ def generate_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
         # Return images list with metadata
         return {"images": [f"/outputs/{name}" for name in filenames]}
     finally:
-        _cleanup_ip_adapter(pipe, ip_adapter_enabled)
-        # 8. Unload lora weights
-        if adapter_names and hasattr(pipe, "unload_lora_weights"):
-            pipe.unload_lora_weights()
+        IpAdapterManager.cleanup(pipe, ip_adapter_enabled)
+        _cleanup_lora_adapters(pipe, adapter_names)
+        _release_pipeline(pipe)
+        pipe = None
+        cleanup_memory()
 
 
 @torch.inference_mode()
@@ -819,29 +916,32 @@ def generate_img2img(params: dict[str, object],) -> dict[str, list[str]]:
     batch_id = make_batch_id()
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
-    #4. Load and create pipeline and scheduler
-    pipe = load_img2img_pipeline(model)
-    pipe.scheduler = create_scheduler(scheduler, pipe)
-    if ip_adapter_enabled:
-        _load_ip_adapter(
-            pipe,
-            model=ip_adapter_model,
-            subfolder=ip_adapter_subfolder,
-            weight_name=ip_adapter_weight_name,
-            scale=ip_adapter_scale,
-        )
-    
-    #5. Load lora into pipeline
-    adapter_names, lora_coverage = apply_lora_adapters_with_validation(
-        pipe,lora_adapters,expected_family="sdxl",validate=True,
-    )
-    report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
-    if report_path is not None:
-        logger.info("LoRA coverage report saved to %s", report_path)
-
     #6. Create list of filenames
     filenames: list[str] = []
+    pipe = None
+    adapter_names: list[str] = []
     try:
+        #4. Load and create pipeline and scheduler
+        pipe = load_img2img_pipeline(model)
+        pipe.scheduler = create_scheduler(scheduler, pipe)
+        if ip_adapter_enabled:
+            IpAdapterManager.load(
+                pipe,
+                model=ip_adapter_model,
+                subfolder=ip_adapter_subfolder,
+                weight_name=ip_adapter_weight_name,
+                scale=ip_adapter_scale,
+                family="SDXL",
+            )
+
+        #5. Load lora into pipeline
+        adapter_names, lora_coverage = apply_lora_adapters_with_validation(
+            pipe,lora_adapters,expected_family="sdxl",validate=True,
+        )
+        report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
+        if report_path is not None:
+            logger.info("LoRA coverage report saved to %s", report_path)
+
         #7. Render image one by one
         for i in range(num_images):
             current_seed = base_seed + i
@@ -887,10 +987,11 @@ def generate_img2img(params: dict[str, object],) -> dict[str, list[str]]:
 
             filenames.append(relpath)
     finally:
-        _cleanup_ip_adapter(pipe, ip_adapter_enabled)
-        # 8. Unload lora weights
-        if adapter_names and hasattr(pipe, "unload_lora_weights"):
-            pipe.unload_lora_weights()
+        IpAdapterManager.cleanup(pipe, ip_adapter_enabled)
+        _cleanup_lora_adapters(pipe, adapter_names)
+        _release_pipeline(pipe)
+        pipe = None
+        cleanup_memory()
     #9. Return output back to workflow calling method
     return {"images": [f"/outputs/{name}" for name in filenames]}
 
@@ -941,32 +1042,35 @@ def generate_inpaint(params: dict[str, object],) -> dict[str, list[str]]:
     batch_id = make_batch_id()
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
-    #4. Load and create pipeline and scheduler
-    pipe = load_inpaint_pipeline(model)
-    pipe.scheduler = create_scheduler(scheduler, pipe)
-    if ip_adapter_enabled:
-        _load_ip_adapter(
-            pipe,
-            model=ip_adapter_model,
-            subfolder=ip_adapter_subfolder,
-            weight_name=ip_adapter_weight_name,
-            scale=ip_adapter_scale,
-        )
-    
-    #5. Load lora into pipeline
-    adapter_names, lora_coverage = apply_lora_adapters_with_validation(
-        pipe,
-        lora_adapters,
-        expected_family="sdxl",
-        validate=True,
-    )
-    report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
-    if report_path is not None:
-        logger.info("LoRA coverage report saved to %s", report_path)
-
     #6. Create list of filenames
     filenames: list[str] = []
+    pipe = None
+    adapter_names: list[str] = []
     try:
+        #4. Load and create pipeline and scheduler
+        pipe = load_inpaint_pipeline(model)
+        pipe.scheduler = create_scheduler(scheduler, pipe)
+        if ip_adapter_enabled:
+            IpAdapterManager.load(
+                pipe,
+                model=ip_adapter_model,
+                subfolder=ip_adapter_subfolder,
+                weight_name=ip_adapter_weight_name,
+                scale=ip_adapter_scale,
+                family="SDXL",
+            )
+
+        #5. Load lora into pipeline
+        adapter_names, lora_coverage = apply_lora_adapters_with_validation(
+            pipe,
+            lora_adapters,
+            expected_family="sdxl",
+            validate=True,
+        )
+        report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
+        if report_path is not None:
+            logger.info("LoRA coverage report saved to %s", report_path)
+
         #7. Render image one by one
         for i in range(num_images):
             # Set current seed
@@ -1011,10 +1115,11 @@ def generate_inpaint(params: dict[str, object],) -> dict[str, list[str]]:
 
             filenames.append(relpath)
     finally:
-        _cleanup_ip_adapter(pipe, ip_adapter_enabled)
-        # 8. Unload lora weights
-        if adapter_names and hasattr(pipe, "unload_lora_weights"):
-            pipe.unload_lora_weights()
+        IpAdapterManager.cleanup(pipe, ip_adapter_enabled)
+        _cleanup_lora_adapters(pipe, adapter_names)
+        _release_pipeline(pipe)
+        pipe = None
+        cleanup_memory()
 
     # 9. Return output back to workflow calling method
     return {"images": [f"/outputs/{name}" for name in filenames]}
@@ -1064,24 +1169,26 @@ def generate_inpaint_controlnet(params: dict[str, object],) -> dict[str, list[st
     batch_id = make_batch_id()
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
-    #4. Load and create pipeline and scheduler
-    pipe = load_controlnet_inpaint_pipeline(model, controlnet_model)
-    pipe.scheduler = create_scheduler(scheduler, pipe)
-
-    #5. Load lora into pipeline
-    adapter_names, lora_coverage = apply_lora_adapters_with_validation(
-        pipe,
-        lora_adapters,
-        expected_family="sdxl",
-        validate=True,
-    )
-    report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
-    if report_path is not None:
-        logger.info("LoRA coverage report saved to %s", report_path)
-
     #6. Create list of filenames
     filenames: list[str] = []
+    pipe = None
+    adapter_names: list[str] = []
     try:
+        #4. Load and create pipeline and scheduler
+        pipe = load_controlnet_inpaint_pipeline(model, controlnet_model)
+        pipe.scheduler = create_scheduler(scheduler, pipe)
+
+        #5. Load lora into pipeline
+        adapter_names, lora_coverage = apply_lora_adapters_with_validation(
+            pipe,
+            lora_adapters,
+            expected_family="sdxl",
+            validate=True,
+        )
+        report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
+        if report_path is not None:
+            logger.info("LoRA coverage report saved to %s", report_path)
+
         # 7. Render image one by one
         for i in range(num_images):
             # Define current seed
@@ -1129,9 +1236,10 @@ def generate_inpaint_controlnet(params: dict[str, object],) -> dict[str, list[st
             logger.info("Image %s saved to %s", i, Path(relpath).name)
             filenames.append(relpath)
     finally:
-        # 8. Unload lora weights
-        if adapter_names and hasattr(pipe, "unload_lora_weights"):
-            pipe.unload_lora_weights()
-    
+        _cleanup_lora_adapters(pipe, adapter_names)
+        _release_pipeline(pipe)
+        pipe = None
+        cleanup_memory()
+
     # 9. Return output back to workflow calling method
     return {"images": [f"/outputs/{name}" for name in filenames]}

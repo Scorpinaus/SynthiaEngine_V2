@@ -8,10 +8,12 @@ from backend.workflow import (
     SdxlControlNetText2ImgInputs,
     SdxlImg2ImgInputs,
     SdxlInpaintInputs,
+    SdxlIpAdapterEncodeInputs,
     SdxlText2ImgInputs,
     _sdxl_controlnet_text2img,
     _sdxl_img2img,
     _sdxl_inpaint,
+    _sdxl_ip_adapter_encode,
     _sdxl_text2img,
 )
 
@@ -34,6 +36,28 @@ class SdxlControlNetInputValidationTests(unittest.TestCase):
                     "scale": 1.5,
                 },
             )
+
+    def test_sdxl_text2img_accepts_ip_adapter_image_embeds_ref(self):
+        inputs = SdxlText2ImgInputs(
+            prompt="test",
+            ip_adapter={
+                "enabled": True,
+                "image_embeds": {"artifact_id": "e0123456789abcdef0123456789abcdef"},
+            },
+        )
+        self.assertEqual(
+            inputs.ip_adapter.image_embeds.artifact_id,
+            "e0123456789abcdef0123456789abcdef",
+        )
+
+    def test_sdxl_ip_adapter_encode_inputs_accept_image_ref(self):
+        inputs = SdxlIpAdapterEncodeInputs(
+            image={"artifact_id": "a0123456789abcdef0123456789abcdef"}
+        )
+        self.assertEqual(
+            inputs.image.artifact_id,
+            "a0123456789abcdef0123456789abcdef",
+        )
 
     def test_sdxl_img2img_ip_adapter_scale_out_of_range_rejected(self):
         with self.assertRaises(ValidationError):
@@ -213,9 +237,38 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertEqual(captured["ip_adapter_subfolder"], "sdxl_models")
         self.assertEqual(captured["ip_adapter_weight_name"], "ip-adapter_sdxl.bin")
 
+    def test_sdxl_text2img_forwards_ip_adapter_image_embeds_ref(self):
+        captured = {}
+        embeds_ref = {"artifact_id": "e0123456789abcdef0123456789abcdef"}
+
+        def _fake_generate_text2img(payload):
+            captured.update(payload)
+            return {"images": ["/outputs/batch/out.png"]}
+
+        with patch("backend.sdxl_pipeline.generate_text2img", side_effect=_fake_generate_text2img):
+            result = _sdxl_text2img(
+                {
+                    "prompt": "test prompt",
+                    "ip_adapter": {
+                        "enabled": True,
+                        "image_embeds": embeds_ref,
+                        "scale": 0.55,
+                        "model": "h94/IP-Adapter",
+                        "subfolder": "sdxl_models",
+                        "weight_name": "ip-adapter_sdxl.bin",
+                    },
+                },
+                _ctx=None,
+            )
+
+        self.assertEqual(result["images"], ["/outputs/batch/out.png"])
+        self.assertEqual(captured["ip_adapter_image_embeds_ref"], embeds_ref)
+        self.assertNotIn("ip_adapter_image", captured)
+        self.assertEqual(captured["ip_adapter_scale"], 0.55)
+
     def test_sdxl_text2img_requires_ip_adapter_image_when_enabled(self):
         with self.assertRaisesRegex(
-            ValueError, "ip_adapter.image is required when IP-Adapter is enabled"
+            ValueError, "ip_adapter.image or ip_adapter.image_embeds is required"
         ):
             _sdxl_text2img(
                 {
@@ -224,6 +277,62 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
                 },
                 _ctx=None,
             )
+
+    def test_sdxl_text2img_rejects_ip_adapter_image_and_embeds_together(self):
+        with self.assertRaisesRegex(
+            ValueError, "Provide either ip_adapter.image or ip_adapter.image_embeds"
+        ):
+            _sdxl_text2img(
+                {
+                    "prompt": "test prompt",
+                    "ip_adapter": {
+                        "enabled": True,
+                        "image": {"artifact_id": "a0123456789abcdef0123456789abcdef"},
+                        "image_embeds": {"artifact_id": "e0123456789abcdef0123456789abcdef"},
+                    },
+                },
+                _ctx=None,
+            )
+
+    def test_sdxl_ip_adapter_encode_task_forwards_params(self):
+        captured = {}
+        reference_image = Image.new("RGBA", (32, 32))
+
+        def _fake_generate_ip_adapter_image_embeds(payload):
+            captured.update(payload)
+            return {
+                "image_embeds": {
+                    "artifact_id": "e0123456789abcdef0123456789abcdef",
+                    "path": "artifacts/e0123456789abcdef0123456789abcdef.pt",
+                    "url": "/outputs/artifacts/e0123456789abcdef0123456789abcdef.pt",
+                }
+            }
+
+        with patch("backend.workflow._open_image_ref", return_value=reference_image):
+            with patch(
+                "backend.sdxl_ip_adapter_pipeline.generate_ip_adapter_image_embeds",
+                side_effect=_fake_generate_ip_adapter_image_embeds,
+            ):
+                result = _sdxl_ip_adapter_encode(
+                    {
+                        "image": {"artifact_id": "a0123456789abcdef0123456789abcdef"},
+                        "model": "stable-diffusion-xl-base-1.0",
+                        "guidance_scale": 7.5,
+                        "ip_adapter_model": "h94/IP-Adapter",
+                        "ip_adapter_subfolder": "sdxl_models",
+                        "ip_adapter_weight_name": "ip-adapter_sdxl.bin",
+                        "ip_adapter_scale": 0.55,
+                    },
+                    _ctx=None,
+                )
+
+        self.assertEqual(
+            result["image_embeds"]["artifact_id"],
+            "e0123456789abcdef0123456789abcdef",
+        )
+        self.assertEqual(captured["image"].mode, "RGB")
+        self.assertEqual(captured["model"], "stable-diffusion-xl-base-1.0")
+        self.assertEqual(captured["ip_adapter_scale"], 0.55)
 
     def test_sdxl_img2img_forwards_ip_adapter_settings(self):
         captured = {}

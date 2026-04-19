@@ -25,6 +25,8 @@ class _FakePipe:
         self.ip_adapter_scale = None
         self.call_kwargs = []
         self.unloaded_ip_adapter = False
+        self.prepare_ip_adapter_image_embeds_kwargs = None
+        self.prepared_ip_adapter_image_embeds = ["prepared-ip-adapter-embeds"]
 
     def to(self, device):
         self.device = device
@@ -43,13 +45,17 @@ class _FakePipe:
     def unload_ip_adapter(self):
         self.unloaded_ip_adapter = True
 
+    def prepare_ip_adapter_image_embeds(self, **kwargs):
+        self.prepare_ip_adapter_image_embeds_kwargs = kwargs
+        return self.prepared_ip_adapter_image_embeds
+
     def __call__(self, **kwargs):
         self.call_kwargs.append(kwargs)
         return type("Result", (), {"images": [Image.new("RGB", (8, 8))]})()
 
 
 class Sd15IpAdapterPipelineTests(unittest.TestCase):
-    def test_generate_images_loads_and_passes_ip_adapter_image(self):
+    def test_generate_images_prepares_and_passes_ip_adapter_image_embeds(self):
         fake_pipe = _FakePipe()
         reference_image = Image.new("RGB", (16, 16))
 
@@ -97,10 +103,24 @@ class Sd15IpAdapterPipelineTests(unittest.TestCase):
             },
         )
         self.assertEqual(fake_pipe.ip_adapter_scale, 0.45)
-        self.assertIs(fake_pipe.call_kwargs[0]["ip_adapter_image"], reference_image)
+        self.assertEqual(
+            fake_pipe.prepare_ip_adapter_image_embeds_kwargs,
+            {
+                "ip_adapter_image": reference_image,
+                "ip_adapter_image_embeds": None,
+                "device": "cuda",
+                "num_images_per_prompt": 1,
+                "do_classifier_free_guidance": True,
+            },
+        )
+        self.assertIs(
+            fake_pipe.call_kwargs[0]["ip_adapter_image_embeds"],
+            fake_pipe.prepared_ip_adapter_image_embeds,
+        )
+        self.assertNotIn("ip_adapter_image", fake_pipe.call_kwargs[0])
         self.assertTrue(fake_pipe.unloaded_ip_adapter)
 
-    def test_generate_images_img2img_loads_and_passes_ip_adapter_image(self):
+    def test_generate_images_img2img_prepares_and_passes_ip_adapter_image_embeds(self):
         fake_pipe = _FakePipe()
         reference_image = Image.new("RGB", (16, 16))
 
@@ -145,10 +165,24 @@ class Sd15IpAdapterPipelineTests(unittest.TestCase):
             },
         )
         self.assertEqual(fake_pipe.ip_adapter_scale, 0.45)
-        self.assertIs(fake_pipe.call_kwargs[0]["ip_adapter_image"], reference_image)
+        self.assertEqual(
+            fake_pipe.prepare_ip_adapter_image_embeds_kwargs,
+            {
+                "ip_adapter_image": reference_image,
+                "ip_adapter_image_embeds": None,
+                "device": "cuda",
+                "num_images_per_prompt": 1,
+                "do_classifier_free_guidance": True,
+            },
+        )
+        self.assertIs(
+            fake_pipe.call_kwargs[0]["ip_adapter_image_embeds"],
+            fake_pipe.prepared_ip_adapter_image_embeds,
+        )
+        self.assertNotIn("ip_adapter_image", fake_pipe.call_kwargs[0])
         self.assertTrue(fake_pipe.unloaded_ip_adapter)
 
-    def test_generate_images_inpaint_loads_and_passes_ip_adapter_image(self):
+    def test_generate_images_inpaint_prepares_and_passes_ip_adapter_image_embeds(self):
         fake_pipe = _FakePipe()
         reference_image = Image.new("RGB", (16, 16))
 
@@ -195,7 +229,21 @@ class Sd15IpAdapterPipelineTests(unittest.TestCase):
             },
         )
         self.assertEqual(fake_pipe.ip_adapter_scale, 0.45)
-        self.assertIs(fake_pipe.call_kwargs[0]["ip_adapter_image"], reference_image)
+        self.assertEqual(
+            fake_pipe.prepare_ip_adapter_image_embeds_kwargs,
+            {
+                "ip_adapter_image": reference_image,
+                "ip_adapter_image_embeds": None,
+                "device": "cuda",
+                "num_images_per_prompt": 1,
+                "do_classifier_free_guidance": True,
+            },
+        )
+        self.assertIs(
+            fake_pipe.call_kwargs[0]["ip_adapter_image_embeds"],
+            fake_pipe.prepared_ip_adapter_image_embeds,
+        )
+        self.assertNotIn("ip_adapter_image", fake_pipe.call_kwargs[0])
         self.assertTrue(fake_pipe.unloaded_ip_adapter)
 
 

@@ -32,6 +32,7 @@ from backend.config import OUTPUT_DIR
 from backend.logging_utils import configure_logging
 from backend.model_registry import get_model_entry
 from backend.resource_logging import resource_logger
+from backend.ip_adapter import IpAdapterManager
 # from testing.pipeline_stable_diffusion import(StableDiffusionPipeline)
 from backend.pipeline_utils import (
     build_fixed_step_timesteps,
@@ -214,43 +215,6 @@ def _cleanup_lora_adapters(pipe, adapter_names: list[str]) -> None:
                 component_name,
                 exc_info=True,
             )
-
-
-def _load_ip_adapter(
-    pipe,
-    *,
-    model: str,
-    subfolder: str,
-    weight_name: str,
-    scale: float,
-) -> None:
-    if not hasattr(pipe, "load_ip_adapter"):
-        raise RuntimeError(
-            "The installed Diffusers pipeline does not support IP-Adapter loading. "
-            "Install a Diffusers version with load_ip_adapter support."
-        )
-    logger.info(
-        "Loading SD1.5 IP-Adapter: model=%s subfolder=%s weight_name=%s scale=%s",
-        model,
-        subfolder,
-        weight_name,
-        scale,
-    )
-    pipe.load_ip_adapter(model, subfolder=subfolder, weight_name=weight_name)
-    if hasattr(pipe, "set_ip_adapter_scale"):
-        pipe.set_ip_adapter_scale(scale)
-    # Some Diffusers versions attach or reload the image encoder during adapter
-    # loading; ensure all newly attached modules land back on CUDA/fp16.
-    pipe.to("cuda")
-
-
-def _cleanup_ip_adapter(pipe, enabled: bool) -> None:
-    if not enabled or not hasattr(pipe, "unload_ip_adapter"):
-        return
-    try:
-        pipe.unload_ip_adapter()
-    except Exception:
-        logger.exception("Failed to unload IP-Adapter weights cleanly.")
 
 
 def _metadata_without_runtime_images(params: dict[str, object]) -> dict[str, object]:
@@ -673,6 +637,7 @@ def generate_images(params: dict[str, object],):
     lora_adapters = params.get("lora_adapters")
     lcm_enabled = bool(params.get("lcm_enabled", False)) or scheduler.lower() == "lcm"
     weighting_policy = str(params.get("weighting_policy") or "diffusers-like")
+
     ip_adapter_image = cast(Image.Image | None, params.get("ip_adapter_image"))
     ip_adapter_enabled = ip_adapter_image is not None
     ip_adapter_model = str(params.get("ip_adapter_model") or _DEFAULT_IP_ADAPTER_MODEL)
@@ -691,7 +656,6 @@ def generate_images(params: dict[str, object],):
     batch_id = params.get("batch_id")
 
     # 1. Check and set seed number(if not present, set random seed)
-    logger.info("seed=%s", seed)
     if seed is None or seed == 0:
         base_seed = torch.randint(0, 2**31, (1,)).item()
     else:
@@ -705,15 +669,24 @@ def generate_images(params: dict[str, object],):
     # 3. Load pipeline and chosen scheduler
     pipe = load_text2img_pipeline(model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
-    logger.info("Generate: model=%s seed=%s scheduler=%s steps=%s cfg=%s size=%sx%s num_images=%s", model, base_seed, scheduler, steps, cfg, width, height, num_images,)
+    logger.info("Generate: model=%s, seed=%s, scheduler=%s, steps=%s, cfg=%s, size= %sx%s, num_images=%s", model, base_seed, scheduler, steps, cfg, width, height, num_images,)
+
     if ip_adapter_enabled:
-        _load_ip_adapter(
+        IpAdapterManager.load(
             pipe,
             model=ip_adapter_model,
             subfolder=ip_adapter_subfolder,
             weight_name=ip_adapter_weight_name,
             scale=ip_adapter_scale,
+            family="SD1.5",
         )
+        ip_adapter_image_embeds = IpAdapterManager.prepare_image_embeds(
+            pipe,
+            ip_adapter_image,
+            do_classifier_free_guidance=cfg > 1.0,
+        )
+    else:
+        ip_adapter_image_embeds = None
     
     # 4. Apply lora to pipeline and generate lora coverage report
     adapter_names = []
@@ -757,9 +730,9 @@ def generate_images(params: dict[str, object],):
         )
         prompt_embeds_ready = True
     
-    filenames = []    
+    filenames = []
     ip_adapter_kwargs = (
-        {"ip_adapter_image": ip_adapter_image} if ip_adapter_enabled else {}
+        {"ip_adapter_image_embeds": ip_adapter_image_embeds} if ip_adapter_enabled else {}
     )
     # 6. Loop around image generation per image
     try:
@@ -848,7 +821,7 @@ def generate_images(params: dict[str, object],):
 
             filenames.append(build_batch_output_relpath(batch_id, filename.name))
     finally:
-        _cleanup_ip_adapter(pipe, ip_adapter_enabled)
+        IpAdapterManager.cleanup(pipe, ip_adapter_enabled)
         _cleanup_lora_adapters(pipe, adapter_names)
     # Return list of filenames
     return filenames
@@ -948,13 +921,21 @@ def generate_images_img2img(params: dict[str, object],):
         num_images,
     )
     if ip_adapter_enabled:
-        _load_ip_adapter(
+        IpAdapterManager.load(
             pipe,
             model=ip_adapter_model,
             subfolder=ip_adapter_subfolder,
             weight_name=ip_adapter_weight_name,
             scale=ip_adapter_scale,
+            family="SD1.5",
         )
+        ip_adapter_image_embeds = IpAdapterManager.prepare_image_embeds(
+            pipe,
+            ip_adapter_image,
+            do_classifier_free_guidance=cfg > 1.0,
+        )
+    else:
+        ip_adapter_image_embeds = None
 
     filenames = []
     adapter_names = []
@@ -990,7 +971,7 @@ def generate_images_img2img(params: dict[str, object],):
         "batch_id": batch_id,
     }
     ip_adapter_kwargs = (
-        {"ip_adapter_image": ip_adapter_image} if ip_adapter_enabled else {}
+        {"ip_adapter_image_embeds": ip_adapter_image_embeds} if ip_adapter_enabled else {}
     )
 
     try:
@@ -1059,7 +1040,7 @@ def generate_images_img2img(params: dict[str, object],):
 
             filenames.append(build_batch_output_relpath(batch_id, filename.name))
     finally:
-        _cleanup_ip_adapter(pipe, ip_adapter_enabled)
+        IpAdapterManager.cleanup(pipe, ip_adapter_enabled)
         _cleanup_lora_adapters(pipe, adapter_names)
 
     return filenames
@@ -1256,13 +1237,21 @@ def generate_images_inpaint(params: dict[str, object],):
         width, height, num_images, strength, padding_mask_crop
     )
     if ip_adapter_enabled:
-        _load_ip_adapter(
+        IpAdapterManager.load(
             pipe,
             model=ip_adapter_model,
             subfolder=ip_adapter_subfolder,
             weight_name=ip_adapter_weight_name,
             scale=ip_adapter_scale,
+            family="SD1.5",
         )
+        ip_adapter_image_embeds = IpAdapterManager.prepare_image_embeds(
+            pipe,
+            ip_adapter_image,
+            do_classifier_free_guidance=cfg > 1.0,
+        )
+    else:
+        ip_adapter_image_embeds = None
 
     filenames = []
     adapter_names = []
@@ -1298,7 +1287,7 @@ def generate_images_inpaint(params: dict[str, object],):
         "batch_id": batch_id,
     }
     ip_adapter_kwargs = (
-        {"ip_adapter_image": ip_adapter_image} if ip_adapter_enabled else {}
+        {"ip_adapter_image_embeds": ip_adapter_image_embeds} if ip_adapter_enabled else {}
     )
 
     try:
@@ -1371,7 +1360,7 @@ def generate_images_inpaint(params: dict[str, object],):
 
             filenames.append(build_batch_output_relpath(batch_id, filename.name))
     finally:
-        _cleanup_ip_adapter(pipe, ip_adapter_enabled)
+        IpAdapterManager.cleanup(pipe, ip_adapter_enabled)
         _cleanup_lora_adapters(pipe, adapter_names)
 
     return filenames

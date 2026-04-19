@@ -435,22 +435,43 @@ async function generate() {
                 if (!uploadedIpAdapterImage?.artifact_id) {
                     throw new Error("IP-Adapter image upload did not return an artifact id.");
                 }
+                const ipAdapterScale = WorkflowClient.readNumberValue(
+                    "ip_adapter_scale",
+                    defaults.ip_adapter?.scale ?? DEFAULTS.ip_adapter_scale
+                );
                 payload.ip_adapter = {
                     enabled: true,
-                    image: `@artifact:${uploadedIpAdapterImage.artifact_id}`,
-                    scale: WorkflowClient.readNumberValue(
-                        "ip_adapter_scale",
-                        defaults.ip_adapter?.scale ?? DEFAULTS.ip_adapter_scale
-                    ),
+                    image_embeds: "@ip_embeds.image_embeds",
+                    scale: ipAdapterScale,
                     model: "h94/IP-Adapter",
                     subfolder: "sdxl_models",
                     weight_name: "ip-adapter_sdxl.bin",
                 };
+                workflowPayload = {
+                    tasks: [
+                        {
+                            id: "ip_embeds",
+                            type: "sdxl.ip_adapter.encode",
+                            inputs: {
+                                image: `@artifact:${uploadedIpAdapterImage.artifact_id}`,
+                                model: payload.model,
+                                guidance_scale: payload.guidance_scale,
+                                ip_adapter_model: "h94/IP-Adapter",
+                                ip_adapter_subfolder: "sdxl_models",
+                                ip_adapter_weight_name: "ip-adapter_sdxl.bin",
+                                ip_adapter_scale: ipAdapterScale,
+                            },
+                        },
+                        { id: "t1", type: "sdxl.text2img", inputs: payload },
+                    ],
+                    return: "@t1.images",
+                };
+            } else {
+                workflowPayload = {
+                    tasks: [{ id: "t1", type: "sdxl.text2img", inputs: payload }],
+                    return: "@t1.images",
+                };
             }
-            workflowPayload = {
-                tasks: [{ id: "t1", type: "sdxl.text2img", inputs: payload }],
-                return: "@t1.images",
-            };
         }
         const idempotencyKey = WorkflowClient.makeIdempotencyKey();
         const createdJob = await WorkflowClient.submitWorkflow(API_BASE, workflowPayload, idempotencyKey);

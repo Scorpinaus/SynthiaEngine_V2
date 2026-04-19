@@ -17,7 +17,8 @@ def _artifact_dir() -> Path:
     return artifacts
 
 
-_ARTIFACT_ID_RE = re.compile(r"^[ap][0-9a-f]{32}$")
+_ARTIFACT_ID_RE = re.compile(r"^[ape][0-9a-f]{32}$")
+_IMAGE_ARTIFACT_ID_RE = re.compile(r"^[ap][0-9a-f]{32}$")
 
 
 def _validate_artifact_id(value: str) -> str:
@@ -25,6 +26,19 @@ def _validate_artifact_id(value: str) -> str:
     if not _ARTIFACT_ID_RE.match(artifact_id):
         raise ValueError("Invalid artifact_id")
     return artifact_id
+
+
+def _validate_image_artifact_id(value: str) -> str:
+    artifact_id = value.strip()
+    if not _IMAGE_ARTIFACT_ID_RE.match(artifact_id):
+        raise ValueError("Invalid image artifact_id")
+    return artifact_id
+
+
+def _artifact_path_for_id(artifact_id: str) -> Path:
+    safe_id = _validate_artifact_id(artifact_id)
+    suffix = ".pt" if safe_id.startswith("e") else ".png"
+    return (_artifact_dir() / f"{safe_id}{suffix}").resolve()
 
 
 def collect_artifact_ids(value: Any) -> set[str]:
@@ -62,14 +76,12 @@ def collect_artifact_ids(value: Any) -> set[str]:
 def cleanup_artifacts(artifact_ids: set[str]) -> None:
     if not artifact_ids:
         return
-    artifacts_dir = _artifact_dir().resolve()
     for artifact_id in artifact_ids:
         try:
-            safe_id = _validate_artifact_id(artifact_id)
+            path = _artifact_path_for_id(artifact_id)
         except ValueError:
             continue
-        path = (artifacts_dir / f"{safe_id}.png").resolve()
-        if not str(path).startswith(str(artifacts_dir)):
+        if not str(path).startswith(str(_artifact_dir().resolve())):
             continue
         try:
             path.unlink(missing_ok=True)
@@ -99,12 +111,12 @@ def _load_image_from_outputs_url(url: str) -> Image.Image:
 
 def _open_image_ref(value: Any) -> Image.Image:
     if isinstance(value, dict) and "artifact_id" in value:
-        artifact_id = _validate_artifact_id(str(value["artifact_id"]))
+        artifact_id = _validate_image_artifact_id(str(value["artifact_id"]))
         path = (_artifact_dir() / f"{artifact_id}.png").resolve()
         with Image.open(path) as img:
             return img.copy()
     if isinstance(value, str) and value.startswith("@artifact:"):
-        artifact_id = _validate_artifact_id(value.removeprefix("@artifact:"))
+        artifact_id = _validate_image_artifact_id(value.removeprefix("@artifact:"))
         path = (_artifact_dir() / f"{artifact_id}.png").resolve()
         with Image.open(path) as img:
             return img.copy()
