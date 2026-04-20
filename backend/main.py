@@ -29,13 +29,13 @@ from PIL import Image, ImageFilter
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from backend.config import DEFAULTS, OUTPUT_DIR
-from backend.controlnet_preprocessors import get_preprocessor, list_preprocessors
-from backend.controlnet_preprocessor_registry import (
+from backend.adapters.controlnet_preprocessors import get_preprocessor, list_preprocessors
+from backend.adapters.controlnet_preprocessor_registry import (
     CONTROLNET_PREPROCESSOR_REGISTRY,
     ControlNetPreprocessorModelEntry,
 )
-from backend.model_analysis import SUPPORTED_EXTS, analyze_model_file
-from backend.model_registry import (
+from backend.utilities.model_analysis import SUPPORTED_EXTS, analyze_model_file
+from backend.registries.model import (
     ModelRegistryEntry,
     create_model_entry,
     delete_model_entry,
@@ -43,7 +43,7 @@ from backend.model_registry import (
     list_model_entries,
     update_model_entry,
 )
-from backend.lora_registry import (
+from backend.lora.registry import (
     LoraRegistryEntry,
     add_lora,
     delete_lora_entry,
@@ -51,8 +51,8 @@ from backend.lora_registry import (
     list_lora_entries,
     update_lora_entry,
 )
-from backend.logging_utils import configure_logging
-from backend.preset_registry import (
+from backend.utilities.logging import configure_logging
+from backend.registries.preset import (
     PresetRegistryCreate,
     PresetRegistryEntry,
     create_preset_entry,
@@ -61,7 +61,7 @@ from backend.preset_registry import (
     list_preset_entries,
     update_preset_entry,
 )
-from backend.job_queue import (
+from backend.jobs.queue import (
     JobNotFoundError,
     JobQueueConfig,
     cancel_job,

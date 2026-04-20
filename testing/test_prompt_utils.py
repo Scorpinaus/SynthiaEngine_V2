@@ -2,8 +2,8 @@ import unittest
 
 import torch
 
-from backend.prompt_utils import parse_prompt_attention_a1111
-from backend.prompt_utils import build_prompt_embeddings_a1111
+from backend.utilities.prompt import parse_prompt_attention_a1111
+from backend.utilities.prompt import build_prompt_embeddings_a1111
 
 
 class PromptParserA1111Tests(unittest.TestCase):

@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-import backend.lora_utils as lora_utils
+import backend.lora.utils as lora_utils
 
 
 class _DummyPipe:

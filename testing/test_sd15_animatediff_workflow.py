@@ -12,13 +12,13 @@ from backend.workflow import (
     _sd15_animatediff_text2video,
     build_workflow_catalog,
 )
-from backend.sd15_animatediff_pipeline import _make_animatediff_generator
-from backend.sd15_animatediff_pipeline import _validate_animatediff_frame_settings
-from backend.sd15_animatediff_pipeline import _validate_free_init_settings
-from backend.sd15_animatediff_pipeline import _enable_free_init
-from backend.sd15_animatediff_pipeline import _prepare_animatediff_prompt_inputs
-from backend.sd15_animatediff_pipeline import _animatediff_video_metadata_path
-from backend.sd15_animatediff_pipeline import _write_animatediff_video_metadata
+from backend.sd15.animatediff_pipeline import _make_animatediff_generator
+from backend.sd15.animatediff_pipeline import _validate_animatediff_frame_settings
+from backend.sd15.animatediff_pipeline import _validate_free_init_settings
+from backend.sd15.animatediff_pipeline import _enable_free_init
+from backend.sd15.animatediff_pipeline import _prepare_animatediff_prompt_inputs
+from backend.sd15.animatediff_pipeline import _animatediff_video_metadata_path
+from backend.sd15.animatediff_pipeline import _write_animatediff_video_metadata
 
 
 class Sd15AnimateDiffText2VideoSchemaTests(unittest.TestCase):
@@ -276,7 +276,7 @@ class Sd15AnimateDiffText2VideoWorkflowTests(unittest.TestCase):
         )
 
     def test_animatediff_free_noise_uses_raw_prompt_inputs(self):
-        with patch("backend.sd15_animatediff_pipeline.build_prompt_embeddings") as mocked:
+        with patch("backend.sd15.animatediff_pipeline.build_prompt_embeddings") as mocked:
             prompt_input, negative_prompt_input, prompt_embeds, negative_prompt_embeds = (
                 _prepare_animatediff_prompt_inputs(
                     pipe=object(),
@@ -296,7 +296,7 @@ class Sd15AnimateDiffText2VideoWorkflowTests(unittest.TestCase):
 
     def test_animatediff_normal_mode_keeps_prompt_embedding_path(self):
         with patch(
-            "backend.sd15_animatediff_pipeline.build_prompt_embeddings",
+            "backend.sd15.animatediff_pipeline.build_prompt_embeddings",
             return_value=("pos", "neg", True),
         ) as mocked:
             prompt_input, negative_prompt_input, prompt_embeds, negative_prompt_embeds = (

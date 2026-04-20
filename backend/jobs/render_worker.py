@@ -4,8 +4,8 @@ import logging
 import threading
 import time
 
-from backend.job_queue import JobQueueConfig, create_job_queue
-from backend.logging_utils import configure_logging
+from backend.jobs.queue import JobQueueConfig, create_job_queue
+from backend.utilities.logging import configure_logging
 
 
 logger = logging.getLogger(__name__)

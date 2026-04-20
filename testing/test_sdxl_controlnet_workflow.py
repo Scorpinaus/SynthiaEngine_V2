@@ -171,7 +171,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(payload)
             return {"images": ["/outputs/batch/out.png"]}
 
-        with patch("backend.sdxl_pipeline.generate_text2img", side_effect=_fake_generate_text2img):
+        with patch("backend.sdxl.pipeline.generate_text2img", side_effect=_fake_generate_text2img):
             result = _sdxl_text2img(
                 {
                     "prompt": "test prompt",
@@ -191,7 +191,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(payload)
             return {"images": ["/outputs/batch/out.png"]}
 
-        with patch("backend.sdxl_pipeline.generate_text2img", side_effect=_fake_generate_text2img):
+        with patch("backend.sdxl.pipeline.generate_text2img", side_effect=_fake_generate_text2img):
             result = _sdxl_text2img(
                 {
                     "prompt": "test prompt",
@@ -212,7 +212,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
             return {"images": ["/outputs/batch/out.png"]}
 
         with patch("backend.workflow._open_image_ref", return_value=reference_image):
-            with patch("backend.sdxl_pipeline.generate_text2img", side_effect=_fake_generate_text2img):
+            with patch("backend.sdxl.pipeline.generate_text2img", side_effect=_fake_generate_text2img):
                 result = _sdxl_text2img(
                     {
                         "prompt": "test prompt",
@@ -245,7 +245,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(payload)
             return {"images": ["/outputs/batch/out.png"]}
 
-        with patch("backend.sdxl_pipeline.generate_text2img", side_effect=_fake_generate_text2img):
+        with patch("backend.sdxl.pipeline.generate_text2img", side_effect=_fake_generate_text2img):
             result = _sdxl_text2img(
                 {
                     "prompt": "test prompt",
@@ -310,7 +310,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
 
         with patch("backend.workflow._open_image_ref", return_value=reference_image):
             with patch(
-                "backend.sdxl_ip_adapter_pipeline.generate_ip_adapter_image_embeds",
+                "backend.sdxl.ip_adapter_pipeline.generate_ip_adapter_image_embeds",
                 side_effect=_fake_generate_ip_adapter_image_embeds,
             ):
                 result = _sdxl_ip_adapter_encode(
@@ -343,7 +343,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
             return {"images": ["/outputs/batch/out.png"]}
 
         with patch("backend.workflow._open_image_ref", return_value=reference_image):
-            with patch("backend.sdxl_pipeline.generate_img2img", side_effect=_fake_generate_img2img):
+            with patch("backend.sdxl.pipeline.generate_img2img", side_effect=_fake_generate_img2img):
                 result = _sdxl_img2img(
                     {
                         "initial_image": {
@@ -420,7 +420,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
             return {"images": ["/outputs/batch/out.png"]}
 
         with patch("backend.workflow._open_image_ref", return_value=reference_image):
-            with patch("backend.sdxl_pipeline.generate_inpaint", side_effect=_fake_generate_inpaint):
+            with patch("backend.sdxl.pipeline.generate_inpaint", side_effect=_fake_generate_inpaint):
                 result = _sdxl_inpaint(
                     {
                         "initial_image": {
@@ -506,7 +506,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
 
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with patch(
-                "backend.sdxl_pipeline.generate_controlnet_text2img",
+                "backend.sdxl.pipeline.generate_controlnet_text2img",
                 side_effect=_fake_generate_controlnet_text2img,
             ):
                 result = _sdxl_controlnet_text2img(
@@ -563,7 +563,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
 
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with patch(
-                "backend.sdxl_pipeline.generate_controlnet_text2img",
+                "backend.sdxl.pipeline.generate_controlnet_text2img",
                 side_effect=_fake_generate_controlnet_text2img,
             ):
                 result = _sdxl_controlnet_text2img(
@@ -651,7 +651,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
 
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with patch(
-                "backend.sdxl_pipeline.generate_img2img_controlnet",
+                "backend.sdxl.pipeline.generate_img2img_controlnet",
                 side_effect=_fake_generate_img2img_controlnet,
             ):
                 result = _sdxl_img2img(
@@ -695,7 +695,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
 
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with patch(
-                "backend.sdxl_pipeline.generate_img2img_controlnet",
+                "backend.sdxl.pipeline.generate_img2img_controlnet",
                 side_effect=_fake_generate_img2img_controlnet,
             ):
                 _sdxl_img2img(
@@ -728,7 +728,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
     def test_img2img_warn_mode_returns_warning_on_unknown_preprocessor(self):
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with patch(
-                "backend.sdxl_pipeline.generate_img2img_controlnet",
+                "backend.sdxl.pipeline.generate_img2img_controlnet",
                 return_value={"images": ["/outputs/batch/out.png"]},
             ):
                 result = _sdxl_img2img(
@@ -754,10 +754,10 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
 
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with patch(
-                "backend.sdxl_pipeline.generate_img2img",
+                "backend.sdxl.pipeline.generate_img2img",
                 side_effect=_fake_generate_img2img,
             ) as default_runner:
-                with patch("backend.sdxl_pipeline.generate_img2img_controlnet") as controlnet_runner:
+                with patch("backend.sdxl.pipeline.generate_img2img_controlnet") as controlnet_runner:
                     result = _sdxl_img2img(
                         {
                             "initial_image": {"artifact_id": "a0123456789abcdef0123456789abcdef"},
@@ -782,7 +782,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
 
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with patch(
-                "backend.sdxl_pipeline.generate_inpaint_controlnet",
+                "backend.sdxl.pipeline.generate_inpaint_controlnet",
                 side_effect=_fake_generate_inpaint_controlnet,
             ):
                 result = _sdxl_inpaint(
@@ -826,7 +826,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
 
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with patch(
-                "backend.sdxl_pipeline.generate_inpaint_controlnet",
+                "backend.sdxl.pipeline.generate_inpaint_controlnet",
                 side_effect=_fake_generate_inpaint_controlnet,
             ):
                 _sdxl_inpaint(
@@ -903,7 +903,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
     def test_inpaint_warn_mode_returns_warning_on_unknown_preprocessor(self):
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with patch(
-                "backend.sdxl_pipeline.generate_inpaint_controlnet",
+                "backend.sdxl.pipeline.generate_inpaint_controlnet",
                 return_value={"images": ["/outputs/batch/out.png"]},
             ):
                 result = _sdxl_inpaint(
@@ -930,10 +930,10 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
 
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with patch(
-                "backend.sdxl_pipeline.generate_inpaint",
+                "backend.sdxl.pipeline.generate_inpaint",
                 side_effect=_fake_generate_inpaint,
             ) as default_runner:
-                with patch("backend.sdxl_pipeline.generate_inpaint_controlnet") as controlnet_runner:
+                with patch("backend.sdxl.pipeline.generate_inpaint_controlnet") as controlnet_runner:
                     result = _sdxl_inpaint(
                         {
                             "initial_image": {"artifact_id": "a0123456789abcdef0123456789abcdef"},
@@ -958,7 +958,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
             return {"images": ["/outputs/batch/plain.png"]}
 
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
-            with patch("backend.sdxl_pipeline.generate_inpaint", side_effect=_fake_generate_inpaint):
+            with patch("backend.sdxl.pipeline.generate_inpaint", side_effect=_fake_generate_inpaint):
                 _sdxl_inpaint(
                     {
                         "initial_image": {"artifact_id": "a0123456789abcdef0123456789abcdef"},
@@ -980,7 +980,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
 
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with patch(
-                "backend.sdxl_pipeline.generate_inpaint_controlnet",
+                "backend.sdxl.pipeline.generate_inpaint_controlnet",
                 side_effect=_fake_generate_inpaint_controlnet,
             ):
                 _sdxl_inpaint(

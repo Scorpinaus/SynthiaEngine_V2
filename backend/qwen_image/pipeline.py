@@ -5,17 +5,17 @@ import torch
 from diffusers import QwenImageImg2ImgPipeline, QwenImageInpaintPipeline, QwenImagePipeline
 
 from backend.config import OUTPUT_DIR
-from backend.logging_utils import configure_logging
-from backend.lora_utils import apply_lora_adapters_with_validation, write_lora_coverage_report
-from backend.model_registry import get_model_entry
-from backend.pipeline_utils import (
+from backend.utilities.logging import configure_logging
+from backend.lora.utils import apply_lora_adapters_with_validation, write_lora_coverage_report
+from backend.registries.model import get_model_entry
+from backend.utilities.pipeline import (
     build_png_metadata,
     build_batch_output_relpath,
     get_batch_output_dir,
     make_batch_id,
     resolve_model_source,
 )
-from backend.schedulers import create_scheduler
+from backend.utilities.schedulers import create_scheduler
 
 GEN_LOCK = threading.Lock()
 

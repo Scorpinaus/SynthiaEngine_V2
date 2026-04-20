@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-import backend.lora_registry as lora_registry
+import backend.lora.registry as lora_registry
 
 
 def _reset_lora_registry_paths(tmp_path, json_payload=None):

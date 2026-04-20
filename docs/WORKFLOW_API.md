@@ -4,7 +4,7 @@ This project uses a **single workflow job API** for all generation (SD1.5, SDXL,
 
 Registry persistence note:
 - `/lora-models` entries are persisted in `database/lora_registry.sqlite3`.
-- If that SQLite registry is empty and `backend/lora_registry.json` exists, the backend performs a one-time import on startup and skips invalid rows with warning logs.
+- If that SQLite registry is empty and `backend/lora/lora_registry.json` exists, the backend performs a one-time import on startup and skips invalid rows with warning logs.
 - API payload shape for LoRA entries is unchanged.
 - `/api/presets` entries are persisted in `database/preset_registry.sqlite3`.
 

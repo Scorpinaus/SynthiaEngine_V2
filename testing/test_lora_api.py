@@ -2,7 +2,7 @@ import json
 
 from fastapi.testclient import TestClient
 
-import backend.lora_registry as lora_registry
+import backend.lora.registry as lora_registry
 from backend.main import app
 
 

@@ -1,0 +1,110 @@
+[
+  {
+    "name": "stable-diffusion-v1-5",
+    "family": "sd15",
+    "model_type": "diffusers",
+    "location_type": "hub",
+    "model_id": 1,
+    "version": "hub",
+    "link": "runwayml/stable-diffusion-v1-5"
+  },
+  {
+    "name": "stable-diffusion-v1-5-local",
+    "family": "sd15",
+    "model_type": "diffusers",
+    "location_type": "local",
+    "model_id": 2,
+    "version": "local",
+    "link": "D:\\diffusion\\diffusers\\stable-diffusion-v1-5"
+  },
+  {
+    "name": "mistoonruby3",
+    "family": "sd15",
+    "model_type": "diffusers",
+    "location_type": "local",
+    "model_id": 3,
+    "version": "hub",
+    "link": "D:\\diffusion\\diffusers\\mistoonruby3"
+  },
+  {
+    "name": "raemumix_v90",
+    "family": "sd15",
+    "model_type": "diffusers",
+    "location_type": "local",
+    "model_id": 4,
+    "version": "hub",
+    "link": "D:\\diffusion\\diffusers\\raemumix_v90"
+  },
+  {
+    "name": "raemumix_v81-inpainting",
+    "family": "sd15",
+    "model_type": "diffusers",
+    "location_type": "local",
+    "model_id": 5,
+    "version": "hub",
+    "link": "D:\\diffusion\\diffusers\\raemumix_v81-inpainting"
+  },
+  {
+    "name": "raemumix_v81",
+    "family": "sd15",
+    "model_type": "single-file",
+    "location_type": "local",
+    "model_id": 6,
+    "version": "hub",
+    "link": "D:\\diffusion\\checkpoints\\raemumix_v81.safetensors"
+  },
+  {
+    "name": "realcartoon3d_v18",
+    "family": "sd15",
+    "model_type": "single-file",
+    "location_type": "local",
+    "model_id": 7,
+    "version": "hub",
+    "link": "D:\\diffusion\\checkpoints\\realcartoon3d_v18.safetensors"
+  }, 
+  {
+    "name": "stable-diffusion-xl-base-1-0",
+    "family": "sdxl",
+    "model_type": "diffusers",
+    "location_type": "local",
+    "model_id": 8,
+    "version": "hub",
+    "link": "D:\\diffusion\\diffusers\\stable-diffusion-xl-base-1-0"
+  },
+  {
+    "name": "anyorangemixxlAnything_v10",
+    "family": "sdxl",
+    "model_type": "single-file",
+    "location_type": "local",
+    "model_id": 9,
+    "version": "hub",
+    "link": "D:\\diffusion\\checkpoints\\anyorangemixxlAnything_v10.safetensors"
+  },
+  {
+    "name": "Z-Image Turbo",
+    "family": "z-image-turbo",
+    "model_type": "diffusers",
+    "location_type": "local",
+    "model_id": 10,
+    "version": "hub",
+    "link": "D:\\diffusion\\diffusers\\z-image-turbo"
+  },
+  {
+    "name": "Z-Image Turbo AIO",
+    "family": "z-image-turbo",
+    "model_type": "single-file",
+    "location_type": "local",
+    "model_id": 11,
+    "version": "hub",
+    "link": "D:\\diffusion\\checkpoints\\zImageTurboAIO_zImageTurboFP16AIO.safetensors"
+  },
+  {
+    "name": "Flux.1-dev",
+    "family": "flux",
+    "model_type": "diffusers",
+    "location_type": "local",
+    "model_id": 12,
+    "version": "dev",
+    "link": "D:\\diffusion\\diffusers\\FLUX.1-dev"
+  }
+]

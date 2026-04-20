@@ -30,7 +30,7 @@ class FluxWorkflowTests(unittest.TestCase):
             return {"images": ["/outputs/batch/out.png"]}
 
         fake_module = SimpleNamespace(generate_text2img=_fake_generate_text2img)
-        with patch.dict("sys.modules", {"backend.flux_pipeline": fake_module}):
+        with patch.dict("sys.modules", {"backend.flux.pipeline": fake_module}):
             result = _flux_text2img(
                 {
                     "prompt": "test prompt",
@@ -60,7 +60,7 @@ class FluxWorkflowTests(unittest.TestCase):
 
         fake_module = SimpleNamespace(generate_img2img=_fake_generate_img2img)
         with (
-            patch.dict("sys.modules", {"backend.flux_pipeline": fake_module}),
+            patch.dict("sys.modules", {"backend.flux.pipeline": fake_module}),
             patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))),
         ):
             result = _flux_img2img(
@@ -96,7 +96,7 @@ class FluxWorkflowTests(unittest.TestCase):
 
         fake_module = SimpleNamespace(generate_inpaint=_fake_generate_inpaint)
         with (
-            patch.dict("sys.modules", {"backend.flux_pipeline": fake_module}),
+            patch.dict("sys.modules", {"backend.flux.pipeline": fake_module}),
             patch(
                 "backend.workflow._open_image_ref",
                 side_effect=[Image.new("RGB", (64, 64)), Image.new("L", (64, 64))],

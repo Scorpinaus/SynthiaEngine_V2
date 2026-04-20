@@ -6,7 +6,7 @@ from unittest.mock import patch
 from fastapi import HTTPException, UploadFile
 from PIL import Image
 
-from backend.controlnet_preprocessors import (
+from backend.adapters.controlnet_preprocessors import (
     ControlNetAuxPreprocessor,
     NormalBaePreprocessor,
     get_preprocessor,

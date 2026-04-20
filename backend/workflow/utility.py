@@ -8,7 +8,7 @@ from typing import Any
 from PIL import Image
 
 from backend.config import OUTPUT_DIR
-from backend.workflow_schema_input import _DEFAULT_SD15_CONTROLNET_MODEL
+from backend.workflow.schema_input import _DEFAULT_SD15_CONTROLNET_MODEL
 
 
 def _artifact_dir() -> Path:

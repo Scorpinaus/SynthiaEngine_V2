@@ -2,7 +2,7 @@ import json
 
 from fastapi.testclient import TestClient
 
-import backend.model_registry as model_registry
+import backend.registries.model as model_registry
 from backend.main import app
 
 

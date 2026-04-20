@@ -30,7 +30,7 @@ class QwenImageWorkflowTests(unittest.TestCase):
             return {"images": ["/outputs/batch/out.png"]}
 
         fake_module = SimpleNamespace(generate_text2img=_fake_generate_text2img)
-        with patch.dict("sys.modules", {"backend.qwen_image_pipeline": fake_module}):
+        with patch.dict("sys.modules", {"backend.qwen_image.pipeline": fake_module}):
             result = _qwen_image_text2img(
                 {
                     "prompt": "test prompt",
@@ -51,7 +51,7 @@ class QwenImageWorkflowTests(unittest.TestCase):
             return {"images": ["/outputs/batch/out.png"]}
 
         fake_module = SimpleNamespace(generate_text2img=_fake_generate_text2img)
-        with patch.dict("sys.modules", {"backend.qwen_image_pipeline": fake_module}):
+        with patch.dict("sys.modules", {"backend.qwen_image.pipeline": fake_module}):
             result = _qwen_image_text2img(
                 {
                     "prompt": "test prompt",
@@ -71,7 +71,7 @@ class QwenImageWorkflowTests(unittest.TestCase):
             return {"images": ["/outputs/batch/out.png"]}
 
         fake_module = SimpleNamespace(generate_text2img=_fake_generate_text2img)
-        with patch.dict("sys.modules", {"backend.qwen_image_pipeline": fake_module}):
+        with patch.dict("sys.modules", {"backend.qwen_image.pipeline": fake_module}):
             result = _qwen_image_text2img(
                 {
                     "prompt": "test prompt",
@@ -99,7 +99,7 @@ class QwenImageWorkflowTests(unittest.TestCase):
             return {"images": ["/outputs/batch/out.png"]}
 
         fake_module = SimpleNamespace(generate_img2img=_fake_generate_img2img)
-        with patch.dict("sys.modules", {"backend.qwen_image_pipeline": fake_module}):
+        with patch.dict("sys.modules", {"backend.qwen_image.pipeline": fake_module}):
             with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
                 result = _qwen_image_img2img(
                     {
@@ -131,7 +131,7 @@ class QwenImageWorkflowTests(unittest.TestCase):
             return {"images": ["/outputs/batch/out.png"]}
 
         fake_module = SimpleNamespace(generate_inpaint=_fake_generate_inpaint)
-        with patch.dict("sys.modules", {"backend.qwen_image_pipeline": fake_module}):
+        with patch.dict("sys.modules", {"backend.qwen_image.pipeline": fake_module}):
             with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
                 result = _qwen_image_inpaint(
                     {

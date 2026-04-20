@@ -1,7 +1,7 @@
 """
 SD1.5 AnimateDiff text-to-video pipeline helpers.
 
-This module mirrors the workflow-facing conventions of ``backend.sd15_pipeline``
+This module mirrors the workflow-facing conventions of ``backend.sd15.pipeline``
 while keeping AnimateDiff loading/generation isolated from the existing image
 pipelines.
 """
@@ -20,12 +20,12 @@ from diffusers.schedulers import DDIMScheduler
 from diffusers.utils import export_to_video
 
 from backend.config import OUTPUT_DIR
-from backend.logging_utils import configure_logging
-from backend.lora_utils import apply_lora_adapters_with_validation, write_lora_coverage_report
-from backend.model_registry import get_model_entry
-from backend.pipeline_utils import build_batch_output_relpath, get_batch_output_dir, make_batch_id, resolve_model_source
-from backend.prompt_utils import build_prompt_embeddings
-from backend.schedulers import create_scheduler
+from backend.utilities.logging import configure_logging
+from backend.lora.utils import apply_lora_adapters_with_validation, write_lora_coverage_report
+from backend.registries.model import get_model_entry
+from backend.utilities.pipeline import build_batch_output_relpath, get_batch_output_dir, make_batch_id, resolve_model_source
+from backend.utilities.prompt import build_prompt_embeddings
+from backend.utilities.schedulers import create_scheduler
 
 logger = logging.getLogger(__name__)
 configure_logging()

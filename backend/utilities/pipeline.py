@@ -8,7 +8,7 @@ from pathlib import Path
 import torch
 from PIL.PngImagePlugin import PngInfo
 
-from backend.model_registry import ModelRegistryEntry
+from backend.registries.model import ModelRegistryEntry
 
 
 def resolve_model_source(entry: ModelRegistryEntry) -> str:

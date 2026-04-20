@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-import backend.preset_registry as preset_registry
+import backend.registries.preset as preset_registry
 from backend.main import app
 
 

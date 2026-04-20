@@ -9,17 +9,17 @@ from huggingface_hub import hf_hub_download
 from PIL import Image
 from transformers import CLIPImageProcessor, CLIPVisionModelWithProjection
 
-from backend.ip_adapter_embeds import save_ip_adapter_embeds_artifact
-from backend.pipeline_utils import cleanup_memory
+from backend.adapters.ip_adapter_embeds import save_ip_adapter_embeds_artifact
+from backend.utilities.pipeline import cleanup_memory
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_IP_ADAPTER_MODEL = "h94/IP-Adapter"
-_DEFAULT_IP_ADAPTER_SUBFOLDER = "models"
-_DEFAULT_IP_ADAPTER_WEIGHT_NAME = "ip-adapter_sd15.bin"
+_DEFAULT_IP_ADAPTER_SUBFOLDER = "sdxl_models"
+_DEFAULT_IP_ADAPTER_WEIGHT_NAME = "ip-adapter_sdxl.bin"
 _DEFAULT_IP_ADAPTER_SCALE = 0.6
 _UNSUPPORTED_MINIMAL_ENCODER_ERROR = (
-    "Only the base SD1.5 IP-Adapter is supported by the minimal encoder."
+    "Only the base SDXL IP-Adapter is supported by the minimal encoder."
 )
 
 
@@ -35,7 +35,7 @@ def _require_default_base_adapter(
         or weight_name != _DEFAULT_IP_ADAPTER_WEIGHT_NAME
     ):
         raise ValueError(
-            "Only the default SD1.5 base IP-Adapter is supported by the minimal encoder."
+            "Only the default SDXL base IP-Adapter is supported by the minimal encoder."
         )
 
 
@@ -63,11 +63,12 @@ def _validate_base_ip_adapter_state_dict(state_dict: dict[str, Any]) -> None:
 
 
 @torch.inference_mode()
-def encode_ip_adapter_image_embeds(params: dict[str, Any]) -> list[torch.Tensor]:
+def generate_ip_adapter_image_embeds(params: dict[str, Any]) -> dict[str, Any]:
     image = params["image"]
     if not isinstance(image, Image.Image):
         raise ValueError("image must be a PIL image.")
 
+    base_model = params.get("model")
     guidance_scale = float(params.get("guidance_scale", 7.5))
     ip_adapter_model = str(params.get("ip_adapter_model") or _DEFAULT_IP_ADAPTER_MODEL)
     ip_adapter_subfolder = str(
@@ -75,6 +76,12 @@ def encode_ip_adapter_image_embeds(params: dict[str, Any]) -> list[torch.Tensor]
     )
     ip_adapter_weight_name = str(
         params.get("ip_adapter_weight_name") or _DEFAULT_IP_ADAPTER_WEIGHT_NAME
+    )
+    ip_adapter_scale_raw = params.get("ip_adapter_scale")
+    ip_adapter_scale = (
+        _DEFAULT_IP_ADAPTER_SCALE
+        if ip_adapter_scale_raw is None
+        else float(ip_adapter_scale_raw)
     )
     do_classifier_free_guidance = guidance_scale > 1.0
 
@@ -84,7 +91,7 @@ def encode_ip_adapter_image_embeds(params: dict[str, Any]) -> list[torch.Tensor]
         weight_name=ip_adapter_weight_name,
     )
     if not torch.cuda.is_available():
-        raise ValueError("CUDA is required for SD1.5 IP-Adapter minimal encode.")
+        raise ValueError("CUDA is required for SDXL IP-Adapter minimal encode.")
 
     image_encoder = None
     image_processor = None
@@ -94,8 +101,12 @@ def encode_ip_adapter_image_embeds(params: dict[str, Any]) -> list[torch.Tensor]
     single_image_embeds = None
     try:
         logger.info(
-            "SD1.5 IP-Adapter encode: adapter_model=%s, subfolder=%s, weight_name=%s, cfg=%s",
-            ip_adapter_model, ip_adapter_subfolder, ip_adapter_weight_name, do_classifier_free_guidance,
+            "SDXL Custom IP-Adapter encode: base_model=%s, adapter_model=%s, subfolder=%s, weight_name=%s, cfg=%s",
+            base_model,
+            ip_adapter_model,
+            ip_adapter_subfolder,
+            ip_adapter_weight_name,
+            do_classifier_free_guidance,
         )
         state_dict = _load_ip_adapter_state_dict(
             model=ip_adapter_model,
@@ -130,14 +141,34 @@ def encode_ip_adapter_image_embeds(params: dict[str, Any]) -> list[torch.Tensor]
                 [single_negative_image_embeds, single_image_embeds],
                 dim=0,
             )
-        return [single_image_embeds.cpu()]
+        embeds = [single_image_embeds.cpu()]
+
+        artifact = save_ip_adapter_embeds_artifact(
+            embeds,
+            metadata={
+                "base_model": base_model,
+                "adapters": [
+                    {
+                        "model": ip_adapter_model,
+                        "subfolder": ip_adapter_subfolder,
+                        "weight_name": ip_adapter_weight_name,
+                        "scale": ip_adapter_scale,
+                    }
+                ],
+                "do_classifier_free_guidance": do_classifier_free_guidance,
+                "num_images_per_prompt": 1,
+            },
+        )
+        return {"image_embeds": artifact}
     finally:
         if image_encoder is not None:
             try:
                 image_encoder.to("cpu")
             except Exception:
-                logger.debug("Failed to move SD1.5 IP-Adapter image encoder to CPU.", exc_info=True,)
-                
+                logger.debug(
+                    "Failed to move SDXL IP-Adapter image encoder to CPU.",
+                    exc_info=True,
+                )
         image_encoder = None
         image_processor = None
         pixel_values = None
@@ -145,43 +176,3 @@ def encode_ip_adapter_image_embeds(params: dict[str, Any]) -> list[torch.Tensor]
         negative_image_embeds = None
         single_image_embeds = None
         cleanup_memory()
-
-
-@torch.inference_mode()
-def generate_ip_adapter_image_embeds(params: dict[str, Any]) -> dict[str, Any]:
-    base_model = params.get("model")
-    guidance_scale = float(params.get("guidance_scale", 7.5))
-    ip_adapter_model = str(params.get("ip_adapter_model") or _DEFAULT_IP_ADAPTER_MODEL)
-    ip_adapter_subfolder = str(
-        params.get("ip_adapter_subfolder") or _DEFAULT_IP_ADAPTER_SUBFOLDER
-    )
-    ip_adapter_weight_name = str(
-        params.get("ip_adapter_weight_name") or _DEFAULT_IP_ADAPTER_WEIGHT_NAME
-    )
-    ip_adapter_scale_raw = params.get("ip_adapter_scale")
-    ip_adapter_scale = (
-        _DEFAULT_IP_ADAPTER_SCALE
-        if ip_adapter_scale_raw is None
-        else float(ip_adapter_scale_raw)
-    )
-    do_classifier_free_guidance = guidance_scale > 1.0
-
-    embeds = encode_ip_adapter_image_embeds(params)
-    artifact = save_ip_adapter_embeds_artifact(
-        embeds,
-        family="SD15",
-        metadata={
-            "base_model": base_model,
-            "adapters": [
-                {
-                    "model": ip_adapter_model,
-                    "subfolder": ip_adapter_subfolder,
-                    "weight_name": ip_adapter_weight_name,
-                    "scale": ip_adapter_scale,
-                }
-            ],
-            "do_classifier_free_guidance": do_classifier_free_guidance,
-            "num_images_per_prompt": 1,
-        },
-    )
-    return {"image_embeds": artifact}

@@ -30,7 +30,7 @@ class ZImageWorkflowTests(unittest.TestCase):
             return {"images": ["/outputs/batch/out.png"]}
 
         fake_module = SimpleNamespace(generate_text2img=_fake_generate_text2img)
-        with patch.dict("sys.modules", {"backend.z_image_pipeline": fake_module}):
+        with patch.dict("sys.modules", {"backend.z_image.pipeline": fake_module}):
             result = _z_image_text2img(
                 {
                     "prompt": "test prompt",
@@ -59,7 +59,7 @@ class ZImageWorkflowTests(unittest.TestCase):
             return {"images": ["/outputs/batch/out.png"]}
 
         fake_module = SimpleNamespace(generate_img2img=_fake_generate_img2img)
-        with patch.dict("sys.modules", {"backend.z_image_pipeline": fake_module}), patch(
+        with patch.dict("sys.modules", {"backend.z_image.pipeline": fake_module}), patch(
             "backend.workflow._open_image_ref"
         ) as mock_open_image:
             fake_image = SimpleNamespace(
@@ -98,7 +98,7 @@ class ZImageWorkflowTests(unittest.TestCase):
             return {"images": ["/outputs/batch/out.png"]}
 
         fake_module = SimpleNamespace(generate_inpaint=_fake_generate_inpaint)
-        with patch.dict("sys.modules", {"backend.z_image_pipeline": fake_module}), patch(
+        with patch.dict("sys.modules", {"backend.z_image.pipeline": fake_module}), patch(
             "backend.workflow._open_image_ref",
             return_value=Image.new("RGB", (64, 64)),
         ):

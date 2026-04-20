@@ -7,7 +7,7 @@ from typing import Any
 import torch
 
 from backend.config import OUTPUT_DIR
-from backend.workflow_utility import _artifact_path_for_id, _validate_artifact_id
+from backend.workflow.utility import _artifact_path_for_id, _validate_artifact_id
 
 IP_ADAPTER_EMBEDS_FORMAT = "synthengine.sdxl.ip_adapter_image_embeds.v1"
 

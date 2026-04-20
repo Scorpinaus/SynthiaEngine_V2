@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from typing import Any, cast
 
-from backend.lora_registry import get_lora_entry
+from backend.lora.registry import get_lora_entry
 
 logger = logging.getLogger(__name__)
 _ADAPTER_NAME_SANITIZE_RE = re.compile(r"[^0-9A-Za-z_-]+")

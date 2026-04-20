@@ -21,10 +21,11 @@ Runtime startup is defined in `run_app.bat`:
 ```text
 Browser (frontend/*.html + *.js)
   -> FastAPI (backend/main.py)
-     -> Job Queue + Worker (backend/job_queue.py)
-        -> Workflow Engine (backend/workflow.py)
-           -> Family Task Runtimes (workflow_sd15.py, workflow_sdxl.py, workflow_flux.py, workflow_qwen_image.py, workflow_z_image.py)
-              -> Diffusers Pipelines (sd15_pipeline.py, sdxl_pipeline.py, flux_pipeline.py, qwen_image_pipeline.py, z_image_pipeline.py)
+     -> Job Queue + Worker (backend/jobs/)
+        -> Workflow Engine (backend/workflow/)
+           -> Family Task Runtimes (backend/workflow/sd15.py, backend/workflow/sdxl.py, backend/workflow/flux.py, backend/workflow/qwen_image.py, backend/workflow/z_image.py)
+              -> Diffusers Pipelines (backend/sd15/pipeline.py, backend/sdxl/pipeline.py, backend/flux/pipeline.py, backend/qwen_image/pipeline.py, backend/z_image/pipeline.py)
+                 -> Shared Adapters (backend/adapters/)
 
 Data/Artifacts:
 - SQLite DBs in database/
@@ -71,9 +72,10 @@ Major route groups:
 
 Core modules:
 
-- `backend/job_queue.py`
-- `backend/job_models.py`
-- `backend/job_db.py`
+- `backend/jobs/queue.py`
+- `backend/jobs/models.py`
+- `backend/jobs/db.py`
+- `backend/jobs/render_worker.py`
 
 Design details:
 
@@ -92,12 +94,13 @@ Design details:
 
 Core modules:
 
-- `backend/workflow.py`
-- `backend/workflow_types.py`
-- `backend/workflow_utility.py`
-- `backend/workflow_schema_input.py`
-- `backend/workflow_schema_output.py`
-- `backend/workflow_catalog.py`
+- `backend/workflow/__init__.py`
+- `backend/workflow/engine.py`
+- `backend/workflow/types.py`
+- `backend/workflow/utility.py`
+- `backend/workflow/schema_input.py`
+- `backend/workflow/schema_output.py`
+- `backend/workflow/catalog.py`
 
 Responsibilities:
 
@@ -121,11 +124,14 @@ Current task families in `TASK_REGISTRY`:
 
 Primary pipeline modules:
 
-- `backend/sd15_pipeline.py`
-- `backend/sdxl_pipeline.py`
-- `backend/flux_pipeline.py`
-- `backend/qwen_image_pipeline.py`
-- `backend/z_image_pipeline.py`
+- `backend/sd15/pipeline.py`
+- `backend/sd15/animatediff_pipeline.py`
+- `backend/sd15/ip_adapter_pipeline.py`
+- `backend/sdxl/pipeline.py`
+- `backend/sdxl/ip_adapter_pipeline.py`
+- `backend/flux/pipeline.py`
+- `backend/qwen_image/pipeline.py`
+- `backend/z_image/pipeline.py`
 
 Common behavior across families:
 
@@ -138,15 +144,32 @@ Common behavior across families:
 
 Family-specific runtime adapters in workflow layer:
 
-- `backend/workflow_sd15.py`
-- `backend/workflow_sdxl.py`
-- `backend/workflow_flux.py`
-- `backend/workflow_qwen_image.py`
-- `backend/workflow_z_image.py`
+- `backend/workflow/sd15.py`
+- `backend/workflow/sdxl.py`
+- `backend/workflow/flux.py`
+- `backend/workflow/qwen_image.py`
+- `backend/workflow/z_image.py`
 
 These modules normalize inputs and call the concrete pipeline functions.
 
-### 3.5 Persistence and Data Stores
+### 3.5 Shared Adapter Infrastructure
+
+Core modules:
+
+- `backend/adapters/controlnet_preprocessors.py`
+- `backend/adapters/controlnet_preprocessor_registry.py`
+- `backend/adapters/controlnet_preprocessor_registry.json`
+- `backend/adapters/ip_adapter.py`
+- `backend/adapters/ip_adapter_embeds.py`
+
+Responsibilities:
+
+- Register and run ControlNet preprocessors used by API and workflow tasks
+- Manage shared Diffusers IP-Adapter lifecycle helpers
+- Save and validate temporary IP-Adapter image-embedding artifacts
+
+
+### 3.6 Persistence and Data Stores
 
 - Job queue DB: `database/jobs.sqlite3`
 - Model registry DB: `database/model_registry.sqlite3`
@@ -159,6 +182,55 @@ Migration pattern used in registries:
 
 - DB-first persistence
 - Optional one-time JSON bootstrap from legacy JSON files where present
+
+### 3.7 Model and Preset Registries
+
+Core modules:
+
+- `backend/registries/model.py`
+- `backend/registries/model_registry.json`
+- `backend/registries/preset.py`
+
+Responsibilities:
+
+- Persist and validate base model entries for `/models`
+- Bootstrap base models from the JSON sidecar when the SQLite registry is empty
+- Persist and validate saved generation presets for `/api/presets`
+
+### 3.8 LoRA Registry and Runtime Helpers
+
+Core modules:
+
+- `backend/lora/registry.py`
+- `backend/lora/lora_registry.json`
+- `backend/lora/utils.py`
+
+Responsibilities:
+
+- Persist and validate LoRA registry entries for `/lora-models`
+- Bootstrap from the JSON sidecar when the SQLite registry is empty
+- Apply selected LoRA adapters and write coverage reports during generation
+
+### 3.9 Shared Utilities
+
+Core modules:
+
+- `backend/utilities/logging.py`
+- `backend/utilities/model_analysis.py`
+- `backend/utilities/pipeline.py`
+- `backend/utilities/pipeline_layer_logging.py`
+- `backend/utilities/prompt.py`
+- `backend/utilities/resource_logging.py`
+- `backend/utilities/schedulers.py`
+
+Responsibilities:
+
+- Configure process logging
+- Analyze model files for registry/tool endpoints
+- Provide shared pipeline output, model-source, and cleanup helpers
+- Parse prompt weighting and build weighted prompt embeddings
+- Create Diffusers scheduler instances from user-facing scheduler ids
+- Capture pipeline layer and runtime resource diagnostics
 
 ## 4. Frontend Architecture
 
@@ -241,4 +313,3 @@ If artifact inputs are used:
 - Queue-backed execution with idempotency and cancellation support
 - Local-file output model with metadata-rich PNG artifacts
 - Static frontend with shared JS clients and per-workflow page scripts
-

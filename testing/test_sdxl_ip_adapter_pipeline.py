@@ -6,8 +6,8 @@ from unittest.mock import patch
 import torch
 from PIL import Image
 
-from backend import sdxl_ip_adapter_pipeline
-from backend import sdxl_pipeline
+from backend.sdxl import ip_adapter_pipeline as sdxl_ip_adapter_pipeline
+from backend.sdxl import pipeline as sdxl_pipeline
 
 
 class _FakeLatents:
@@ -174,9 +174,9 @@ class SdxlIpAdapterPipelineTests(unittest.TestCase):
             {"model_type": "diffusers", "location_type": "hub", "link": "model/repo"},
         )()
 
-        with patch("backend.sdxl_pipeline.get_model_entry", return_value=fake_entry):
+        with patch("backend.sdxl.pipeline.get_model_entry", return_value=fake_entry):
             with patch(
-                "backend.sdxl_pipeline.StableDiffusionXLPipeline.from_pretrained",
+                "backend.sdxl.pipeline.StableDiffusionXLPipeline.from_pretrained",
                 return_value=fake_pipe,
             ):
                 pipe = sdxl_pipeline.load_text2img_pipeline("stable-diffusion-xl-base-1.0")
@@ -200,30 +200,30 @@ class SdxlIpAdapterPipelineTests(unittest.TestCase):
                 "url": "/outputs/artifacts/e123.pt",
             }
 
-        with patch("backend.sdxl_ip_adapter_pipeline.torch.cuda.is_available", return_value=True):
-            with patch("backend.sdxl_ip_adapter_pipeline.hf_hub_download", return_value="adapter.bin") as download:
+        with patch("backend.sdxl.ip_adapter_pipeline.torch.cuda.is_available", return_value=True):
+            with patch("backend.sdxl.ip_adapter_pipeline.hf_hub_download", return_value="adapter.bin") as download:
                 with patch(
-                    "backend.sdxl_ip_adapter_pipeline.load_state_dict",
+                    "backend.sdxl.ip_adapter_pipeline.load_state_dict",
                     return_value={
                         "image_proj": {"proj.weight": torch.zeros(8192, 1280)},
                         "ip_adapter": {},
                     },
                 ):
                     with patch(
-                        "backend.sdxl_ip_adapter_pipeline.CLIPVisionModelWithProjection.from_pretrained",
+                        "backend.sdxl.ip_adapter_pipeline.CLIPVisionModelWithProjection.from_pretrained",
                         return_value=fake_encoder,
                     ) as from_pretrained:
                         with patch(
-                            "backend.sdxl_ip_adapter_pipeline.CLIPImageProcessor",
+                            "backend.sdxl.ip_adapter_pipeline.CLIPImageProcessor",
                             _FakeCLIPImageProcessor,
                         ):
                             with patch(
-                                "backend.sdxl_ip_adapter_pipeline.save_ip_adapter_embeds_artifact",
+                                "backend.sdxl.ip_adapter_pipeline.save_ip_adapter_embeds_artifact",
                                 side_effect=_fake_save_embeds,
                             ):
-                                with patch("backend.sdxl_ip_adapter_pipeline.cleanup_memory") as cleanup:
+                                with patch("backend.sdxl.ip_adapter_pipeline.cleanup_memory") as cleanup:
                                     with patch(
-                                        "backend.sdxl_ip_adapter_pipeline.load_text2img_pipeline",
+                                        "backend.sdxl.ip_adapter_pipeline.load_text2img_pipeline",
                                         create=True,
                                     ) as load_text2img_pipeline:
                                         result = sdxl_ip_adapter_pipeline.generate_ip_adapter_image_embeds(
@@ -315,8 +315,8 @@ class SdxlIpAdapterPipelineTests(unittest.TestCase):
             )
 
     def test_generate_ip_adapter_image_embeds_requires_cuda(self):
-        with patch("backend.sdxl_ip_adapter_pipeline.torch.cuda.is_available", return_value=False):
-            with patch("backend.sdxl_ip_adapter_pipeline.hf_hub_download") as download:
+        with patch("backend.sdxl.ip_adapter_pipeline.torch.cuda.is_available", return_value=False):
+            with patch("backend.sdxl.ip_adapter_pipeline.hf_hub_download") as download:
                 with self.assertRaisesRegex(
                     ValueError,
                     "CUDA is required for SDXL IP-Adapter minimal encode",
@@ -328,16 +328,16 @@ class SdxlIpAdapterPipelineTests(unittest.TestCase):
         download.assert_not_called()
 
     def test_generate_ip_adapter_image_embeds_rejects_unsupported_projection(self):
-        with patch("backend.sdxl_ip_adapter_pipeline.torch.cuda.is_available", return_value=True):
-            with patch("backend.sdxl_ip_adapter_pipeline.hf_hub_download", return_value="adapter.bin"):
+        with patch("backend.sdxl.ip_adapter_pipeline.torch.cuda.is_available", return_value=True):
+            with patch("backend.sdxl.ip_adapter_pipeline.hf_hub_download", return_value="adapter.bin"):
                 with patch(
-                    "backend.sdxl_ip_adapter_pipeline.load_state_dict",
+                    "backend.sdxl.ip_adapter_pipeline.load_state_dict",
                     return_value={"image_proj": {"latents": torch.zeros(1, 4, 8)}, "ip_adapter": {}},
                 ):
                     with patch(
-                        "backend.sdxl_ip_adapter_pipeline.CLIPVisionModelWithProjection.from_pretrained"
+                        "backend.sdxl.ip_adapter_pipeline.CLIPVisionModelWithProjection.from_pretrained"
                     ) as from_pretrained:
-                        with patch("backend.sdxl_ip_adapter_pipeline.cleanup_memory"):
+                        with patch("backend.sdxl.ip_adapter_pipeline.cleanup_memory"):
                             with self.assertRaisesRegex(
                                 ValueError,
                                 "Only the base SDXL IP-Adapter is supported by the minimal encoder",
@@ -353,7 +353,7 @@ class SdxlIpAdapterPipelineTests(unittest.TestCase):
         image_encoder = fake_pipe.image_encoder
         ip_adapter_image_embeds = ["prepared-ip-adapter-embeds"]
 
-        with patch("backend.sdxl_pipeline.torch.Generator", _FakeGenerator):
+        with patch("backend.sdxl.pipeline.torch.Generator", _FakeGenerator):
             latents = sdxl_pipeline.render_text2img_latents(
                 fake_pipe,
                 prompt="test prompt",
@@ -410,31 +410,31 @@ class SdxlIpAdapterPipelineTests(unittest.TestCase):
             return Image.new("RGB", (8, 8))
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch("backend.sdxl_pipeline.load_text2img_pipeline", return_value=fake_pipe):
-                with patch("backend.sdxl_pipeline.create_scheduler", return_value="scheduler"):
+            with patch("backend.sdxl.pipeline.load_text2img_pipeline", return_value=fake_pipe):
+                with patch("backend.sdxl.pipeline.create_scheduler", return_value="scheduler"):
                     with patch(
-                        "backend.sdxl_pipeline.apply_lora_adapters_with_validation",
+                        "backend.sdxl.pipeline.apply_lora_adapters_with_validation",
                         return_value=([], {}),
                     ):
-                        with patch("backend.sdxl_pipeline.write_lora_coverage_report", return_value=None):
+                        with patch("backend.sdxl.pipeline.write_lora_coverage_report", return_value=None):
                             with patch(
-                                "backend.sdxl_pipeline.render_text2img_latents",
+                                "backend.sdxl.pipeline.render_text2img_latents",
                                 side_effect=_fake_render_text2img_latents,
                             ):
                                 with patch(
-                                    "backend.sdxl_pipeline._release_pipeline",
+                                    "backend.sdxl.pipeline._release_pipeline",
                                     side_effect=_fake_release_pipeline,
                                 ):
                                     with patch(
-                                        "backend.sdxl_pipeline._decode_latents_to_pil",
+                                        "backend.sdxl.pipeline._decode_latents_to_pil",
                                         side_effect=_fake_decode_latents_to_pil,
                                     ):
                                         with patch(
-                                            "backend.sdxl_pipeline.make_batch_id",
+                                            "backend.sdxl.pipeline.make_batch_id",
                                             return_value="batch123",
                                         ):
                                             with patch(
-                                                "backend.sdxl_pipeline.get_batch_output_dir",
+                                                "backend.sdxl.pipeline.get_batch_output_dir",
                                                 return_value=Path(tmpdir),
                                             ):
                                                 result = sdxl_pipeline.generate_text2img(
@@ -469,27 +469,27 @@ class SdxlIpAdapterPipelineTests(unittest.TestCase):
             return _FakeLatents()
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch("backend.sdxl_pipeline.load_text2img_pipeline", return_value=fake_pipe):
-                with patch("backend.sdxl_pipeline.create_scheduler", return_value="scheduler"):
+            with patch("backend.sdxl.pipeline.load_text2img_pipeline", return_value=fake_pipe):
+                with patch("backend.sdxl.pipeline.create_scheduler", return_value="scheduler"):
                     with patch(
-                        "backend.sdxl_pipeline.apply_lora_adapters_with_validation",
+                        "backend.sdxl.pipeline.apply_lora_adapters_with_validation",
                         return_value=([], {}),
                     ):
-                        with patch("backend.sdxl_pipeline.write_lora_coverage_report", return_value=None):
+                        with patch("backend.sdxl.pipeline.write_lora_coverage_report", return_value=None):
                             with patch(
-                                "backend.sdxl_pipeline.render_text2img_latents",
+                                "backend.sdxl.pipeline.render_text2img_latents",
                                 side_effect=_fake_render_text2img_latents,
                             ):
                                 with patch(
-                                    "backend.sdxl_pipeline._decode_latents_to_pil",
+                                    "backend.sdxl.pipeline._decode_latents_to_pil",
                                     return_value=Image.new("RGB", (8, 8)),
                                 ):
                                     with patch(
-                                        "backend.sdxl_pipeline.make_batch_id",
+                                        "backend.sdxl.pipeline.make_batch_id",
                                         return_value="batch123",
                                     ):
                                         with patch(
-                                            "backend.sdxl_pipeline.get_batch_output_dir",
+                                            "backend.sdxl.pipeline.get_batch_output_dir",
                                             return_value=Path(tmpdir),
                                         ):
                                             result = sdxl_pipeline.generate_text2img(
@@ -554,32 +554,32 @@ class SdxlIpAdapterPipelineTests(unittest.TestCase):
             return _FakeLatents()
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch("backend.sdxl_pipeline.load_text2img_pipeline", return_value=fake_pipe):
-                with patch("backend.sdxl_pipeline.create_scheduler", return_value="scheduler"):
+            with patch("backend.sdxl.pipeline.load_text2img_pipeline", return_value=fake_pipe):
+                with patch("backend.sdxl.pipeline.create_scheduler", return_value="scheduler"):
                     with patch(
-                        "backend.sdxl_pipeline.load_ip_adapter_embeds_artifact",
+                        "backend.sdxl.pipeline.load_ip_adapter_embeds_artifact",
                         return_value=embeds_payload,
                     ) as load_embeds:
-                        with patch("backend.sdxl_pipeline.validate_ip_adapter_embeds_metadata") as validate_embeds:
+                        with patch("backend.sdxl.pipeline.validate_ip_adapter_embeds_metadata") as validate_embeds:
                             with patch(
-                                "backend.sdxl_pipeline.apply_lora_adapters_with_validation",
+                                "backend.sdxl.pipeline.apply_lora_adapters_with_validation",
                                 return_value=([], {}),
                             ):
-                                with patch("backend.sdxl_pipeline.write_lora_coverage_report", return_value=None):
+                                with patch("backend.sdxl.pipeline.write_lora_coverage_report", return_value=None):
                                     with patch(
-                                        "backend.sdxl_pipeline.render_text2img_latents",
+                                        "backend.sdxl.pipeline.render_text2img_latents",
                                         side_effect=_fake_render_text2img_latents,
                                     ):
                                         with patch(
-                                            "backend.sdxl_pipeline._decode_latents_to_pil",
+                                            "backend.sdxl.pipeline._decode_latents_to_pil",
                                             return_value=Image.new("RGB", (8, 8)),
                                         ):
                                             with patch(
-                                                "backend.sdxl_pipeline.make_batch_id",
+                                                "backend.sdxl.pipeline.make_batch_id",
                                                 return_value="batch123",
                                             ):
                                                 with patch(
-                                                    "backend.sdxl_pipeline.get_batch_output_dir",
+                                                    "backend.sdxl.pipeline.get_batch_output_dir",
                                                     return_value=Path(tmpdir),
                                                 ):
                                                     result = sdxl_pipeline.generate_text2img(
@@ -645,31 +645,31 @@ class SdxlIpAdapterPipelineTests(unittest.TestCase):
             return Image.new("RGB", (8, 8))
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch("backend.sdxl_pipeline.load_img2img_pipeline", return_value=fake_pipe):
-                with patch("backend.sdxl_pipeline.create_scheduler", return_value="scheduler"):
+            with patch("backend.sdxl.pipeline.load_img2img_pipeline", return_value=fake_pipe):
+                with patch("backend.sdxl.pipeline.create_scheduler", return_value="scheduler"):
                     with patch(
-                        "backend.sdxl_pipeline.apply_lora_adapters_with_validation",
+                        "backend.sdxl.pipeline.apply_lora_adapters_with_validation",
                         return_value=([], {}),
                     ):
-                        with patch("backend.sdxl_pipeline.write_lora_coverage_report", return_value=None):
+                        with patch("backend.sdxl.pipeline.write_lora_coverage_report", return_value=None):
                             with patch(
-                                "backend.sdxl_pipeline.render_img2img_latents",
+                                "backend.sdxl.pipeline.render_img2img_latents",
                                 side_effect=_fake_render_img2img_latents,
                             ):
                                 with patch(
-                                    "backend.sdxl_pipeline._release_pipeline",
+                                    "backend.sdxl.pipeline._release_pipeline",
                                     side_effect=_fake_release_pipeline,
                                 ):
                                     with patch(
-                                        "backend.sdxl_pipeline._decode_latents_to_pil",
+                                        "backend.sdxl.pipeline._decode_latents_to_pil",
                                         side_effect=_fake_decode_latents_to_pil,
                                     ):
                                         with patch(
-                                            "backend.sdxl_pipeline.make_batch_id",
+                                            "backend.sdxl.pipeline.make_batch_id",
                                             return_value="batch123",
                                         ):
                                             with patch(
-                                                "backend.sdxl_pipeline.get_batch_output_dir",
+                                                "backend.sdxl.pipeline.get_batch_output_dir",
                                                 return_value=Path(tmpdir),
                                             ):
                                                 result = sdxl_pipeline.generate_img2img(
@@ -708,27 +708,27 @@ class SdxlIpAdapterPipelineTests(unittest.TestCase):
             return _FakeLatents()
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch("backend.sdxl_pipeline.load_img2img_pipeline", return_value=fake_pipe):
-                with patch("backend.sdxl_pipeline.create_scheduler", return_value="scheduler"):
+            with patch("backend.sdxl.pipeline.load_img2img_pipeline", return_value=fake_pipe):
+                with patch("backend.sdxl.pipeline.create_scheduler", return_value="scheduler"):
                     with patch(
-                        "backend.sdxl_pipeline.apply_lora_adapters_with_validation",
+                        "backend.sdxl.pipeline.apply_lora_adapters_with_validation",
                         return_value=([], {}),
                     ):
-                        with patch("backend.sdxl_pipeline.write_lora_coverage_report", return_value=None):
+                        with patch("backend.sdxl.pipeline.write_lora_coverage_report", return_value=None):
                             with patch(
-                                "backend.sdxl_pipeline.render_img2img_latents",
+                                "backend.sdxl.pipeline.render_img2img_latents",
                                 side_effect=_fake_render_img2img_latents,
                             ):
                                 with patch(
-                                    "backend.sdxl_pipeline._decode_latents_to_pil",
+                                    "backend.sdxl.pipeline._decode_latents_to_pil",
                                     return_value=Image.new("RGB", (8, 8)),
                                 ):
                                     with patch(
-                                        "backend.sdxl_pipeline.make_batch_id",
+                                        "backend.sdxl.pipeline.make_batch_id",
                                         return_value="batch123",
                                     ):
                                         with patch(
-                                            "backend.sdxl_pipeline.get_batch_output_dir",
+                                            "backend.sdxl.pipeline.get_batch_output_dir",
                                             return_value=Path(tmpdir),
                                         ):
                                             result = sdxl_pipeline.generate_img2img(
@@ -783,23 +783,23 @@ class SdxlIpAdapterPipelineTests(unittest.TestCase):
             return Image.new("RGB", (8, 8))
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch("backend.sdxl_pipeline.load_inpaint_pipeline", return_value=fake_pipe):
-                with patch("backend.sdxl_pipeline.create_scheduler", return_value="scheduler"):
+            with patch("backend.sdxl.pipeline.load_inpaint_pipeline", return_value=fake_pipe):
+                with patch("backend.sdxl.pipeline.create_scheduler", return_value="scheduler"):
                     with patch(
-                        "backend.sdxl_pipeline.apply_lora_adapters_with_validation",
+                        "backend.sdxl.pipeline.apply_lora_adapters_with_validation",
                         return_value=([], {}),
                     ):
-                        with patch("backend.sdxl_pipeline.write_lora_coverage_report", return_value=None):
+                        with patch("backend.sdxl.pipeline.write_lora_coverage_report", return_value=None):
                             with patch(
-                                "backend.sdxl_pipeline.render_inpaint_image",
+                                "backend.sdxl.pipeline.render_inpaint_image",
                                 side_effect=_fake_render_inpaint_image,
                             ):
                                 with patch(
-                                    "backend.sdxl_pipeline.make_batch_id",
+                                    "backend.sdxl.pipeline.make_batch_id",
                                     return_value="batch123",
                                 ):
                                     with patch(
-                                        "backend.sdxl_pipeline.get_batch_output_dir",
+                                        "backend.sdxl.pipeline.get_batch_output_dir",
                                         return_value=Path(tmpdir),
                                     ):
                                         result = sdxl_pipeline.generate_inpaint(

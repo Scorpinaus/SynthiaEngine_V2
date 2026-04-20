@@ -15,15 +15,15 @@ from diffusers import (
 )
 
 from backend.config import OUTPUT_DIR
-from backend.ip_adapter import IpAdapterManager
-from backend.ip_adapter_embeds import (
+from backend.adapters.ip_adapter import IpAdapterManager
+from backend.adapters.ip_adapter_embeds import (
     load_ip_adapter_embeds_artifact,
     validate_ip_adapter_embeds_metadata,
 )
-from backend.logging_utils import configure_logging
-from backend.lora_utils import apply_lora_adapters_with_validation, write_lora_coverage_report
-from backend.model_registry import get_model_entry
-from backend.pipeline_utils import (
+from backend.utilities.logging import configure_logging
+from backend.lora.utils import apply_lora_adapters_with_validation, write_lora_coverage_report
+from backend.registries.model import get_model_entry
+from backend.utilities.pipeline import (
     build_fixed_step_timesteps,
     build_png_metadata,
     build_batch_output_relpath,
@@ -32,7 +32,7 @@ from backend.pipeline_utils import (
     make_batch_id,
     resolve_model_source,
 )
-from backend.schedulers import create_scheduler
+from backend.utilities.schedulers import create_scheduler
 
 logger = logging.getLogger(__name__)
 configure_logging()

@@ -1,7 +1,7 @@
 import threading
 
 import backend.main as main
-import backend.render_worker as render_worker
+import backend.jobs.render_worker as render_worker
 
 
 class _FakeEngine:

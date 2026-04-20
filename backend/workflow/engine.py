@@ -9,11 +9,11 @@ from PIL import Image
 from pydantic import BaseModel
 
 from backend.config import OUTPUT_DIR
-from backend.workflow_catalog import build_workflow_catalog as _build_workflow_catalog
-from backend.controlnet_preprocessor_registry import CONTROLNET_PREPROCESSOR_REGISTRY
-from backend.controlnet_preprocessors import get_preprocessor
-from backend.pipeline_utils import get_batch_output_dir, make_batch_id
-from backend.workflow_schema_input import (
+from backend.workflow.catalog import build_workflow_catalog as _build_workflow_catalog
+from backend.adapters.controlnet_preprocessor_registry import CONTROLNET_PREPROCESSOR_REGISTRY
+from backend.adapters.controlnet_preprocessors import get_preprocessor
+from backend.utilities.pipeline import get_batch_output_dir, make_batch_id
+from backend.workflow.schema_input import (
     ArtifactRef,
     ControlNetPreprocessInputs,
     FluxImg2ImgInputs,
@@ -45,7 +45,7 @@ from backend.workflow_schema_input import (
     _DEFAULT_SD15_CONTROLNET_MODEL,
     _DEFAULT_SDXL_CONTROLNET_MODEL,
 )
-from backend.workflow_schema_output import (
+from backend.workflow.schema_output import (
     ArtifactInfo,
     ControlNetPreprocessOutput,
     ImagesOutput,
@@ -60,14 +60,14 @@ from backend.workflow_schema_output import (
     SdxlIpAdapterEncodeOutput,
     VideosWithBatchOutput,
 )
-from backend.workflow_types import (
+from backend.workflow.types import (
     TaskType,
     WorkflowCanceled,
     WorkflowContext,
     WorkflowRequest,
     WorkflowTask,
 )
-from backend.workflow_utility import (
+from backend.workflow.utility import (
     _ARTIFACT_ID_RE,
     _artifact_dir,
     _load_image_from_outputs_url,
@@ -83,7 +83,7 @@ from backend.workflow_utility import (
     collect_artifact_ids,
     save_artifact_png,
 )
-from backend.workflow_sd15 import (
+from backend.workflow.sd15 import (
     run_sd15_animatediff_text2video as _run_sd15_animatediff_text2video,
     run_sd15_controlnet_text2img as _run_sd15_controlnet_text2img,
     run_sd15_hires_fix as _run_sd15_hires_fix,
@@ -92,29 +92,29 @@ from backend.workflow_sd15 import (
     run_sd15_ip_adapter_encode_task as _run_sd15_ip_adapter_encode,
     run_sd15_text2img as _run_sd15_text2img,
 )
-from backend.workflow_sdxl import (
+from backend.workflow.sdxl import (
     run_sdxl_controlnet_text2img_task as _run_sdxl_controlnet_text2img,
     run_sdxl_img2img_task as _run_sdxl_img2img,
     run_sdxl_inpaint_task as _run_sdxl_inpaint,
     run_sdxl_ip_adapter_encode_task as _run_sdxl_ip_adapter_encode,
     run_sdxl_text2img_task as _run_sdxl_text2img,
 )
-from backend.workflow_flux import (
+from backend.workflow.flux import (
     run_flux_text2img_task as _run_flux_text2img,
     run_flux_img2img_task as _run_flux_img2img,
     run_flux_inpaint_task as _run_flux_inpaint,
 )
-from backend.workflow_z_image import (
+from backend.workflow.z_image import (
     run_z_image_text2img_task as _run_z_image_text2img,
     run_z_image_img2img_task as _run_z_image_img2img,
     run_z_image_inpaint_task as _run_z_image_inpaint,
 )
-from backend.workflow_qwen_image import (
+from backend.workflow.qwen_image import (
     run_qwen_image_text2img_task as _run_qwen_image_text2img,
     run_qwen_image_img2img_task as _run_qwen_image_img2img,
     run_qwen_image_inpaint_task as _run_qwen_image_inpaint,
 )
-from backend.sd15_pipeline import (
+from backend.sd15.pipeline import (
     generate_images,
     generate_images_controlnet,
     generate_images_img2img,
@@ -123,8 +123,8 @@ from backend.sd15_pipeline import (
     generate_images_inpaint_controlnet,
     run_sd15_hires_fix,
 )
-from backend.sd15_animatediff_pipeline import generate_videos_text2video
-import backend.sdxl_pipeline as sdxl_pipeline_module
+from backend.sd15.animatediff_pipeline import generate_videos_text2video
+import backend.sdxl.pipeline as sdxl_pipeline_module
 
 logger = logging.getLogger(__name__)
 
@@ -221,7 +221,7 @@ def _sd15_runtime_deps() -> dict[str, Any]:
         "generate_images_inpaint_controlnet": generate_images_inpaint_controlnet,
         "generate_images_controlnet": generate_images_controlnet,
         "generate_ip_adapter_image_embeds": importlib.import_module(
-            "backend.sd15_ip_adapter_pipeline"
+            "backend.sd15.ip_adapter_pipeline"
         ).generate_ip_adapter_image_embeds,
         "default_sd15_controlnet_model": _DEFAULT_SD15_CONTROLNET_MODEL,
         "max_controlnet_models": _MAX_CONTROLNET_MODELS,
@@ -303,7 +303,7 @@ def _sdxl_runtime_deps() -> dict[str, Any]:
         "logger": logger,
         "generate_text2img": sdxl_pipeline_module.generate_text2img,
         "generate_ip_adapter_image_embeds": importlib.import_module(
-            "backend.sdxl_ip_adapter_pipeline"
+            "backend.sdxl.ip_adapter_pipeline"
         ).generate_ip_adapter_image_embeds,
         "generate_controlnet_text2img": sdxl_pipeline_module.generate_controlnet_text2img,
         "generate_img2img": sdxl_pipeline_module.generate_img2img,
@@ -338,7 +338,7 @@ def _sdxl_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, An
 
 # Flux task handlers and dependencies
 def _flux_runtime_deps() -> dict[str, Any]:
-    flux_pipeline_module = importlib.import_module("backend.flux_pipeline")
+    flux_pipeline_module = importlib.import_module("backend.flux.pipeline")
     deps: dict[str, Any] = {"open_image_ref": _open_image_ref}
     for name in ("generate_text2img", "generate_img2img", "generate_inpaint"):
         func = getattr(flux_pipeline_module, name, None)
@@ -361,7 +361,7 @@ def _flux_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, An
 
 # Qwen-Image task handlers and dependencies
 def _qwen_image_runtime_deps() -> dict[str, Any]:
-    qwen_image_pipeline_module = importlib.import_module("backend.qwen_image_pipeline")
+    qwen_image_pipeline_module = importlib.import_module("backend.qwen_image.pipeline")
     deps: dict[str, Any] = {
         "open_image_ref": _open_image_ref,
         "remap_img2img_strength": _remap_img2img_strength,
@@ -388,7 +388,7 @@ def _qwen_image_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[s
 
 # Z-Image task handlers and dependencies
 def _z_image_runtime_deps() -> dict[str, Any]:
-    z_image_pipeline_module = importlib.import_module("backend.z_image_pipeline")
+    z_image_pipeline_module = importlib.import_module("backend.z_image.pipeline")
     deps: dict[str, Any] = {
         "open_image_ref": _open_image_ref,
         "remap_img2img_strength": _remap_img2img_strength,

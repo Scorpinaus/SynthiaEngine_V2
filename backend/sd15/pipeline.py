@@ -30,16 +30,16 @@ from diffusers import (
 )
 
 from backend.config import OUTPUT_DIR
-from backend.logging_utils import configure_logging
-from backend.model_registry import get_model_entry
-from backend.resource_logging import resource_logger
-from backend.ip_adapter import IpAdapterManager
-from backend.ip_adapter_embeds import (
+from backend.utilities.logging import configure_logging
+from backend.registries.model import get_model_entry
+from backend.utilities.resource_logging import resource_logger
+from backend.adapters.ip_adapter import IpAdapterManager
+from backend.adapters.ip_adapter_embeds import (
     load_ip_adapter_embeds_artifact,
     validate_ip_adapter_embeds_metadata,
 )
 # from testing.pipeline_stable_diffusion import(StableDiffusionPipeline)
-from backend.pipeline_utils import (
+from backend.utilities.pipeline import (
     build_fixed_step_timesteps,
     build_png_metadata,
     build_batch_output_relpath,
@@ -47,15 +47,15 @@ from backend.pipeline_utils import (
     make_batch_id,
     resolve_model_source,
 )
-from backend.schedulers import create_scheduler
-from backend.prompt_utils import build_prompt_embeddings
+from backend.utilities.schedulers import create_scheduler
+from backend.utilities.prompt import build_prompt_embeddings
 from backend import config
-from backend.pipeline_layer_logging import (
+from backend.utilities.pipeline_layer_logging import (
     append_layers_report,
     capture_runtime_used_layers,
     collect_pipeline_layers,
 )
-from backend.lora_utils import apply_lora_adapters_with_validation, write_lora_coverage_report
+from backend.lora.utils import apply_lora_adapters_with_validation, write_lora_coverage_report
 
 logger = logging.getLogger(__name__)
 configure_logging()

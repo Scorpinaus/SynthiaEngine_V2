@@ -1,6 +1,6 @@
 import unittest
 
-from backend.lora_utils import apply_lora_adapters_with_validation
+from backend.lora.utils import apply_lora_adapters_with_validation
 
 
 class FakePipeline:

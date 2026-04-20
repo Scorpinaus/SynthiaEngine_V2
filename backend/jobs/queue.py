@@ -12,9 +12,9 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.exc import OperationalError
 
-from backend.job_db import JobDbConfig, create_job_engine, create_sessionmaker
-from backend.job_db import DEFAULT_JOB_DB_URL
-from backend.job_models import Base, Job, utcnow
+from backend.jobs.db import JobDbConfig, create_job_engine, create_sessionmaker
+from backend.jobs.db import DEFAULT_JOB_DB_URL
+from backend.jobs.models import Base, Job, utcnow
 
 logger = logging.getLogger(__name__)
 

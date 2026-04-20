@@ -7,7 +7,7 @@ import torch
 from PIL import Image
 from diffusers.image_processor import IPAdapterMaskProcessor
 
-from backend.pipeline_utils import cleanup_memory
+from backend.utilities.pipeline import cleanup_memory
 
 _UNSET = object()
 

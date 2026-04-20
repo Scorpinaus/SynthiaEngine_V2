@@ -6,8 +6,8 @@ from unittest.mock import patch
 import torch
 from PIL import Image
 
-from backend import sd15_ip_adapter_pipeline
-from backend import sd15_pipeline
+from backend.sd15 import ip_adapter_pipeline as sd15_ip_adapter_pipeline
+from backend.sd15 import pipeline as sd15_pipeline
 
 
 class _FakeGenerator:
@@ -114,28 +114,28 @@ class Sd15IpAdapterPipelineTests(unittest.TestCase):
                 "url": "/outputs/artifacts/e123.pt",
             }
 
-        with patch("backend.sd15_ip_adapter_pipeline.torch.cuda.is_available", return_value=True):
-            with patch("backend.sd15_ip_adapter_pipeline.hf_hub_download", return_value="adapter.bin") as download:
+        with patch("backend.sd15.ip_adapter_pipeline.torch.cuda.is_available", return_value=True):
+            with patch("backend.sd15.ip_adapter_pipeline.hf_hub_download", return_value="adapter.bin") as download:
                 with patch(
-                    "backend.sd15_ip_adapter_pipeline.load_state_dict",
+                    "backend.sd15.ip_adapter_pipeline.load_state_dict",
                     return_value={
                         "image_proj": {"proj.weight": torch.zeros(3072, 1024)},
                         "ip_adapter": {},
                     },
                 ):
                     with patch(
-                        "backend.sd15_ip_adapter_pipeline.CLIPVisionModelWithProjection.from_pretrained",
+                        "backend.sd15.ip_adapter_pipeline.CLIPVisionModelWithProjection.from_pretrained",
                         return_value=fake_encoder,
                     ) as from_pretrained:
                         with patch(
-                            "backend.sd15_ip_adapter_pipeline.CLIPImageProcessor",
+                            "backend.sd15.ip_adapter_pipeline.CLIPImageProcessor",
                             _FakeCLIPImageProcessor,
                         ):
                             with patch(
-                                "backend.sd15_ip_adapter_pipeline.save_ip_adapter_embeds_artifact",
+                                "backend.sd15.ip_adapter_pipeline.save_ip_adapter_embeds_artifact",
                                 side_effect=_fake_save_embeds,
                             ):
-                                with patch("backend.sd15_ip_adapter_pipeline.cleanup_memory") as cleanup:
+                                with patch("backend.sd15.ip_adapter_pipeline.cleanup_memory") as cleanup:
                                     result = sd15_ip_adapter_pipeline.generate_ip_adapter_image_embeds(
                                         {
                                             "image": image,
@@ -193,15 +193,15 @@ class Sd15IpAdapterPipelineTests(unittest.TestCase):
         reference_image = Image.new("RGB", (16, 16))
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch("backend.sd15_pipeline.load_text2img_pipeline", return_value=fake_pipe):
-                with patch("backend.sd15_pipeline.create_scheduler", return_value="scheduler"):
+            with patch("backend.sd15.pipeline.load_text2img_pipeline", return_value=fake_pipe):
+                with patch("backend.sd15.pipeline.create_scheduler", return_value="scheduler"):
                     with patch(
-                        "backend.sd15_pipeline.build_prompt_embeddings",
+                        "backend.sd15.pipeline.build_prompt_embeddings",
                         return_value=(None, None, False),
                     ):
-                        with patch("backend.sd15_pipeline.torch.Generator", _FakeGenerator):
+                        with patch("backend.sd15.pipeline.torch.Generator", _FakeGenerator):
                             with patch(
-                                "backend.sd15_pipeline.get_batch_output_dir",
+                                "backend.sd15.pipeline.get_batch_output_dir",
                                 return_value=Path(tmpdir),
                             ):
                                 filenames = sd15_pipeline.generate_images(
@@ -260,23 +260,23 @@ class Sd15IpAdapterPipelineTests(unittest.TestCase):
         embeds_payload = {"family": "SD15", "metadata": {}, "embeds": embeds}
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch("backend.sd15_pipeline.load_text2img_pipeline", return_value=fake_pipe):
-                with patch("backend.sd15_pipeline.create_scheduler", return_value="scheduler"):
+            with patch("backend.sd15.pipeline.load_text2img_pipeline", return_value=fake_pipe):
+                with patch("backend.sd15.pipeline.create_scheduler", return_value="scheduler"):
                     with patch(
-                        "backend.sd15_pipeline.build_prompt_embeddings",
+                        "backend.sd15.pipeline.build_prompt_embeddings",
                         return_value=(None, None, False),
                     ):
-                        with patch("backend.sd15_pipeline.torch.Generator", _FakeGenerator):
+                        with patch("backend.sd15.pipeline.torch.Generator", _FakeGenerator):
                             with patch(
-                                "backend.sd15_pipeline.get_batch_output_dir",
+                                "backend.sd15.pipeline.get_batch_output_dir",
                                 return_value=Path(tmpdir),
                             ):
                                 with patch(
-                                    "backend.sd15_pipeline.load_ip_adapter_embeds_artifact",
+                                    "backend.sd15.pipeline.load_ip_adapter_embeds_artifact",
                                     return_value=embeds_payload,
                                 ) as load_embeds:
                                     with patch(
-                                        "backend.sd15_pipeline.validate_ip_adapter_embeds_metadata"
+                                        "backend.sd15.pipeline.validate_ip_adapter_embeds_metadata"
                                     ) as validate_embeds:
                                         sd15_pipeline.generate_images(
                                             {
@@ -325,11 +325,11 @@ class Sd15IpAdapterPipelineTests(unittest.TestCase):
         reference_image = Image.new("RGB", (16, 16))
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch("backend.sd15_pipeline.load_img2img_pipeline", return_value=fake_pipe):
-                with patch("backend.sd15_pipeline.create_scheduler", return_value="scheduler"):
-                    with patch("backend.sd15_pipeline.torch.Generator", _FakeGenerator):
+            with patch("backend.sd15.pipeline.load_img2img_pipeline", return_value=fake_pipe):
+                with patch("backend.sd15.pipeline.create_scheduler", return_value="scheduler"):
+                    with patch("backend.sd15.pipeline.torch.Generator", _FakeGenerator):
                         with patch(
-                            "backend.sd15_pipeline.get_batch_output_dir",
+                            "backend.sd15.pipeline.get_batch_output_dir",
                             return_value=Path(tmpdir),
                         ):
                             filenames = sd15_pipeline.generate_images_img2img(
@@ -387,19 +387,19 @@ class Sd15IpAdapterPipelineTests(unittest.TestCase):
         embeds = ["loaded-ip-adapter-embeds"]
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch("backend.sd15_pipeline.load_img2img_pipeline", return_value=fake_pipe):
-                with patch("backend.sd15_pipeline.create_scheduler", return_value="scheduler"):
-                    with patch("backend.sd15_pipeline.torch.Generator", _FakeGenerator):
+            with patch("backend.sd15.pipeline.load_img2img_pipeline", return_value=fake_pipe):
+                with patch("backend.sd15.pipeline.create_scheduler", return_value="scheduler"):
+                    with patch("backend.sd15.pipeline.torch.Generator", _FakeGenerator):
                         with patch(
-                            "backend.sd15_pipeline.get_batch_output_dir",
+                            "backend.sd15.pipeline.get_batch_output_dir",
                             return_value=Path(tmpdir),
                         ):
                             with patch(
-                                "backend.sd15_pipeline.load_ip_adapter_embeds_artifact",
+                                "backend.sd15.pipeline.load_ip_adapter_embeds_artifact",
                                 return_value={"family": "SD15", "metadata": {}, "embeds": embeds},
                             ):
                                 with patch(
-                                    "backend.sd15_pipeline.validate_ip_adapter_embeds_metadata"
+                                    "backend.sd15.pipeline.validate_ip_adapter_embeds_metadata"
                                 ) as validate_embeds:
                                     sd15_pipeline.generate_images_img2img(
                                         {
@@ -433,12 +433,12 @@ class Sd15IpAdapterPipelineTests(unittest.TestCase):
         reference_image = Image.new("RGB", (16, 16))
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch("backend.sd15_pipeline.load_inpaint_pipeline", return_value=fake_pipe):
-                with patch("backend.sd15_pipeline.create_scheduler", return_value="scheduler"):
-                    with patch("backend.sd15_pipeline.torch.Generator", _FakeGenerator):
-                        with patch("backend.sd15_pipeline._apply_lora_adapters", return_value=[]):
+            with patch("backend.sd15.pipeline.load_inpaint_pipeline", return_value=fake_pipe):
+                with patch("backend.sd15.pipeline.create_scheduler", return_value="scheduler"):
+                    with patch("backend.sd15.pipeline.torch.Generator", _FakeGenerator):
+                        with patch("backend.sd15.pipeline._apply_lora_adapters", return_value=[]):
                             with patch(
-                                "backend.sd15_pipeline.get_batch_output_dir",
+                                "backend.sd15.pipeline.get_batch_output_dir",
                                 return_value=Path(tmpdir),
                             ):
                                 filenames = sd15_pipeline.generate_images_inpaint(
@@ -497,20 +497,20 @@ class Sd15IpAdapterPipelineTests(unittest.TestCase):
         embeds = ["loaded-ip-adapter-embeds"]
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch("backend.sd15_pipeline.load_inpaint_pipeline", return_value=fake_pipe):
-                with patch("backend.sd15_pipeline.create_scheduler", return_value="scheduler"):
-                    with patch("backend.sd15_pipeline.torch.Generator", _FakeGenerator):
-                        with patch("backend.sd15_pipeline._apply_lora_adapters", return_value=[]):
+            with patch("backend.sd15.pipeline.load_inpaint_pipeline", return_value=fake_pipe):
+                with patch("backend.sd15.pipeline.create_scheduler", return_value="scheduler"):
+                    with patch("backend.sd15.pipeline.torch.Generator", _FakeGenerator):
+                        with patch("backend.sd15.pipeline._apply_lora_adapters", return_value=[]):
                             with patch(
-                                "backend.sd15_pipeline.get_batch_output_dir",
+                                "backend.sd15.pipeline.get_batch_output_dir",
                                 return_value=Path(tmpdir),
                             ):
                                 with patch(
-                                    "backend.sd15_pipeline.load_ip_adapter_embeds_artifact",
+                                    "backend.sd15.pipeline.load_ip_adapter_embeds_artifact",
                                     return_value={"family": "SD15", "metadata": {}, "embeds": embeds},
                                 ):
                                     with patch(
-                                        "backend.sd15_pipeline.validate_ip_adapter_embeds_metadata"
+                                        "backend.sd15.pipeline.validate_ip_adapter_embeds_metadata"
                                     ) as validate_embeds:
                                         sd15_pipeline.generate_images_inpaint(
                                             {
@@ -547,15 +547,15 @@ class Sd15IpAdapterPipelineTests(unittest.TestCase):
         prepared_masks = ["prepared-ip-adapter-masks"]
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch("backend.sd15_pipeline.load_text2img_pipeline", return_value=fake_pipe):
-                with patch("backend.sd15_pipeline.create_scheduler", return_value="scheduler"):
+            with patch("backend.sd15.pipeline.load_text2img_pipeline", return_value=fake_pipe):
+                with patch("backend.sd15.pipeline.create_scheduler", return_value="scheduler"):
                     with patch(
-                        "backend.sd15_pipeline.build_prompt_embeddings",
+                        "backend.sd15.pipeline.build_prompt_embeddings",
                         return_value=(None, None, False),
                     ):
-                        with patch("backend.sd15_pipeline.torch.Generator", _FakeGenerator):
+                        with patch("backend.sd15.pipeline.torch.Generator", _FakeGenerator):
                             with patch(
-                                "backend.sd15_pipeline.get_batch_output_dir",
+                                "backend.sd15.pipeline.get_batch_output_dir",
                                 return_value=Path(tmpdir),
                             ):
                                 with patch.object(
@@ -596,11 +596,11 @@ class Sd15IpAdapterPipelineTests(unittest.TestCase):
         prepared_masks = ["prepared-ip-adapter-masks"]
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch("backend.sd15_pipeline.load_img2img_pipeline", return_value=fake_pipe):
-                with patch("backend.sd15_pipeline.create_scheduler", return_value="scheduler"):
-                    with patch("backend.sd15_pipeline.torch.Generator", _FakeGenerator):
+            with patch("backend.sd15.pipeline.load_img2img_pipeline", return_value=fake_pipe):
+                with patch("backend.sd15.pipeline.create_scheduler", return_value="scheduler"):
+                    with patch("backend.sd15.pipeline.torch.Generator", _FakeGenerator):
                         with patch(
-                            "backend.sd15_pipeline.get_batch_output_dir",
+                            "backend.sd15.pipeline.get_batch_output_dir",
                             return_value=Path(tmpdir),
                         ):
                             with patch.object(
@@ -642,12 +642,12 @@ class Sd15IpAdapterPipelineTests(unittest.TestCase):
         prepared_masks = ["prepared-ip-adapter-masks"]
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch("backend.sd15_pipeline.load_inpaint_pipeline", return_value=fake_pipe):
-                with patch("backend.sd15_pipeline.create_scheduler", return_value="scheduler"):
-                    with patch("backend.sd15_pipeline.torch.Generator", _FakeGenerator):
-                        with patch("backend.sd15_pipeline._apply_lora_adapters", return_value=[]):
+            with patch("backend.sd15.pipeline.load_inpaint_pipeline", return_value=fake_pipe):
+                with patch("backend.sd15.pipeline.create_scheduler", return_value="scheduler"):
+                    with patch("backend.sd15.pipeline.torch.Generator", _FakeGenerator):
+                        with patch("backend.sd15.pipeline._apply_lora_adapters", return_value=[]):
                             with patch(
-                                "backend.sd15_pipeline.get_batch_output_dir",
+                                "backend.sd15.pipeline.get_batch_output_dir",
                                 return_value=Path(tmpdir),
                             ):
                                 with patch.object(

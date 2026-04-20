@@ -9,7 +9,7 @@ It's designed to make it easy to:
 
 ## What's in this repo
 
-- `backend/`: FastAPI app (`backend/main.py`) + workflow/task system (`backend/workflow.py`) + model/LoRA registries.
+- `backend/`: FastAPI app (`backend/main.py`) + workflow/task package (`backend/workflow/`) + model/LoRA registries.
 - `frontend/`: static HTML/JS pages for common workflows (SD1.5 / SDXL / Flux / Qwen-Image / Z-Image).
 - `docs/WORKFLOW_API.md`: the current "workflow-only" API contract (v2).
 - `outputs/`: generated images + uploaded artifacts (ephemeral).
@@ -48,7 +48,7 @@ Artifacts are **ephemeral** and are cleaned up when the workflow finishes.
 
 ### 3) Task types
 
-Current task types are documented in `docs/WORKFLOW_API.md` and implemented in `backend/workflow.py`:
+Current task types are documented in `docs/WORKFLOW_API.md` and implemented in `backend/workflow/`:
 - SD1.5: `sd15.text2img`, `sd15.img2img`, `sd15.inpaint`, `sd15.controlnet.text2img`, `sd15.hires_fix`
 - SDXL: `sdxl.text2img`, `sdxl.img2img`, `sdxl.inpaint`
 - Flux: `flux.text2img`, `flux.img2img`, `flux.inpaint`
@@ -91,7 +91,7 @@ Then start the renderer in another terminal:
 
 ```bat
 set SYNTHA_LOG_ROLE=render
-.venv\Scripts\python.exe -m backend.render_worker
+.venv\Scripts\python.exe -m backend.jobs.render_worker
 ```
 
 Note: `requirements.txt` currently references a local editable dependency `-e ./controlnet_aux`. If you don't have that folder in this repo checkout, `pip install -r requirements.txt` will fail; either add it (if you use it) or remove/replace that line.

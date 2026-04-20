@@ -31,7 +31,7 @@ class Sd15Text2ImgWorkflowPlumbingTests(unittest.TestCase):
 
         with patch("backend.workflow._open_image_ref", return_value=reference_image):
             with patch(
-                "backend.sd15_ip_adapter_pipeline.generate_ip_adapter_image_embeds",
+                "backend.sd15.ip_adapter_pipeline.generate_ip_adapter_image_embeds",
                 side_effect=_fake_generate_ip_adapter_image_embeds,
             ):
                 result = _sd15_ip_adapter_encode(

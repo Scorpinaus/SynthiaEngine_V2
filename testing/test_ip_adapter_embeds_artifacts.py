@@ -5,19 +5,19 @@ from unittest.mock import patch
 
 import torch
 
-from backend.ip_adapter_embeds import (
+from backend.adapters.ip_adapter_embeds import (
     load_ip_adapter_embeds_artifact,
     save_ip_adapter_embeds_artifact,
 )
-from backend.workflow_utility import cleanup_artifacts, collect_artifact_ids
+from backend.workflow.utility import cleanup_artifacts, collect_artifact_ids
 
 
 class IpAdapterEmbedsArtifactTests(unittest.TestCase):
     def test_embed_artifacts_are_saved_loaded_collected_and_cleaned_up(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
-            with patch("backend.workflow_utility.OUTPUT_DIR", output_dir):
-                with patch("backend.ip_adapter_embeds.OUTPUT_DIR", output_dir):
+            with patch("backend.workflow.utility.OUTPUT_DIR", output_dir):
+                with patch("backend.adapters.ip_adapter_embeds.OUTPUT_DIR", output_dir):
                     artifact = save_ip_adapter_embeds_artifact(
                         [torch.ones((1, 2, 3))],
                         metadata={
@@ -50,8 +50,8 @@ class IpAdapterEmbedsArtifactTests(unittest.TestCase):
     def test_embed_artifacts_can_store_sd15_family(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
-            with patch("backend.workflow_utility.OUTPUT_DIR", output_dir):
-                with patch("backend.ip_adapter_embeds.OUTPUT_DIR", output_dir):
+            with patch("backend.workflow.utility.OUTPUT_DIR", output_dir):
+                with patch("backend.adapters.ip_adapter_embeds.OUTPUT_DIR", output_dir):
                     artifact = save_ip_adapter_embeds_artifact(
                         [torch.ones((1, 2, 3))],
                         family="SD15",

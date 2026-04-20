@@ -2,7 +2,7 @@ import unittest
 
 from PIL import Image
 
-from backend.sd15_pipeline import _resize_control_image_to_target
+from backend.sd15.pipeline import _resize_control_image_to_target
 
 
 class Sd15ControlNetResizeTests(unittest.TestCase):
