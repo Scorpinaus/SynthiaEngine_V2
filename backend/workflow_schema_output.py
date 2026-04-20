@@ -71,6 +71,12 @@ class ControlNetPreprocessOutput(BaseModel):
     artifact: ArtifactInfo
 
 
+class Sd15IpAdapterEncodeOutput(BaseModel):
+    """Output of sd15.ip_adapter.encode (produces an embed artifact)."""
+
+    image_embeds: ArtifactInfo
+
+
 class SdxlIpAdapterEncodeOutput(BaseModel):
     """Output of sdxl.ip_adapter.encode (produces an embed artifact)."""
 

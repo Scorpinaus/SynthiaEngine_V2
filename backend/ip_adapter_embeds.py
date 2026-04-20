@@ -16,13 +16,14 @@ def save_ip_adapter_embeds_artifact(
     embeds: list[torch.Tensor],
     *,
     metadata: dict[str, Any],
+    family: str = "SDXL",
 ) -> dict[str, str]:
     artifact_id = f"e{uuid.uuid4().hex}"
     path = _artifact_path_for_id(artifact_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "format": IP_ADAPTER_EMBEDS_FORMAT,
-        "family": "SDXL",
+        "family": family,
         "embeds": [embed.detach().cpu() for embed in embeds],
         "metadata": metadata,
     }
@@ -62,8 +63,8 @@ def load_ip_adapter_embeds_artifact(ref: Any) -> dict[str, Any]:
         raise ValueError("IP-Adapter embeds artifact must contain an object.")
     if payload.get("format") != IP_ADAPTER_EMBEDS_FORMAT:
         raise ValueError("Unsupported IP-Adapter embeds artifact format.")
-    if payload.get("family") != "SDXL":
-        raise ValueError("IP-Adapter embeds artifact family must be SDXL.")
+    if payload.get("family") not in {"SD15", "SDXL"}:
+        raise ValueError("IP-Adapter embeds artifact family must be SD15 or SDXL.")
     embeds = payload.get("embeds")
     if not isinstance(embeds, list) or not embeds:
         raise ValueError("IP-Adapter embeds artifact must contain a non-empty embeds list.")
@@ -82,7 +83,14 @@ def validate_ip_adapter_embeds_metadata(
     expected_subfolder: str,
     expected_weight_name: str,
     do_classifier_free_guidance: bool,
+    expected_family: str = "SDXL",
 ) -> None:
+    actual_family = str(payload.get("family") or "")
+    if actual_family != expected_family:
+        raise ValueError(
+            f"IP-Adapter embeds artifact family must be {expected_family}."
+        )
+
     metadata = payload["metadata"]
     adapters = metadata.get("adapters")
     if not isinstance(adapters, list) or len(adapters) != 1:

@@ -4,7 +4,7 @@ from unittest.mock import patch
 from PIL import Image
 from pydantic import ValidationError
 
-from backend.workflow import Sd15Text2ImgInputs, _sd15_text2img
+from backend.workflow import Sd15Text2ImgInputs, _sd15_ip_adapter_encode, _sd15_text2img
 
 
 class Sd15Text2ImgInputValidationTests(unittest.TestCase):
@@ -21,6 +21,38 @@ class Sd15Text2ImgInputValidationTests(unittest.TestCase):
 
 
 class Sd15Text2ImgWorkflowPlumbingTests(unittest.TestCase):
+    def test_sd15_ip_adapter_encode_opens_image_and_returns_embeds(self):
+        reference_image = Image.new("RGBA", (32, 32))
+        captured = {}
+
+        def _fake_generate_ip_adapter_image_embeds(params):
+            captured.update(params)
+            return {"image_embeds": {"artifact_id": "e123", "path": "artifacts/e123.pt", "url": "/outputs/artifacts/e123.pt"}}
+
+        with patch("backend.workflow._open_image_ref", return_value=reference_image):
+            with patch(
+                "backend.sd15_ip_adapter_pipeline.generate_ip_adapter_image_embeds",
+                side_effect=_fake_generate_ip_adapter_image_embeds,
+            ):
+                result = _sd15_ip_adapter_encode(
+                    {
+                        "image": {"artifact_id": "a0123456789abcdef0123456789abcdef"},
+                        "model": "stable-diffusion-v1-5",
+                        "guidance_scale": 7.5,
+                        "ip_adapter_model": "h94/IP-Adapter",
+                        "ip_adapter_subfolder": "models",
+                        "ip_adapter_weight_name": "ip-adapter_sd15.bin",
+                        "ip_adapter_scale": 0.45,
+                    },
+                    _ctx=None,
+                )
+
+        self.assertEqual(result["image_embeds"]["artifact_id"], "e123")
+        self.assertEqual(captured["image"].mode, "RGB")
+        self.assertEqual(captured["model"], "stable-diffusion-v1-5")
+        self.assertEqual(captured["guidance_scale"], 7.5)
+        self.assertEqual(captured["ip_adapter_scale"], 0.45)
+
     def test_sd15_text2img_passes_expected_generation_params(self):
         captured = {}
 
@@ -233,14 +265,90 @@ class Sd15Text2ImgWorkflowPlumbingTests(unittest.TestCase):
         self.assertEqual(captured["ip_adapter_subfolder"], "models")
         self.assertEqual(captured["ip_adapter_weight_name"], "ip-adapter_sd15.bin")
 
+    def test_sd15_text2img_forwards_ip_adapter_mask(self):
+        captured = {}
+        reference_image = Image.new("RGBA", (32, 32))
+        mask_image = Image.new("RGB", (32, 32))
+
+        def _fake_generate_images(params):
+            captured.update(params)
+            return ["batch/out.png"]
+
+        with patch(
+            "backend.workflow._open_image_ref",
+            side_effect=[reference_image, mask_image],
+        ):
+            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+                with patch("backend.workflow.generate_images", side_effect=_fake_generate_images):
+                    _sd15_text2img(
+                        {
+                            "prompt": "test prompt",
+                            "ip_adapter": {
+                                "enabled": True,
+                                "image": {
+                                    "artifact_id": "a0123456789abcdef0123456789abcdef"
+                                },
+                                "mask_image": {
+                                    "artifact_id": "a11111111111111111111111111111111"
+                                },
+                            },
+                        },
+                        _ctx=None,
+                    )
+
+        self.assertEqual(captured["ip_adapter_image"].mode, "RGB")
+        self.assertEqual(captured["ip_adapter_mask_image"].mode, "L")
+
+    def test_sd15_text2img_forwards_ip_adapter_image_embeds_ref(self):
+        captured = {}
+
+        def _fake_generate_images(params):
+            captured.update(params)
+            return ["batch/out.png"]
+
+        embeds_ref = {"artifact_id": "e0123456789abcdef0123456789abcdef"}
+        with patch("backend.workflow.make_batch_id", return_value="batch123"):
+            with patch("backend.workflow.generate_images", side_effect=_fake_generate_images):
+                _sd15_text2img(
+                    {
+                        "prompt": "test prompt",
+                        "ip_adapter": {
+                            "enabled": True,
+                            "image_embeds": embeds_ref,
+                            "scale": 0.55,
+                        },
+                    },
+                    _ctx=None,
+                )
+
+        self.assertEqual(captured["ip_adapter_image_embeds_ref"], embeds_ref)
+        self.assertNotIn("ip_adapter_image", captured)
+        self.assertEqual(captured["ip_adapter_scale"], 0.55)
+
     def test_sd15_text2img_requires_ip_adapter_image_when_enabled(self):
         with self.assertRaisesRegex(
-            ValueError, "ip_adapter.image is required when IP-Adapter is enabled"
+            ValueError, "ip_adapter.image or ip_adapter.image_embeds is required"
         ):
             _sd15_text2img(
                 {
                     "prompt": "test prompt",
                     "ip_adapter": {"enabled": True},
+                },
+                _ctx=None,
+            )
+
+    def test_sd15_text2img_rejects_both_ip_adapter_image_and_embeds(self):
+        with self.assertRaisesRegex(
+            ValueError, "Provide either ip_adapter.image or ip_adapter.image_embeds"
+        ):
+            _sd15_text2img(
+                {
+                    "prompt": "test prompt",
+                    "ip_adapter": {
+                        "enabled": True,
+                        "image": {"artifact_id": "a0123456789abcdef0123456789abcdef"},
+                        "image_embeds": {"artifact_id": "e0123456789abcdef0123456789abcdef"},
+                    },
                 },
                 _ctx=None,
             )

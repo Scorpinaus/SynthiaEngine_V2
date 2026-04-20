@@ -14,6 +14,7 @@ aim to be deterministic (seeded) and side-effectful only in well-defined ways
 import torch
 import logging
 import math
+from contextlib import contextmanager
 from pathlib import Path
 from typing import cast
 from PIL import ImageFilter, Image
@@ -33,6 +34,10 @@ from backend.logging_utils import configure_logging
 from backend.model_registry import get_model_entry
 from backend.resource_logging import resource_logger
 from backend.ip_adapter import IpAdapterManager
+from backend.ip_adapter_embeds import (
+    load_ip_adapter_embeds_artifact,
+    validate_ip_adapter_embeds_metadata,
+)
 # from testing.pipeline_stable_diffusion import(StableDiffusionPipeline)
 from backend.pipeline_utils import (
     build_fixed_step_timesteps,
@@ -221,8 +226,37 @@ def _metadata_without_runtime_images(params: dict[str, object]) -> dict[str, obj
     return {
         key: value
         for key, value in params.items()
-        if key not in {"ip_adapter_image"}
+        if key not in {"ip_adapter_image", "ip_adapter_mask_image"}
     }
+
+
+def _build_ip_adapter_kwargs(
+    *,
+    enabled: bool,
+    image_embeds: list[torch.Tensor] | None,
+    masks: list[torch.Tensor] | None,
+) -> dict[str, object]:
+    if not enabled:
+        return {}
+
+    kwargs: dict[str, object] = {"ip_adapter_image_embeds": image_embeds}
+    if masks is not None:
+        kwargs["cross_attention_kwargs"] = {"ip_adapter_masks": masks}
+    return kwargs
+
+
+@contextmanager
+def _hide_image_encoder_while_using_ip_adapter_embeds(pipe, *, enabled: bool):
+    if not enabled or pipe is None or not hasattr(pipe, "image_encoder"):
+        yield
+        return
+
+    image_encoder = pipe.image_encoder
+    pipe.image_encoder = None
+    try:
+        yield
+    finally:
+        pipe.image_encoder = image_encoder
 
 
 """
@@ -482,7 +516,7 @@ def generate_images_controlnet(params: dict[str, object],) -> list[str]:
     Returns:
         Output PNG paths relative to ``OUTPUT_DIR``.
     """
-    # Normalize all controlnet txt2img inputs in one place for easier maintenance and tracing.
+    # Base text2image inputs
     prompt = str(params["prompt"])
     negative_prompt = str(params.get("negative_prompt") or "")
     steps = int(params.get("steps") or 20)
@@ -494,6 +528,8 @@ def generate_images_controlnet(params: dict[str, object],) -> list[str]:
     model = params.get("model")
     num_images = int(params.get("num_images") or 1)
     clip_skip = int(params.get("clip_skip") or 1)
+    
+    # Controlnet inputs
     controlnet_model = cast(str | list[str], params["controlnet_model"])
     control_image = cast(Image.Image | list[Image.Image], params["control_image"])
     controlnet_conditioning_scale = cast(
@@ -639,7 +675,11 @@ def generate_images(params: dict[str, object],):
     weighting_policy = str(params.get("weighting_policy") or "diffusers-like")
 
     ip_adapter_image = cast(Image.Image | None, params.get("ip_adapter_image"))
-    ip_adapter_enabled = ip_adapter_image is not None
+    ip_adapter_image_embeds_ref = params.get("ip_adapter_image_embeds_ref")
+    if ip_adapter_image is not None and ip_adapter_image_embeds_ref is not None:
+        raise ValueError("Provide either ip_adapter_image or ip_adapter_image_embeds_ref, not both.")
+    ip_adapter_enabled = ip_adapter_image is not None or ip_adapter_image_embeds_ref is not None
+    ip_adapter_mask_image = cast(Image.Image | None, params.get("ip_adapter_mask_image"))
     ip_adapter_model = str(params.get("ip_adapter_model") or _DEFAULT_IP_ADAPTER_MODEL)
     ip_adapter_subfolder = str(
         params.get("ip_adapter_subfolder") or _DEFAULT_IP_ADAPTER_SUBFOLDER
@@ -672,21 +712,52 @@ def generate_images(params: dict[str, object],):
     logger.info("Generate: model=%s, seed=%s, scheduler=%s, steps=%s, cfg=%s, size= %sx%s, num_images=%s", model, base_seed, scheduler, steps, cfg, width, height, num_images,)
 
     if ip_adapter_enabled:
-        IpAdapterManager.load(
-            pipe,
-            model=ip_adapter_model,
-            subfolder=ip_adapter_subfolder,
-            weight_name=ip_adapter_weight_name,
-            scale=ip_adapter_scale,
-            family="SD1.5",
-        )
-        ip_adapter_image_embeds = IpAdapterManager.prepare_image_embeds(
-            pipe,
-            ip_adapter_image,
-            do_classifier_free_guidance=cfg > 1.0,
+        if ip_adapter_image_embeds_ref is not None:
+            embeds_payload = load_ip_adapter_embeds_artifact(ip_adapter_image_embeds_ref)
+            validate_ip_adapter_embeds_metadata(
+                embeds_payload,
+                expected_model=ip_adapter_model,
+                expected_subfolder=ip_adapter_subfolder,
+                expected_weight_name=ip_adapter_weight_name,
+                do_classifier_free_guidance=cfg > 1.0,
+                expected_family="SD15",
+            )
+            ip_adapter_image_embeds = embeds_payload["embeds"]
+            IpAdapterManager.load(
+                pipe,
+                model=ip_adapter_model,
+                subfolder=ip_adapter_subfolder,
+                weight_name=ip_adapter_weight_name,
+                scale=ip_adapter_scale,
+                family="SD1.5",
+                image_encoder_folder=None,
+            )
+        else:
+            IpAdapterManager.load(
+                pipe,
+                model=ip_adapter_model,
+                subfolder=ip_adapter_subfolder,
+                weight_name=ip_adapter_weight_name,
+                scale=ip_adapter_scale,
+                family="SD1.5",
+            )
+            ip_adapter_image_embeds = IpAdapterManager.prepare_image_embeds(
+                pipe,
+                ip_adapter_image,
+                do_classifier_free_guidance=cfg > 1.0,
+            )
+        ip_adapter_masks = (
+            IpAdapterManager.prepare_masks(
+                ip_adapter_mask_image,
+                height=height,
+                width=width,
+            )
+            if ip_adapter_mask_image is not None
+            else None
         )
     else:
         ip_adapter_image_embeds = None
+        ip_adapter_masks = None
     
     # 4. Apply lora to pipeline and generate lora coverage report
     adapter_names = []
@@ -731,8 +802,10 @@ def generate_images(params: dict[str, object],):
         prompt_embeds_ready = True
     
     filenames = []
-    ip_adapter_kwargs = (
-        {"ip_adapter_image_embeds": ip_adapter_image_embeds} if ip_adapter_enabled else {}
+    ip_adapter_kwargs = _build_ip_adapter_kwargs(
+        enabled=ip_adapter_enabled,
+        image_embeds=ip_adapter_image_embeds,
+        masks=ip_adapter_masks,
     )
     # 6. Loop around image generation per image
     try:
@@ -756,19 +829,23 @@ def generate_images(params: dict[str, object],):
                     )
                     prompt_embeds_ready = True
                     # Generate image
-                    image = pipe(
-                        prompt=None if use_prompt_embeds else prompt,
-                        negative_prompt=None if use_prompt_embeds else negative_prompt,
-                        num_inference_steps=steps,
-                        guidance_scale=cfg,
-                        width=width,
-                        height=height,
-                        generator=generator,
-                        clip_skip=clip_skip,
-                        prompt_embeds=prompt_embeds if use_prompt_embeds else None,
-                        negative_prompt_embeds=negative_prompt_embeds if use_prompt_embeds else None,
-                        **ip_adapter_kwargs,
-                    ).images[0]
+                    with _hide_image_encoder_while_using_ip_adapter_embeds(
+                        pipe,
+                        enabled=ip_adapter_image_embeds is not None,
+                    ):
+                        image = pipe(
+                            prompt=None if use_prompt_embeds else prompt,
+                            negative_prompt=None if use_prompt_embeds else negative_prompt,
+                            num_inference_steps=steps,
+                            guidance_scale=cfg,
+                            width=width,
+                            height=height,
+                            generator=generator,
+                            clip_skip=clip_skip,
+                            prompt_embeds=prompt_embeds if use_prompt_embeds else None,
+                            negative_prompt_embeds=negative_prompt_embeds if use_prompt_embeds else None,
+                            **ip_adapter_kwargs,
+                        ).images[0]
 
                 # Log layers to report
                 append_layers_report(
@@ -794,19 +871,23 @@ def generate_images(params: dict[str, object],):
                     )
                     prompt_embeds_ready = True
                 # Generate image
-                image = pipe(
-                    prompt=None if use_prompt_embeds else prompt,
-                    negative_prompt=None if use_prompt_embeds else negative_prompt,
-                    num_inference_steps=steps,
-                    guidance_scale=cfg,
-                    width=width,
-                    height=height,
-                    generator=generator,
-                    clip_skip=clip_skip,
-                    prompt_embeds=prompt_embeds if use_prompt_embeds else None,
-                    negative_prompt_embeds=negative_prompt_embeds if use_prompt_embeds else None,
-                    **ip_adapter_kwargs,
-                ).images[0]
+                with _hide_image_encoder_while_using_ip_adapter_embeds(
+                    pipe,
+                    enabled=ip_adapter_image_embeds is not None,
+                ):
+                    image = pipe(
+                        prompt=None if use_prompt_embeds else prompt,
+                        negative_prompt=None if use_prompt_embeds else negative_prompt,
+                        num_inference_steps=steps,
+                        guidance_scale=cfg,
+                        width=width,
+                        height=height,
+                        generator=generator,
+                        clip_skip=clip_skip,
+                        prompt_embeds=prompt_embeds if use_prompt_embeds else None,
+                        negative_prompt_embeds=negative_prompt_embeds if use_prompt_embeds else None,
+                        **ip_adapter_kwargs,
+                    ).images[0]
 
             # Write the PNG and embed all inputs/settings for later inspection.
             filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
@@ -880,7 +961,11 @@ def generate_images_img2img(params: dict[str, object],):
     clip_skip = int(params.get("clip_skip") or 1)
     lora_adapters = params.get("lora_adapters")
     ip_adapter_image = cast(Image.Image | None, params.get("ip_adapter_image"))
-    ip_adapter_enabled = ip_adapter_image is not None
+    ip_adapter_image_embeds_ref = params.get("ip_adapter_image_embeds_ref")
+    if ip_adapter_image is not None and ip_adapter_image_embeds_ref is not None:
+        raise ValueError("Provide either ip_adapter_image or ip_adapter_image_embeds_ref, not both.")
+    ip_adapter_enabled = ip_adapter_image is not None or ip_adapter_image_embeds_ref is not None
+    ip_adapter_mask_image = cast(Image.Image | None, params.get("ip_adapter_mask_image"))
     ip_adapter_model = str(params.get("ip_adapter_model") or _DEFAULT_IP_ADAPTER_MODEL)
     ip_adapter_subfolder = str(
         params.get("ip_adapter_subfolder") or _DEFAULT_IP_ADAPTER_SUBFOLDER
@@ -921,21 +1006,52 @@ def generate_images_img2img(params: dict[str, object],):
         num_images,
     )
     if ip_adapter_enabled:
-        IpAdapterManager.load(
-            pipe,
-            model=ip_adapter_model,
-            subfolder=ip_adapter_subfolder,
-            weight_name=ip_adapter_weight_name,
-            scale=ip_adapter_scale,
-            family="SD1.5",
-        )
-        ip_adapter_image_embeds = IpAdapterManager.prepare_image_embeds(
-            pipe,
-            ip_adapter_image,
-            do_classifier_free_guidance=cfg > 1.0,
+        if ip_adapter_image_embeds_ref is not None:
+            embeds_payload = load_ip_adapter_embeds_artifact(ip_adapter_image_embeds_ref)
+            validate_ip_adapter_embeds_metadata(
+                embeds_payload,
+                expected_model=ip_adapter_model,
+                expected_subfolder=ip_adapter_subfolder,
+                expected_weight_name=ip_adapter_weight_name,
+                do_classifier_free_guidance=cfg > 1.0,
+                expected_family="SD15",
+            )
+            ip_adapter_image_embeds = embeds_payload["embeds"]
+            IpAdapterManager.load(
+                pipe,
+                model=ip_adapter_model,
+                subfolder=ip_adapter_subfolder,
+                weight_name=ip_adapter_weight_name,
+                scale=ip_adapter_scale,
+                family="SD1.5",
+                image_encoder_folder=None,
+            )
+        else:
+            IpAdapterManager.load(
+                pipe,
+                model=ip_adapter_model,
+                subfolder=ip_adapter_subfolder,
+                weight_name=ip_adapter_weight_name,
+                scale=ip_adapter_scale,
+                family="SD1.5",
+            )
+            ip_adapter_image_embeds = IpAdapterManager.prepare_image_embeds(
+                pipe,
+                ip_adapter_image,
+                do_classifier_free_guidance=cfg > 1.0,
+            )
+        ip_adapter_masks = (
+            IpAdapterManager.prepare_masks(
+                ip_adapter_mask_image,
+                height=height,
+                width=width,
+            )
+            if ip_adapter_mask_image is not None
+            else None
         )
     else:
         ip_adapter_image_embeds = None
+        ip_adapter_masks = None
 
     filenames = []
     adapter_names = []
@@ -970,8 +1086,10 @@ def generate_images_img2img(params: dict[str, object],):
         "lcm_lora_model": _LCM_LORA_MODEL_ID if lcm_enabled else None,
         "batch_id": batch_id,
     }
-    ip_adapter_kwargs = (
-        {"ip_adapter_image_embeds": ip_adapter_image_embeds} if ip_adapter_enabled else {}
+    ip_adapter_kwargs = _build_ip_adapter_kwargs(
+        enabled=ip_adapter_enabled,
+        image_embeds=ip_adapter_image_embeds,
+        masks=ip_adapter_masks,
     )
 
     try:
@@ -989,17 +1107,21 @@ def generate_images_img2img(params: dict[str, object],):
                     pipe,
                     leaf_only=config.PIPELINE_LAYER_LOGGING_LEAF_ONLY,
                 ) as (used_layer_names, name_to_type, name_to_inputs, name_to_calls):
-                    image = pipe(
-                        prompt=prompt,
-                        negative_prompt=negative_prompt,
-                        image=initial_image,
-                        strength=strength,
-                        num_inference_steps=steps,
-                        guidance_scale=cfg,
-                        generator=generator,
-                        clip_skip=clip_skip,
-                        **ip_adapter_kwargs,
-                    ).images[0]
+                    with _hide_image_encoder_while_using_ip_adapter_embeds(
+                        pipe,
+                        enabled=ip_adapter_image_embeds is not None,
+                    ):
+                        image = pipe(
+                            prompt=prompt,
+                            negative_prompt=negative_prompt,
+                            image=initial_image,
+                            strength=strength,
+                            num_inference_steps=steps,
+                            guidance_scale=cfg,
+                            generator=generator,
+                            clip_skip=clip_skip,
+                            **ip_adapter_kwargs,
+                        ).images[0]
                 append_layers_report(
                     output_dir=batch_output_dir,
                     batch_id=batch_id,
@@ -1012,17 +1134,21 @@ def generate_images_img2img(params: dict[str, object],):
                     runtime_name_to_call_count=(name_to_calls if config.PIPELINE_LAYER_LOGGING_CAPTURE_INPUTS else None),
                 )
             else:
-                image = pipe(
-                    prompt=prompt,
-                    negative_prompt=negative_prompt,
-                    image=initial_image,
-                    strength=strength,
-                    num_inference_steps=steps,
-                    guidance_scale=cfg,
-                    generator=generator,
-                    clip_skip=clip_skip,
-                    **ip_adapter_kwargs,
-                ).images[0]
+                with _hide_image_encoder_while_using_ip_adapter_embeds(
+                    pipe,
+                    enabled=ip_adapter_image_embeds is not None,
+                ):
+                    image = pipe(
+                        prompt=prompt,
+                        negative_prompt=negative_prompt,
+                        image=initial_image,
+                        strength=strength,
+                        num_inference_steps=steps,
+                        guidance_scale=cfg,
+                        generator=generator,
+                        clip_skip=clip_skip,
+                        **ip_adapter_kwargs,
+                    ).images[0]
 
             filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
             metadata = {
@@ -1202,7 +1328,11 @@ def generate_images_inpaint(params: dict[str, object],):
     clip_skip = int(params.get("clip_skip") or 1)
     lora_adapters = params.get("lora_adapters")
     ip_adapter_image = cast(Image.Image | None, params.get("ip_adapter_image"))
-    ip_adapter_enabled = ip_adapter_image is not None
+    ip_adapter_image_embeds_ref = params.get("ip_adapter_image_embeds_ref")
+    if ip_adapter_image is not None and ip_adapter_image_embeds_ref is not None:
+        raise ValueError("Provide either ip_adapter_image or ip_adapter_image_embeds_ref, not both.")
+    ip_adapter_enabled = ip_adapter_image is not None or ip_adapter_image_embeds_ref is not None
+    ip_adapter_mask_image = cast(Image.Image | None, params.get("ip_adapter_mask_image"))
     ip_adapter_model = str(params.get("ip_adapter_model") or _DEFAULT_IP_ADAPTER_MODEL)
     ip_adapter_subfolder = str(
         params.get("ip_adapter_subfolder") or _DEFAULT_IP_ADAPTER_SUBFOLDER
@@ -1237,21 +1367,52 @@ def generate_images_inpaint(params: dict[str, object],):
         width, height, num_images, strength, padding_mask_crop
     )
     if ip_adapter_enabled:
-        IpAdapterManager.load(
-            pipe,
-            model=ip_adapter_model,
-            subfolder=ip_adapter_subfolder,
-            weight_name=ip_adapter_weight_name,
-            scale=ip_adapter_scale,
-            family="SD1.5",
-        )
-        ip_adapter_image_embeds = IpAdapterManager.prepare_image_embeds(
-            pipe,
-            ip_adapter_image,
-            do_classifier_free_guidance=cfg > 1.0,
+        if ip_adapter_image_embeds_ref is not None:
+            embeds_payload = load_ip_adapter_embeds_artifact(ip_adapter_image_embeds_ref)
+            validate_ip_adapter_embeds_metadata(
+                embeds_payload,
+                expected_model=ip_adapter_model,
+                expected_subfolder=ip_adapter_subfolder,
+                expected_weight_name=ip_adapter_weight_name,
+                do_classifier_free_guidance=cfg > 1.0,
+                expected_family="SD15",
+            )
+            ip_adapter_image_embeds = embeds_payload["embeds"]
+            IpAdapterManager.load(
+                pipe,
+                model=ip_adapter_model,
+                subfolder=ip_adapter_subfolder,
+                weight_name=ip_adapter_weight_name,
+                scale=ip_adapter_scale,
+                family="SD1.5",
+                image_encoder_folder=None,
+            )
+        else:
+            IpAdapterManager.load(
+                pipe,
+                model=ip_adapter_model,
+                subfolder=ip_adapter_subfolder,
+                weight_name=ip_adapter_weight_name,
+                scale=ip_adapter_scale,
+                family="SD1.5",
+            )
+            ip_adapter_image_embeds = IpAdapterManager.prepare_image_embeds(
+                pipe,
+                ip_adapter_image,
+                do_classifier_free_guidance=cfg > 1.0,
+            )
+        ip_adapter_masks = (
+            IpAdapterManager.prepare_masks(
+                ip_adapter_mask_image,
+                height=initial_image.height,
+                width=initial_image.width,
+            )
+            if ip_adapter_mask_image is not None
+            else None
         )
     else:
         ip_adapter_image_embeds = None
+        ip_adapter_masks = None
 
     filenames = []
     adapter_names = []
@@ -1286,8 +1447,10 @@ def generate_images_inpaint(params: dict[str, object],):
         "lcm_lora_model": _LCM_LORA_MODEL_ID if lcm_enabled else None,
         "batch_id": batch_id,
     }
-    ip_adapter_kwargs = (
-        {"ip_adapter_image_embeds": ip_adapter_image_embeds} if ip_adapter_enabled else {}
+    ip_adapter_kwargs = _build_ip_adapter_kwargs(
+        enabled=ip_adapter_enabled,
+        image_embeds=ip_adapter_image_embeds,
+        masks=ip_adapter_masks,
     )
 
     try:
@@ -1305,6 +1468,39 @@ def generate_images_inpaint(params: dict[str, object],):
                     pipe,
                     leaf_only=config.PIPELINE_LAYER_LOGGING_LEAF_ONLY,
                 ) as (used_layer_names, name_to_type, name_to_inputs, name_to_calls):
+                    with _hide_image_encoder_while_using_ip_adapter_embeds(
+                        pipe,
+                        enabled=ip_adapter_image_embeds is not None,
+                    ):
+                        image = pipe(
+                            prompt=prompt,
+                            negative_prompt=negative_prompt,
+                            image=initial_image,
+                            mask_image=mask_image,
+                            num_inference_steps=steps,
+                            guidance_scale=cfg,
+                            generator=generator,
+                            strength=strength,
+                            padding_mask_crop=padding_mask_crop,
+                            clip_skip=clip_skip,
+                            **ip_adapter_kwargs,
+                        ).images[0]
+                append_layers_report(
+                    output_dir=batch_output_dir,
+                    batch_id=batch_id,
+                    label="sd15_inpaint",
+                    pipeline_name=pipe.__class__.__name__,
+                    architecture_layers=arch_layers,
+                    runtime_used_layer_names=used_layer_names,
+                    runtime_name_to_type=name_to_type,
+                    runtime_name_to_input_summary=(name_to_inputs if config.PIPELINE_LAYER_LOGGING_CAPTURE_INPUTS else None),
+                    runtime_name_to_call_count=(name_to_calls if config.PIPELINE_LAYER_LOGGING_CAPTURE_INPUTS else None),
+                )
+            else:
+                with _hide_image_encoder_while_using_ip_adapter_embeds(
+                    pipe,
+                    enabled=ip_adapter_image_embeds is not None,
+                ):
                     image = pipe(
                         prompt=prompt,
                         negative_prompt=negative_prompt,
@@ -1318,31 +1514,6 @@ def generate_images_inpaint(params: dict[str, object],):
                         clip_skip=clip_skip,
                         **ip_adapter_kwargs,
                     ).images[0]
-                append_layers_report(
-                    output_dir=batch_output_dir,
-                    batch_id=batch_id,
-                    label="sd15_inpaint",
-                    pipeline_name=pipe.__class__.__name__,
-                    architecture_layers=arch_layers,
-                    runtime_used_layer_names=used_layer_names,
-                    runtime_name_to_type=name_to_type,
-                    runtime_name_to_input_summary=(name_to_inputs if config.PIPELINE_LAYER_LOGGING_CAPTURE_INPUTS else None),
-                    runtime_name_to_call_count=(name_to_calls if config.PIPELINE_LAYER_LOGGING_CAPTURE_INPUTS else None),
-                )
-            else:
-                image = pipe(
-                    prompt=prompt,
-                    negative_prompt=negative_prompt,
-                    image=initial_image,
-                    mask_image=mask_image,
-                    num_inference_steps=steps,
-                    guidance_scale=cfg,
-                    generator=generator,
-                    strength=strength,
-                    padding_mask_crop=padding_mask_crop,
-                    clip_skip=clip_skip,
-                    **ip_adapter_kwargs,
-                ).images[0]
 
             filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
             metadata = {

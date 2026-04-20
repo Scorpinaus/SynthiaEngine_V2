@@ -1730,6 +1730,20 @@ body {
     opacity: 0.4;
 }
 
+#ip_adapter_mask_modal .modal-content {
+    width: min(94vw, 1100px);
+    max-height: 94vh;
+    overflow: auto;
+}
+
+#ip_adapter_mask_base_canvas {
+    pointer-events: none;
+}
+
+#ip_adapter_mask_canvas {
+    opacity: 0.55;
+}
+
 .viewer-controls span {
     font-size: 14px;
     color: #6b645c;

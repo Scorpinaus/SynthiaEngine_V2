@@ -125,10 +125,99 @@ class Sd15InpaintControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertEqual(captured["ip_adapter_subfolder"], "models")
         self.assertEqual(captured["ip_adapter_weight_name"], "ip-adapter_sd15.bin")
 
+    def test_non_controlnet_path_forwards_ip_adapter_mask(self):
+        captured = {}
+        initial_image = Image.new("RGB", (64, 64))
+        inpaint_mask_image = Image.new("L", (64, 64))
+        reference_image = Image.new("RGBA", (32, 32))
+        ip_adapter_mask_image = Image.new("RGB", (64, 64))
+
+        def _fake_generate_images_inpaint(params):
+            captured.update(params)
+            return ["batch/out.png"]
+
+        with patch(
+            "backend.workflow._open_image_ref",
+            side_effect=[
+                initial_image,
+                inpaint_mask_image,
+                reference_image,
+                ip_adapter_mask_image,
+            ],
+        ):
+            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+                with patch(
+                    "backend.workflow.generate_images_inpaint",
+                    side_effect=_fake_generate_images_inpaint,
+                ):
+                    _sd15_inpaint(
+                        {
+                            "initial_image": {
+                                "artifact_id": "a0123456789abcdef0123456789abcdef"
+                            },
+                            "mask_image": {
+                                "artifact_id": "a22222222222222222222222222222222"
+                            },
+                            "prompt": "test prompt",
+                            "ip_adapter": {
+                                "enabled": True,
+                                "image": {
+                                    "artifact_id": "a0123456789abcdef0123456789abcdef"
+                                },
+                                "mask_image": {
+                                    "artifact_id": "a11111111111111111111111111111111"
+                                },
+                            },
+                        },
+                        _ctx=None,
+                    )
+
+        self.assertEqual(captured["ip_adapter_image"].mode, "RGB")
+        self.assertEqual(captured["ip_adapter_mask_image"].mode, "L")
+
+    def test_non_controlnet_path_forwards_ip_adapter_image_embeds_ref(self):
+        captured = {}
+        initial_image = Image.new("RGB", (64, 64))
+        inpaint_mask_image = Image.new("L", (64, 64))
+        embeds_ref = {"artifact_id": "e0123456789abcdef0123456789abcdef"}
+
+        def _fake_generate_images_inpaint(params):
+            captured.update(params)
+            return ["batch/out.png"]
+
+        with patch(
+            "backend.workflow._open_image_ref",
+            side_effect=[initial_image, inpaint_mask_image],
+        ):
+            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+                with patch(
+                    "backend.workflow.generate_images_inpaint",
+                    side_effect=_fake_generate_images_inpaint,
+                ):
+                    _sd15_inpaint(
+                        {
+                            "initial_image": {
+                                "artifact_id": "a0123456789abcdef0123456789abcdef"
+                            },
+                            "mask_image": {
+                                "artifact_id": "a22222222222222222222222222222222"
+                            },
+                            "prompt": "test prompt",
+                            "ip_adapter": {
+                                "enabled": True,
+                                "image_embeds": embeds_ref,
+                            },
+                        },
+                        _ctx=None,
+                    )
+
+        self.assertEqual(captured["ip_adapter_image_embeds_ref"], embeds_ref)
+        self.assertNotIn("ip_adapter_image", captured)
+
     def test_ip_adapter_requires_image_when_enabled(self):
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
-                ValueError, "ip_adapter.image is required when IP-Adapter is enabled"
+                ValueError, "ip_adapter.image or ip_adapter.image_embeds is required"
             ):
                 _sd15_inpaint(
                     {

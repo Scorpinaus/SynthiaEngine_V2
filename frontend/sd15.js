@@ -271,7 +271,12 @@ function initSd15Page() {
     didInitSd15Page = true;
 
     gallery.render();
-    window.IpAdapterPanel?.init();
+    window.IpAdapterPanel?.init({
+        getMaskSize: () => ({
+            width: WorkflowClient.readNumberValue("width", DEFAULTS.width, { integer: true }),
+            height: WorkflowClient.readNumberValue("height", DEFAULTS.height, { integer: true }),
+        }),
+    });
 
     const generateButton = document.getElementById("generate-button");
     generateButton?.addEventListener("click", () => {
@@ -550,6 +555,7 @@ async function generate() {
     const lcmEnabled = isLcmModeEnabled();
     const ipAdapterEnabled = Boolean(document.getElementById("ip_adapter_enabled")?.checked);
     const ipAdapterImageFile = getIpAdapterImageFile();
+    const ipAdapterMaskFile = window.IpAdapterPanel?.getMaskFile?.() ?? null;
     const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
     const loraAdaptersEnabled = Array.isArray(loraAdapters) && loraAdapters.length > 0;
 
@@ -612,17 +618,42 @@ async function generate() {
             if (!uploadedIpAdapterImage?.artifact_id) {
                 throw new Error("IP-Adapter image upload did not return an artifact id.");
             }
+            const ipAdapterScale = WorkflowClient.readNumberValue(
+                "ip_adapter_scale",
+                primaryDefaults.ip_adapter?.scale ?? DEFAULTS.ip_adapter_scale
+            );
+            tasks.push({
+                id: "ip_embeds",
+                type: "sd15.ip_adapter.encode",
+                inputs: {
+                    image: `@artifact:${uploadedIpAdapterImage.artifact_id}`,
+                    model: inputs.model,
+                    guidance_scale: inputs.cfg,
+                    ip_adapter_model: "h94/IP-Adapter",
+                    ip_adapter_subfolder: "models",
+                    ip_adapter_weight_name: "ip-adapter_sd15.bin",
+                    ip_adapter_scale: ipAdapterScale,
+                },
+            });
             inputs.ip_adapter = {
                 enabled: true,
-                image: `@artifact:${uploadedIpAdapterImage.artifact_id}`,
-                scale: WorkflowClient.readNumberValue(
-                    "ip_adapter_scale",
-                    primaryDefaults.ip_adapter?.scale ?? DEFAULTS.ip_adapter_scale
-                ),
+                image_embeds: "@ip_embeds.image_embeds",
+                scale: ipAdapterScale,
                 model: "h94/IP-Adapter",
                 subfolder: "models",
                 weight_name: "ip-adapter_sd15.bin",
             };
+            if (ipAdapterMaskFile) {
+                const uploadedIpAdapterMask = await WorkflowClient.uploadArtifact(
+                    API_BASE,
+                    ipAdapterMaskFile,
+                    ipAdapterMaskFile.name || "ip_adapter_mask.png"
+                );
+                if (!uploadedIpAdapterMask?.artifact_id) {
+                    throw new Error("IP-Adapter mask upload did not return an artifact id.");
+                }
+                inputs.ip_adapter.mask_image = `@artifact:${uploadedIpAdapterMask.artifact_id}`;
+            }
         }
 
         // Check if ControlNet is enabled.

@@ -412,11 +412,12 @@ Frontend note (SD1.5 page):
 - `frontend/controlnet_panel.html` is loaded by `frontend/controlnet_panel.js`.
 - `frontend/controlnet_preprocessor.html` is loaded by `frontend/controlnet_preprocessor.js`.
 - `frontend/sd15.js` consumes shared ControlNet state via `window.ControlNetPanel.getState()`.
-- `frontend/sd15.js` uploads the optional SD1.5 IP-Adapter reference image through `/api/artifacts` and sends it as `sd15.text2img.inputs.ip_adapter.image`.
+- `frontend/sd15.js` uploads the optional SD1.5 IP-Adapter reference image, creates a `sd15.ip_adapter.encode` task, and sends the resulting `image_embeds` into `sd15.text2img.inputs.ip_adapter.image_embeds`. It uploads the optional IP-Adapter mask as `sd15.text2img.inputs.ip_adapter.mask_image`.
 - `frontend/sd15_img2img.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()`.
-- `frontend/sd15_img2img.js` uploads the optional SD1.5 IP-Adapter reference image through `/api/artifacts` and sends it as `sd15.img2img.inputs.ip_adapter.image`.
+- `frontend/sd15_img2img.js` uploads the optional SD1.5 IP-Adapter reference image, creates a `sd15.ip_adapter.encode` task, and sends the resulting `image_embeds` into `sd15.img2img.inputs.ip_adapter.image_embeds`. It uploads the optional IP-Adapter mask as `sd15.img2img.inputs.ip_adapter.mask_image`.
 - `frontend/sd15_inpainting.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()`.
-- `frontend/sd15_inpainting.js` uploads the optional SD1.5 IP-Adapter reference image through `/api/artifacts` and sends it as `sd15.inpaint.inputs.ip_adapter.image`.
+- `frontend/sd15_inpainting.js` uploads the optional SD1.5 IP-Adapter reference image, creates a `sd15.ip_adapter.encode` task, and sends the resulting `image_embeds` into `sd15.inpaint.inputs.ip_adapter.image_embeds`. It uploads the optional IP-Adapter mask as `sd15.inpaint.inputs.ip_adapter.mask_image`.
+- `frontend/ip_adapter_panel.js` supports either uploading an IP-Adapter mask image or creating one in a lightweight canvas editor. White = apply image prompt; black = suppress image prompt.
 - `frontend/controlnet_panel.html` groups ControlNet runtime knobs (`controlnet_conditioning_scale`, `controlnet_guess_mode`, `control_guidance_start`, `control_guidance_end`).
 - The preprocessor modal layout uses a two-column split (`settings` + `preview`) and caps preview height to viewport.
 - `frontend/controlnet_preprocessor.js` applies a runtime layout fallback so stale cached modal markup is upgraded in-place.
@@ -504,7 +505,7 @@ References are resolved at runtime:
 - Artifact reference (uploaded via `/api/artifacts`):
   - String form: `@artifact:<artifact_id>`
   - Object form: `{ "artifact_id": "<artifact_id>" }`
-- Embed artifact reference (created by `sdxl.ip_adapter.encode`):
+- Embed artifact reference (created by `sd15.ip_adapter.encode` or `sdxl.ip_adapter.encode`):
   - Object form: `{ "artifact_id": "e..." }`
   - These are ephemeral `.pt` files under `outputs/artifacts/` and are deleted with workflow artifacts after the job finishes.
 - Output file reference:
@@ -516,7 +517,7 @@ Resolution behavior:
 
 ## Supported task types (current)
 
-- SD1.5: `sd15.text2img`, `sd15.animatediff.text2video`, `sd15.img2img`, `sd15.inpaint`, `sd15.controlnet.text2img`, `sd15.hires_fix`
+- SD1.5: `sd15.ip_adapter.encode`, `sd15.text2img`, `sd15.animatediff.text2video`, `sd15.img2img`, `sd15.inpaint`, `sd15.controlnet.text2img`, `sd15.hires_fix`
 - SDXL: `sdxl.ip_adapter.encode`, `sdxl.text2img`, `sdxl.controlnet.text2img`, `sdxl.img2img`, `sdxl.inpaint`
 - Flux: `flux.text2img`, `flux.img2img`, `flux.inpaint`
 - Qwen-Image: `qwen-image.text2img`, `qwen-image.img2img`, `qwen-image.inpaint`
@@ -568,11 +569,29 @@ LoRA adapter targeting:
 - `hires`: optional object `{ "hiresEnabled": boolean, "hires_scale": number }`.
   - When `hires_enabled` / `hires_scale` are omitted, backend can derive values from `hires`.
 - `ip_adapter`: optional SD1.5 text-to-image image prompt object.
-  - Shape: `{ "enabled": boolean, "image": ImageRef, "scale": number, "model": string, "subfolder": string, "weight_name": string }`.
+  - Shape: `{ "enabled": boolean, "image": ImageRef, "image_embeds": EmbedRef, "mask_image": ImageRef, "scale": number, "model": string, "subfolder": string, "weight_name": string }`.
   - Minimal supported default adapter is `model: "h94/IP-Adapter"`, `subfolder: "models"`, `weight_name: "ip-adapter_sd15.bin"`.
-  - `image` is required when `enabled` is `true`; accepted references match other workflow image inputs (`{"artifact_id":"..."}`, `"@artifact:..."`, or `"/outputs/..."`).
+  - Exactly one of `image` or `image_embeds` is required when `enabled` is `true`.
+  - `image` accepts references matching other workflow image inputs (`{"artifact_id":"..."}`, `"@artifact:..."`, or `"/outputs/..."`).
+  - `image_embeds` accepts an embed artifact produced by `sd15.ip_adapter.encode`. When `image_embeds` is provided, render loads the IP-Adapter with `image_encoder_folder: null` and uses the precomputed embeds instead of the reference image.
+  - `mask_image` is optional; accepted references match other workflow image inputs. White pixels apply the IP-Adapter image prompt and black pixels suppress it. The backend preprocesses it with Diffusers `IPAdapterMaskProcessor` at the final output size.
   - `scale` defaults to `0.6` and must be within `[0, 1]`; Diffusers uses this to control image-prompt influence.
   - Initial support is one SD1.5 base IP-Adapter for `sd15.text2img`, `sd15.img2img`, and `sd15.inpaint`. FaceID, Plus variants, multiple adapters, ControlNet combinations, LCM combinations, and Hi-Res Fix combinations are outside the initial contract.
+
+`sd15.ip_adapter.encode` input notes:
+- Creates a temporary SD1.5 IP-Adapter image-embeds artifact for later use by SD1.5 render tasks.
+- The encoder loads only the IP-Adapter weights and CLIP vision image encoder; it does not load the SD1.5 UNet, VAE, text encoder, tokenizer, or scheduler.
+- Minimal encoder v1 supports only the default base SD1.5 adapter: `ip_adapter_model: "h94/IP-Adapter"`, `ip_adapter_subfolder: "models"`, `ip_adapter_weight_name: "ip-adapter_sd15.bin"`.
+- Plus variants, FaceID variants, multiple IP-Adapters, and custom projection formats that require hidden states are rejected by the minimal encoder.
+- CUDA is required for the minimal encode step.
+- Inputs:
+  - `image`: reference image (`ImageRef`).
+  - `model`: SD1.5 base model registry name saved in embed metadata for render-side compatibility checks.
+  - `guidance_scale`: render guidance scale; this determines whether classifier-free guidance embeds are created and must match the render step's guidance mode.
+  - `ip_adapter_model`, `ip_adapter_subfolder`, `ip_adapter_weight_name`, `ip_adapter_scale`: adapter settings. Defaults mirror SD1.5 render tasks.
+- Output:
+  - `{ "image_embeds": { "artifact_id": "e...", "path": "artifacts/e....pt", "url": "/outputs/artifacts/e....pt" } }`
+- Embed artifacts are ephemeral and cleaned up after the workflow finishes.
 
 `sd15.animatediff.text2video` input notes:
 - `prompt` / `negative_prompt`: prompt text.
@@ -677,9 +696,11 @@ LoRA adapter targeting:
 
 `sd15.img2img` IP-Adapter input notes:
 - `ip_adapter`: optional SD1.5 image-to-image image prompt object.
-- Shape mirrors `sd15.text2img`: `{ "enabled": boolean, "image": ImageRef, "scale": number, "model": string, "subfolder": string, "weight_name": string }`.
+- Shape mirrors `sd15.text2img`: `{ "enabled": boolean, "image": ImageRef, "image_embeds": EmbedRef, "mask_image": ImageRef, "scale": number, "model": string, "subfolder": string, "weight_name": string }`.
 - Minimal supported default adapter is `model: "h94/IP-Adapter"`, `subfolder: "models"`, `weight_name: "ip-adapter_sd15.bin"`.
-- `image` is required when `enabled` is `true`; accepted references match other workflow image inputs (`{"artifact_id":"..."}`, `"@artifact:..."`, or `"/outputs/..."`).
+- Exactly one of `image` or `image_embeds` is required when `enabled` is `true`.
+- `image_embeds` accepts an embed artifact produced by `sd15.ip_adapter.encode`; render loads the IP-Adapter without the image encoder when embeds are provided.
+- `mask_image` is optional and uses the same white-applies/black-suppresses convention as `sd15.text2img`.
 - `scale` defaults to `0.6` and must be within `[0, 1]`.
 - Minimal initial support is non-ControlNet, non-LCM `sd15.img2img` only. User-selected SD1.5 LoRA adapters may still be combined with IP-Adapter.
 
@@ -716,9 +737,11 @@ LoRA adapter targeting:
 
 `sd15.inpaint` IP-Adapter input notes:
 - `ip_adapter`: optional SD1.5 inpainting image prompt object.
-- Shape mirrors `sd15.text2img`: `{ "enabled": boolean, "image": ImageRef, "scale": number, "model": string, "subfolder": string, "weight_name": string }`.
+- Shape mirrors `sd15.text2img`: `{ "enabled": boolean, "image": ImageRef, "image_embeds": EmbedRef, "mask_image": ImageRef, "scale": number, "model": string, "subfolder": string, "weight_name": string }`.
 - Minimal supported default adapter is `model: "h94/IP-Adapter"`, `subfolder: "models"`, `weight_name: "ip-adapter_sd15.bin"`.
-- `image` is required when `enabled` is `true`; accepted references match other workflow image inputs (`{"artifact_id":"..."}`, `"@artifact:..."`, or `"/outputs/..."`).
+- Exactly one of `image` or `image_embeds` is required when `enabled` is `true`.
+- `image_embeds` accepts an embed artifact produced by `sd15.ip_adapter.encode`; render loads the IP-Adapter without the image encoder when embeds are provided.
+- `mask_image` is optional and separate from the inpaint `mask_image`; the inpaint mask controls repainting while `ip_adapter.mask_image` controls IP-Adapter influence.
 - `scale` defaults to `0.6` and must be within `[0, 1]`.
 - Minimal initial support is non-ControlNet, non-LCM `sd15.inpaint` only. User-selected SD1.5 LoRA adapters may still be combined with IP-Adapter.
 

@@ -52,6 +52,8 @@ class _FakePipe:
         self.image_encoder = object()
         self.call_kwargs = None
         self.image_encoder_during_call = None
+        self.vae = _FakeVae()
+        self.image_processor = object()
 
     def to(self, device):
         self.device = device
@@ -89,15 +91,19 @@ class _FakeDeviceAwarePipe(_FakePipe):
 
 class _FakeLoadableText2ImgPipe:
     def __init__(self):
-        self.vae_slicing_enabled = False
-        self.vae_tiling_enabled = False
+        self.vae = type("FakeVae", (), {})()
+        self.vae.slicing_enabled = False
+        self.vae.tiling_enabled = False
         self.device = None
 
-    def enable_vae_slicing(self):
-        self.vae_slicing_enabled = True
+        def enable_slicing():
+            self.vae.slicing_enabled = True
 
-    def enable_vae_tiling(self):
-        self.vae_tiling_enabled = True
+        def enable_tiling():
+            self.vae.tiling_enabled = True
+
+        self.vae.enable_slicing = enable_slicing
+        self.vae.enable_tiling = enable_tiling
 
     def to(self, device):
         self.device = device
@@ -176,8 +182,8 @@ class SdxlIpAdapterPipelineTests(unittest.TestCase):
                 pipe = sdxl_pipeline.load_text2img_pipeline("stable-diffusion-xl-base-1.0")
 
         self.assertIs(pipe, fake_pipe)
-        self.assertTrue(fake_pipe.vae_slicing_enabled)
-        self.assertTrue(fake_pipe.vae_tiling_enabled)
+        self.assertTrue(fake_pipe.vae.slicing_enabled)
+        self.assertTrue(fake_pipe.vae.tiling_enabled)
         self.assertEqual(fake_pipe.device, "cuda")
 
     def test_generate_ip_adapter_image_embeds_uses_minimal_encoder(self):
@@ -384,6 +390,75 @@ class SdxlIpAdapterPipelineTests(unittest.TestCase):
         self.assertEqual(latents.to_kwargs, {"device": "cuda", "dtype": "float16"})
         self.assertIs(fake_pipe.vae.decoded_latents, latents)
 
+    def test_generate_text2img_releases_pipeline_before_latent_decode(self):
+        fake_pipe = _FakePipe()
+        events = []
+
+        def _fake_render_text2img_latents(_pipe, **_kwargs):
+            events.append("render")
+            return _FakeLatents()
+
+        def _fake_release_pipeline(pipe):
+            self.assertIs(pipe, fake_pipe)
+            events.append("release")
+
+        def _fake_decode_latents_to_pil(decoder, _latents):
+            events.append("decode")
+            self.assertIsNot(decoder, fake_pipe)
+            self.assertIs(decoder.vae, fake_pipe.vae)
+            self.assertLess(events.index("release"), events.index("decode"))
+            return Image.new("RGB", (8, 8))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch("backend.sdxl_pipeline.load_text2img_pipeline", return_value=fake_pipe):
+                with patch("backend.sdxl_pipeline.create_scheduler", return_value="scheduler"):
+                    with patch(
+                        "backend.sdxl_pipeline.apply_lora_adapters_with_validation",
+                        return_value=([], {}),
+                    ):
+                        with patch("backend.sdxl_pipeline.write_lora_coverage_report", return_value=None):
+                            with patch(
+                                "backend.sdxl_pipeline.render_text2img_latents",
+                                side_effect=_fake_render_text2img_latents,
+                            ):
+                                with patch(
+                                    "backend.sdxl_pipeline._release_pipeline",
+                                    side_effect=_fake_release_pipeline,
+                                ):
+                                    with patch(
+                                        "backend.sdxl_pipeline._decode_latents_to_pil",
+                                        side_effect=_fake_decode_latents_to_pil,
+                                    ):
+                                        with patch(
+                                            "backend.sdxl_pipeline.make_batch_id",
+                                            return_value="batch123",
+                                        ):
+                                            with patch(
+                                                "backend.sdxl_pipeline.get_batch_output_dir",
+                                                return_value=Path(tmpdir),
+                                            ):
+                                                result = sdxl_pipeline.generate_text2img(
+                                                    {
+                                                        "prompt": "test prompt",
+                                                        "negative_prompt": "",
+                                                        "steps": 2,
+                                                        "guidance_scale": 7.5,
+                                                        "width": 64,
+                                                        "height": 64,
+                                                        "seed": 123,
+                                                        "scheduler": "euler",
+                                                        "model": "stable-diffusion-xl-base-1.0",
+                                                        "num_images": 1,
+                                                        "clip_skip": 1,
+                                                    }
+                                                )
+
+        self.assertEqual(
+            result,
+            {"images": ["/outputs/batch_batch123/batch123_123.png"]},
+        )
+        self.assertEqual(events, ["render", "release", "decode"])
+
     def test_generate_text2img_prepares_and_passes_ip_adapter_image_embeds(self):
         fake_pipe = _FakePipe()
         reference_image = Image.new("RGB", (16, 16))
@@ -548,6 +623,79 @@ class SdxlIpAdapterPipelineTests(unittest.TestCase):
         self.assertIs(captured_render_kwargs["ip_adapter_image_embeds"], embeds)
         self.assertIsNone(fake_pipe.prepare_ip_adapter_image_embeds_kwargs)
         self.assertTrue(fake_pipe.unloaded_ip_adapter)
+
+    def test_generate_img2img_releases_pipeline_before_latent_decode(self):
+        fake_pipe = _FakePipe()
+        initial_image = Image.new("RGB", (16, 16))
+        events = []
+
+        def _fake_render_img2img_latents(_pipe, **_kwargs):
+            events.append("render")
+            return _FakeLatents()
+
+        def _fake_release_pipeline(pipe):
+            self.assertIs(pipe, fake_pipe)
+            events.append("release")
+
+        def _fake_decode_latents_to_pil(decoder, _latents):
+            events.append("decode")
+            self.assertIsNot(decoder, fake_pipe)
+            self.assertIs(decoder.vae, fake_pipe.vae)
+            self.assertLess(events.index("release"), events.index("decode"))
+            return Image.new("RGB", (8, 8))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch("backend.sdxl_pipeline.load_img2img_pipeline", return_value=fake_pipe):
+                with patch("backend.sdxl_pipeline.create_scheduler", return_value="scheduler"):
+                    with patch(
+                        "backend.sdxl_pipeline.apply_lora_adapters_with_validation",
+                        return_value=([], {}),
+                    ):
+                        with patch("backend.sdxl_pipeline.write_lora_coverage_report", return_value=None):
+                            with patch(
+                                "backend.sdxl_pipeline.render_img2img_latents",
+                                side_effect=_fake_render_img2img_latents,
+                            ):
+                                with patch(
+                                    "backend.sdxl_pipeline._release_pipeline",
+                                    side_effect=_fake_release_pipeline,
+                                ):
+                                    with patch(
+                                        "backend.sdxl_pipeline._decode_latents_to_pil",
+                                        side_effect=_fake_decode_latents_to_pil,
+                                    ):
+                                        with patch(
+                                            "backend.sdxl_pipeline.make_batch_id",
+                                            return_value="batch123",
+                                        ):
+                                            with patch(
+                                                "backend.sdxl_pipeline.get_batch_output_dir",
+                                                return_value=Path(tmpdir),
+                                            ):
+                                                result = sdxl_pipeline.generate_img2img(
+                                                    {
+                                                        "initial_image": initial_image,
+                                                        "strength": 0.65,
+                                                        "prompt": "test prompt",
+                                                        "negative_prompt": "",
+                                                        "steps": 2,
+                                                        "guidance_scale": 7.5,
+                                                        "width": 64,
+                                                        "height": 64,
+                                                        "seed": 123,
+                                                        "scheduler": "euler",
+                                                        "model": "stable-diffusion-xl-base-1.0",
+                                                        "num_images": 1,
+                                                        "clip_skip": 1,
+                                                        "lora_adapters": [],
+                                                    }
+                                                )
+
+        self.assertEqual(
+            result,
+            {"images": ["/outputs/batch_batch123/batch123_123.png"]},
+        )
+        self.assertEqual(events, ["render", "release", "decode"])
 
     def test_generate_img2img_loads_and_passes_ip_adapter_image(self):
         fake_pipe = _FakePipe()

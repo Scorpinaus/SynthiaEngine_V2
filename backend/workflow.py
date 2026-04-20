@@ -29,6 +29,7 @@ from backend.workflow_schema_input import (
     Sd15HiresFixInputs,
     Sd15HiresContract,
     Sd15IpAdapterContract,
+    Sd15IpAdapterEncodeInputs,
     Sd15Img2ImgInputs,
     Sd15InpaintInputs,
     Sd15Text2ImgInputs,
@@ -52,6 +53,7 @@ from backend.workflow_schema_output import (
     Sd15ControlNetText2ImgOutput,
     Sd15Img2ImgOutput,
     Sd15InpaintOutput,
+    Sd15IpAdapterEncodeOutput,
     SdxlControlNetText2ImgOutput,
     SdxlImg2ImgOutput,
     SdxlInpaintOutput,
@@ -87,6 +89,7 @@ from backend.workflow_sd15 import (
     run_sd15_hires_fix as _run_sd15_hires_fix,
     run_sd15_img2img as _run_sd15_img2img,
     run_sd15_inpaint as _run_sd15_inpaint,
+    run_sd15_ip_adapter_encode_task as _run_sd15_ip_adapter_encode,
     run_sd15_text2img as _run_sd15_text2img,
 )
 from backend.workflow_sdxl import (
@@ -139,6 +142,7 @@ TASK_INPUT_MODELS: dict[str, type[BaseModel]] = {
     "sd15.inpaint": Sd15InpaintInputs,
     "sd15.controlnet.text2img": Sd15ControlNetText2ImgInputs,
     "sd15.hires_fix": Sd15HiresFixInputs,
+    "sd15.ip_adapter.encode": Sd15IpAdapterEncodeInputs,
     # ControlNet utility tasks
     "controlnet.preprocess": ControlNetPreprocessInputs,
     # SDXL tasks
@@ -170,6 +174,7 @@ TASK_OUTPUT_MODELS: dict[str, type[BaseModel]] = {
     "sd15.inpaint": Sd15InpaintOutput,
     "sd15.controlnet.text2img": Sd15ControlNetText2ImgOutput,
     "sd15.hires_fix": ImagesWithBatchOutput,
+    "sd15.ip_adapter.encode": Sd15IpAdapterEncodeOutput,
     # ControlNet utility tasks
     "controlnet.preprocess": ControlNetPreprocessOutput,
     # SDXL tasks
@@ -215,6 +220,9 @@ def _sd15_runtime_deps() -> dict[str, Any]:
         "generate_images_inpaint": generate_images_inpaint,
         "generate_images_inpaint_controlnet": generate_images_inpaint_controlnet,
         "generate_images_controlnet": generate_images_controlnet,
+        "generate_ip_adapter_image_embeds": importlib.import_module(
+            "backend.sd15_ip_adapter_pipeline"
+        ).generate_ip_adapter_image_embeds,
         "default_sd15_controlnet_model": _DEFAULT_SD15_CONTROLNET_MODEL,
         "max_controlnet_models": _MAX_CONTROLNET_MODELS,
         "controlnet_preprocessor_registry_by_id": _CONTROLNET_PREPROCESSOR_REGISTRY_BY_ID,
@@ -248,6 +256,10 @@ def _sd15_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, An
 
 def _sd15_controlnet_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
     return _run_sd15_controlnet_text2img(inputs, _sd15_runtime_deps())
+
+
+def _sd15_ip_adapter_encode(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
+    return _run_sd15_ip_adapter_encode(inputs, _sd15_runtime_deps())
 
 
 
@@ -408,6 +420,7 @@ TASK_REGISTRY: dict[str, Callable[[dict[str, Any], WorkflowContext], dict[str, A
     "sd15.inpaint": _sd15_inpaint,
     "sd15.controlnet.text2img": _sd15_controlnet_text2img,
     "sd15.hires_fix": _sd15_hires_fix,
+    "sd15.ip_adapter.encode": _sd15_ip_adapter_encode,
     # ControlNet utility tasks
     "controlnet.preprocess": _controlnet_preprocess,
     # SDXL tasks

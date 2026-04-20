@@ -5,6 +5,7 @@ from typing import Any
 
 import torch
 from PIL import Image
+from diffusers.image_processor import IPAdapterMaskProcessor
 
 from backend.pipeline_utils import cleanup_memory
 
@@ -97,3 +98,14 @@ class IpAdapterManager:
                 cleanup_memory()
 
         return image_embeds
+
+    @staticmethod
+    def prepare_masks(
+        mask_image: Image.Image,
+        *,
+        height: int,
+        width: int,
+    ) -> list[torch.Tensor]:
+        processor = IPAdapterMaskProcessor()
+        mask = processor.preprocess(mask_image, height=height, width=width)
+        return [mask.reshape(1, mask.shape[0], mask.shape[2], mask.shape[3])]

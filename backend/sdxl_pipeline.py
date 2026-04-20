@@ -62,23 +62,38 @@ def _get_module_device(module, fallback: torch.device | str) -> torch.device | s
 
 
 def _enable_vae_memory_savers(pipe: object) -> None:
-    enable_slicing = getattr(pipe, "enable_vae_slicing", None)
-    if callable(enable_slicing):
-        enable_slicing()
-    else:
-        vae = getattr(pipe, "vae", None)
-        vae_enable_slicing = getattr(vae, "enable_slicing", None)
-        if callable(vae_enable_slicing):
-            vae_enable_slicing()
+    vae = getattr(pipe, "vae", None)
+    vae_enable_slicing = getattr(vae, "enable_slicing", None)
+    if callable(vae_enable_slicing):
+        vae_enable_slicing()
 
-    enable_tiling = getattr(pipe, "enable_vae_tiling", None)
-    if callable(enable_tiling):
-        enable_tiling()
-    else:
-        vae = getattr(pipe, "vae", None)
-        vae_enable_tiling = getattr(vae, "enable_tiling", None)
-        if callable(vae_enable_tiling):
-            vae_enable_tiling()
+    vae_enable_tiling = getattr(vae, "enable_tiling", None)
+    if callable(vae_enable_tiling):
+        vae_enable_tiling()
+
+
+class _LatentDecoder:
+    def __init__(
+        self,
+        *,
+        vae: object,
+        image_processor: object | None,
+        device: torch.device | str,
+    ) -> None:
+        self.vae = vae
+        self.image_processor = image_processor
+        self.device = device
+
+
+def _build_latent_decoder(pipe: object) -> _LatentDecoder:
+    vae = getattr(pipe, "vae", None)
+    if vae is None:
+        raise RuntimeError("SDXL pipeline does not have a VAE for latent decoding.")
+    return _LatentDecoder(
+        vae=vae,
+        image_processor=getattr(pipe, "image_processor", None),
+        device=_get_module_device(vae, _get_pipe_device(pipe)),
+    )
 
 
 @contextmanager
@@ -96,7 +111,7 @@ def _hide_image_encoder_while_using_ip_adapter_embeds(pipe, *, enabled: bool):
 
 
 def _decode_latents_to_pil(
-    pipe: StableDiffusionXLPipeline | StableDiffusionXLImg2ImgPipeline | StableDiffusionXLInpaintPipeline,
+    pipe: object,
     latents: torch.Tensor,
 ) -> Image.Image:
     if latents.ndim == 3:
@@ -728,6 +743,7 @@ def generate_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
     ip_adapter_image = payload.get("ip_adapter_image")
     ip_adapter_image_embeds_ref = payload.get("ip_adapter_image_embeds_ref")
     ip_adapter_enabled = isinstance(ip_adapter_image, Image.Image) or ip_adapter_image_embeds_ref is not None
+    ip_adapter_was_enabled = ip_adapter_enabled
     if isinstance(ip_adapter_image, Image.Image) and ip_adapter_image_embeds_ref is not None:
         raise ValueError("Provide either ip_adapter_image or ip_adapter_image_embeds_ref, not both.")
     ip_adapter_model = str(payload.get("ip_adapter_model") or _DEFAULT_IP_ADAPTER_MODEL)
@@ -836,10 +852,20 @@ def generate_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
             seed_batch.append(current_seed)
             del latents
 
+        latent_decoder = _build_latent_decoder(pipe)
+        ip_adapter_image_embeds = None
+        IpAdapterManager.cleanup(pipe, ip_adapter_enabled)
+        ip_adapter_enabled = False
+        _cleanup_lora_adapters(pipe, adapter_names)
+        adapter_names = []
+        _release_pipeline(pipe)
+        pipe = None
+        cleanup_memory()
+
         # Decode latents to images
         images: list[Image.Image] = []
         for latents in latents_batch:
-            images.append(_decode_latents_to_pil(pipe, latents))
+            images.append(_decode_latents_to_pil(latent_decoder, latents))
         del latents_batch
 
         # Generate image metadata and append to image
@@ -848,7 +874,7 @@ def generate_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
             image_params["mode"] = "txt2img"
             image_params["seed"] = current_seed
             image_params["batch_id"] = batch_id
-            image_params["ip_adapter_enabled"] = ip_adapter_enabled
+            image_params["ip_adapter_enabled"] = ip_adapter_was_enabled
             relpath = save_image(
                 image=image,
                 batch_output_dir=batch_output_dir,
@@ -863,10 +889,11 @@ def generate_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
         # Return images list with metadata
         return {"images": [f"/outputs/{name}" for name in filenames]}
     finally:
-        IpAdapterManager.cleanup(pipe, ip_adapter_enabled)
-        _cleanup_lora_adapters(pipe, adapter_names)
-        _release_pipeline(pipe)
-        pipe = None
+        if pipe is not None:
+            IpAdapterManager.cleanup(pipe, ip_adapter_enabled)
+            _cleanup_lora_adapters(pipe, adapter_names)
+            _release_pipeline(pipe)
+            pipe = None
         cleanup_memory()
 
 
@@ -889,6 +916,7 @@ def generate_img2img(params: dict[str, object],) -> dict[str, list[str]]:
     lora_adapters = params["lora_adapters"]
     ip_adapter_image = params.get("ip_adapter_image")
     ip_adapter_enabled = isinstance(ip_adapter_image, Image.Image)
+    ip_adapter_was_enabled = ip_adapter_enabled
     ip_adapter_model = str(params.get("ip_adapter_model") or _DEFAULT_IP_ADAPTER_MODEL)
     ip_adapter_subfolder = str(
         params.get("ip_adapter_subfolder") or _DEFAULT_IP_ADAPTER_SUBFOLDER
@@ -942,7 +970,9 @@ def generate_img2img(params: dict[str, object],) -> dict[str, list[str]]:
         if report_path is not None:
             logger.info("LoRA coverage report saved to %s", report_path)
 
-        #7. Render image one by one
+        #7. Render latent images one by one
+        latents_batch: list[torch.Tensor] = []
+        seed_batch: list[int] = []
         for i in range(num_images):
             current_seed = base_seed + i
 
@@ -960,10 +990,22 @@ def generate_img2img(params: dict[str, object],) -> dict[str, list[str]]:
                 clip_skip=clip_skip,
                 ip_adapter_image=ip_adapter_image if ip_adapter_enabled else None,
             )
-
-            # Decode latent to image and delete intermediate latents
-            image = _decode_latents_to_pil(pipe, latents)
+            latents_batch.append(latents.detach().cpu())
+            seed_batch.append(current_seed)
             del latents
+
+        latent_decoder = _build_latent_decoder(pipe)
+        IpAdapterManager.cleanup(pipe, ip_adapter_enabled)
+        ip_adapter_enabled = False
+        _cleanup_lora_adapters(pipe, adapter_names)
+        adapter_names = []
+        _release_pipeline(pipe)
+        pipe = None
+        cleanup_memory()
+
+        for i, (latents, current_seed) in enumerate(zip(latents_batch, seed_batch, strict=True)):
+            # Decode latent to image after the render pipeline has been released.
+            image = _decode_latents_to_pil(latent_decoder, latents)
 
             # Generate image metadata and append to image
             image_width, image_height = initial_image.size
@@ -974,7 +1016,7 @@ def generate_img2img(params: dict[str, object],) -> dict[str, list[str]]:
             image_params["batch_id"] = batch_id
             image_params["width"] = image_width
             image_params["height"] = image_height
-            image_params["ip_adapter_enabled"] = ip_adapter_enabled
+            image_params["ip_adapter_enabled"] = ip_adapter_was_enabled
             # Save filename to rendered image
             relpath = save_image(
                 image=image,
@@ -986,11 +1028,13 @@ def generate_img2img(params: dict[str, object],) -> dict[str, list[str]]:
             logger.info("Image %s saved to %s", i, Path(relpath).name)
 
             filenames.append(relpath)
+        del latents_batch
     finally:
-        IpAdapterManager.cleanup(pipe, ip_adapter_enabled)
-        _cleanup_lora_adapters(pipe, adapter_names)
-        _release_pipeline(pipe)
-        pipe = None
+        if pipe is not None:
+            IpAdapterManager.cleanup(pipe, ip_adapter_enabled)
+            _cleanup_lora_adapters(pipe, adapter_names)
+            _release_pipeline(pipe)
+            pipe = None
         cleanup_memory()
     #9. Return output back to workflow calling method
     return {"images": [f"/outputs/{name}" for name in filenames]}

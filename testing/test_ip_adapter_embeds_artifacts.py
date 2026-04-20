@@ -47,6 +47,31 @@ class IpAdapterEmbedsArtifactTests(unittest.TestCase):
                     cleanup_artifacts({artifact_id})
                     self.assertFalse(path.exists())
 
+    def test_embed_artifacts_can_store_sd15_family(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            with patch("backend.workflow_utility.OUTPUT_DIR", output_dir):
+                with patch("backend.ip_adapter_embeds.OUTPUT_DIR", output_dir):
+                    artifact = save_ip_adapter_embeds_artifact(
+                        [torch.ones((1, 2, 3))],
+                        family="SD15",
+                        metadata={
+                            "adapters": [
+                                {
+                                    "model": "h94/IP-Adapter",
+                                    "subfolder": "models",
+                                    "weight_name": "ip-adapter_sd15.bin",
+                                    "scale": 0.6,
+                                }
+                            ],
+                            "do_classifier_free_guidance": True,
+                            "num_images_per_prompt": 1,
+                        },
+                    )
+
+                    payload = load_ip_adapter_embeds_artifact(artifact)
+                    self.assertEqual(payload["family"], "SD15")
+
 
 if __name__ == "__main__":
     unittest.main()

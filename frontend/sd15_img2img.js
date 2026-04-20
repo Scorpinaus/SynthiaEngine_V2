@@ -223,7 +223,9 @@ async function loadModels() {
  */
 function initSd15Img2ImgPage() {
     gallery.render();
-    window.IpAdapterPanel?.init();
+    window.IpAdapterPanel?.init({
+        getMaskBackdropFile: () => document.getElementById("initial_image")?.files?.[0] ?? null,
+    });
     document.getElementById("lcm_enabled")?.addEventListener("change", syncLcmModeDefaults);
     loadModels();
     if (window.WorkflowCatalog?.load) {
@@ -444,6 +446,7 @@ async function generateImg2Img() {
     const lcmEnabled = isLcmModeEnabled();
     const ipAdapterEnabled = Boolean(document.getElementById("ip_adapter_enabled")?.checked);
     const ipAdapterImageFile = getIpAdapterImageFile();
+    const ipAdapterMaskFile = window.IpAdapterPanel?.getMaskFile?.() ?? null;
 
     const initialImageInput = document.getElementById("initial_image");
     const initialFile = initialImageInput.files[0];
@@ -488,6 +491,7 @@ async function generateImg2Img() {
         const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
         setLoraContract(taskInputs, loraAdapters);
 
+        const tasks = [];
         if (ipAdapterEnabled) {
             const uploadedIpAdapterImage = await WorkflowClient.uploadArtifact(
                 API_BASE,
@@ -497,33 +501,60 @@ async function generateImg2Img() {
             if (!uploadedIpAdapterImage?.artifact_id) {
                 throw new Error("IP-Adapter image upload did not return an artifact id.");
             }
+            const ipAdapterScale = WorkflowClient.readNumberValue(
+                "ip_adapter_scale",
+                defaults.ip_adapter?.scale ?? DEFAULTS.ip_adapter_scale
+            );
+            tasks.push({
+                id: "ip_embeds",
+                type: "sd15.ip_adapter.encode",
+                inputs: {
+                    image: `@artifact:${uploadedIpAdapterImage.artifact_id}`,
+                    model: taskInputs.model,
+                    guidance_scale: taskInputs.cfg,
+                    ip_adapter_model: "h94/IP-Adapter",
+                    ip_adapter_subfolder: "models",
+                    ip_adapter_weight_name: "ip-adapter_sd15.bin",
+                    ip_adapter_scale: ipAdapterScale,
+                },
+            });
             taskInputs.ip_adapter = {
                 enabled: true,
-                image: `@artifact:${uploadedIpAdapterImage.artifact_id}`,
-                scale: WorkflowClient.readNumberValue(
-                    "ip_adapter_scale",
-                    defaults.ip_adapter?.scale ?? DEFAULTS.ip_adapter_scale
-                ),
+                image_embeds: "@ip_embeds.image_embeds",
+                scale: ipAdapterScale,
                 model: "h94/IP-Adapter",
                 subfolder: "models",
                 weight_name: "ip-adapter_sd15.bin",
             };
+            if (ipAdapterMaskFile) {
+                const uploadedIpAdapterMask = await WorkflowClient.uploadArtifact(
+                    API_BASE,
+                    ipAdapterMaskFile,
+                    ipAdapterMaskFile.name || "ip_adapter_mask.png"
+                );
+                if (!uploadedIpAdapterMask?.artifact_id) {
+                    throw new Error("IP-Adapter mask upload did not return an artifact id.");
+                }
+                taskInputs.ip_adapter.mask_image = `@artifact:${uploadedIpAdapterMask.artifact_id}`;
+            }
         }
 
         if (controlnetEnabled) {
             await setControlNetInputs(taskInputs, defaults, controlnetState);
         }
 
-        await validateTaskInputsOrThrow("sd15.img2img", taskInputs);
+        tasks.push({
+            id: "img2img",
+            type: "sd15.img2img",
+            inputs: taskInputs,
+        });
+
+        for (const task of tasks) {
+            await validateTaskInputsOrThrow(task.type, task.inputs);
+        }
 
         const workflowPayload = {
-            tasks: [
-                {
-                    id: "img2img",
-                    type: "sd15.img2img",
-                    inputs: taskInputs,
-                },
-            ],
+            tasks,
             return: "@img2img.images",
         };
 

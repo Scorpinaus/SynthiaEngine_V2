@@ -22,7 +22,7 @@ class ArtifactRef(BaseModel):
 class EmbedArtifactRef(BaseModel):
     artifact_id: str = Field(
         ...,
-        description="Embed artifact id produced by sdxl.ip_adapter.encode.",
+        description="Embed artifact id produced by an IP-Adapter encode task.",
         pattern=r"^e[0-9a-f]{32}$",
         examples=["e0123456789abcdef0123456789abcdef"],
     )
@@ -51,6 +51,14 @@ class Sd15IpAdapterContract(BaseModel):
     image: ImageRef | None = Field(
         default=None,
         description='IP-Adapter reference image: {"artifact_id":"..."} OR "@artifact:..." OR "/outputs/...".',
+    )
+    mask_image: ImageRef | None = Field(
+        default=None,
+        description='Optional IP-Adapter influence mask: {"artifact_id":"..."} OR "@artifact:..." OR "/outputs/...". White applies the image prompt, black suppresses it.',
+    )
+    image_embeds: EmbedRef | None = Field(
+        default=None,
+        description='Precomputed IP-Adapter embeds from sd15.ip_adapter.encode: {"artifact_id":"..."} OR "@artifact:...".',
     )
     scale: float = Field(default=0.6, ge=0.0, le=1.0)
     model: str = "h94/IP-Adapter"
@@ -295,6 +303,19 @@ class SdxlText2ImgInputs(BaseModel):
     scheduler: str = "euler"
     lora_adapters: Any | None = None
     ip_adapter: SdxlIpAdapterContract | None = None
+
+
+class Sd15IpAdapterEncodeInputs(BaseModel):
+    image: ImageRef = Field(
+        ...,
+        description='IP-Adapter reference image: {"artifact_id":"..."} OR "@artifact:..." OR "/outputs/...".',
+    )
+    model: str | None = None
+    guidance_scale: float = 7.5
+    ip_adapter_model: str = "h94/IP-Adapter"
+    ip_adapter_subfolder: str = "models"
+    ip_adapter_weight_name: str = "ip-adapter_sd15.bin"
+    ip_adapter_scale: float = Field(default=0.6, ge=0.0, le=1.0)
 
 
 class SdxlIpAdapterEncodeInputs(BaseModel):

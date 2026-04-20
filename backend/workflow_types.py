@@ -14,6 +14,7 @@ TaskType = Literal[
     "sd15.inpaint",
     "sd15.controlnet.text2img",
     "sd15.hires_fix",
+    "sd15.ip_adapter.encode",
     "controlnet.preprocess",
     "sdxl.ip_adapter.encode",
     "sdxl.text2img",

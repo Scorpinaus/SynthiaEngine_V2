@@ -124,7 +124,7 @@ def load_img2img_pipeline(model_name: str | None) -> FluxImg2ImgPipeline:
     else:
         raise ValueError(f"Unsupported model type: {entry.model_type}")
 
-    #3. Set pipeline settings: enable vae slicing and tiling to reduce vram and sequetial cpu offload
+    #3. Set pipeline settings: enable vae slicing and tiling to reduce vram and sequential cpu offload
     pipe.enable_attention_slicing("max")
     pipe.vae.enable_slicing()
     pipe.vae.enable_tiling()
@@ -198,7 +198,7 @@ def generate_text2img(params: dict[str, object]) -> dict[str, list[str]]:
     else:
         base_seed = int(seed)
     logger.info(
-        "Flux Text2Image: model=%s seed=%s steps=%s guidance_scale=%s size=%sx%s num_images=%s",
+        "Flux Text2Image: model=%s, seed=%s, steps=%s, guidance_scale=%s, size=%sx%s, num_images=%s",
         model, base_seed, steps, guidance_scale, width, height, num_images,
     )
 
@@ -304,9 +304,8 @@ def generate_img2img(params: dict[str, object]) -> dict[str, list[str]]:
     else:
         base_seed = int(seed)
     logger.info(
-        "Flux Img2Img: model=%s seed=%s steps=%s guidance_scale=%s size=%sx%s strength=%s num_images=%s",
-        model, base_seed, steps, guidance_scale, width,
-        height, strength,num_images,
+        "Flux Img2Img: model=%s, seed=%s, steps=%s, guidance_scale=%s, size=%sx%s, strength=%s, num_images=%s",
+        model, base_seed, steps, guidance_scale, width, height, strength,num_images,
     )
     
     #3. Create batch_id and output directory
@@ -415,9 +414,8 @@ def generate_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
     else:
         base_seed = int(seed)
     logger.info(
-        "Flux Inpaint: model=%s seed=%s steps=%s guidance_scale=%s strength=%s num_images=%s",
-        model, base_seed, steps, guidance_scale, strength,
-        num_images,
+        "Flux Inpaint: model=%s, seed=%s, steps=%s, guidance_scale=%s, strength=%s, num_images=%s",
+        model, base_seed, steps, guidance_scale, strength, num_images,
     )
 
     #3. Create batch_id and output directory
@@ -467,7 +465,7 @@ def generate_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
 
                     image = pipe(**call_kwargs).images[0]
 
-                #define filenames & Create image_params metadata dict
+                # Define filenames & Create image_params metadata dict
                 filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
                 image_width, image_height = initial_image.size
                 image_params = dict(params)
