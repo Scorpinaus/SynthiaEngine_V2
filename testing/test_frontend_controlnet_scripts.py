@@ -7,12 +7,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class FrontendControlNetScriptTests(unittest.TestCase):
     def test_sd15_page_includes_controlnet_scripts_before_sd15(self):
-        sd15_html = (ROOT / "frontend" / "sd15.html").read_text(encoding="utf-8")
-        validator_tag = '<script src="workflow_input_validator.js?v=1"></script>'
-        panel_tag = '<script src="controlnet_panel.js?v=2"></script>'
-        preprocessor_tag = '<script src="controlnet_preprocessor.js?v=3"></script>'
-        preset_tag = '<script src="preset_panel.js?v=1"></script>'
-        sd15_tag = '<script src="sd15.js?v=5"></script>'
+        sd15_html = (ROOT / "frontend" / "sd15" / "text2img.html").read_text(encoding="utf-8")
+        validator_tag = '<script src="../workflow_input_validator.js?v=1"></script>'
+        panel_tag = '<script src="../components/controlnet_panel.js?v=2"></script>'
+        preprocessor_tag = '<script src="../components/controlnet_preprocessor.js?v=3"></script>'
+        preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
+        sd15_tag = '<script src="text2img.js?v=5"></script>'
 
         self.assertIn(validator_tag, sd15_html)
         self.assertIn(panel_tag, sd15_html)
@@ -25,12 +25,12 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertLess(sd15_html.index(preset_tag), sd15_html.index(sd15_tag))
 
     def test_sd15_img2img_page_includes_controlnet_scripts_before_img2img(self):
-        sd15_img2img_html = (ROOT / "frontend" / "sd15_img2img.html").read_text(encoding="utf-8")
-        validator_tag = '<script src="workflow_input_validator.js?v=1"></script>'
-        panel_tag = '<script src="controlnet_panel.js?v=2"></script>'
-        preprocessor_tag = '<script src="controlnet_preprocessor.js?v=3"></script>'
-        preset_tag = '<script src="preset_panel.js?v=1"></script>'
-        img2img_tag = '<script src="sd15_img2img.js?v=5"></script>'
+        sd15_img2img_html = (ROOT / "frontend" / "sd15" / "img2img.html").read_text(encoding="utf-8")
+        validator_tag = '<script src="../workflow_input_validator.js?v=1"></script>'
+        panel_tag = '<script src="../components/controlnet_panel.js?v=2"></script>'
+        preprocessor_tag = '<script src="../components/controlnet_preprocessor.js?v=3"></script>'
+        preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
+        img2img_tag = '<script src="img2img.js?v=5"></script>'
 
         self.assertIn(validator_tag, sd15_img2img_html)
         self.assertIn(panel_tag, sd15_img2img_html)
@@ -45,12 +45,12 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertLess(sd15_img2img_html.index(preset_tag), sd15_img2img_html.index(img2img_tag))
 
     def test_sd15_inpaint_page_includes_controlnet_scripts_before_inpaint(self):
-        sd15_inpaint_html = (ROOT / "frontend" / "sd15_inpainting.html").read_text(encoding="utf-8")
-        validator_tag = '<script src="workflow_input_validator.js?v=1"></script>'
-        panel_tag = '<script src="controlnet_panel.js?v=2"></script>'
-        preprocessor_tag = '<script src="controlnet_preprocessor.js?v=3"></script>'
-        preset_tag = '<script src="preset_panel.js?v=1"></script>'
-        inpaint_tag = '<script src="sd15_inpainting.js?v=5"></script>'
+        sd15_inpaint_html = (ROOT / "frontend" / "sd15" / "inpainting.html").read_text(encoding="utf-8")
+        validator_tag = '<script src="../workflow_input_validator.js?v=1"></script>'
+        panel_tag = '<script src="../components/controlnet_panel.js?v=2"></script>'
+        preprocessor_tag = '<script src="../components/controlnet_preprocessor.js?v=3"></script>'
+        preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
+        inpaint_tag = '<script src="inpainting.js?v=5"></script>'
 
         self.assertIn(validator_tag, sd15_inpaint_html)
         self.assertIn(panel_tag, sd15_inpaint_html)
@@ -65,12 +65,14 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertLess(sd15_inpaint_html.index(preset_tag), sd15_inpaint_html.index(inpaint_tag))
 
     def test_sdxl_page_includes_controlnet_scripts_before_sdxl(self):
-        sdxl_html = (ROOT / "frontend" / "sdxl.html").read_text(encoding="utf-8")
-        panel_tag = '<script src="controlnet_panel.js?v=2"></script>'
-        preprocessor_tag = '<script src="controlnet_preprocessor.js?v=3"></script>'
-        lora_tag = '<script src="lora_panel.js?v=1"></script>'
-        preset_tag = '<script src="preset_panel.js?v=1"></script>'
-        sdxl_tag = '<script src="sdxl.js?v=6"></script>'
+        sdxl_html = (ROOT / "frontend" / "sdxl" / "text2img.html").read_text(
+            encoding="utf-8"
+        )
+        panel_tag = '<script src="../components/controlnet_panel.js?v=2"></script>'
+        preprocessor_tag = '<script src="../components/controlnet_preprocessor.js?v=3"></script>'
+        lora_tag = '<script src="../components/lora_panel.js?v=1"></script>'
+        preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
+        sdxl_tag = '<script src="text2img.js?v=6"></script>'
 
         self.assertIn(panel_tag, sdxl_html)
         self.assertIn(preprocessor_tag, sdxl_html)
@@ -83,12 +85,14 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertLess(sdxl_html.index(preset_tag), sdxl_html.index(sdxl_tag))
 
     def test_sdxl_img2img_page_includes_controlnet_scripts_before_sdxl_img2img(self):
-        sdxl_img2img_html = (ROOT / "frontend" / "sdxl_img2img.html").read_text(encoding="utf-8")
-        panel_tag = '<script src="controlnet_panel.js?v=2"></script>'
-        preprocessor_tag = '<script src="controlnet_preprocessor.js?v=3"></script>'
-        lora_tag = '<script src="lora_panel.js?v=1"></script>'
-        preset_tag = '<script src="preset_panel.js?v=1"></script>'
-        sdxl_img2img_tag = '<script src="sdxl_img2img.js?v=4"></script>'
+        sdxl_img2img_html = (ROOT / "frontend" / "sdxl" / "img2img.html").read_text(
+            encoding="utf-8"
+        )
+        panel_tag = '<script src="../components/controlnet_panel.js?v=2"></script>'
+        preprocessor_tag = '<script src="../components/controlnet_preprocessor.js?v=3"></script>'
+        lora_tag = '<script src="../components/lora_panel.js?v=1"></script>'
+        preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
+        sdxl_img2img_tag = '<script src="img2img.js?v=4"></script>'
 
         self.assertIn(panel_tag, sdxl_img2img_html)
         self.assertIn(preprocessor_tag, sdxl_img2img_html)
@@ -101,12 +105,14 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertLess(sdxl_img2img_html.index(preset_tag), sdxl_img2img_html.index(sdxl_img2img_tag))
 
     def test_sdxl_inpaint_page_includes_controlnet_scripts_before_sdxl_inpaint(self):
-        sdxl_inpaint_html = (ROOT / "frontend" / "sdxl_inpaint.html").read_text(encoding="utf-8")
-        panel_tag = '<script src="controlnet_panel.js?v=2"></script>'
-        preprocessor_tag = '<script src="controlnet_preprocessor.js?v=3"></script>'
-        lora_tag = '<script src="lora_panel.js?v=1"></script>'
-        preset_tag = '<script src="preset_panel.js?v=1"></script>'
-        sdxl_inpaint_tag = '<script src="sdxl_inpaint.js?v=4"></script>'
+        sdxl_inpaint_html = (ROOT / "frontend" / "sdxl" / "inpaint.html").read_text(
+            encoding="utf-8"
+        )
+        panel_tag = '<script src="../components/controlnet_panel.js?v=2"></script>'
+        preprocessor_tag = '<script src="../components/controlnet_preprocessor.js?v=3"></script>'
+        lora_tag = '<script src="../components/lora_panel.js?v=1"></script>'
+        preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
+        sdxl_inpaint_tag = '<script src="inpaint.js?v=4"></script>'
 
         self.assertIn(panel_tag, sdxl_inpaint_html)
         self.assertIn(preprocessor_tag, sdxl_inpaint_html)
@@ -119,29 +125,29 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertLess(sdxl_inpaint_html.index(preset_tag), sdxl_inpaint_html.index(sdxl_inpaint_tag))
 
     def test_controlnet_panel_script_exposes_expected_api(self):
-        panel_js = (ROOT / "frontend" / "controlnet_panel.js").read_text(encoding="utf-8")
+        panel_js = (ROOT / "frontend" / "components" / "controlnet_panel.js").read_text(encoding="utf-8")
         self.assertIn("window.ControlNetPanel", panel_js)
         self.assertIn("getState", panel_js)
         self.assertIn("loadPanel", panel_js)
         self.assertIn("updateIndicator", panel_js)
-        self.assertIn('fetch("controlnet_panel.html?v=2", { cache: "no-store" })', panel_js)
+        self.assertIn('fetch(resolveAssetUrl("controlnet_panel.html?v=2"), { cache: "no-store" })', panel_js)
 
     def test_controlnet_preprocessor_script_exposes_expected_api(self):
-        preprocessor_js = (ROOT / "frontend" / "controlnet_preprocessor.js").read_text(encoding="utf-8")
+        preprocessor_js = (ROOT / "frontend" / "components" / "controlnet_preprocessor.js").read_text(encoding="utf-8")
         self.assertIn("window.ControlNetPreprocessor", preprocessor_js)
         self.assertIn("ensureControlNetUI", preprocessor_js)
         self.assertIn("openPreprocessorModal", preprocessor_js)
-        self.assertIn('fetch("controlnet_preprocessor.html?v=2", { cache: "no-store" })', preprocessor_js)
+        self.assertIn('fetch(resolveAssetUrl("controlnet_preprocessor.html?v=2"), { cache: "no-store" })', preprocessor_js)
         self.assertIn("ensurePreprocessorLayoutStructure", preprocessor_js)
         self.assertIn("gridTemplateColumns", preprocessor_js)
         self.assertIn("window.innerWidth <= 700", preprocessor_js)
 
     def test_sd15_controlnet_script_wires_per_item_guidance_timing(self):
-        panel_js = (ROOT / "frontend" / "controlnet_panel.js").read_text(encoding="utf-8")
-        preprocessor_js = (ROOT / "frontend" / "controlnet_preprocessor.js").read_text(
+        panel_js = (ROOT / "frontend" / "components" / "controlnet_panel.js").read_text(encoding="utf-8")
+        preprocessor_js = (ROOT / "frontend" / "components" / "controlnet_preprocessor.js").read_text(
             encoding="utf-8"
         )
-        sd15_js = (ROOT / "frontend" / "sd15.js").read_text(encoding="utf-8")
+        sd15_js = (ROOT / "frontend" / "sd15" / "text2img.js").read_text(encoding="utf-8")
 
         self.assertIn("data-guidance-start-id", panel_js)
         self.assertIn("data-guidance-end-id", panel_js)
@@ -168,20 +174,20 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("WorkflowCatalog.load", validator_js)
 
     def test_lora_panel_html_has_weight_mode_toggle(self):
-        lora_html = (ROOT / "frontend" / "lora_panel.html").read_text(encoding="utf-8")
+        lora_html = (ROOT / "frontend" / "components" / "lora_panel.html").read_text(encoding="utf-8")
         self.assertIn('id="lora-weight-mode-row"', lora_html)
         self.assertIn('id="lora-weight-mode-basic"', lora_html)
         self.assertIn('id="lora-weight-mode-advanced"', lora_html)
 
     def test_lora_panel_script_supports_sd15_advanced_component_strengths(self):
-        lora_js = (ROOT / "frontend" / "lora_panel.js").read_text(encoding="utf-8")
+        lora_js = (ROOT / "frontend" / "components" / "lora_panel.js").read_text(encoding="utf-8")
         self.assertIn("weightMode", lora_js)
         self.assertIn("lora-weight-mode-advanced", lora_js)
         self.assertIn("unet_strength", lora_js)
         self.assertIn("text_encoder_strength", lora_js)
 
     def test_preset_panel_html_has_mode_specific_controls(self):
-        preset_html = (ROOT / "frontend" / "preset_panel.html").read_text(encoding="utf-8")
+        preset_html = (ROOT / "frontend" / "components" / "preset_panel.html").read_text(encoding="utf-8")
         self.assertIn('id="preset-load"', preset_html)
         self.assertIn('id="preset-refresh"', preset_html)
         self.assertIn('id="preset-add-new"', preset_html)
@@ -191,14 +197,14 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn('id="preset-cancel"', preset_html)
 
     def test_preset_panel_script_supports_create_and_manage_modes(self):
-        preset_js = (ROOT / "frontend" / "preset_panel.js").read_text(encoding="utf-8")
+        preset_js = (ROOT / "frontend" / "components" / "preset_panel.js").read_text(encoding="utf-8")
         self.assertIn("const UI_MODES", preset_js)
         self.assertIn("setUiMode(UI_MODES.MANAGE)", preset_js)
         self.assertIn('document.getElementById("preset-add-new")', preset_js)
         self.assertIn('document.getElementById("preset-cancel")', preset_js)
 
     def test_sd15_img2img_script_consumes_controlnet_state(self):
-        img2img_js = (ROOT / "frontend" / "sd15_img2img.js").read_text(encoding="utf-8")
+        img2img_js = (ROOT / "frontend" / "sd15" / "img2img.js").read_text(encoding="utf-8")
         self.assertIn("window.ControlNetPanel?.getState?.()", img2img_js)
         self.assertIn("window.ControlNetPreprocessor.init()", img2img_js)
         self.assertIn("controlnetEnabled", img2img_js)
@@ -206,7 +212,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("controlnet_models", img2img_js)
 
     def test_sd15_script_wires_preset_panel(self):
-        sd15_js = (ROOT / "frontend" / "sd15.js").read_text(encoding="utf-8")
+        sd15_js = (ROOT / "frontend" / "sd15" / "text2img.js").read_text(encoding="utf-8")
         self.assertIn("window.PresetPanel?.init({", sd15_js)
         self.assertIn('taskType: "sd15.text2img"', sd15_js)
         self.assertIn("collectSettings: collectSd15PresetSettings", sd15_js)
@@ -214,9 +220,9 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("WorkflowInputValidator?.assertTaskInputs", sd15_js)
 
     def test_sd15_script_wires_lcm_mode_payload_and_guardrails(self):
-        sd15_html = (ROOT / "frontend" / "sd15.html").read_text(encoding="utf-8")
-        sd15_js = (ROOT / "frontend" / "sd15.js").read_text(encoding="utf-8")
-        scheduler_html = (ROOT / "frontend" / "scheduler_panel.html").read_text(
+        sd15_html = (ROOT / "frontend" / "sd15" / "text2img.html").read_text(encoding="utf-8")
+        sd15_js = (ROOT / "frontend" / "sd15" / "text2img.js").read_text(encoding="utf-8")
+        scheduler_html = (ROOT / "frontend" / "components" / "scheduler_panel.html").read_text(
             encoding="utf-8"
         )
 
@@ -229,7 +235,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertNotIn("cannot combine with selected LoRAs", sd15_js)
 
     def test_sd15_page_wires_ip_adapter_controls(self):
-        sd15_html = (ROOT / "frontend" / "sd15.html").read_text(encoding="utf-8")
+        sd15_html = (ROOT / "frontend" / "sd15" / "text2img.html").read_text(encoding="utf-8")
 
         self.assertIn('id="ip_adapter_panel"', sd15_html)
         self.assertIn('id="ip_adapter_toggle"', sd15_html)
@@ -244,7 +250,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("ip_adapter_panel.js?v=1", sd15_html)
 
     def test_sd15_script_wires_ip_adapter_payload_and_guardrails(self):
-        sd15_js = (ROOT / "frontend" / "sd15.js").read_text(encoding="utf-8")
+        sd15_js = (ROOT / "frontend" / "sd15" / "text2img.js").read_text(encoding="utf-8")
 
         self.assertIn("window.IpAdapterPanel?.init({", sd15_js)
         self.assertIn("getIpAdapterImageFile", sd15_js)
@@ -264,7 +270,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("IP-Adapter is currently available for SD1.5 text-to-image only.", sd15_js)
 
     def test_sd15_img2img_script_wires_preset_panel(self):
-        img2img_js = (ROOT / "frontend" / "sd15_img2img.js").read_text(encoding="utf-8")
+        img2img_js = (ROOT / "frontend" / "sd15" / "img2img.js").read_text(encoding="utf-8")
         self.assertIn("window.PresetPanel?.init({", img2img_js)
         self.assertIn('taskType: "sd15.img2img"', img2img_js)
         self.assertIn("collectSettings: collectSd15Img2ImgPresetSettings", img2img_js)
@@ -272,8 +278,8 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("WorkflowInputValidator?.assertTaskInputs", img2img_js)
 
     def test_sd15_img2img_script_wires_lcm_mode_payload_and_guardrails(self):
-        img2img_html = (ROOT / "frontend" / "sd15_img2img.html").read_text(encoding="utf-8")
-        img2img_js = (ROOT / "frontend" / "sd15_img2img.js").read_text(encoding="utf-8")
+        img2img_html = (ROOT / "frontend" / "sd15" / "img2img.html").read_text(encoding="utf-8")
+        img2img_js = (ROOT / "frontend" / "sd15" / "img2img.js").read_text(encoding="utf-8")
 
         self.assertIn('id="lcm_enabled"', img2img_html)
         self.assertIn("function applyLcmImg2ImgContract(inputs)", img2img_js)
@@ -282,7 +288,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("LCM mode cannot be combined with ControlNet for SD1.5 img2img yet.", img2img_js)
 
     def test_sd15_img2img_page_wires_ip_adapter_controls(self):
-        img2img_html = (ROOT / "frontend" / "sd15_img2img.html").read_text(encoding="utf-8")
+        img2img_html = (ROOT / "frontend" / "sd15" / "img2img.html").read_text(encoding="utf-8")
 
         self.assertIn('id="ip_adapter_panel"', img2img_html)
         self.assertIn('id="ip_adapter_toggle"', img2img_html)
@@ -297,7 +303,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("ip_adapter_panel.js?v=1", img2img_html)
 
     def test_sd15_img2img_script_wires_ip_adapter_payload_and_guardrails(self):
-        img2img_js = (ROOT / "frontend" / "sd15_img2img.js").read_text(encoding="utf-8")
+        img2img_js = (ROOT / "frontend" / "sd15" / "img2img.js").read_text(encoding="utf-8")
 
         self.assertIn("window.IpAdapterPanel?.init({", img2img_js)
         self.assertIn("getIpAdapterImageFile", img2img_js)
@@ -316,7 +322,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("IP-Adapter cannot be combined with LCM mode for SD1.5 img2img yet.", img2img_js)
 
     def test_sd15_inpaint_script_wires_preset_panel(self):
-        inpaint_js = (ROOT / "frontend" / "sd15_inpainting.js").read_text(encoding="utf-8")
+        inpaint_js = (ROOT / "frontend" / "sd15" / "inpainting.js").read_text(encoding="utf-8")
         self.assertIn("window.PresetPanel?.init({", inpaint_js)
         self.assertIn('taskType: "sd15.inpaint"', inpaint_js)
         self.assertIn("collectSettings: collectSd15InpaintPresetSettings", inpaint_js)
@@ -324,10 +330,10 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("WorkflowInputValidator?.assertTaskInputs", inpaint_js)
 
     def test_sd15_inpaint_script_wires_lcm_mode_payload_and_guardrails(self):
-        inpaint_html = (ROOT / "frontend" / "sd15_inpainting.html").read_text(
+        inpaint_html = (ROOT / "frontend" / "sd15" / "inpainting.html").read_text(
             encoding="utf-8"
         )
-        inpaint_js = (ROOT / "frontend" / "sd15_inpainting.js").read_text(encoding="utf-8")
+        inpaint_js = (ROOT / "frontend" / "sd15" / "inpainting.js").read_text(encoding="utf-8")
 
         self.assertIn('id="lcm_enabled"', inpaint_html)
         self.assertIn("function applyLcmInpaintContract(inputs)", inpaint_js)
@@ -336,7 +342,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("LCM mode cannot be combined with ControlNet for SD1.5 inpaint yet.", inpaint_js)
 
     def test_sd15_inpaint_page_wires_ip_adapter_controls(self):
-        inpaint_html = (ROOT / "frontend" / "sd15_inpainting.html").read_text(
+        inpaint_html = (ROOT / "frontend" / "sd15" / "inpainting.html").read_text(
             encoding="utf-8"
         )
 
@@ -353,7 +359,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("ip_adapter_panel.js?v=1", inpaint_html)
 
     def test_sd15_inpaint_script_wires_ip_adapter_payload_and_guardrails(self):
-        inpaint_js = (ROOT / "frontend" / "sd15_inpainting.js").read_text(encoding="utf-8")
+        inpaint_js = (ROOT / "frontend" / "sd15" / "inpainting.js").read_text(encoding="utf-8")
 
         self.assertIn("window.IpAdapterPanel?.init({", inpaint_js)
         self.assertIn("getIpAdapterImageFile", inpaint_js)
@@ -372,7 +378,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("IP-Adapter cannot be combined with LCM mode for SD1.5 inpaint yet.", inpaint_js)
 
     def test_ip_adapter_panel_script_previews_selected_reference_image(self):
-        panel_js = (ROOT / "frontend" / "ip_adapter_panel.js").read_text(encoding="utf-8")
+        panel_js = (ROOT / "frontend" / "components" / "ip_adapter_panel.js").read_text(encoding="utf-8")
 
         self.assertIn("URL.createObjectURL(file)", panel_js)
         self.assertIn("URL.revokeObjectURL(previewUrl)", panel_js)
@@ -384,14 +390,14 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn('content.classList.toggle("is-open", isOpen)', panel_js)
 
     def test_sd15_img2img_script_wires_lora_panel_and_payload(self):
-        img2img_js = (ROOT / "frontend" / "sd15_img2img.js").read_text(encoding="utf-8")
+        img2img_js = (ROOT / "frontend" / "sd15" / "img2img.js").read_text(encoding="utf-8")
         self.assertIn('window.LoraPanel?.init({ apiBase: API_BASE, family: "sd15" })', img2img_js)
         self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", img2img_js)
         self.assertIn("inputs.lora = {", img2img_js)
         self.assertIn("setLoraContract(taskInputs, loraAdapters);", img2img_js)
 
     def test_sd15_inpaint_script_consumes_controlnet_state(self):
-        inpaint_js = (ROOT / "frontend" / "sd15_inpainting.js").read_text(encoding="utf-8")
+        inpaint_js = (ROOT / "frontend" / "sd15" / "inpainting.js").read_text(encoding="utf-8")
         self.assertIn("window.ControlNetPanel?.getState?.()", inpaint_js)
         self.assertIn("window.ControlNetPreprocessor.init()", inpaint_js)
         self.assertIn("controlnetEnabled", inpaint_js)
@@ -399,14 +405,14 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("controlnet_models", inpaint_js)
 
     def test_sd15_inpaint_script_wires_lora_panel_and_payload(self):
-        inpaint_js = (ROOT / "frontend" / "sd15_inpainting.js").read_text(encoding="utf-8")
+        inpaint_js = (ROOT / "frontend" / "sd15" / "inpainting.js").read_text(encoding="utf-8")
         self.assertIn('window.LoraPanel?.init({ apiBase: API_BASE, family: "sd15" })', inpaint_js)
         self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", inpaint_js)
         self.assertIn("inputs.lora = {", inpaint_js)
         self.assertIn("setLoraContract(taskInputs, loraAdapters);", inpaint_js)
 
     def test_sdxl_script_consumes_controlnet_state(self):
-        sdxl_js = (ROOT / "frontend" / "sdxl.js").read_text(encoding="utf-8")
+        sdxl_js = (ROOT / "frontend" / "sdxl" / "text2img.js").read_text(encoding="utf-8")
         self.assertIn("window.ControlNetPanel?.getState?.()", sdxl_js)
         self.assertIn("window.ControlNetPreprocessor.init()", sdxl_js)
         self.assertIn("controlnetEnabled", sdxl_js)
@@ -414,14 +420,14 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("controlnet_models", sdxl_js)
 
     def test_sdxl_script_wires_lora_panel_and_payload(self):
-        sdxl_js = (ROOT / "frontend" / "sdxl.js").read_text(encoding="utf-8")
+        sdxl_js = (ROOT / "frontend" / "sdxl" / "text2img.js").read_text(encoding="utf-8")
         self.assertIn('window.LoraPanel?.init({ apiBase: API_BASE, family: "sdxl" })', sdxl_js)
         self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", sdxl_js)
         self.assertIn("inputs.lora_adapters = loraAdapters;", sdxl_js)
         self.assertIn("payload.lora_adapters = loraAdapters;", sdxl_js)
 
     def test_sdxl_page_wires_ip_adapter_controls(self):
-        sdxl_html = (ROOT / "frontend" / "sdxl.html").read_text(encoding="utf-8")
+        sdxl_html = (ROOT / "frontend" / "sdxl" / "text2img.html").read_text(encoding="utf-8")
 
         self.assertIn('id="ip_adapter_panel"', sdxl_html)
         self.assertIn('id="ip_adapter_toggle"', sdxl_html)
@@ -433,7 +439,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("ip_adapter_panel.js?v=1", sdxl_html)
 
     def test_sdxl_script_wires_ip_adapter_payload_and_guardrails(self):
-        sdxl_js = (ROOT / "frontend" / "sdxl.js").read_text(encoding="utf-8")
+        sdxl_js = (ROOT / "frontend" / "sdxl" / "text2img.js").read_text(encoding="utf-8")
 
         self.assertIn("window.IpAdapterPanel?.init()", sdxl_js)
         self.assertIn("getIpAdapterImageFile", sdxl_js)
@@ -451,14 +457,14 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("SDXL IP-Adapter cannot be combined with ControlNet yet.", sdxl_js)
 
     def test_sdxl_script_wires_preset_panel(self):
-        sdxl_js = (ROOT / "frontend" / "sdxl.js").read_text(encoding="utf-8")
+        sdxl_js = (ROOT / "frontend" / "sdxl" / "text2img.js").read_text(encoding="utf-8")
         self.assertIn("window.PresetPanel?.init({", sdxl_js)
         self.assertIn('taskType: "sdxl.text2img"', sdxl_js)
         self.assertIn("collectSettings: collectSdxlPresetSettings", sdxl_js)
         self.assertIn("applySettings: applySdxlPresetSettings", sdxl_js)
 
     def test_sdxl_img2img_script_consumes_controlnet_state(self):
-        sdxl_img2img_js = (ROOT / "frontend" / "sdxl_img2img.js").read_text(encoding="utf-8")
+        sdxl_img2img_js = (ROOT / "frontend" / "sdxl" / "img2img.js").read_text(encoding="utf-8")
         self.assertIn("window.ControlNetPanel?.getState?.()", sdxl_img2img_js)
         self.assertIn("window.ControlNetPreprocessor.init()", sdxl_img2img_js)
         self.assertIn("controlnetEnabled", sdxl_img2img_js)
@@ -466,14 +472,16 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("controlnet_models", sdxl_img2img_js)
 
     def test_sdxl_img2img_script_wires_lora_panel_and_payload(self):
-        sdxl_img2img_js = (ROOT / "frontend" / "sdxl_img2img.js").read_text(encoding="utf-8")
+        sdxl_img2img_js = (ROOT / "frontend" / "sdxl" / "img2img.js").read_text(encoding="utf-8")
         self.assertIn('window.LoraPanel?.init({ apiBase: API_BASE, family: "sdxl" })', sdxl_img2img_js)
         self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", sdxl_img2img_js)
         self.assertIn("taskInputs.lora_adapters = loraAdapters;", sdxl_img2img_js)
 
     def test_sdxl_img2img_page_and_script_wire_ip_adapter_payload(self):
-        sdxl_img2img_html = (ROOT / "frontend" / "sdxl_img2img.html").read_text(encoding="utf-8")
-        sdxl_img2img_js = (ROOT / "frontend" / "sdxl_img2img.js").read_text(encoding="utf-8")
+        sdxl_img2img_html = (ROOT / "frontend" / "sdxl" / "img2img.html").read_text(
+            encoding="utf-8"
+        )
+        sdxl_img2img_js = (ROOT / "frontend" / "sdxl" / "img2img.js").read_text(encoding="utf-8")
 
         self.assertIn('id="ip_adapter_panel"', sdxl_img2img_html)
         self.assertIn('id="ip_adapter_toggle"', sdxl_img2img_html)
@@ -491,14 +499,14 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("SDXL img2img IP-Adapter cannot be combined with ControlNet yet.", sdxl_img2img_js)
 
     def test_sdxl_img2img_script_wires_preset_panel(self):
-        sdxl_img2img_js = (ROOT / "frontend" / "sdxl_img2img.js").read_text(encoding="utf-8")
+        sdxl_img2img_js = (ROOT / "frontend" / "sdxl" / "img2img.js").read_text(encoding="utf-8")
         self.assertIn("window.PresetPanel?.init({", sdxl_img2img_js)
         self.assertIn('taskType: "sdxl.img2img"', sdxl_img2img_js)
         self.assertIn("collectSettings: collectSdxlImg2ImgPresetSettings", sdxl_img2img_js)
         self.assertIn("applySettings: applySdxlImg2ImgPresetSettings", sdxl_img2img_js)
 
     def test_sdxl_inpaint_script_consumes_controlnet_state(self):
-        sdxl_inpaint_js = (ROOT / "frontend" / "sdxl_inpaint.js").read_text(encoding="utf-8")
+        sdxl_inpaint_js = (ROOT / "frontend" / "sdxl" / "inpaint.js").read_text(encoding="utf-8")
         self.assertIn("window.ControlNetPanel?.getState?.()", sdxl_inpaint_js)
         self.assertIn("window.ControlNetPreprocessor.init()", sdxl_inpaint_js)
         self.assertIn("controlnetEnabled", sdxl_inpaint_js)
@@ -506,14 +514,16 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("controlnet_models", sdxl_inpaint_js)
 
     def test_sdxl_inpaint_script_wires_lora_panel_and_payload(self):
-        sdxl_inpaint_js = (ROOT / "frontend" / "sdxl_inpaint.js").read_text(encoding="utf-8")
+        sdxl_inpaint_js = (ROOT / "frontend" / "sdxl" / "inpaint.js").read_text(encoding="utf-8")
         self.assertIn('window.LoraPanel?.init({ apiBase: API_BASE, family: "sdxl" })', sdxl_inpaint_js)
         self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", sdxl_inpaint_js)
         self.assertIn("taskInputs.lora_adapters = loraAdapters;", sdxl_inpaint_js)
 
     def test_sdxl_inpaint_page_and_script_wire_ip_adapter_payload(self):
-        sdxl_inpaint_html = (ROOT / "frontend" / "sdxl_inpaint.html").read_text(encoding="utf-8")
-        sdxl_inpaint_js = (ROOT / "frontend" / "sdxl_inpaint.js").read_text(encoding="utf-8")
+        sdxl_inpaint_html = (ROOT / "frontend" / "sdxl" / "inpaint.html").read_text(
+            encoding="utf-8"
+        )
+        sdxl_inpaint_js = (ROOT / "frontend" / "sdxl" / "inpaint.js").read_text(encoding="utf-8")
 
         self.assertIn('id="ip_adapter_panel"', sdxl_inpaint_html)
         self.assertIn('id="ip_adapter_toggle"', sdxl_inpaint_html)
@@ -531,17 +541,19 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("SDXL inpaint IP-Adapter cannot be combined with ControlNet yet.", sdxl_inpaint_js)
 
     def test_sdxl_inpaint_script_wires_preset_panel(self):
-        sdxl_inpaint_js = (ROOT / "frontend" / "sdxl_inpaint.js").read_text(encoding="utf-8")
+        sdxl_inpaint_js = (ROOT / "frontend" / "sdxl" / "inpaint.js").read_text(encoding="utf-8")
         self.assertIn("window.PresetPanel?.init({", sdxl_inpaint_js)
         self.assertIn('taskType: "sdxl.inpaint"', sdxl_inpaint_js)
         self.assertIn("collectSettings: collectSdxlInpaintPresetSettings", sdxl_inpaint_js)
         self.assertIn("applySettings: applySdxlInpaintPresetSettings", sdxl_inpaint_js)
 
     def test_z_image_page_includes_lora_script_before_z_image(self):
-        z_image_html = (ROOT / "frontend" / "z_image.html").read_text(encoding="utf-8")
-        lora_tag = '<script src="lora_panel.js?v=1"></script>'
-        preset_tag = '<script src="preset_panel.js?v=1"></script>'
-        z_image_tag = '<script src="z_image.js?v=2"></script>'
+        z_image_html = (ROOT / "frontend" / "z_image" / "text2img.html").read_text(
+            encoding="utf-8"
+        )
+        lora_tag = '<script src="../components/lora_panel.js?v=1"></script>'
+        preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
+        z_image_tag = '<script src="text2img.js?v=2"></script>'
 
         self.assertIn(lora_tag, z_image_html)
         self.assertIn(preset_tag, z_image_html)
@@ -550,24 +562,30 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertLess(z_image_html.index(preset_tag), z_image_html.index(z_image_tag))
 
     def test_z_image_script_wires_lora_panel_and_payload(self):
-        z_image_js = (ROOT / "frontend" / "z_image.js").read_text(encoding="utf-8")
+        z_image_js = (ROOT / "frontend" / "z_image" / "text2img.js").read_text(
+            encoding="utf-8"
+        )
         self.assertIn('window.LoraPanel?.init({ apiBase: API_BASE, family: "z-image" })', z_image_js)
         self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", z_image_js)
         self.assertIn("inputs.Lora = {", z_image_js)
         self.assertIn("inputs.lora_adapters = loraAdapters;", z_image_js)
 
     def test_z_image_script_wires_preset_panel(self):
-        z_image_js = (ROOT / "frontend" / "z_image.js").read_text(encoding="utf-8")
+        z_image_js = (ROOT / "frontend" / "z_image" / "text2img.js").read_text(
+            encoding="utf-8"
+        )
         self.assertIn("window.PresetPanel?.init({", z_image_js)
         self.assertIn('taskType: "z-image.text2img"', z_image_js)
         self.assertIn("collectSettings: collectZImagePresetSettings", z_image_js)
         self.assertIn("applySettings: applyZImagePresetSettings", z_image_js)
 
     def test_z_image_img2img_page_includes_lora_script_before_z_image_img2img(self):
-        z_image_img2img_html = (ROOT / "frontend" / "z_image_img2img.html").read_text(encoding="utf-8")
-        lora_tag = '<script src="lora_panel.js?v=1"></script>'
-        preset_tag = '<script src="preset_panel.js?v=1"></script>'
-        z_image_img2img_tag = '<script src="z_image_img2img.js?v=2"></script>'
+        z_image_img2img_html = (ROOT / "frontend" / "z_image" / "img2img.html").read_text(
+            encoding="utf-8"
+        )
+        lora_tag = '<script src="../components/lora_panel.js?v=1"></script>'
+        preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
+        z_image_img2img_tag = '<script src="img2img.js?v=2"></script>'
 
         self.assertIn(lora_tag, z_image_img2img_html)
         self.assertIn(preset_tag, z_image_img2img_html)
@@ -579,25 +597,29 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         )
 
     def test_z_image_img2img_script_wires_lora_panel_and_payload(self):
-        z_image_img2img_js = (ROOT / "frontend" / "z_image_img2img.js").read_text(encoding="utf-8")
+        z_image_img2img_js = (ROOT / "frontend" / "z_image" / "img2img.js").read_text(
+            encoding="utf-8"
+        )
         self.assertIn('window.LoraPanel?.init({ apiBase: API_BASE, family: "z-image" })', z_image_img2img_js)
         self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", z_image_img2img_js)
         self.assertIn("taskInputs.lora_adapters = loraAdapters;", z_image_img2img_js)
 
     def test_z_image_img2img_script_wires_preset_panel(self):
-        z_image_img2img_js = (ROOT / "frontend" / "z_image_img2img.js").read_text(encoding="utf-8")
+        z_image_img2img_js = (ROOT / "frontend" / "z_image" / "img2img.js").read_text(
+            encoding="utf-8"
+        )
         self.assertIn("window.PresetPanel?.init({", z_image_img2img_js)
         self.assertIn('taskType: "z-image.img2img"', z_image_img2img_js)
         self.assertIn("collectSettings: collectZImageImg2ImgPresetSettings", z_image_img2img_js)
         self.assertIn("applySettings: applyZImageImg2ImgPresetSettings", z_image_img2img_js)
 
     def test_z_image_inpaint_page_includes_lora_script_before_z_image_inpaint(self):
-        z_image_inpaint_html = (ROOT / "frontend" / "z_image_inpaint.html").read_text(
+        z_image_inpaint_html = (ROOT / "frontend" / "z_image" / "inpaint.html").read_text(
             encoding="utf-8"
         )
-        lora_tag = '<script src="lora_panel.js?v=1"></script>'
-        preset_tag = '<script src="preset_panel.js?v=1"></script>'
-        z_image_inpaint_tag = '<script src="z_image_inpaint.js?v=1"></script>'
+        lora_tag = '<script src="../components/lora_panel.js?v=1"></script>'
+        preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
+        z_image_inpaint_tag = '<script src="inpaint.js?v=1"></script>'
 
         self.assertIn(lora_tag, z_image_inpaint_html)
         self.assertIn(preset_tag, z_image_inpaint_html)
@@ -612,7 +634,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         )
 
     def test_z_image_inpaint_script_wires_lora_panel_and_payload(self):
-        z_image_inpaint_js = (ROOT / "frontend" / "z_image_inpaint.js").read_text(
+        z_image_inpaint_js = (ROOT / "frontend" / "z_image" / "inpaint.js").read_text(
             encoding="utf-8"
         )
         self.assertIn(
@@ -623,7 +645,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("taskInputs.lora_adapters = loraAdapters;", z_image_inpaint_js)
 
     def test_z_image_inpaint_script_wires_preset_panel(self):
-        z_image_inpaint_js = (ROOT / "frontend" / "z_image_inpaint.js").read_text(
+        z_image_inpaint_js = (ROOT / "frontend" / "z_image" / "inpaint.js").read_text(
             encoding="utf-8"
         )
         self.assertIn("window.PresetPanel?.init({", z_image_inpaint_js)
@@ -632,10 +654,10 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("applySettings: applyZImageInpaintPresetSettings", z_image_inpaint_js)
 
     def test_flux_page_includes_lora_script_before_flux(self):
-        flux_html = (ROOT / "frontend" / "flux.html").read_text(encoding="utf-8")
-        lora_tag = '<script src="lora_panel.js?v=1"></script>'
-        preset_tag = '<script src="preset_panel.js?v=1"></script>'
-        flux_tag = '<script src="flux.js?v=2"></script>'
+        flux_html = (ROOT / "frontend" / "flux" / "text2img.html").read_text(encoding="utf-8")
+        lora_tag = '<script src="../components/lora_panel.js?v=1"></script>'
+        preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
+        flux_tag = '<script src="text2img.js?v=2"></script>'
 
         self.assertIn(lora_tag, flux_html)
         self.assertIn(preset_tag, flux_html)
@@ -644,23 +666,25 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertLess(flux_html.index(preset_tag), flux_html.index(flux_tag))
 
     def test_flux_script_wires_lora_panel_and_payload(self):
-        flux_js = (ROOT / "frontend" / "flux.js").read_text(encoding="utf-8")
+        flux_js = (ROOT / "frontend" / "flux" / "text2img.js").read_text(encoding="utf-8")
         self.assertIn('window.LoraPanel?.init({ apiBase: API_BASE, family: "flux" })', flux_js)
         self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", flux_js)
-        self.assertIn("payload.lora_adapters = loraAdapters;", flux_js)
+        self.assertIn("inputs.lora_adapters = loraAdapters;", flux_js)
 
     def test_flux_script_wires_preset_panel(self):
-        flux_js = (ROOT / "frontend" / "flux.js").read_text(encoding="utf-8")
+        flux_js = (ROOT / "frontend" / "flux" / "text2img.js").read_text(encoding="utf-8")
         self.assertIn("window.PresetPanel?.init({", flux_js)
         self.assertIn('taskType: "flux.text2img"', flux_js)
         self.assertIn("collectSettings: collectFluxPresetSettings", flux_js)
         self.assertIn("applySettings: applyFluxPresetSettings", flux_js)
 
     def test_flux_img2img_page_includes_lora_script_before_flux_img2img(self):
-        flux_img2img_html = (ROOT / "frontend" / "flux_img2img.html").read_text(encoding="utf-8")
-        lora_tag = '<script src="lora_panel.js?v=1"></script>'
-        preset_tag = '<script src="preset_panel.js?v=1"></script>'
-        flux_img2img_tag = '<script src="flux_img2img.js?v=2"></script>'
+        flux_img2img_html = (ROOT / "frontend" / "flux" / "img2img.html").read_text(
+            encoding="utf-8"
+        )
+        lora_tag = '<script src="../components/lora_panel.js?v=1"></script>'
+        preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
+        flux_img2img_tag = '<script src="img2img.js?v=2"></script>'
 
         self.assertIn(lora_tag, flux_img2img_html)
         self.assertIn(preset_tag, flux_img2img_html)
@@ -673,23 +697,25 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         )
 
     def test_flux_img2img_script_wires_lora_panel_and_payload(self):
-        flux_img2img_js = (ROOT / "frontend" / "flux_img2img.js").read_text(encoding="utf-8")
+        flux_img2img_js = (ROOT / "frontend" / "flux" / "img2img.js").read_text(encoding="utf-8")
         self.assertIn('window.LoraPanel?.init({ apiBase: API_BASE, family: "flux" })', flux_img2img_js)
         self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", flux_img2img_js)
-        self.assertIn("taskInputs.lora_adapters = loraAdapters;", flux_img2img_js)
+        self.assertIn("inputs.lora_adapters = loraAdaptersEnabled ? loraAdapters : [];", flux_img2img_js)
 
     def test_flux_img2img_script_wires_preset_panel(self):
-        flux_img2img_js = (ROOT / "frontend" / "flux_img2img.js").read_text(encoding="utf-8")
+        flux_img2img_js = (ROOT / "frontend" / "flux" / "img2img.js").read_text(encoding="utf-8")
         self.assertIn("window.PresetPanel?.init({", flux_img2img_js)
         self.assertIn('taskType: "flux.img2img"', flux_img2img_js)
         self.assertIn("collectSettings: collectFluxImg2ImgPresetSettings", flux_img2img_js)
         self.assertIn("applySettings: applyFluxImg2ImgPresetSettings", flux_img2img_js)
 
     def test_flux_inpaint_page_includes_lora_script_before_flux_inpaint(self):
-        flux_inpaint_html = (ROOT / "frontend" / "flux_inpaint.html").read_text(encoding="utf-8")
-        lora_tag = '<script src="lora_panel.js?v=1"></script>'
-        preset_tag = '<script src="preset_panel.js?v=1"></script>'
-        flux_inpaint_tag = '<script src="flux_inpaint.js?v=2"></script>'
+        flux_inpaint_html = (ROOT / "frontend" / "flux" / "inpaint.html").read_text(
+            encoding="utf-8"
+        )
+        lora_tag = '<script src="../components/lora_panel.js?v=1"></script>'
+        preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
+        flux_inpaint_tag = '<script src="inpaint.js?v=2"></script>'
 
         self.assertIn(lora_tag, flux_inpaint_html)
         self.assertIn(preset_tag, flux_inpaint_html)
@@ -702,23 +728,25 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         )
 
     def test_flux_inpaint_script_wires_lora_panel_and_payload(self):
-        flux_inpaint_js = (ROOT / "frontend" / "flux_inpaint.js").read_text(encoding="utf-8")
+        flux_inpaint_js = (ROOT / "frontend" / "flux" / "inpaint.js").read_text(encoding="utf-8")
         self.assertIn('window.LoraPanel?.init({ apiBase: API_BASE, family: "flux" })', flux_inpaint_js)
         self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", flux_inpaint_js)
-        self.assertIn("taskInputs.lora_adapters = loraAdapters;", flux_inpaint_js)
+        self.assertIn("inputs.lora_adapters = loraAdapters;", flux_inpaint_js)
 
     def test_flux_inpaint_script_wires_preset_panel(self):
-        flux_inpaint_js = (ROOT / "frontend" / "flux_inpaint.js").read_text(encoding="utf-8")
+        flux_inpaint_js = (ROOT / "frontend" / "flux" / "inpaint.js").read_text(encoding="utf-8")
         self.assertIn("window.PresetPanel?.init({", flux_inpaint_js)
         self.assertIn('taskType: "flux.inpaint"', flux_inpaint_js)
         self.assertIn("collectSettings: collectFluxInpaintPresetSettings", flux_inpaint_js)
         self.assertIn("applySettings: applyFluxInpaintPresetSettings", flux_inpaint_js)
 
     def test_qwen_image_page_includes_lora_script_before_qwen_image(self):
-        qwen_image_html = (ROOT / "frontend" / "qwen_image.html").read_text(encoding="utf-8")
-        lora_tag = '<script src="lora_panel.js?v=1"></script>'
-        preset_tag = '<script src="preset_panel.js?v=1"></script>'
-        qwen_image_tag = '<script src="qwen_image.js?v=2"></script>'
+        qwen_image_html = (ROOT / "frontend" / "qwen_image" / "text2img.html").read_text(
+            encoding="utf-8"
+        )
+        lora_tag = '<script src="../components/lora_panel.js?v=1"></script>'
+        preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
+        qwen_image_tag = '<script src="text2img.js?v=2"></script>'
 
         self.assertIn(lora_tag, qwen_image_html)
         self.assertIn(preset_tag, qwen_image_html)
@@ -727,28 +755,32 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertLess(qwen_image_html.index(preset_tag), qwen_image_html.index(qwen_image_tag))
 
     def test_qwen_image_script_wires_lora_panel_and_payload(self):
-        qwen_image_js = (ROOT / "frontend" / "qwen_image.js").read_text(encoding="utf-8")
+        qwen_image_js = (ROOT / "frontend" / "qwen_image" / "text2img.js").read_text(
+            encoding="utf-8"
+        )
         self.assertIn(
             'window.LoraPanel?.init({ apiBase: API_BASE, family: "qwen-image" })',
             qwen_image_js,
         )
         self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", qwen_image_js)
-        self.assertIn("payload.lora_adapters = loraAdapters;", qwen_image_js)
+        self.assertIn("inputs.lora_adapters = loraAdapters;", qwen_image_js)
 
     def test_qwen_image_script_wires_preset_panel(self):
-        qwen_image_js = (ROOT / "frontend" / "qwen_image.js").read_text(encoding="utf-8")
+        qwen_image_js = (ROOT / "frontend" / "qwen_image" / "text2img.js").read_text(
+            encoding="utf-8"
+        )
         self.assertIn("window.PresetPanel?.init({", qwen_image_js)
         self.assertIn('taskType: "qwen-image.text2img"', qwen_image_js)
         self.assertIn("collectSettings: collectQwenImagePresetSettings", qwen_image_js)
         self.assertIn("applySettings: applyQwenImagePresetSettings", qwen_image_js)
 
     def test_qwen_image_img2img_page_includes_lora_script_before_qwen_image_img2img(self):
-        qwen_image_img2img_html = (ROOT / "frontend" / "qwen_image_img2img.html").read_text(
+        qwen_image_img2img_html = (ROOT / "frontend" / "qwen_image" / "img2img.html").read_text(
             encoding="utf-8"
         )
-        lora_tag = '<script src="lora_panel.js?v=1"></script>'
-        preset_tag = '<script src="preset_panel.js?v=1"></script>'
-        qwen_image_img2img_tag = '<script src="qwen_image_img2img.js?v=2"></script>'
+        lora_tag = '<script src="../components/lora_panel.js?v=1"></script>'
+        preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
+        qwen_image_img2img_tag = '<script src="img2img.js?v=2"></script>'
 
         self.assertIn(lora_tag, qwen_image_img2img_html)
         self.assertIn(preset_tag, qwen_image_img2img_html)
@@ -763,7 +795,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         )
 
     def test_qwen_image_img2img_script_wires_lora_panel_and_payload(self):
-        qwen_image_img2img_js = (ROOT / "frontend" / "qwen_image_img2img.js").read_text(
+        qwen_image_img2img_js = (ROOT / "frontend" / "qwen_image" / "img2img.js").read_text(
             encoding="utf-8"
         )
         self.assertIn(
@@ -771,10 +803,10 @@ class FrontendControlNetScriptTests(unittest.TestCase):
             qwen_image_img2img_js,
         )
         self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", qwen_image_img2img_js)
-        self.assertIn("taskInputs.lora_adapters = loraAdapters;", qwen_image_img2img_js)
+        self.assertIn("inputs.lora_adapters = loraAdapters;", qwen_image_img2img_js)
 
     def test_qwen_image_img2img_script_wires_preset_panel(self):
-        qwen_image_img2img_js = (ROOT / "frontend" / "qwen_image_img2img.js").read_text(
+        qwen_image_img2img_js = (ROOT / "frontend" / "qwen_image" / "img2img.js").read_text(
             encoding="utf-8"
         )
         self.assertIn("window.PresetPanel?.init({", qwen_image_img2img_js)
@@ -783,12 +815,12 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("applySettings: applyQwenImageImg2ImgPresetSettings", qwen_image_img2img_js)
 
     def test_qwen_image_inpaint_page_includes_lora_script_before_qwen_image_inpaint(self):
-        qwen_image_inpaint_html = (ROOT / "frontend" / "qwen_image_inpaint.html").read_text(
+        qwen_image_inpaint_html = (ROOT / "frontend" / "qwen_image" / "inpaint.html").read_text(
             encoding="utf-8"
         )
-        lora_tag = '<script src="lora_panel.js?v=1"></script>'
-        preset_tag = '<script src="preset_panel.js?v=1"></script>'
-        qwen_image_inpaint_tag = '<script src="qwen_image_inpaint.js?v=2"></script>'
+        lora_tag = '<script src="../components/lora_panel.js?v=1"></script>'
+        preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
+        qwen_image_inpaint_tag = '<script src="inpaint.js?v=2"></script>'
 
         self.assertIn(lora_tag, qwen_image_inpaint_html)
         self.assertIn(preset_tag, qwen_image_inpaint_html)
@@ -803,7 +835,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         )
 
     def test_qwen_image_inpaint_script_wires_lora_panel_and_payload(self):
-        qwen_image_inpaint_js = (ROOT / "frontend" / "qwen_image_inpaint.js").read_text(
+        qwen_image_inpaint_js = (ROOT / "frontend" / "qwen_image" / "inpaint.js").read_text(
             encoding="utf-8"
         )
         self.assertIn(
@@ -811,10 +843,10 @@ class FrontendControlNetScriptTests(unittest.TestCase):
             qwen_image_inpaint_js,
         )
         self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", qwen_image_inpaint_js)
-        self.assertIn("taskInputs.lora_adapters = loraAdapters;", qwen_image_inpaint_js)
+        self.assertIn("inputs.lora_adapters = loraAdapters;", qwen_image_inpaint_js)
 
     def test_qwen_image_inpaint_script_wires_preset_panel(self):
-        qwen_image_inpaint_js = (ROOT / "frontend" / "qwen_image_inpaint.js").read_text(
+        qwen_image_inpaint_js = (ROOT / "frontend" / "qwen_image" / "inpaint.js").read_text(
             encoding="utf-8"
         )
         self.assertIn("window.PresetPanel?.init({", qwen_image_inpaint_js)
@@ -823,7 +855,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("applySettings: applyQwenImageInpaintPresetSettings", qwen_image_inpaint_js)
 
     def test_preprocessor_modal_has_two_column_layout_hooks(self):
-        preprocessor_html = (ROOT / "frontend" / "controlnet_preprocessor.html").read_text(
+        preprocessor_html = (ROOT / "frontend" / "components" / "controlnet_preprocessor.html").read_text(
             encoding="utf-8"
         )
         self.assertIn('class="modal-body preprocessor-layout"', preprocessor_html)
@@ -833,7 +865,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
 
     def test_preprocessor_modal_styles_define_viewport_height_preview(self):
         style_css = (ROOT / "frontend" / "style.css").read_text(encoding="utf-8")
-        preprocessor_html = (ROOT / "frontend" / "controlnet_preprocessor.html").read_text(
+        preprocessor_html = (ROOT / "frontend" / "components" / "controlnet_preprocessor.html").read_text(
             encoding="utf-8"
         )
         self.assertIn("#preprocessor-modal .preprocessor-layout", style_css)

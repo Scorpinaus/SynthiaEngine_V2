@@ -23,5 +23,5 @@ rem Wait 20 seconds
 timeout /t 20 /nobreak >nul
 
 start "Synthia Frontend" cmd /k ""%VENV_PY%" -m http.server 4173 --directory frontend"
-start "" "http://127.0.0.1:4173/sd15.html"
+start "" "http://127.0.0.1:4173/sd15/text2img.html"
 

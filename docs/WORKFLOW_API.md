@@ -321,12 +321,12 @@ Compatibility guarantees:
 - Error `404`: missing id in `{"detail": "Preset with id <preset_id> not found."}`
 
 Frontend note (registry pages):
-- `frontend/models.html` now serves base model listing with edit/delete actions.
-- `frontend/model_base_add.html` serves base model create flow.
-- `frontend/model_base_edit.html` serves base model edit flow via `name` query parameter.
-- `frontend/lora_models.html` provides LoRA list/search/filter plus edit/delete actions.
-- `frontend/lora_add.html` provides LoRA create flow.
-- `frontend/lora_edit.html` provides LoRA edit flow via `lora_id` query parameter.
+- `frontend/models/base/registry.html` now serves base model listing with edit/delete actions.
+- `frontend/models/base/add.html` serves base model create flow.
+- `frontend/models/base/edit.html` serves base model edit flow via `name` query parameter.
+- `frontend/models/lora/model_page.html` provides LoRA list/search/filter plus edit/delete actions.
+- `frontend/models/lora/add.html` provides LoRA create flow.
+- `frontend/models/lora/edit.html` provides LoRA edit flow via `lora_id` query parameter.
 
 ### Base model registry endpoints
 
@@ -409,29 +409,29 @@ Validation behavior:
 - Returns `400` with an actionable message for invalid params.
 
 Frontend note (SD1.5 page):
-- `frontend/controlnet_panel.html` is loaded by `frontend/controlnet_panel.js`.
-- `frontend/controlnet_preprocessor.html` is loaded by `frontend/controlnet_preprocessor.js`.
-- `frontend/sd15.js` consumes shared ControlNet state via `window.ControlNetPanel.getState()`.
-- `frontend/sd15.js` uploads the optional SD1.5 IP-Adapter reference image, creates a `sd15.ip_adapter.encode` task, and sends the resulting `image_embeds` into `sd15.text2img.inputs.ip_adapter.image_embeds`. It uploads the optional IP-Adapter mask as `sd15.text2img.inputs.ip_adapter.mask_image`.
-- `frontend/sd15_img2img.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()`.
-- `frontend/sd15_img2img.js` uploads the optional SD1.5 IP-Adapter reference image, creates a `sd15.ip_adapter.encode` task, and sends the resulting `image_embeds` into `sd15.img2img.inputs.ip_adapter.image_embeds`. It uploads the optional IP-Adapter mask as `sd15.img2img.inputs.ip_adapter.mask_image`.
-- `frontend/sd15_inpainting.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()`.
-- `frontend/sd15_inpainting.js` uploads the optional SD1.5 IP-Adapter reference image, creates a `sd15.ip_adapter.encode` task, and sends the resulting `image_embeds` into `sd15.inpaint.inputs.ip_adapter.image_embeds`. It uploads the optional IP-Adapter mask as `sd15.inpaint.inputs.ip_adapter.mask_image`.
-- `frontend/ip_adapter_panel.js` supports either uploading an IP-Adapter mask image or creating one in a lightweight canvas editor. White = apply image prompt; black = suppress image prompt.
-- `frontend/controlnet_panel.html` groups ControlNet runtime knobs (`controlnet_conditioning_scale`, `controlnet_guess_mode`, `control_guidance_start`, `control_guidance_end`).
+- `frontend/components/controlnet_panel.html` is loaded by `frontend/components/controlnet_panel.js`.
+- `frontend/components/controlnet_preprocessor.html` is loaded by `frontend/components/controlnet_preprocessor.js`.
+- `frontend/sd15/text2img.js` consumes shared ControlNet state via `window.ControlNetPanel.getState()`.
+- `frontend/sd15/text2img.js` uploads the optional SD1.5 IP-Adapter reference image, creates a `sd15.ip_adapter.encode` task, and sends the resulting `image_embeds` into `sd15.text2img.inputs.ip_adapter.image_embeds`. It uploads the optional IP-Adapter mask as `sd15.text2img.inputs.ip_adapter.mask_image`.
+- `frontend/sd15/img2img.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()`.
+- `frontend/sd15/img2img.js` uploads the optional SD1.5 IP-Adapter reference image, creates a `sd15.ip_adapter.encode` task, and sends the resulting `image_embeds` into `sd15.img2img.inputs.ip_adapter.image_embeds`. It uploads the optional IP-Adapter mask as `sd15.img2img.inputs.ip_adapter.mask_image`.
+- `frontend/sd15/inpainting.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()`.
+- `frontend/sd15/inpainting.js` uploads the optional SD1.5 IP-Adapter reference image, creates a `sd15.ip_adapter.encode` task, and sends the resulting `image_embeds` into `sd15.inpaint.inputs.ip_adapter.image_embeds`. It uploads the optional IP-Adapter mask as `sd15.inpaint.inputs.ip_adapter.mask_image`.
+- `frontend/components/ip_adapter_panel.js` supports either uploading an IP-Adapter mask image or creating one in a lightweight canvas editor. White = apply image prompt; black = suppress image prompt.
+- `frontend/components/controlnet_panel.html` groups ControlNet runtime knobs (`controlnet_conditioning_scale`, `controlnet_guess_mode`, `control_guidance_start`, `control_guidance_end`).
 - The preprocessor modal layout uses a two-column split (`settings` + `preview`) and caps preview height to viewport.
-- `frontend/controlnet_preprocessor.js` applies a runtime layout fallback so stale cached modal markup is upgraded in-place.
+- `frontend/components/controlnet_preprocessor.js` applies a runtime layout fallback so stale cached modal markup is upgraded in-place.
 - ControlNet HTML fragments are fetched with `cache: "no-store"` to avoid stale modal/panel assets.
-- `frontend/controlnet_preprocessor.html` also carries inline layout styles as a last-resort cache-resistant fallback.
+- `frontend/components/controlnet_preprocessor.html` also carries inline layout styles as a last-resort cache-resistant fallback.
 - The preprocessor modal collapses to one column only on narrow screens (`<=700px`).
-- `frontend/sd15_animatediff.html` serves SD1.5 AnimateDiff text-to-video generation and renders `videos` outputs in `frontend/video_gallery.js`.
-- `frontend/sdxl.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()` for `sdxl.controlnet.text2img`.
-- `frontend/sdxl.js` uploads the optional SDXL IP-Adapter reference image through `/api/artifacts` and sends it as `sdxl.text2img.inputs.ip_adapter.image`.
-- `frontend/sdxl_img2img.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()` for `sdxl.img2img` optional ControlNet usage.
-- `frontend/sdxl_img2img.js` uploads the optional SDXL IP-Adapter reference image through `/api/artifacts` and sends it as `sdxl.img2img.inputs.ip_adapter.image`.
-- `frontend/sdxl_inpaint.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()` for `sdxl.inpaint` optional ControlNet usage.
-- `frontend/sdxl_inpaint.js` also consumes shared LoRA state via `window.LoraPanel.getSelectedAdapters()` for `sdxl.inpaint`.
-- `frontend/sdxl_inpaint.js` uploads the optional SDXL IP-Adapter reference image through `/api/artifacts` and sends it as `sdxl.inpaint.inputs.ip_adapter.image`.
+- `frontend/sd15/animatediff.html` serves SD1.5 AnimateDiff text-to-video generation and renders `videos` outputs in `frontend/components/video_gallery.js`.
+- `frontend/sdxl/text2img.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()` for `sdxl.controlnet.text2img`.
+- `frontend/sdxl/text2img.js` uploads the optional SDXL IP-Adapter reference image through `/api/artifacts` and sends it as `sdxl.text2img.inputs.ip_adapter.image`.
+- `frontend/sdxl/img2img.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()` for `sdxl.img2img` optional ControlNet usage.
+- `frontend/sdxl/img2img.js` uploads the optional SDXL IP-Adapter reference image through `/api/artifacts` and sends it as `sdxl.img2img.inputs.ip_adapter.image`.
+- `frontend/sdxl/inpaint.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()` for `sdxl.inpaint` optional ControlNet usage.
+- `frontend/sdxl/inpaint.js` also consumes shared LoRA state via `window.LoraPanel.getSelectedAdapters()` for `sdxl.inpaint`.
+- `frontend/sdxl/inpaint.js` uploads the optional SDXL IP-Adapter reference image through `/api/artifacts` and sends it as `sdxl.inpaint.inputs.ip_adapter.image`.
 
 ## Job object
 

@@ -75,7 +75,7 @@ run_app.bat
 This launches:
 - Backend API: `http://127.0.0.1:8000`
 - Renderer worker: a separate command window for generation/job logs
-- Frontend: `http://127.0.0.1:4173` (opens `sd15.html` by default)
+- Frontend: `http://127.0.0.1:4173` (opens `sd15/text2img.html` by default)
 
 The API and renderer are split so request/access logs stay separate from
 generation warnings and errors. For manual startup, run the API with the

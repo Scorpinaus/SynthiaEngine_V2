@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Synthia Engine Models</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../../style.css?v=2" />
+</head>
+
+<body>
+    <div class="app">
+        <div id="header-root"></div>
+
+        <section class="models-panel">
+            <div class="models-header">
+                <div>
+                    <h2>Model Registry</h2>
+                    <p>Review the available models and their registry metadata.</p>
+                </div>
+                <div class="models-actions">
+                    <a class="secondary nav-link" href="add.html">Add model</a>
+                    <a class="secondary nav-link" href="../lora/model_page.html">LoRA registry</a>
+                    <button id="models-refresh" class="secondary" type="button">Refresh</button>
+                </div>
+            </div>
+
+            <div class="models-toolbar">
+                <div class="models-summary">
+                    <span id="models-count">0</span>
+                    <span class="models-summary-label">models</span>
+                    <span id="models-updated" class="models-updated"></span>
+                </div>
+                <div class="models-filters">
+                    <label class="models-filter">
+                        <span>Search</span>
+                        <input id="models-search" type="search" placeholder="Search by name, family, ID, or type" />
+                    </label>
+                    <label class="models-filter">
+                        <span>Family</span>
+                        <select id="models-family">
+                            <option value="">All families</option>
+                        </select>
+                    </label>
+                    <label class="models-filter">
+                        <span>Sort</span>
+                        <select id="models-sort">
+                            <option value="name">Name</option>
+                            <option value="family">Family</option>
+                            <option value="type">Model type</option>
+                            <option value="location">Location</option>
+                        </select>
+                    </label>
+                </div>
+            </div>
+            <div id="models-state" class="models-state">Loading model registry...</div>
+            <div id="models-grid" class="models-grid"></div>
+        </section>
+    </div>
+
+    <script src="../../api_config.js?v=1"></script>
+    <script src="../../components/header.js?v=1"></script>
+    <script src="../../components/nav_bar.js?v=3"></script>
+    <script src="registry.js?v=1"></script>
+</body>
+
+</html>

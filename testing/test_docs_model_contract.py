@@ -14,7 +14,7 @@ class DocsModelContractTests(unittest.TestCase):
         self.assertIn("`GET /models/{model_name}`", docs)
         self.assertIn("`PATCH /models/{model_name}`", docs)
         self.assertIn("`DELETE /models/{model_name}`", docs)
-        self.assertIn("`frontend/model_base_edit.html`", docs)
+        self.assertIn("`frontend/models/base/edit.html`", docs)
 
 
 if __name__ == "__main__":

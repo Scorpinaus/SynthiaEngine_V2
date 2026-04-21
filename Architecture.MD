@@ -14,7 +14,7 @@ Runtime startup is defined in `run_app.bat`:
 
 - Starts Uvicorn for `backend.main:app`
 - Starts `python -m http.server` for `frontend/`
-- Opens `sd15.html`
+- Opens `sd15/text2img.html`
 
 ## 2. High-Level Component Diagram
 
@@ -248,12 +248,12 @@ Frontend is plain HTML + JS (no build step) served by static HTTP server.
 - `frontend/workflow_catalog.js`
   - Fetch/caches `/api/workflow/catalog`
   - Applies backend defaults into form controls
-- `frontend/header.js`, `frontend/nav_bar.js`
+- `frontend/components/header.js`, `frontend/components/nav_bar.js`
   - Shared navigation/header shell
 
 ### 4.2 Page Pattern
 
-Generation pages (for example `frontend/sd15.html` + `frontend/sd15.js`) follow a common pattern:
+Generation pages (for example `frontend/sd15/text2img.html` + `frontend/sd15/text2img.js`) follow a common pattern:
 
 1. Load model options (`GET /models?family=<family>`)
 2. Optionally load defaults from workflow catalog
@@ -265,22 +265,24 @@ Generation pages (for example `frontend/sd15.html` + `frontend/sd15.js`) follow 
 
 ### 4.3 Reusable UI Panels
 
-- `controlnet_panel.js`, `controlnet_preprocessor.js`
+- `frontend/components/controlnet_panel.js`, `frontend/components/controlnet_preprocessor.js`
   - ControlNet item management + preprocessor integration
-- `lora_panel.js`
+- `frontend/components/lora_panel.js`
   - LoRA picker/weights mapped to workflow `lora_adapters`
-- `preset_panel.js`
+- `frontend/components/preset_panel.js`
   - Save/apply presets through `/api/presets`
-- `jobs_queue.js`
+- `frontend/components/jobs_queue.js`
   - Poll recent jobs and trigger cancellation
-- `history.js`
+- `frontend/components/gallery.js`, `frontend/components/video_gallery.js`
+  - Shared image/video viewers used by workflow pages
+- `others/history.js`
   - Read `/history` and render outputs grouped by `batch_id`
 
 ### 4.4 Registry and Utility Pages
 
-- Base models: `models.html`, `model_base_add.html`, `model_base_edit.html`
-- LoRAs: `lora_models.html`, `lora_add.html`, `lora_edit.html`
-- Tools: `tools_analysis.html`
+- Base models: `models/base/registry.html`, `models/base/add.html`, `models/base/edit.html`
+- LoRAs: `models/lora/model_page.html`, `models/lora/add.html`, `models/lora/edit.html`
+- Tools: `others/tools_analysis.html`
 
 These pages call model/LoRA registry endpoints and tool endpoints directly.
 
