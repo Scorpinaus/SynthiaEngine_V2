@@ -158,19 +158,66 @@ def _coerce_param_value(key: str, value: Any, spec: PreprocessorParamSpec) -> An
 class ControlNetAuxPreprocessor(BasePreprocessor):
     detector_names: list[str]
     pretrained_model_or_path: str | None = None
+    pretrained_kwargs: dict[str, Any] = {}
     detector_instance: Any | None = None
 
     def _get_detector(self) -> Any:
         if self.detector_instance is None:
             detector_class = _resolve_detector_class(self.detector_names)
-            self.detector_instance = _build_detector(
-                detector_class, self.pretrained_model_or_path
-            )
+            if self.pretrained_kwargs:
+                try:
+                    self.detector_instance = detector_class.from_pretrained(
+                        self.pretrained_model_or_path,
+                        **self.pretrained_kwargs,
+                    )
+                except Exception as exc:  # pragma: no cover - external model loading failures
+                    raise RuntimeError(
+                        f"Failed to load detector from '{self.pretrained_model_or_path}'."
+                    ) from exc
+            else:
+                self.detector_instance = _build_detector(
+                    detector_class, self.pretrained_model_or_path
+                )
         return self.detector_instance
 
     def run(self, image: Image.Image, params: dict[str, Any]) -> Image.Image:
         detector = self._get_detector()
         return detector(image, **params)
+
+
+def _resolution_params() -> dict[str, PreprocessorParamSpec]:
+    return {
+        "detect_resolution": PreprocessorParamSpec(
+            type="int",
+            description="Resolution used by the detector before resizing.",
+            minimum=64,
+            maximum=4096,
+        ),
+        "image_resolution": PreprocessorParamSpec(
+            type="int",
+            description="Output resolution used by the detector.",
+            minimum=64,
+            maximum=4096,
+        ),
+    }
+
+
+def _safe_param() -> dict[str, PreprocessorParamSpec]:
+    return {
+        "safe": PreprocessorParamSpec(
+            type="bool",
+            description="Use safer edge post-processing.",
+        )
+    }
+
+
+def _scribble_param() -> dict[str, PreprocessorParamSpec]:
+    return {
+        "scribble": PreprocessorParamSpec(
+            type="bool",
+            description="Convert detected edges into a scribble-style control image.",
+        )
+    }
 
 
 class CannyPreprocessor(ControlNetAuxPreprocessor):
@@ -209,6 +256,47 @@ class HEDPreprocessor(ControlNetAuxPreprocessor):
     )
 
 
+class SoftedgeHEDPreprocessor(ControlNetAuxPreprocessor):
+    detector_names = ["HEDdetector", "HEDDetector"]
+    pretrained_model_or_path = "lllyasviel/Annotators"
+    definition = PreprocessorDefinition(
+        id="softedge-hed",
+        name="SoftEdge HED",
+        description="Soft edge detection using HED.",
+        defaults={"detect_resolution": 512, "image_resolution": 512, "safe": False},
+        param_schema={**_resolution_params(), **_safe_param()},
+    )
+
+
+class SoftedgeHEDSafePreprocessor(ControlNetAuxPreprocessor):
+    detector_names = ["HEDdetector", "HEDDetector"]
+    pretrained_model_or_path = "lllyasviel/Annotators"
+    definition = PreprocessorDefinition(
+        id="softedge-hedsafe",
+        name="SoftEdge HED Safe",
+        description="Soft edge detection using HED safe mode.",
+        defaults={"detect_resolution": 512, "image_resolution": 512, "safe": True},
+        param_schema={**_resolution_params(), **_safe_param()},
+    )
+
+
+class ScribbleHEDPreprocessor(ControlNetAuxPreprocessor):
+    detector_names = ["HEDdetector", "HEDDetector"]
+    pretrained_model_or_path = "lllyasviel/Annotators"
+    definition = PreprocessorDefinition(
+        id="scribble-hed",
+        name="Scribble HED",
+        description="Scribble-style edge extraction using HED.",
+        defaults={
+            "detect_resolution": 512,
+            "image_resolution": 512,
+            "safe": False,
+            "scribble": True,
+        },
+        param_schema={**_resolution_params(), **_safe_param(), **_scribble_param()},
+    )
+
+
 class MidasDepthPreprocessor(ControlNetAuxPreprocessor):
     detector_names = ["MidasDetector"]
     pretrained_model_or_path = "lllyasviel/Annotators"
@@ -218,6 +306,106 @@ class MidasDepthPreprocessor(ControlNetAuxPreprocessor):
         description="Predicts depth maps using MiDaS.",
         defaults={},
         param_schema={},
+    )
+
+
+class MidasNormalPreprocessor(ControlNetAuxPreprocessor):
+    detector_names = ["MidasDetector"]
+    pretrained_model_or_path = "lllyasviel/Annotators"
+    definition = PreprocessorDefinition(
+        id="normal-midas",
+        name="Midas Normal",
+        description="Predicts surface normals from MiDaS depth.",
+        defaults={
+            "detect_resolution": 512,
+            "image_resolution": 512,
+            "depth_and_normal": True,
+            "bg_th": 0.1,
+        },
+        param_schema={
+            **_resolution_params(),
+            "depth_and_normal": PreprocessorParamSpec(
+                type="bool",
+                description="Return the MiDaS normal-map output.",
+            ),
+            "bg_th": PreprocessorParamSpec(
+                type="float",
+                description="Background threshold for normal-map generation.",
+                minimum=0.0,
+                maximum=1.0,
+            ),
+        },
+    )
+
+    def run(self, image: Image.Image, params: dict[str, Any]) -> Image.Image:
+        detector = self._get_detector()
+        _depth_image, normal_image = detector(image, **params)
+        return normal_image
+
+
+class ZoeDepthPreprocessor(ControlNetAuxPreprocessor):
+    detector_names = ["ZoeDetector"]
+    pretrained_model_or_path = "lllyasviel/Annotators"
+    definition = PreprocessorDefinition(
+        id="depth-zoe",
+        name="Zoe Depth",
+        description="Predicts depth maps using ZoeDepth.",
+        defaults={"detect_resolution": 512, "image_resolution": 512},
+        param_schema=_resolution_params(),
+    )
+
+
+class LeresDepthPreprocessor(ControlNetAuxPreprocessor):
+    detector_names = ["LeresDetector"]
+    pretrained_model_or_path = "lllyasviel/Annotators"
+    definition = PreprocessorDefinition(
+        id="depth-leres",
+        name="LeReS Depth",
+        description="Predicts depth maps using LeReS.",
+        defaults={
+            "detect_resolution": 512,
+            "image_resolution": 512,
+            "thr_a": 0,
+            "thr_b": 0,
+            "boost": False,
+        },
+        param_schema={
+            **_resolution_params(),
+            "thr_a": PreprocessorParamSpec(
+                type="int",
+                description="Near depth threshold.",
+                minimum=0,
+                maximum=255,
+            ),
+            "thr_b": PreprocessorParamSpec(
+                type="int",
+                description="Far depth threshold.",
+                minimum=0,
+                maximum=255,
+            ),
+            "boost": PreprocessorParamSpec(
+                type="bool",
+                description="Use boosted LeReS depth estimation.",
+            ),
+        },
+    )
+
+
+class LeresDepthBoostPreprocessor(ControlNetAuxPreprocessor):
+    detector_names = ["LeresDetector"]
+    pretrained_model_or_path = "lllyasviel/Annotators"
+    definition = PreprocessorDefinition(
+        id="depth-leres-plus",
+        name="LeReS Depth Plus",
+        description="Predicts boosted depth maps using LeReS.",
+        defaults={
+            "detect_resolution": 512,
+            "image_resolution": 512,
+            "thr_a": 0,
+            "thr_b": 0,
+            "boost": True,
+        },
+        param_schema=LeresDepthPreprocessor.definition.param_schema,
     )
 
 
@@ -269,6 +457,51 @@ class LineartAnimePreprocessor(ControlNetAuxPreprocessor):
     )
 
 
+class LineartStandardPreprocessor(ControlNetAuxPreprocessor):
+    detector_names = ["LineartStandardDetector"]
+    definition = PreprocessorDefinition(
+        id="lineart-standard",
+        name="Lineart Standard",
+        description="Extracts standard lineart without pretrained weights.",
+        defaults={
+            "detect_resolution": 512,
+            "guassian_sigma": 6.0,
+            "intensity_threshold": 8,
+        },
+        param_schema={
+            "detect_resolution": PreprocessorParamSpec(
+                type="int",
+                description="Resolution used by the detector.",
+                minimum=64,
+                maximum=4096,
+            ),
+            "guassian_sigma": PreprocessorParamSpec(
+                type="float",
+                description="Gaussian blur sigma used by the detector.",
+                minimum=0.0,
+                maximum=32.0,
+            ),
+            "intensity_threshold": PreprocessorParamSpec(
+                type="int",
+                description="Line intensity threshold.",
+                minimum=0,
+                maximum=255,
+            ),
+        },
+    )
+
+
+class ContentShufflePreprocessor(ControlNetAuxPreprocessor):
+    detector_names = ["ContentShuffleDetector"]
+    definition = PreprocessorDefinition(
+        id="shuffle",
+        name="Content Shuffle",
+        description="Shuffles image content while preserving color and texture cues.",
+        defaults={"detect_resolution": 512, "image_resolution": 512},
+        param_schema=_resolution_params(),
+    )
+
+
 class PidiNetPreprocessor(ControlNetAuxPreprocessor):
     detector_names = ["PidiNetDetector"]
     pretrained_model_or_path = "lllyasviel/Annotators"
@@ -278,6 +511,47 @@ class PidiNetPreprocessor(ControlNetAuxPreprocessor):
         description="Edge detection using PiDiNet.",
         defaults={},
         param_schema={},
+    )
+
+
+class SoftedgePidiNetPreprocessor(ControlNetAuxPreprocessor):
+    detector_names = ["PidiNetDetector"]
+    pretrained_model_or_path = "lllyasviel/Annotators"
+    definition = PreprocessorDefinition(
+        id="softedge-pidinet",
+        name="SoftEdge PidiNet",
+        description="Soft edge detection using PiDiNet.",
+        defaults={"detect_resolution": 512, "image_resolution": 512, "safe": False},
+        param_schema={**_resolution_params(), **_safe_param()},
+    )
+
+
+class SoftedgePidiNetSafePreprocessor(ControlNetAuxPreprocessor):
+    detector_names = ["PidiNetDetector"]
+    pretrained_model_or_path = "lllyasviel/Annotators"
+    definition = PreprocessorDefinition(
+        id="softedge-pidsafe",
+        name="SoftEdge PidiNet Safe",
+        description="Soft edge detection using PiDiNet safe mode.",
+        defaults={"detect_resolution": 512, "image_resolution": 512, "safe": True},
+        param_schema={**_resolution_params(), **_safe_param()},
+    )
+
+
+class ScribblePidiNetPreprocessor(ControlNetAuxPreprocessor):
+    detector_names = ["PidiNetDetector"]
+    pretrained_model_or_path = "lllyasviel/Annotators"
+    definition = PreprocessorDefinition(
+        id="scribble-pidinet",
+        name="Scribble PidiNet",
+        description="Scribble-style edge extraction using PiDiNet.",
+        defaults={
+            "detect_resolution": 512,
+            "image_resolution": 512,
+            "safe": False,
+            "scribble": True,
+        },
+        param_schema={**_resolution_params(), **_safe_param(), **_scribble_param()},
     )
 
 
@@ -296,12 +570,24 @@ class NormalBaePreprocessor(ControlNetAuxPreprocessor):
 _PREPROCESSORS: list[BasePreprocessor] = [
     CannyPreprocessor(),
     HEDPreprocessor(),
+    SoftedgeHEDPreprocessor(),
+    SoftedgeHEDSafePreprocessor(),
+    ScribbleHEDPreprocessor(),
     MidasDepthPreprocessor(),
+    MidasNormalPreprocessor(),
+    ZoeDepthPreprocessor(),
+    LeresDepthPreprocessor(),
+    LeresDepthBoostPreprocessor(),
     OpenPosePreprocessor(),
     MLSDPreprocessor(),
     LineartPreprocessor(),
     LineartAnimePreprocessor(),
+    LineartStandardPreprocessor(),
+    ContentShufflePreprocessor(),
     PidiNetPreprocessor(),
+    SoftedgePidiNetPreprocessor(),
+    SoftedgePidiNetSafePreprocessor(),
+    ScribblePidiNetPreprocessor(),
     NormalBaePreprocessor(),
 ]
 

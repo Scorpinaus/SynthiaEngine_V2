@@ -54,6 +54,36 @@ class ControlNetPreprocessorValidationTests(unittest.TestCase):
         self.assertIn("low_threshold", canny.param_schema)
         self.assertEqual(canny.param_schema["low_threshold"].type, "int")
 
+    def test_expanded_preprocessor_catalog_includes_depth_softedge_and_shuffle(self):
+        defs = {entry.id: entry for entry in list_preprocessors()}
+        for preprocessor_id in (
+            "depth-zoe",
+            "depth-leres",
+            "depth-leres-plus",
+            "normal-midas",
+            "lineart-standard",
+            "shuffle",
+            "softedge-hed",
+            "softedge-hedsafe",
+            "scribble-hed",
+            "softedge-pidinet",
+            "softedge-pidsafe",
+            "scribble-pidinet",
+        ):
+            self.assertIn(preprocessor_id, defs)
+
+        self.assertEqual(defs["depth-zoe"].param_schema["detect_resolution"].type, "int")
+        self.assertEqual(defs["softedge-hedsafe"].defaults["safe"], True)
+        self.assertEqual(defs["scribble-pidinet"].defaults["scribble"], True)
+
+    def test_bool_params_are_coerced_from_form_strings(self):
+        preprocessor = get_preprocessor("softedge-hedsafe")
+        validated = preprocessor.validate_params(
+            {"detect_resolution": "512", "image_resolution": "512", "safe": "false"}
+        )
+        self.assertEqual(validated["detect_resolution"], 512)
+        self.assertFalse(validated["safe"])
+
 
 class ControlNetPreprocessorApiTests(unittest.TestCase):
     def test_list_endpoint_includes_schema_and_compatibility(self):
@@ -61,6 +91,12 @@ class ControlNetPreprocessorApiTests(unittest.TestCase):
         canny = next(item for item in response if item.id == "canny")
         self.assertIn("low_threshold", canny.param_schema)
         self.assertGreaterEqual(len(canny.recommended_sd15_control_models), 1)
+        depth_zoe = next(item for item in response if item.id == "depth-zoe")
+        self.assertIn("detect_resolution", depth_zoe.param_schema)
+        self.assertIn(
+            "lllyasviel/control_v11f1p_sd15_depth",
+            depth_zoe.recommended_sd15_control_models,
+        )
 
     def test_preprocess_endpoint_returns_400_for_invalid_params(self):
         with self.assertRaises(HTTPException) as exc:

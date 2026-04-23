@@ -90,6 +90,22 @@
             }
         }
 
+        let paramsContainer = document.getElementById("preprocessor-params");
+        if (!paramsContainer) {
+            const staleCannyFields = document.getElementById("canny-thresholds");
+            paramsContainer = document.createElement("div");
+            paramsContainer.id = "preprocessor-params";
+            paramsContainer.className = "preprocessor-param-list";
+            const applyButton = document.getElementById("apply-preprocessor");
+            if (staleCannyFields) {
+                staleCannyFields.replaceWith(paramsContainer);
+            } else if (applyButton) {
+                applyButton.parentElement?.insertBefore(paramsContainer, applyButton);
+            } else {
+                settings.appendChild(paramsContainer);
+            }
+        }
+
         applyPreprocessorLayoutStyles();
         if (!layoutResizeBound) {
             window.addEventListener("resize", applyPreprocessorLayoutStyles);
@@ -141,40 +157,108 @@
         }
     }
 
+    function formatParamLabel(key) {
+        return key
+            .split("_")
+            .filter(Boolean)
+            .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+            .join(" ");
+    }
+
+    function createParamInput(key, spec, value) {
+        const input = document.createElement("input");
+        input.id = `preprocessor-param-${key}`;
+        input.dataset.preprocessorParam = key;
+        input.dataset.paramType = spec?.type || "str";
+
+        if (spec?.type === "bool") {
+            input.type = "checkbox";
+            input.checked = Boolean(value);
+            return input;
+        }
+
+        if (spec?.type === "int" || spec?.type === "float") {
+            input.type = "number";
+            input.step = spec.type === "int" ? "1" : "0.01";
+            if (spec.minimum !== null && spec.minimum !== undefined) {
+                input.min = String(spec.minimum);
+            }
+            if (spec.maximum !== null && spec.maximum !== undefined) {
+                input.max = String(spec.maximum);
+            }
+            input.value = Number(value ?? 0);
+            return input;
+        }
+
+        input.type = "text";
+        input.value = value ?? "";
+        return input;
+    }
+
+    function renderPreprocessorParams(preprocessorId) {
+        const state = getState();
+        const definition = state?.preprocessors.get(preprocessorId);
+        const schema = definition?.param_schema ?? {};
+        const defaults = definition?.defaults ?? {};
+        const paramsContainer = document.getElementById("preprocessor-params");
+        if (!paramsContainer) {
+            return;
+        }
+        paramsContainer.innerHTML = "";
+
+        Object.entries(schema).forEach(([key, spec]) => {
+            const label = document.createElement("label");
+            const input = createParamInput(key, spec, defaults[key]);
+            const labelText = document.createElement("span");
+            labelText.textContent = formatParamLabel(key);
+
+            if (spec?.type === "bool") {
+                label.className = "field inline-field";
+                label.append(input, labelText);
+            } else {
+                label.className = "field";
+                label.append(labelText, input);
+            }
+            paramsContainer.appendChild(label);
+        });
+    }
+
     function updatePreprocessorDefaults(preprocessorId) {
         const state = getState();
         const definition = state?.preprocessors.get(preprocessorId);
-        const defaults = definition?.defaults ?? {};
         const description = definition?.description ?? "";
-        const lowThresholdInput = document.getElementById("preprocessor-low-threshold");
-        const highThresholdInput = document.getElementById("preprocessor-high-threshold");
         const descriptionNode = document.getElementById("preprocessor-description");
-        const cannyRow = document.getElementById("canny-thresholds");
-        if (lowThresholdInput) {
-            lowThresholdInput.value = Number(defaults.low_threshold ?? 100);
-        }
-        if (highThresholdInput) {
-            highThresholdInput.value = Number(defaults.high_threshold ?? 200);
-        }
         if (descriptionNode) {
             descriptionNode.textContent = description;
         }
-        if (cannyRow) {
-            const isCanny = preprocessorId === "canny";
-            cannyRow.classList.toggle("is-hidden", !isCanny);
-        }
+        renderPreprocessorParams(preprocessorId);
     }
 
     function buildPreprocessorParams(preprocessorId) {
         const state = getState();
         const definition = state?.preprocessors.get(preprocessorId);
+        const schema = definition?.param_schema ?? {};
         const params = { ...(definition?.defaults ?? {}) };
-        if (preprocessorId === "canny") {
-            const lowThresholdInput = document.getElementById("preprocessor-low-threshold");
-            const highThresholdInput = document.getElementById("preprocessor-high-threshold");
-            params.low_threshold = Number(lowThresholdInput?.value ?? params.low_threshold ?? 100);
-            params.high_threshold = Number(highThresholdInput?.value ?? params.high_threshold ?? 200);
-        }
+
+        Object.entries(schema).forEach(([key, spec]) => {
+            const input = document.querySelector(`[data-preprocessor-param="${key}"]`);
+            if (!(input instanceof HTMLInputElement)) {
+                return;
+            }
+            if (spec?.type === "bool") {
+                params[key] = Boolean(input.checked);
+                return;
+            }
+            if (spec?.type === "int") {
+                params[key] = parseInt(input.value, 10);
+                return;
+            }
+            if (spec?.type === "float") {
+                params[key] = Number(input.value);
+                return;
+            }
+            params[key] = input.value;
+        });
         return params;
     }
 

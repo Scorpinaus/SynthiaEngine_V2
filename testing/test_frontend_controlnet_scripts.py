@@ -142,6 +142,21 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("gridTemplateColumns", preprocessor_js)
         self.assertIn("window.innerWidth <= 700", preprocessor_js)
 
+    def test_controlnet_preprocessor_script_renders_generic_param_schema(self):
+        preprocessor_js = (ROOT / "frontend" / "components" / "controlnet_preprocessor.js").read_text(
+            encoding="utf-8"
+        )
+        preprocessor_html = (ROOT / "frontend" / "components" / "controlnet_preprocessor.html").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('id="preprocessor-params"', preprocessor_html)
+        self.assertIn("renderPreprocessorParams", preprocessor_js)
+        self.assertIn("data-preprocessor-param", preprocessor_js)
+        self.assertIn("spec?.type === \"bool\"", preprocessor_js)
+        self.assertIn("Object.entries(schema).forEach", preprocessor_js)
+        self.assertNotIn('id="canny-thresholds"', preprocessor_html)
+
     def test_sd15_controlnet_script_wires_per_item_guidance_timing(self):
         panel_js = (ROOT / "frontend" / "components" / "controlnet_panel.js").read_text(encoding="utf-8")
         preprocessor_js = (ROOT / "frontend" / "components" / "controlnet_preprocessor.js").read_text(

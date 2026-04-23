@@ -19,16 +19,7 @@
                     <span>Input Image</span>
                     <input id="preprocessor-image" type="file" accept="image/*" />
                 </label>
-                <div class="field-row" id="canny-thresholds">
-                    <label class="field">
-                        <span>Low Threshold</span>
-                        <input id="preprocessor-low-threshold" type="number" min="0" max="255" value="100" />
-                    </label>
-                    <label class="field">
-                        <span>High Threshold</span>
-                        <input id="preprocessor-high-threshold" type="number" min="0" max="255" value="200" />
-                    </label>
-                </div>
+                <div class="preprocessor-param-list" id="preprocessor-params"></div>
                 <button class="primary" id="apply-preprocessor" type="button">Apply Preprocessor</button>
             </div>
             <div class="preprocessor-preview preprocessor-preview-panel" style="min-height: 0;">

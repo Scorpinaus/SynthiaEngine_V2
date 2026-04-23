@@ -851,6 +851,11 @@ button {
     color: #6b645c;
 }
 
+.preprocessor-param-list {
+    display: grid;
+    gap: 12px;
+}
+
 .is-hidden {
     display: none;
 }

@@ -28,9 +28,107 @@
         ]
     },
     {
+        "id": "softedge-hed",
+        "name": "SoftEdge HED",
+        "description": "Soft edge detection via HED (controlnet-aux).",
+        "repo_id": null,
+        "revision": null,
+        "local_path": null,
+        "recommended_sd15_control_models": [
+            "lllyasviel/control_v11p_sd15_softedge"
+        ],
+        "legacy_aliases": [
+            "lllyasviel/sd-controlnet-hed"
+        ]
+    },
+    {
+        "id": "softedge-hedsafe",
+        "name": "SoftEdge HED Safe",
+        "description": "Soft edge detection via HED safe mode (controlnet-aux).",
+        "repo_id": null,
+        "revision": null,
+        "local_path": null,
+        "recommended_sd15_control_models": [
+            "lllyasviel/control_v11p_sd15_softedge"
+        ],
+        "legacy_aliases": [
+            "lllyasviel/sd-controlnet-hed"
+        ]
+    },
+    {
+        "id": "scribble-hed",
+        "name": "Scribble HED",
+        "description": "Scribble extraction via HED (controlnet-aux).",
+        "repo_id": null,
+        "revision": null,
+        "local_path": null,
+        "recommended_sd15_control_models": [
+            "lllyasviel/control_v11p_sd15_scribble"
+        ],
+        "legacy_aliases": [
+            "lllyasviel/sd-controlnet-scribble"
+        ]
+    },
+    {
         "id": "midas-depth",
         "name": "Midas Depth",
         "description": "Depth estimation via MiDaS (controlnet-aux).",
+        "repo_id": null,
+        "revision": null,
+        "local_path": null,
+        "recommended_sd15_control_models": [
+            "lllyasviel/control_v11f1p_sd15_depth"
+        ],
+        "legacy_aliases": [
+            "lllyasviel/sd-controlnet-depth"
+        ]
+    },
+    {
+        "id": "normal-midas",
+        "name": "Midas Normal",
+        "description": "Surface normals via MiDaS depth (controlnet-aux).",
+        "repo_id": null,
+        "revision": null,
+        "local_path": null,
+        "recommended_sd15_control_models": [
+            "lllyasviel/control_v11p_sd15_normalbae"
+        ],
+        "legacy_aliases": [
+            "lllyasviel/sd-controlnet-normal"
+        ]
+    },
+    {
+        "id": "depth-zoe",
+        "name": "Zoe Depth",
+        "description": "Depth estimation via ZoeDepth (controlnet-aux).",
+        "repo_id": null,
+        "revision": null,
+        "local_path": null,
+        "recommended_sd15_control_models": [
+            "lllyasviel/control_v11f1p_sd15_depth"
+        ],
+        "legacy_aliases": [
+            "lllyasviel/sd-controlnet-depth"
+        ]
+    },
+    {
+        "id": "depth-leres",
+        "name": "LeReS Depth",
+        "description": "Depth estimation via LeReS (controlnet-aux).",
+        "repo_id": null,
+        "revision": null,
+        "local_path": null,
+        "recommended_sd15_control_models": [
+            "lllyasviel/control_v11f1p_sd15_depth"
+        ],
+        "legacy_aliases": [
+            "lllyasviel/sd-controlnet-depth"
+        ]
+    },
+    {
+        "id": "depth-leres-plus",
+        "name": "LeReS Depth Plus",
+        "description": "Boosted depth estimation via LeReS (controlnet-aux).",
         "repo_id": null,
         "revision": null,
         "local_path": null,
@@ -98,6 +196,32 @@
         ]
     },
     {
+        "id": "lineart-standard",
+        "name": "Lineart Standard",
+        "description": "Standard lineart extraction via controlnet-aux.",
+        "repo_id": null,
+        "revision": null,
+        "local_path": null,
+        "recommended_sd15_control_models": [
+            "lllyasviel/control_v11p_sd15_lineart"
+        ],
+        "legacy_aliases": [
+            "lllyasviel/sd-controlnet-lineart"
+        ]
+    },
+    {
+        "id": "shuffle",
+        "name": "Content Shuffle",
+        "description": "Content shuffle preprocessor via controlnet-aux.",
+        "repo_id": null,
+        "revision": null,
+        "local_path": null,
+        "recommended_sd15_control_models": [
+            "lllyasviel/control_v11e_sd15_shuffle"
+        ],
+        "legacy_aliases": []
+    },
+    {
         "id": "pidinet",
         "name": "PidiNet",
         "description": "PiDiNet edge detector via controlnet-aux.",
@@ -106,6 +230,48 @@
         "local_path": null,
         "recommended_sd15_control_models": [
             "lllyasviel/control_v11p_sd15_softedge"
+        ],
+        "legacy_aliases": [
+            "lllyasviel/sd-controlnet-scribble"
+        ]
+    },
+    {
+        "id": "softedge-pidinet",
+        "name": "SoftEdge PidiNet",
+        "description": "Soft edge detection via PiDiNet (controlnet-aux).",
+        "repo_id": null,
+        "revision": null,
+        "local_path": null,
+        "recommended_sd15_control_models": [
+            "lllyasviel/control_v11p_sd15_softedge"
+        ],
+        "legacy_aliases": [
+            "lllyasviel/sd-controlnet-scribble"
+        ]
+    },
+    {
+        "id": "softedge-pidsafe",
+        "name": "SoftEdge PidiNet Safe",
+        "description": "Soft edge detection via PiDiNet safe mode (controlnet-aux).",
+        "repo_id": null,
+        "revision": null,
+        "local_path": null,
+        "recommended_sd15_control_models": [
+            "lllyasviel/control_v11p_sd15_softedge"
+        ],
+        "legacy_aliases": [
+            "lllyasviel/sd-controlnet-scribble"
+        ]
+    },
+    {
+        "id": "scribble-pidinet",
+        "name": "Scribble PidiNet",
+        "description": "Scribble extraction via PiDiNet (controlnet-aux).",
+        "repo_id": null,
+        "revision": null,
+        "local_path": null,
+        "recommended_sd15_control_models": [
+            "lllyasviel/control_v11p_sd15_scribble"
         ],
         "legacy_aliases": [
             "lllyasviel/sd-controlnet-scribble"
