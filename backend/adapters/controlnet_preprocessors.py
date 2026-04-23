@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from importlib.util import find_spec
 from typing import Any
 from typing import Literal
 
@@ -26,11 +27,31 @@ class PreprocessorDefinition:
 
 class BasePreprocessor:
     definition: PreprocessorDefinition
+    required_modules: dict[str, str] = {}
 
     def process(self, image: Image.Image, params: dict[str, Any]) -> Image.Image:
+        self.require_available()
         merged = {**self.definition.defaults, **params}
         validated = self.validate_params(merged)
         return self.run(image, validated)
+
+    def availability(self) -> tuple[bool, str | None, str | None]:
+        for module_name, install_hint in self.required_modules.items():
+            if find_spec(module_name) is None:
+                return (
+                    False,
+                    f"Optional dependency '{module_name}' is not installed.",
+                    install_hint,
+                )
+        return True, None, None
+
+    def require_available(self) -> None:
+        available, reason, install_hint = self.availability()
+        if not available:
+            detail = f"Preprocessor '{self.definition.id}' is unavailable: {reason}"
+            if install_hint:
+                detail = f"{detail} {install_hint}"
+            raise RuntimeError(detail)
 
     def validate_params(self, params: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(params, dict):
@@ -159,12 +180,18 @@ class ControlNetAuxPreprocessor(BasePreprocessor):
     detector_names: list[str]
     pretrained_model_or_path: str | None = None
     pretrained_kwargs: dict[str, Any] = {}
+    detector_init_kwargs: dict[str, Any] = {}
     detector_instance: Any | None = None
 
     def _get_detector(self) -> Any:
         if self.detector_instance is None:
             detector_class = _resolve_detector_class(self.detector_names)
             if self.pretrained_kwargs:
+                if not hasattr(detector_class, "from_pretrained"):
+                    raise RuntimeError(
+                        f"Detector for '{self.definition.id}' does not support "
+                        "from_pretrained loading."
+                    )
                 try:
                     self.detector_instance = detector_class.from_pretrained(
                         self.pretrained_model_or_path,
@@ -175,9 +202,19 @@ class ControlNetAuxPreprocessor(BasePreprocessor):
                         f"Failed to load detector from '{self.pretrained_model_or_path}'."
                     ) from exc
             else:
-                self.detector_instance = _build_detector(
-                    detector_class, self.pretrained_model_or_path
-                )
+                if self.detector_init_kwargs:
+                    try:
+                        self.detector_instance = detector_class(
+                            **self.detector_init_kwargs
+                        )
+                    except Exception as exc:  # pragma: no cover - external init failures
+                        raise RuntimeError(
+                            f"Failed to initialize detector for '{self.definition.id}'."
+                        ) from exc
+                else:
+                    self.detector_instance = _build_detector(
+                        detector_class, self.pretrained_model_or_path
+                    )
         return self.detector_instance
 
     def run(self, image: Image.Image, params: dict[str, Any]) -> Image.Image:
@@ -567,6 +604,168 @@ class NormalBaePreprocessor(ControlNetAuxPreprocessor):
     )
 
 
+class MediaPipeFacePreprocessor(ControlNetAuxPreprocessor):
+    detector_names = ["MediapipeFaceDetector"]
+    required_modules = {
+        "mediapipe": "Install optional MediaPipe support with `pip install mediapipe`."
+    }
+    definition = PreprocessorDefinition(
+        id="mediapipe-face",
+        name="MediaPipe Face",
+        description="Detects face mesh landmarks using MediaPipe.",
+        defaults={
+            "max_faces": 1,
+            "min_confidence": 0.5,
+            "detect_resolution": 512,
+            "image_resolution": 512,
+        },
+        param_schema={
+            **_resolution_params(),
+            "max_faces": PreprocessorParamSpec(
+                type="int",
+                description="Maximum number of faces to annotate.",
+                minimum=1,
+                maximum=16,
+            ),
+            "min_confidence": PreprocessorParamSpec(
+                type="float",
+                description="Minimum face detection confidence.",
+                minimum=0.0,
+                maximum=1.0,
+            ),
+        },
+    )
+
+
+class SamMobilePreprocessor(ControlNetAuxPreprocessor):
+    detector_names = ["SamDetector"]
+    pretrained_model_or_path = "dhkim2810/MobileSAM"
+    pretrained_kwargs = {"model_type": "vit_t", "filename": "mobile_sam.pt"}
+    definition = PreprocessorDefinition(
+        id="sam-mobile",
+        name="SAM Mobile",
+        description="Segments image regions using the smaller MobileSAM checkpoint.",
+        defaults={"detect_resolution": 512, "image_resolution": 512},
+        param_schema=_resolution_params(),
+    )
+
+
+class SamPreprocessor(ControlNetAuxPreprocessor):
+    detector_names = ["SamDetector"]
+    pretrained_model_or_path = "ybelkada/segment-anything"
+    pretrained_kwargs = {"subfolder": "checkpoints"}
+    definition = PreprocessorDefinition(
+        id="sam",
+        name="SAM",
+        description="Segments image regions using Segment Anything.",
+        defaults={"detect_resolution": 512, "image_resolution": 512},
+        param_schema=_resolution_params(),
+    )
+
+
+class TEEDPreprocessor(ControlNetAuxPreprocessor):
+    detector_names = ["TEEDdetector"]
+    pretrained_model_or_path = "fal-ai/teed"
+    pretrained_kwargs = {"filename": "5_model.pth"}
+    definition = PreprocessorDefinition(
+        id="teed",
+        name="TEED",
+        description="Thin edge extraction using the TEED checkpoint.",
+        defaults={"detect_resolution": 512, "safe_steps": 2},
+        param_schema={
+            "detect_resolution": PreprocessorParamSpec(
+                type="int",
+                description="Resolution used by the detector.",
+                minimum=64,
+                maximum=4096,
+            ),
+            "safe_steps": PreprocessorParamSpec(
+                type="int",
+                description="Edge refinement safety steps.",
+                minimum=0,
+                maximum=10,
+            ),
+        },
+    )
+
+
+class AnylinePreprocessor(ControlNetAuxPreprocessor):
+    detector_names = ["AnylineDetector"]
+    pretrained_model_or_path = "TheMistoAI/MistoLine"
+    pretrained_kwargs = {"filename": "MTEED.pth", "subfolder": "Anyline"}
+    definition = PreprocessorDefinition(
+        id="anyline",
+        name="Anyline",
+        description="Hybrid line extraction using the MistoLine Anyline checkpoint.",
+        defaults={
+            "detect_resolution": 1280,
+            "guassian_sigma": 2.0,
+            "intensity_threshold": 3,
+        },
+        param_schema={
+            "detect_resolution": PreprocessorParamSpec(
+                type="int",
+                description="Resolution used by the detector.",
+                minimum=64,
+                maximum=4096,
+            ),
+            "guassian_sigma": PreprocessorParamSpec(
+                type="float",
+                description="Gaussian blur sigma used by the detector.",
+                minimum=0.0,
+                maximum=32.0,
+            ),
+            "intensity_threshold": PreprocessorParamSpec(
+                type="int",
+                description="Line intensity threshold.",
+                minimum=0,
+                maximum=255,
+            ),
+        },
+    )
+
+
+class DWPosePreprocessor(BasePreprocessor):
+    required_modules = {
+        "easy_dwpose": "Install optional DWPose support with `pip install easy-dwpose`."
+    }
+    detector_instance: Any | None = None
+    definition = PreprocessorDefinition(
+        id="dwpose",
+        name="DWPose",
+        description="Whole-body pose detection with body, hand, and face keypoints.",
+        defaults={"include_hands": True, "include_face": True},
+        param_schema={
+            "include_hands": PreprocessorParamSpec(
+                type="bool",
+                description="Include hand keypoints in the pose map.",
+            ),
+            "include_face": PreprocessorParamSpec(
+                type="bool",
+                description="Include face keypoints in the pose map.",
+            ),
+        },
+    )
+
+    def _get_detector(self) -> Any:
+        if self.detector_instance is None:
+            try:
+                import torch
+                from easy_dwpose import DWposeDetector
+            except ImportError as exc:  # pragma: no cover - guarded by availability
+                raise RuntimeError(
+                    "DWPose requires `easy-dwpose`. Install it and restart the backend."
+                ) from exc
+
+            device = "cuda:0" if torch.cuda.is_available() else "cpu"
+            self.detector_instance = DWposeDetector(device=device)
+        return self.detector_instance
+
+    def run(self, image: Image.Image, params: dict[str, Any]) -> Image.Image:
+        detector = self._get_detector()
+        return detector(image, output_type="pil", **params)
+
+
 _PREPROCESSORS: list[BasePreprocessor] = [
     CannyPreprocessor(),
     HEDPreprocessor(),
@@ -589,6 +788,12 @@ _PREPROCESSORS: list[BasePreprocessor] = [
     SoftedgePidiNetSafePreprocessor(),
     ScribblePidiNetPreprocessor(),
     NormalBaePreprocessor(),
+    MediaPipeFacePreprocessor(),
+    SamMobilePreprocessor(),
+    SamPreprocessor(),
+    TEEDPreprocessor(),
+    AnylinePreprocessor(),
+    DWPosePreprocessor(),
 ]
 
 

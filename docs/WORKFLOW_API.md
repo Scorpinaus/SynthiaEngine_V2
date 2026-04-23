@@ -366,9 +366,10 @@ Returns available preprocessors plus typed parameter schema and SD1.5 model comp
 Implemented SD1.5-oriented preprocessor ids:
 - Edges/soft edges/scribble: `canny`, `hed`, `softedge-hed`, `softedge-hedsafe`, `scribble-hed`, `pidinet`, `softedge-pidinet`, `softedge-pidsafe`, `scribble-pidinet`
 - Depth/normal: `midas-depth`, `depth-zoe`, `depth-leres`, `depth-leres-plus`, `normal-midas`, `normal-bae`
-- Pose/lines/structure: `openpose`, `mlsd`, `lineart`, `lineart-anime`, `lineart-standard`, `shuffle`
+- Pose/lines/structure: `openpose`, `dwpose`, `mlsd`, `lineart`, `lineart-anime`, `lineart-standard`, `teed`, `anyline`, `shuffle`
+- Face/segmentation: `mediapipe-face`, `sam-mobile`, `sam`
 
-Deferred/heavier controlnet-aux detectors are intentionally not exposed yet: `dwpose` requires extra runtime dependencies, `mediapipe-face` requires `mediapipe`, `sam` is a large segmentation-oriented model, and `teed`/`anyline` require non-default checkpoint wiring.
+Some heavier processors are exposed as optional entries. The catalog includes `available`, `unavailable_reason`, and `install_hint` so clients can disable processors that require extra local dependencies. `dwpose` requires `easy-dwpose`, `mediapipe-face` requires `mediapipe`, `sam` downloads a large Segment Anything checkpoint, `sam-mobile` uses MobileSAM, and `teed`/`anyline` use their upstream checkpoint repos.
 
 Response item shape:
 ```json
@@ -380,6 +381,9 @@ Response item shape:
     "low_threshold": 100,
     "high_threshold": 200
   },
+  "available": true,
+  "unavailable_reason": null,
+  "install_hint": null,
   "param_schema": {
     "low_threshold": {
       "type": "int",
@@ -414,11 +418,13 @@ Validation behavior:
 - Unknown param keys are rejected.
 - Param values are type-coerced/validated against `param_schema` bounds.
 - Returns `400` with an actionable message for invalid params.
+- Returns `503` when an optional heavy preprocessor is unavailable because a runtime dependency is missing.
 
 Frontend note (SD1.5 page):
 - `frontend/components/controlnet_panel.html` is loaded by `frontend/components/controlnet_panel.js`.
 - `frontend/components/controlnet_preprocessor.html` is loaded by `frontend/components/controlnet_preprocessor.js`.
 - The preprocessor modal renders parameter controls from each entry's `param_schema`; new backend preprocessors do not require hardcoded frontend parameter fields.
+- `frontend/sd15/text2img.html` groups ControlNet preprocessors, LoRA adapters, and IP-Adapter controls behind one adapter modal. Its overview tab shows available and active adapter counts without changing workflow payload shape.
 - `frontend/sd15/text2img.js` consumes shared ControlNet state via `window.ControlNetPanel.getState()`.
 - `frontend/sd15/text2img.js` uploads the optional SD1.5 IP-Adapter reference image, creates a `sd15.ip_adapter.encode` task, and sends the resulting `image_embeds` into `sd15.text2img.inputs.ip_adapter.image_embeds`. It uploads the optional IP-Adapter mask as `sd15.text2img.inputs.ip_adapter.mask_image`.
 - `frontend/sd15/img2img.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()`.

@@ -9,20 +9,26 @@ class FrontendControlNetScriptTests(unittest.TestCase):
     def test_sd15_page_includes_controlnet_scripts_before_sd15(self):
         sd15_html = (ROOT / "frontend" / "sd15" / "text2img.html").read_text(encoding="utf-8")
         validator_tag = '<script src="../workflow_input_validator.js?v=1"></script>'
-        panel_tag = '<script src="../components/controlnet_panel.js?v=2"></script>'
+        panel_tag = '<script src="../components/controlnet_panel.js?v=3"></script>'
         preprocessor_tag = '<script src="../components/controlnet_preprocessor.js?v=3"></script>'
         preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
-        sd15_tag = '<script src="text2img.js?v=5"></script>'
+        lora_tag = '<script src="../components/lora_panel.js?v=2"></script>'
+        ip_adapter_tag = '<script src="../components/ip_adapter_panel.js?v=2"></script>'
+        sd15_tag = '<script src="text2img.js?v=6"></script>'
 
         self.assertIn(validator_tag, sd15_html)
         self.assertIn(panel_tag, sd15_html)
         self.assertIn(preprocessor_tag, sd15_html)
         self.assertIn(preset_tag, sd15_html)
+        self.assertIn(lora_tag, sd15_html)
+        self.assertIn(ip_adapter_tag, sd15_html)
         self.assertIn(sd15_tag, sd15_html)
         self.assertLess(sd15_html.index(validator_tag), sd15_html.index(sd15_tag))
         self.assertLess(sd15_html.index(panel_tag), sd15_html.index(sd15_tag))
         self.assertLess(sd15_html.index(preprocessor_tag), sd15_html.index(sd15_tag))
         self.assertLess(sd15_html.index(preset_tag), sd15_html.index(sd15_tag))
+        self.assertLess(sd15_html.index(lora_tag), sd15_html.index(sd15_tag))
+        self.assertLess(sd15_html.index(ip_adapter_tag), sd15_html.index(sd15_tag))
 
     def test_sd15_img2img_page_includes_controlnet_scripts_before_img2img(self):
         sd15_img2img_html = (ROOT / "frontend" / "sd15" / "img2img.html").read_text(encoding="utf-8")
@@ -128,8 +134,10 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         panel_js = (ROOT / "frontend" / "components" / "controlnet_panel.js").read_text(encoding="utf-8")
         self.assertIn("window.ControlNetPanel", panel_js)
         self.assertIn("getState", panel_js)
+        self.assertIn("getSummary", panel_js)
         self.assertIn("loadPanel", panel_js)
         self.assertIn("updateIndicator", panel_js)
+        self.assertIn("adapter-summary-changed", panel_js)
         self.assertIn('fetch(resolveAssetUrl("controlnet_panel.html?v=2"), { cache: "no-store" })', panel_js)
 
     def test_controlnet_preprocessor_script_exposes_expected_api(self):
@@ -155,6 +163,9 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("data-preprocessor-param", preprocessor_js)
         self.assertIn("spec?.type === \"bool\"", preprocessor_js)
         self.assertIn("Object.entries(schema).forEach", preprocessor_js)
+        self.assertIn("preprocessor.available === false", preprocessor_js)
+        self.assertIn("option.disabled = true", preprocessor_js)
+        self.assertIn("definition.install_hint", preprocessor_js)
         self.assertNotIn('id="canny-thresholds"', preprocessor_html)
 
     def test_sd15_controlnet_script_wires_per_item_guidance_timing(self):
@@ -168,6 +179,12 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("data-guidance-end-id", panel_js)
         self.assertIn("guidanceStart: Number(guidanceStart ?? 0.0)", panel_js)
         self.assertIn("guidanceEnd: Number(guidanceEnd ?? 1.0)", panel_js)
+        self.assertIn("updateControlItemFromField", panel_js)
+        self.assertIn('target.hasAttribute("data-scale-id")', panel_js)
+        self.assertIn('target.hasAttribute("data-guidance-start-id")', panel_js)
+        self.assertIn('target.hasAttribute("data-guidance-end-id")', panel_js)
+        self.assertIn('itemsContainer?.addEventListener("input"', preprocessor_js)
+        self.assertIn("updateControlItemFromField?.(event.target)", preprocessor_js)
         self.assertIn("setPerItemGuidanceTimingEnabled", panel_js)
         self.assertIn("defaultGuidanceStart", preprocessor_js)
         self.assertIn("defaultGuidanceEnd", preprocessor_js)
@@ -200,6 +217,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("lora-weight-mode-advanced", lora_js)
         self.assertIn("unet_strength", lora_js)
         self.assertIn("text_encoder_strength", lora_js)
+        self.assertIn("getSummary", lora_js)
 
     def test_preset_panel_html_has_mode_specific_controls(self):
         preset_html = (ROOT / "frontend" / "components" / "preset_panel.html").read_text(encoding="utf-8")
@@ -233,6 +251,8 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("collectSettings: collectSd15PresetSettings", sd15_js)
         self.assertIn("applySettings: applySd15PresetSettings", sd15_js)
         self.assertIn("WorkflowInputValidator?.assertTaskInputs", sd15_js)
+        self.assertIn("initAdapterModal", sd15_js)
+        self.assertIn("updateAdapterSummary", sd15_js)
 
     def test_sd15_script_wires_lcm_mode_payload_and_guardrails(self):
         sd15_html = (ROOT / "frontend" / "sd15" / "text2img.html").read_text(encoding="utf-8")
@@ -252,6 +272,15 @@ class FrontendControlNetScriptTests(unittest.TestCase):
     def test_sd15_page_wires_ip_adapter_controls(self):
         sd15_html = (ROOT / "frontend" / "sd15" / "text2img.html").read_text(encoding="utf-8")
 
+        self.assertIn('id="adapter-modal-open"', sd15_html)
+        self.assertIn('id="adapter-modal"', sd15_html)
+        self.assertIn('data-adapter-tab="overview"', sd15_html)
+        self.assertIn('data-adapter-tab="controlnet"', sd15_html)
+        self.assertIn('data-adapter-tab="lora"', sd15_html)
+        self.assertIn('data-adapter-tab="ipadapter"', sd15_html)
+        self.assertIn('id="adapter-overview-controlnet-count"', sd15_html)
+        self.assertIn('id="controlnet-panel-root"', sd15_html)
+        self.assertIn('id="lora-panel-root"', sd15_html)
         self.assertIn('id="ip_adapter_panel"', sd15_html)
         self.assertIn('id="ip_adapter_toggle"', sd15_html)
         self.assertIn('id="ip_adapter_content"', sd15_html)
@@ -262,7 +291,13 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn('id="ip_adapter_mask_editor_open"', sd15_html)
         self.assertIn('id="ip_adapter_mask_preview"', sd15_html)
         self.assertIn('id="ip_adapter_scale"', sd15_html)
-        self.assertIn("ip_adapter_panel.js?v=1", sd15_html)
+        self.assertIn("ip_adapter_panel.js?v=2", sd15_html)
+
+    def test_adapter_modal_allows_preprocessor_modal_to_stack_above_it(self):
+        style_css = (ROOT / "frontend" / "style.css").read_text(encoding="utf-8")
+
+        self.assertIn("#adapter-modal {\n    z-index: 1000;", style_css)
+        self.assertIn("#preprocessor-modal {\n    z-index: 1010;", style_css)
 
     def test_sd15_script_wires_ip_adapter_payload_and_guardrails(self):
         sd15_js = (ROOT / "frontend" / "sd15" / "text2img.js").read_text(encoding="utf-8")
@@ -401,7 +436,8 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn('document.getElementById("ip_adapter_image")', panel_js)
         self.assertIn('document.getElementById("ip_adapter_preview")', panel_js)
         self.assertIn('document.getElementById("ip_adapter_mask_image")', panel_js)
-        self.assertIn("window.IpAdapterPanel = { init, getMaskFile }", panel_js)
+        self.assertIn("window.IpAdapterPanel = { init, getMaskFile, getSummary }", panel_js)
+        self.assertIn("adapter-summary-changed", panel_js)
         self.assertIn('content.classList.toggle("is-open", isOpen)', panel_js)
 
     def test_sd15_img2img_script_wires_lora_panel_and_payload(self):

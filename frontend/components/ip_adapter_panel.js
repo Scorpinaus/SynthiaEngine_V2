@@ -9,6 +9,24 @@
     let isDrawing = false;
     let didInit = false;
 
+    function emitAdapterSummaryChanged() {
+        window.dispatchEvent(new CustomEvent("adapter-summary-changed", { detail: { panel: "ip_adapter" } }));
+    }
+
+    function getSummary() {
+        const enabled = Boolean(document.getElementById("ip_adapter_enabled")?.checked);
+        const imageInput = document.getElementById("ip_adapter_image");
+        const maskInput = document.getElementById("ip_adapter_mask_image");
+        const scale = Number(document.getElementById("ip_adapter_scale")?.value);
+        return {
+            availableAdapters: 1,
+            enabled,
+            hasReference: Boolean(imageInput?.files?.[0]),
+            hasMask: Boolean(maskBlob || maskInput?.files?.[0]),
+            scale: Number.isFinite(scale) ? scale : null,
+        };
+    }
+
     function revokePreviewUrl() {
         if (!previewUrl) {
             return;
@@ -284,6 +302,7 @@
         empty?.classList.remove("is-hidden");
 
         if (!file) {
+            emitAdapterSummaryChanged();
             return;
         }
         maskPreviewUrl = URL.createObjectURL(file);
@@ -292,6 +311,7 @@
             preview.classList.remove("is-hidden");
         }
         empty?.classList.add("is-hidden");
+        emitAdapterSummaryChanged();
     }
 
     function init(options = {}) {
@@ -332,6 +352,7 @@
                 preview.classList.add("is-hidden");
             }
             empty?.classList.remove("is-hidden");
+            emitAdapterSummaryChanged();
         }
 
         function updatePreview() {
@@ -348,6 +369,7 @@
             }
             empty?.classList.add("is-hidden");
             setOpen(true);
+            emitAdapterSummaryChanged();
         }
 
         toggle.addEventListener("click", () => {
@@ -357,6 +379,7 @@
             if (enabled.checked) {
                 setOpen(true);
             }
+            emitAdapterSummaryChanged();
         });
         input?.addEventListener("change", updatePreview);
         maskInput?.addEventListener("change", () => {
@@ -368,6 +391,7 @@
             void openMaskEditor();
         });
         maskClear?.addEventListener("click", clearMaskSelection);
+        document.getElementById("ip_adapter_scale")?.addEventListener("input", emitAdapterSummaryChanged);
         window.addEventListener("beforeunload", () => {
             revokePreviewUrl();
             revokeMaskPreviewUrl();
@@ -375,7 +399,8 @@
 
         updatePreview();
         updateMaskPreview();
+        emitAdapterSummaryChanged();
     }
 
-    window.IpAdapterPanel = { init, getMaskFile };
+    window.IpAdapterPanel = { init, getMaskFile, getSummary };
 })();

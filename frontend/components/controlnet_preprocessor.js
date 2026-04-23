@@ -144,9 +144,22 @@
                 const option = document.createElement("option");
                 option.value = preprocessor.id;
                 option.textContent = preprocessor.name;
+                if (preprocessor.available === false) {
+                    option.disabled = true;
+                    option.title = preprocessor.install_hint || preprocessor.unavailable_reason || "";
+                }
                 select.appendChild(option);
                 state.preprocessors.set(preprocessor.id, preprocessor);
             });
+            const selectedDefinition = state.preprocessors.get(select.value);
+            if (selectedDefinition?.available === false) {
+                const firstAvailable = preprocessors.find(
+                    (preprocessor) => preprocessor.available !== false
+                );
+                if (firstAvailable) {
+                    select.value = firstAvailable.id;
+                }
+            }
             updatePreprocessorDefaults(select.value);
         } catch (error) {
             const fallback = document.createElement("option");
@@ -229,7 +242,10 @@
         const description = definition?.description ?? "";
         const descriptionNode = document.getElementById("preprocessor-description");
         if (descriptionNode) {
-            descriptionNode.textContent = description;
+            const availability = definition?.available === false
+                ? `${definition.unavailable_reason || "This preprocessor is unavailable."} ${definition.install_hint || ""}`.trim()
+                : "";
+            descriptionNode.textContent = [description, availability].filter(Boolean).join(" ");
         }
         renderPreprocessorParams(preprocessorId);
     }
@@ -302,6 +318,12 @@
         const formData = new FormData();
         formData.append("image", fileInput.files[0]);
         const selectedId = select?.value ?? "canny";
+        const selectedDefinition = state.preprocessors.get(selectedId);
+        if (selectedDefinition?.available === false) {
+            const hint = selectedDefinition.install_hint || selectedDefinition.unavailable_reason || "";
+            alert(`This preprocessor is unavailable. ${hint}`.trim());
+            return;
+        }
         formData.append("preprocessor_id", selectedId);
         formData.append("params", JSON.stringify(buildPreprocessorParams(selectedId)));
 
@@ -411,43 +433,11 @@
             panelApi?.updateIndicator();
             panelApi?.updateActiveFlag();
         });
+        itemsContainer?.addEventListener("input", (event) => {
+            panelApi?.updateControlItemFromField?.(event.target);
+        });
         itemsContainer?.addEventListener("change", (event) => {
-            const target = event.target;
-            if (!(target instanceof HTMLInputElement) && !(target instanceof HTMLSelectElement)) {
-                return;
-            }
-
-            const modelId = Number(target.getAttribute("data-model-id"));
-            if (Number.isFinite(modelId) && target instanceof HTMLSelectElement) {
-                panelApi?.updateControlItem(modelId, { modelId: target.value });
-                return;
-            }
-
-            const scaleId = Number(target.getAttribute("data-scale-id"));
-            if (Number.isFinite(scaleId) && target instanceof HTMLInputElement) {
-                const scale = Number(target.value);
-                if (Number.isFinite(scale)) {
-                    panelApi?.updateControlItem(scaleId, { conditioningScale: scale });
-                }
-                return;
-            }
-
-            const guidanceStartId = Number(target.getAttribute("data-guidance-start-id"));
-            if (Number.isFinite(guidanceStartId) && target instanceof HTMLInputElement) {
-                const guidanceStart = Number(target.value);
-                if (Number.isFinite(guidanceStart)) {
-                    panelApi?.updateControlItem(guidanceStartId, { guidanceStart });
-                }
-                return;
-            }
-
-            const guidanceEndId = Number(target.getAttribute("data-guidance-end-id"));
-            if (Number.isFinite(guidanceEndId) && target instanceof HTMLInputElement) {
-                const guidanceEnd = Number(target.value);
-                if (Number.isFinite(guidanceEnd)) {
-                    panelApi?.updateControlItem(guidanceEndId, { guidanceEnd });
-                }
-            }
+            panelApi?.updateControlItemFromField?.(event.target);
         });
 
         loadPreprocessors();

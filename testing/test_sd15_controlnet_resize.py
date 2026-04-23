@@ -2,7 +2,21 @@ import unittest
 
 from PIL import Image
 
-from backend.sd15.pipeline import _resize_control_image_to_target
+from backend.sd15.pipeline import (
+    _enable_xformers_memory_efficient_attention_if_available,
+    _resize_control_image_to_target,
+)
+
+
+class FakeXformersPipeline:
+    def __init__(self, error=None):
+        self.error = error
+        self.enabled = False
+
+    def enable_xformers_memory_efficient_attention(self):
+        if self.error is not None:
+            raise self.error
+        self.enabled = True
 
 
 class Sd15ControlNetResizeTests(unittest.TestCase):
@@ -49,6 +63,27 @@ class Sd15ControlNetResizeTests(unittest.TestCase):
         self.assertEqual(resized[0].size, (512, 512))
         self.assertEqual(resized[1].size, (512, 512))
         self.assertEqual(resized[2].size, (512, 512))
+
+
+class Sd15ControlNetXformersTests(unittest.TestCase):
+    def test_missing_xformers_does_not_fail_generation_setup(self):
+        pipe = FakeXformersPipeline(ModuleNotFoundError("No module named 'xformers'"))
+
+        with self.assertLogs("backend.sd15.pipeline", level="WARNING") as logs:
+            enabled = _enable_xformers_memory_efficient_attention_if_available(pipe)
+
+        self.assertFalse(enabled)
+        self.assertTrue(
+            any("continuing without it" in message for message in logs.output)
+        )
+
+    def test_available_xformers_is_enabled(self):
+        pipe = FakeXformersPipeline()
+
+        enabled = _enable_xformers_memory_efficient_attention_if_available(pipe)
+
+        self.assertTrue(enabled)
+        self.assertTrue(pipe.enabled)
 
 
 if __name__ == "__main__":

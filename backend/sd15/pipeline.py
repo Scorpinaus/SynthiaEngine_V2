@@ -164,6 +164,34 @@ def _resize_control_image_to_target(
     return _resize_single(control_image)
 
 
+def _enable_xformers_memory_efficient_attention_if_available(pipe) -> bool:
+    """
+    Enable xFormers attention when the optional dependency is installed.
+
+    xFormers is a performance optimization, not a functional requirement. Some
+    Windows/local installs do not include it, so generation should keep running
+    with Diffusers' default attention path when it is unavailable.
+    """
+    if not hasattr(pipe, "enable_xformers_memory_efficient_attention"):
+        logger.debug(
+            "Pipeline %s does not expose xFormers memory efficient attention.",
+            pipe.__class__.__name__,
+        )
+        return False
+
+    try:
+        pipe.enable_xformers_memory_efficient_attention()
+    except (ImportError, ModuleNotFoundError) as exc:
+        logger.warning(
+            "xFormers memory efficient attention is unavailable; continuing without it. %s",
+            exc,
+        )
+        return False
+
+    logger.info("Enabled xFormers memory efficient attention.")
+    return True
+
+
 def _apply_lora_adapters(
     pipe,
     lora_adapters: list[object] | None,
@@ -560,7 +588,7 @@ def generate_images_controlnet(params: dict[str, object],) -> list[str]:
     pipe = load_controlnet_pipeline(model, controlnet_model)
     pipe.scheduler = create_scheduler(scheduler, pipe)
     pipe.safety_checker = None
-    pipe.enable_xformers_memory_efficient_attention()
+    _enable_xformers_memory_efficient_attention_if_available(pipe)
 
     if clip_skip > 1:
         # Diffusers exposes clip-skip by effectively reducing the text encoder depth.

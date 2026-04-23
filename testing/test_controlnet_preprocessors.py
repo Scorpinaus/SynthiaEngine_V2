@@ -7,8 +7,11 @@ from fastapi import HTTPException, UploadFile
 from PIL import Image
 
 from backend.adapters.controlnet_preprocessors import (
+    AnylinePreprocessor,
     ControlNetAuxPreprocessor,
     NormalBaePreprocessor,
+    SamMobilePreprocessor,
+    TEEDPreprocessor,
     get_preprocessor,
     list_preprocessors,
 )
@@ -69,12 +72,21 @@ class ControlNetPreprocessorValidationTests(unittest.TestCase):
             "softedge-pidinet",
             "softedge-pidsafe",
             "scribble-pidinet",
+            "mediapipe-face",
+            "sam-mobile",
+            "sam",
+            "teed",
+            "anyline",
+            "dwpose",
         ):
             self.assertIn(preprocessor_id, defs)
 
         self.assertEqual(defs["depth-zoe"].param_schema["detect_resolution"].type, "int")
         self.assertEqual(defs["softedge-hedsafe"].defaults["safe"], True)
         self.assertEqual(defs["scribble-pidinet"].defaults["scribble"], True)
+        self.assertEqual(defs["mediapipe-face"].param_schema["max_faces"].type, "int")
+        self.assertEqual(defs["teed"].param_schema["safe_steps"].type, "int")
+        self.assertEqual(defs["anyline"].defaults["detect_resolution"], 1280)
 
     def test_bool_params_are_coerced_from_form_strings(self):
         preprocessor = get_preprocessor("softedge-hedsafe")
@@ -83,6 +95,23 @@ class ControlNetPreprocessorValidationTests(unittest.TestCase):
         )
         self.assertEqual(validated["detect_resolution"], 512)
         self.assertFalse(validated["safe"])
+
+    def test_heavy_preprocessors_wire_checkpoint_kwargs(self):
+        self.assertEqual(SamMobilePreprocessor.pretrained_model_or_path, "dhkim2810/MobileSAM")
+        self.assertEqual(SamMobilePreprocessor.pretrained_kwargs["model_type"], "vit_t")
+        self.assertEqual(TEEDPreprocessor.pretrained_kwargs["filename"], "5_model.pth")
+        self.assertEqual(AnylinePreprocessor.pretrained_kwargs["subfolder"], "Anyline")
+
+    def test_optional_dependency_availability_is_reported(self):
+        preprocessor = get_preprocessor("mediapipe-face")
+        with patch(
+            "backend.adapters.controlnet_preprocessors.find_spec",
+            return_value=None,
+        ):
+            available, reason, hint = preprocessor.availability()
+        self.assertFalse(available)
+        self.assertIn("mediapipe", reason)
+        self.assertIn("pip install mediapipe", hint)
 
 
 class ControlNetPreprocessorApiTests(unittest.TestCase):
@@ -97,6 +126,9 @@ class ControlNetPreprocessorApiTests(unittest.TestCase):
             "lllyasviel/control_v11f1p_sd15_depth",
             depth_zoe.recommended_sd15_control_models,
         )
+        mediapipe_face = next(item for item in response if item.id == "mediapipe-face")
+        self.assertIsNotNone(mediapipe_face.available)
+        self.assertIn("CrucibleAI/ControlNetMediaPipeFace", mediapipe_face.recommended_sd15_control_models)
 
     def test_preprocess_endpoint_returns_400_for_invalid_params(self):
         with self.assertRaises(HTTPException) as exc:
@@ -111,6 +143,24 @@ class ControlNetPreprocessorApiTests(unittest.TestCase):
             )
         self.assertEqual(exc.exception.status_code, 400)
         self.assertIn("Unsupported params", str(exc.exception.detail))
+
+    def test_preprocess_endpoint_returns_503_for_unavailable_optional_dependency(self):
+        with patch(
+            "backend.adapters.controlnet_preprocessors.find_spec",
+            return_value=None,
+        ):
+            with self.assertRaises(HTTPException) as exc:
+                asyncio.run(
+                    run_controlnet_preprocessor(
+                        image=_png_upload(),
+                        preprocessor_id="mediapipe-face",
+                        params=None,
+                        low_threshold=None,
+                        high_threshold=None,
+                    )
+                )
+        self.assertEqual(exc.exception.status_code, 503)
+        self.assertIn("mediapipe-face", str(exc.exception.detail))
 
 
 class ControlNetPreprocessWorkflowTaskTests(unittest.TestCase):

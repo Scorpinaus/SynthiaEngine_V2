@@ -13,8 +13,26 @@
         perItemGuidanceTimingEnabled: false,
     };
 
+    function emitAdapterSummaryChanged() {
+        window.dispatchEvent(new CustomEvent("adapter-summary-changed", { detail: { panel: "controlnet" } }));
+    }
+
     function getState() {
         return state;
+    }
+
+    function getSummary() {
+        const preprocessors = Array.from(state.preprocessors.values());
+        const availablePreprocessors = preprocessors.filter(
+            (preprocessor) => preprocessor?.available !== false
+        ).length;
+        const enabledToggle = document.getElementById("controlnet-enabled");
+        return {
+            availablePreprocessors,
+            totalPreprocessors: preprocessors.length,
+            activeItems: state.controlItems.length,
+            enabled: Boolean(enabledToggle?.checked),
+        };
     }
 
     function updateIndicator() {
@@ -31,7 +49,7 @@
                 ? `ControlNet ready (${state.controlItems.length} image${state.controlItems.length === 1 ? "" : "s"}).`
                 : "No preprocessor applied.";
         }
-        renderControlItems();
+        emitAdapterSummaryChanged();
     }
 
     function updateActiveFlag() {
@@ -43,6 +61,7 @@
         const isActive = Boolean(enabledToggle?.checked && state.controlItems.length > 0);
         flag.classList.toggle("is-hidden", !isActive);
         flag.style.display = isActive ? "inline-flex" : "none";
+        emitAdapterSummaryChanged();
     }
 
     function _modelOptionsForItem(item) {
@@ -173,6 +192,7 @@
         state.previewUrl = previewUrl ?? null;
         state.preprocessorId = preprocessorId || null;
         renderControlItems();
+        emitAdapterSummaryChanged();
         return item;
     }
 
@@ -194,6 +214,7 @@
             state.preprocessorId = null;
         }
         renderControlItems();
+        emitAdapterSummaryChanged();
     }
 
     function updateControlItem(itemId, patch) {
@@ -202,6 +223,48 @@
             return;
         }
         Object.assign(item, patch);
+        emitAdapterSummaryChanged();
+    }
+
+    function updateControlItemFromField(target) {
+        if (!(target instanceof HTMLInputElement) && !(target instanceof HTMLSelectElement)) {
+            return false;
+        }
+
+        if (target instanceof HTMLSelectElement && target.hasAttribute("data-model-id")) {
+            updateControlItem(Number(target.getAttribute("data-model-id")), { modelId: target.value });
+            return true;
+        }
+
+        if (!(target instanceof HTMLInputElement)) {
+            return false;
+        }
+
+        if (target.hasAttribute("data-scale-id")) {
+            const scale = Number(target.value);
+            if (Number.isFinite(scale)) {
+                updateControlItem(Number(target.getAttribute("data-scale-id")), { conditioningScale: scale });
+            }
+            return true;
+        }
+
+        if (target.hasAttribute("data-guidance-start-id")) {
+            const guidanceStart = Number(target.value);
+            if (Number.isFinite(guidanceStart)) {
+                updateControlItem(Number(target.getAttribute("data-guidance-start-id")), { guidanceStart });
+            }
+            return true;
+        }
+
+        if (target.hasAttribute("data-guidance-end-id")) {
+            const guidanceEnd = Number(target.value);
+            if (Number.isFinite(guidanceEnd)) {
+                updateControlItem(Number(target.getAttribute("data-guidance-end-id")), { guidanceEnd });
+            }
+            return true;
+        }
+
+        return false;
     }
 
     function clearControlItems() {
@@ -216,6 +279,7 @@
         state.previewUrl = null;
         state.preprocessorId = null;
         renderControlItems();
+        emitAdapterSummaryChanged();
     }
 
     function showPrevControlItem() {
@@ -225,6 +289,7 @@
         state.activeControlIndex =
             (state.activeControlIndex - 1 + state.controlItems.length) % state.controlItems.length;
         renderControlItems();
+        emitAdapterSummaryChanged();
     }
 
     function showNextControlItem() {
@@ -233,11 +298,13 @@
         }
         state.activeControlIndex = (state.activeControlIndex + 1) % state.controlItems.length;
         renderControlItems();
+        emitAdapterSummaryChanged();
     }
 
     function setPerItemGuidanceTimingEnabled(enabled) {
         state.perItemGuidanceTimingEnabled = Boolean(enabled);
         renderControlItems();
+        emitAdapterSummaryChanged();
     }
 
     function togglePanel() {
@@ -268,12 +335,14 @@
 
     window.ControlNetPanel = {
         getState,
+        getSummary,
         updateIndicator,
         updateActiveFlag,
         renderControlItems,
         addControlItem,
         removeControlItem,
         updateControlItem,
+        updateControlItemFromField,
         clearControlItems,
         showPrevControlItem,
         showNextControlItem,

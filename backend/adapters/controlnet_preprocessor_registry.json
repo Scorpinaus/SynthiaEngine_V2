@@ -290,5 +290,85 @@
         "legacy_aliases": [
             "lllyasviel/sd-controlnet-normal"
         ]
+    },
+    {
+        "id": "mediapipe-face",
+        "name": "MediaPipe Face",
+        "description": "Face mesh landmark detection via MediaPipe (controlnet-aux).",
+        "repo_id": null,
+        "revision": null,
+        "local_path": null,
+        "recommended_sd15_control_models": [
+            "CrucibleAI/ControlNetMediaPipeFace"
+        ],
+        "legacy_aliases": [
+            "CrucibleAI/ControlNetMediaPipeFace"
+        ]
+    },
+    {
+        "id": "sam-mobile",
+        "name": "SAM Mobile",
+        "description": "MobileSAM segmentation preprocessor via controlnet-aux.",
+        "repo_id": null,
+        "revision": null,
+        "local_path": null,
+        "recommended_sd15_control_models": [
+            "lllyasviel/control_v11p_sd15_seg"
+        ],
+        "legacy_aliases": [
+            "lllyasviel/sd-controlnet-seg"
+        ]
+    },
+    {
+        "id": "sam",
+        "name": "SAM",
+        "description": "Segment Anything preprocessor via controlnet-aux.",
+        "repo_id": null,
+        "revision": null,
+        "local_path": null,
+        "recommended_sd15_control_models": [
+            "lllyasviel/control_v11p_sd15_seg"
+        ],
+        "legacy_aliases": [
+            "lllyasviel/sd-controlnet-seg"
+        ]
+    },
+    {
+        "id": "teed",
+        "name": "TEED",
+        "description": "Thin edge extraction via the TEED checkpoint.",
+        "repo_id": null,
+        "revision": null,
+        "local_path": null,
+        "recommended_sd15_control_models": [
+            "lllyasviel/control_v11p_sd15_lineart"
+        ],
+        "legacy_aliases": []
+    },
+    {
+        "id": "anyline",
+        "name": "Anyline",
+        "description": "Hybrid line extraction via the MistoLine Anyline checkpoint.",
+        "repo_id": null,
+        "revision": null,
+        "local_path": null,
+        "recommended_sd15_control_models": [
+            "lllyasviel/control_v11p_sd15_lineart"
+        ],
+        "legacy_aliases": []
+    },
+    {
+        "id": "dwpose",
+        "name": "DWPose",
+        "description": "Whole-body pose detection via easy-dwpose.",
+        "repo_id": null,
+        "revision": null,
+        "local_path": null,
+        "recommended_sd15_control_models": [
+            "lllyasviel/control_v11p_sd15_openpose"
+        ],
+        "legacy_aliases": [
+            "lllyasviel/sd-controlnet-openpose"
+        ]
     }
 ]

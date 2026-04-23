@@ -22,6 +22,19 @@
         weightMode: "basic",
     };
 
+    function emitAdapterSummaryChanged() {
+        window.dispatchEvent(new CustomEvent("adapter-summary-changed", { detail: { panel: "lora" } }));
+    }
+
+    function getSummary() {
+        return {
+            available: loraState.available.length,
+            selected: loraState.selected.length,
+            family: loraState.family,
+            weightMode: loraState.weightMode,
+        };
+    }
+
     function clampStrength(value) {
         const parsed = Number(value);
         if (!Number.isFinite(parsed)) {
@@ -120,6 +133,7 @@
         list.innerHTML = "";
         if (loraState.selected.length === 0) {
             emptyState.classList.remove("is-hidden");
+            emitAdapterSummaryChanged();
             return;
         }
         emptyState.classList.add("is-hidden");
@@ -230,6 +244,7 @@
             }
             list.appendChild(item);
         });
+        emitAdapterSummaryChanged();
     }
 
     function updateLoraStrength(loraId, strength) {
@@ -469,5 +484,6 @@
         init: initLoraUI,
         getSelectedAdapters: buildLoraPayload,
         setSelectedAdapters,
+        getSummary,
     };
 })();

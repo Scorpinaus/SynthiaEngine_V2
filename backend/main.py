@@ -194,6 +194,9 @@ class ControlNetPreprocessorInfo(BaseModel):
     description: str
     defaults: dict[str, object]
     param_schema: dict[str, dict[str, object]] = Field(default_factory=dict)
+    available: bool = True
+    unavailable_reason: str | None = None
+    install_hint: str | None = None
     recommended_sd15_control_models: list[str] = Field(default_factory=list)
     legacy_aliases: list[str] = Field(default_factory=list)
 
@@ -780,12 +783,17 @@ async def list_controlnet_preprocessors():
     infos: list[ControlNetPreprocessorInfo] = []
     for preprocessor in preprocessors:
         registry_entry = registry_by_id.get(preprocessor.id)
+        implementation = get_preprocessor(preprocessor.id)
+        available, unavailable_reason, install_hint = implementation.availability()
         infos.append(
             ControlNetPreprocessorInfo(
                 id=preprocessor.id,
                 name=preprocessor.name,
                 description=preprocessor.description,
                 defaults=preprocessor.defaults,
+                available=available,
+                unavailable_reason=unavailable_reason,
+                install_hint=install_hint,
                 param_schema={
                     key: {
                         "type": spec.type,
@@ -866,6 +874,8 @@ async def run_controlnet_preprocessor(
                     "Install `controlnet-aux` and restart the backend."
                 ),
             ) from exc
+        if "is unavailable" in message:
+            raise HTTPException(status_code=503, detail=message) from exc
         raise HTTPException(status_code=500, detail=message) from exc
     output = BytesIO()
     processed.save(output, format="PNG")
