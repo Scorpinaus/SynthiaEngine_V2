@@ -424,7 +424,7 @@ Frontend note (SD1.5 page):
 - `frontend/components/controlnet_panel.html` is loaded by `frontend/components/controlnet_panel.js`.
 - `frontend/components/controlnet_preprocessor.html` is loaded by `frontend/components/controlnet_preprocessor.js`.
 - The preprocessor modal renders parameter controls from each entry's `param_schema`; new backend preprocessors do not require hardcoded frontend parameter fields.
-- `frontend/sd15/text2img.html` groups ControlNet preprocessors, LoRA adapters, and IP-Adapter controls behind one adapter modal. Its overview tab shows available and active adapter counts without changing workflow payload shape.
+- `frontend/sd15/text2img.html`, `frontend/sd15/img2img.html`, and `frontend/sd15/inpainting.html` group ControlNet preprocessors, LoRA adapters, and IP-Adapter controls behind one adapter modal. The overview tab shows available and active adapter counts without changing workflow payload shape.
 - `frontend/sd15/text2img.js` consumes shared ControlNet state via `window.ControlNetPanel.getState()`.
 - `frontend/sd15/text2img.js` uploads the optional SD1.5 IP-Adapter reference image, creates a `sd15.ip_adapter.encode` task, and sends the resulting `image_embeds` into `sd15.text2img.inputs.ip_adapter.image_embeds`. It uploads the optional IP-Adapter mask as `sd15.text2img.inputs.ip_adapter.mask_image`.
 - `frontend/sd15/img2img.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()`.

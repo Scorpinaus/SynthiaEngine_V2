@@ -33,15 +33,19 @@ class FrontendControlNetScriptTests(unittest.TestCase):
     def test_sd15_img2img_page_includes_controlnet_scripts_before_img2img(self):
         sd15_img2img_html = (ROOT / "frontend" / "sd15" / "img2img.html").read_text(encoding="utf-8")
         validator_tag = '<script src="../workflow_input_validator.js?v=1"></script>'
-        panel_tag = '<script src="../components/controlnet_panel.js?v=2"></script>'
+        panel_tag = '<script src="../components/controlnet_panel.js?v=3"></script>'
         preprocessor_tag = '<script src="../components/controlnet_preprocessor.js?v=3"></script>'
         preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
-        img2img_tag = '<script src="img2img.js?v=5"></script>'
+        lora_tag = '<script src="../components/lora_panel.js?v=2"></script>'
+        ip_adapter_tag = '<script src="../components/ip_adapter_panel.js?v=2"></script>'
+        img2img_tag = '<script src="img2img.js?v=6"></script>'
 
         self.assertIn(validator_tag, sd15_img2img_html)
         self.assertIn(panel_tag, sd15_img2img_html)
         self.assertIn(preprocessor_tag, sd15_img2img_html)
         self.assertIn(preset_tag, sd15_img2img_html)
+        self.assertIn(lora_tag, sd15_img2img_html)
+        self.assertIn(ip_adapter_tag, sd15_img2img_html)
         self.assertIn(img2img_tag, sd15_img2img_html)
         self.assertLess(sd15_img2img_html.index(validator_tag), sd15_img2img_html.index(img2img_tag))
         self.assertLess(sd15_img2img_html.index(panel_tag), sd15_img2img_html.index(img2img_tag))
@@ -49,19 +53,25 @@ class FrontendControlNetScriptTests(unittest.TestCase):
             sd15_img2img_html.index(preprocessor_tag), sd15_img2img_html.index(img2img_tag)
         )
         self.assertLess(sd15_img2img_html.index(preset_tag), sd15_img2img_html.index(img2img_tag))
+        self.assertLess(sd15_img2img_html.index(lora_tag), sd15_img2img_html.index(img2img_tag))
+        self.assertLess(sd15_img2img_html.index(ip_adapter_tag), sd15_img2img_html.index(img2img_tag))
 
     def test_sd15_inpaint_page_includes_controlnet_scripts_before_inpaint(self):
         sd15_inpaint_html = (ROOT / "frontend" / "sd15" / "inpainting.html").read_text(encoding="utf-8")
         validator_tag = '<script src="../workflow_input_validator.js?v=1"></script>'
-        panel_tag = '<script src="../components/controlnet_panel.js?v=2"></script>'
+        panel_tag = '<script src="../components/controlnet_panel.js?v=3"></script>'
         preprocessor_tag = '<script src="../components/controlnet_preprocessor.js?v=3"></script>'
         preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
-        inpaint_tag = '<script src="inpainting.js?v=5"></script>'
+        lora_tag = '<script src="../components/lora_panel.js?v=2"></script>'
+        ip_adapter_tag = '<script src="../components/ip_adapter_panel.js?v=2"></script>'
+        inpaint_tag = '<script src="inpainting.js?v=6"></script>'
 
         self.assertIn(validator_tag, sd15_inpaint_html)
         self.assertIn(panel_tag, sd15_inpaint_html)
         self.assertIn(preprocessor_tag, sd15_inpaint_html)
         self.assertIn(preset_tag, sd15_inpaint_html)
+        self.assertIn(lora_tag, sd15_inpaint_html)
+        self.assertIn(ip_adapter_tag, sd15_inpaint_html)
         self.assertIn(inpaint_tag, sd15_inpaint_html)
         self.assertLess(sd15_inpaint_html.index(validator_tag), sd15_inpaint_html.index(inpaint_tag))
         self.assertLess(sd15_inpaint_html.index(panel_tag), sd15_inpaint_html.index(inpaint_tag))
@@ -69,6 +79,8 @@ class FrontendControlNetScriptTests(unittest.TestCase):
             sd15_inpaint_html.index(preprocessor_tag), sd15_inpaint_html.index(inpaint_tag)
         )
         self.assertLess(sd15_inpaint_html.index(preset_tag), sd15_inpaint_html.index(inpaint_tag))
+        self.assertLess(sd15_inpaint_html.index(lora_tag), sd15_inpaint_html.index(inpaint_tag))
+        self.assertLess(sd15_inpaint_html.index(ip_adapter_tag), sd15_inpaint_html.index(inpaint_tag))
 
     def test_sdxl_page_includes_controlnet_scripts_before_sdxl(self):
         sdxl_html = (ROOT / "frontend" / "sdxl" / "text2img.html").read_text(
@@ -340,6 +352,15 @@ class FrontendControlNetScriptTests(unittest.TestCase):
     def test_sd15_img2img_page_wires_ip_adapter_controls(self):
         img2img_html = (ROOT / "frontend" / "sd15" / "img2img.html").read_text(encoding="utf-8")
 
+        self.assertIn('id="adapter-modal-open"', img2img_html)
+        self.assertIn('id="adapter-modal"', img2img_html)
+        self.assertIn('data-adapter-tab="overview"', img2img_html)
+        self.assertIn('data-adapter-tab="controlnet"', img2img_html)
+        self.assertIn('data-adapter-tab="lora"', img2img_html)
+        self.assertIn('data-adapter-tab="ipadapter"', img2img_html)
+        self.assertIn('id="adapter-overview-controlnet-count"', img2img_html)
+        self.assertIn('id="controlnet-panel-root"', img2img_html)
+        self.assertIn('id="lora-panel-root"', img2img_html)
         self.assertIn('id="ip_adapter_panel"', img2img_html)
         self.assertIn('id="ip_adapter_toggle"', img2img_html)
         self.assertIn('id="ip_adapter_content"', img2img_html)
@@ -350,12 +371,16 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn('id="ip_adapter_mask_editor_open"', img2img_html)
         self.assertIn('id="ip_adapter_mask_preview"', img2img_html)
         self.assertIn('id="ip_adapter_scale"', img2img_html)
-        self.assertIn("ip_adapter_panel.js?v=1", img2img_html)
+        self.assertIn("ip_adapter_panel.js?v=2", img2img_html)
 
     def test_sd15_img2img_script_wires_ip_adapter_payload_and_guardrails(self):
         img2img_js = (ROOT / "frontend" / "sd15" / "img2img.js").read_text(encoding="utf-8")
 
         self.assertIn("window.IpAdapterPanel?.init({", img2img_js)
+        self.assertIn("function initAdapterModal()", img2img_js)
+        self.assertIn("function updateAdapterSummary()", img2img_js)
+        self.assertIn('window.addEventListener("adapter-summary-changed", updateAdapterSummary)', img2img_js)
+        self.assertIn("initAdapterModal();", img2img_js)
         self.assertIn("getIpAdapterImageFile", img2img_js)
         self.assertIn("WorkflowClient.uploadArtifact(", img2img_js)
         self.assertIn("window.IpAdapterPanel?.getMaskFile?.()", img2img_js)
@@ -396,6 +421,15 @@ class FrontendControlNetScriptTests(unittest.TestCase):
             encoding="utf-8"
         )
 
+        self.assertIn('id="adapter-modal-open"', inpaint_html)
+        self.assertIn('id="adapter-modal"', inpaint_html)
+        self.assertIn('data-adapter-tab="overview"', inpaint_html)
+        self.assertIn('data-adapter-tab="controlnet"', inpaint_html)
+        self.assertIn('data-adapter-tab="lora"', inpaint_html)
+        self.assertIn('data-adapter-tab="ipadapter"', inpaint_html)
+        self.assertIn('id="adapter-overview-controlnet-count"', inpaint_html)
+        self.assertIn('id="controlnet-panel-root"', inpaint_html)
+        self.assertIn('id="lora-panel-root"', inpaint_html)
         self.assertIn('id="ip_adapter_panel"', inpaint_html)
         self.assertIn('id="ip_adapter_toggle"', inpaint_html)
         self.assertIn('id="ip_adapter_content"', inpaint_html)
@@ -406,12 +440,16 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn('id="ip_adapter_mask_editor_open"', inpaint_html)
         self.assertIn('id="ip_adapter_mask_preview"', inpaint_html)
         self.assertIn('id="ip_adapter_scale"', inpaint_html)
-        self.assertIn("ip_adapter_panel.js?v=1", inpaint_html)
+        self.assertIn("ip_adapter_panel.js?v=2", inpaint_html)
 
     def test_sd15_inpaint_script_wires_ip_adapter_payload_and_guardrails(self):
         inpaint_js = (ROOT / "frontend" / "sd15" / "inpainting.js").read_text(encoding="utf-8")
 
         self.assertIn("window.IpAdapterPanel?.init({", inpaint_js)
+        self.assertIn("function initAdapterModal()", inpaint_js)
+        self.assertIn("function updateAdapterSummary()", inpaint_js)
+        self.assertIn('window.addEventListener("adapter-summary-changed", updateAdapterSummary)', inpaint_js)
+        self.assertIn("initAdapterModal();", inpaint_js)
         self.assertIn("getIpAdapterImageFile", inpaint_js)
         self.assertIn("WorkflowClient.uploadArtifact(", inpaint_js)
         self.assertIn("window.IpAdapterPanel?.getMaskFile?.()", inpaint_js)

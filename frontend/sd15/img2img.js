@@ -50,6 +50,162 @@ function getControlNetState() {
 let controlNetUiReady = Promise.resolve();
 let loraPanelReady = Promise.resolve();
 
+function countLabel(count, singular, plural = `${singular}s`) {
+    const value = Number(count);
+    const safeCount = Number.isFinite(value) ? value : 0;
+    return `${safeCount} ${safeCount === 1 ? singular : plural}`;
+}
+
+function setText(elementId, value) {
+    const element = document.getElementById(elementId);
+    if (element) {
+        element.textContent = value;
+    }
+}
+
+function collectAdapterSummaries() {
+    const controlFallbackState = getControlNetState();
+    const loraFallback = window.LoraPanel?.getSelectedAdapters?.() ?? [];
+    const control = window.ControlNetPanel?.getSummary?.() ?? {
+        availablePreprocessors: controlFallbackState?.preprocessors?.size ?? 0,
+        totalPreprocessors: controlFallbackState?.preprocessors?.size ?? 0,
+        activeItems: controlFallbackState?.controlItems?.length ?? 0,
+        enabled: Boolean(document.getElementById("controlnet-enabled")?.checked),
+    };
+    const lora = window.LoraPanel?.getSummary?.() ?? {
+        available: 0,
+        selected: Array.isArray(loraFallback) ? loraFallback.length : 0,
+    };
+    const ipAdapter = window.IpAdapterPanel?.getSummary?.() ?? {
+        availableAdapters: 1,
+        enabled: Boolean(document.getElementById("ip_adapter_enabled")?.checked),
+        hasReference: Boolean(document.getElementById("ip_adapter_image")?.files?.[0]),
+        hasMask: Boolean(window.IpAdapterPanel?.getMaskFile?.()),
+    };
+    return { control, lora, ipAdapter };
+}
+
+function updateAdapterSummary() {
+    const { control, lora, ipAdapter } = collectAdapterSummaries();
+    const availableControl = Number(control.availablePreprocessors ?? control.totalPreprocessors ?? 0);
+    const activeControlItems = Number(control.activeItems ?? 0);
+    const availableLoras = Number(lora.available ?? 0);
+    const selectedLoras = Number(lora.selected ?? 0);
+    const availableIpAdapters = Number(ipAdapter.availableAdapters ?? 1);
+    const ipActive = Boolean(ipAdapter.enabled);
+    const totalAvailable =
+        (Number.isFinite(availableControl) ? availableControl : 0) +
+        (Number.isFinite(availableLoras) ? availableLoras : 0) +
+        (Number.isFinite(availableIpAdapters) ? availableIpAdapters : 0);
+    const activeAdapterCount =
+        (control.enabled && activeControlItems > 0 ? activeControlItems : 0) +
+        (Number.isFinite(selectedLoras) ? selectedLoras : 0) +
+        (ipActive ? 1 : 0);
+
+    setText(
+        "adapter_summary_label",
+        `${countLabel(totalAvailable, "adapter available", "adapters available")} / ${countLabel(activeAdapterCount, "adapter active", "adapters active")}`
+    );
+    setText("adapter-tab-controlnet-badge", countLabel(activeControlItems, "active", "active"));
+    setText("adapter-tab-lora-badge", countLabel(selectedLoras, "selected", "selected"));
+    setText("adapter-tab-ipadapter-badge", ipActive ? "on" : "off");
+
+    setText(
+        "adapter-overview-controlnet-count",
+        countLabel(availableControl, "preprocessor available", "preprocessors available")
+    );
+    setText(
+        "adapter-overview-controlnet-detail",
+        control.enabled && activeControlItems > 0
+            ? `${countLabel(activeControlItems, "control image")} active.`
+            : "No control images active."
+    );
+    setText("adapter-overview-lora-count", countLabel(availableLoras, "LoRA available", "LoRAs available"));
+    setText(
+        "adapter-overview-lora-detail",
+        selectedLoras > 0 ? `${countLabel(selectedLoras, "LoRA")} selected.` : "No LoRAs selected."
+    );
+    setText(
+        "adapter-overview-ipadapter-count",
+        countLabel(availableIpAdapters, "IP-Adapter available", "IP-Adapters available")
+    );
+    setText(
+        "adapter-overview-ipadapter-detail",
+        ipActive
+            ? `Image prompt enabled${ipAdapter.hasReference ? " with reference image" : ""}${ipAdapter.hasMask ? " and mask" : ""}.`
+            : "Image prompt disabled."
+    );
+}
+
+function setAdapterTab(tabName) {
+    const target = String(tabName || "overview");
+    document.querySelectorAll("[data-adapter-tab]").forEach((tab) => {
+        const isActive = tab.getAttribute("data-adapter-tab") === target;
+        tab.classList.toggle("is-active", isActive);
+        tab.setAttribute("aria-selected", String(isActive));
+    });
+    document.querySelectorAll("[data-adapter-panel]").forEach((panel) => {
+        const isActive = panel.getAttribute("data-adapter-panel") === target;
+        panel.classList.toggle("is-active", isActive);
+        panel.toggleAttribute("hidden", !isActive);
+    });
+    updateAdapterSummary();
+}
+
+function setAdapterModalOpen(isOpen) {
+    const modal = document.getElementById("adapter-modal");
+    if (!modal) {
+        return;
+    }
+    modal.classList.toggle("hidden", !isOpen);
+    modal.setAttribute("aria-hidden", String(!isOpen));
+    if (isOpen) {
+        updateAdapterSummary();
+        document.getElementById("adapter-modal-close")?.focus();
+    } else {
+        document.getElementById("adapter-modal-open")?.focus();
+    }
+}
+
+function initAdapterModal() {
+    const modal = document.getElementById("adapter-modal");
+    if (!modal) {
+        return;
+    }
+    document.getElementById("adapter-modal-open")?.addEventListener("click", () => {
+        setAdapterModalOpen(true);
+    });
+    document.getElementById("adapter-modal-close")?.addEventListener("click", () => {
+        setAdapterModalOpen(false);
+    });
+    document.getElementById("adapter-modal-overlay")?.addEventListener("click", () => {
+        setAdapterModalOpen(false);
+    });
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !modal.classList.contains("hidden")) {
+            setAdapterModalOpen(false);
+        }
+    });
+    document.querySelectorAll("[data-adapter-tab]").forEach((tab) => {
+        tab.addEventListener("click", () => {
+            setAdapterTab(tab.getAttribute("data-adapter-tab"));
+        });
+    });
+    document.querySelectorAll("[data-adapter-tab-jump]").forEach((button) => {
+        button.addEventListener("click", () => {
+            setAdapterTab(button.getAttribute("data-adapter-tab-jump"));
+        });
+    });
+    window.addEventListener("adapter-summary-changed", updateAdapterSummary);
+    modal.addEventListener("change", () => {
+        window.setTimeout(updateAdapterSummary, 0);
+    });
+    modal.addEventListener("click", () => {
+        window.setTimeout(updateAdapterSummary, 0);
+    });
+    updateAdapterSummary();
+}
+
 function isLcmModeEnabled() {
     return Boolean(document.getElementById("lcm_enabled")?.checked);
 }
@@ -223,6 +379,7 @@ async function loadModels() {
  */
 function initSd15Img2ImgPage() {
     gallery.render();
+    initAdapterModal();
     window.IpAdapterPanel?.init({
         getMaskBackdropFile: () => document.getElementById("initial_image")?.files?.[0] ?? null,
     });
@@ -253,6 +410,11 @@ function initSd15Img2ImgPage() {
     }
     // Optional LoRA panel integration (only active if that script is present on the page).
     loraPanelReady = window.LoraPanel?.init({ apiBase: API_BASE, family: "sd15" }) ?? Promise.resolve();
+    loraPanelReady.then(() => {
+        updateAdapterSummary();
+        window.setTimeout(updateAdapterSummary, 500);
+        window.setTimeout(updateAdapterSummary, 1500);
+    });
     window.PresetPanel?.init({
         apiBase: API_BASE,
         family: "sd15",
