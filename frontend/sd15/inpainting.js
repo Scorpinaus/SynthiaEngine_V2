@@ -437,6 +437,7 @@ function initSd15InpaintingPage() {
 
     // Render the gallery shell immediately (images will be set after a job completes).
     gallery.render();
+    window.AdapterPanel?.render?.();
     initAdapterModal();
     window.IpAdapterPanel?.init({
         getMaskBackdropFile: () => baseImageFile,

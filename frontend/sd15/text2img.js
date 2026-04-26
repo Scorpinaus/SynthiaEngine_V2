@@ -427,6 +427,7 @@ function initSd15Page() {
     didInitSd15Page = true;
 
     gallery.render();
+    window.AdapterPanel?.render?.();
     initAdapterModal();
     window.IpAdapterPanel?.init({
         getMaskSize: () => ({

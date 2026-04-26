@@ -288,6 +288,15 @@ class WorkflowCatalogResponse(BaseModel):
 
 def _serialize_job(job) -> JobResponse:
     """Convert a queue job object into the public `JobResponse` format."""
+    def _serialize_timestamp(value: datetime | None) -> str | None:
+        if value is None:
+            return None
+        # SQLite drops tzinfo for `DateTime(timezone=True)` values on readback.
+        # Treat naive values from the jobs DB as UTC so clients can localize them.
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.isoformat()
+
     return JobResponse(
         id=job.id,
         idempotency_key=getattr(job, "idempotency_key", None),
@@ -297,10 +306,10 @@ def _serialize_job(job) -> JobResponse:
         payload=dict(job.payload or {}),
         result=dict(job.result) if job.result else None,
         error=job.error,
-        created_at=job.created_at.isoformat() if job.created_at else None,
-        updated_at=job.updated_at.isoformat() if job.updated_at else None,
-        started_at=job.started_at.isoformat() if job.started_at else None,
-        finished_at=job.finished_at.isoformat() if job.finished_at else None,
+        created_at=_serialize_timestamp(job.created_at),
+        updated_at=_serialize_timestamp(job.updated_at),
+        started_at=_serialize_timestamp(job.started_at),
+        finished_at=_serialize_timestamp(job.finished_at),
     )
 
 

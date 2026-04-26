@@ -91,6 +91,9 @@ Idempotency:
 
 `GET /api/jobs/{job_id}`
 
+- Job timestamp fields (`created_at`, `updated_at`, `started_at`, `finished_at`) are returned as ISO-8601 strings with an explicit timezone offset.
+- Current job APIs normalize timestamps to UTC (`+00:00`), which lets clients safely convert them to the viewer's system timezone.
+
 ### List jobs
 
 `GET /api/jobs?limit=50` (clamped 1..500)

@@ -9,6 +9,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
     def test_sd15_page_includes_controlnet_scripts_before_sd15(self):
         sd15_html = (ROOT / "frontend" / "sd15" / "text2img.html").read_text(encoding="utf-8")
         validator_tag = '<script src="../workflow_input_validator.js?v=1"></script>'
+        adapter_panel_tag = '<script src="../components/adapter_panel.js?v=1"></script>'
         panel_tag = '<script src="../components/controlnet_panel.js?v=3"></script>'
         preprocessor_tag = '<script src="../components/controlnet_preprocessor.js?v=3"></script>'
         preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
@@ -17,6 +18,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         sd15_tag = '<script src="text2img.js?v=6"></script>'
 
         self.assertIn(validator_tag, sd15_html)
+        self.assertIn(adapter_panel_tag, sd15_html)
         self.assertIn(panel_tag, sd15_html)
         self.assertIn(preprocessor_tag, sd15_html)
         self.assertIn(preset_tag, sd15_html)
@@ -24,6 +26,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn(ip_adapter_tag, sd15_html)
         self.assertIn(sd15_tag, sd15_html)
         self.assertLess(sd15_html.index(validator_tag), sd15_html.index(sd15_tag))
+        self.assertLess(sd15_html.index(adapter_panel_tag), sd15_html.index(sd15_tag))
         self.assertLess(sd15_html.index(panel_tag), sd15_html.index(sd15_tag))
         self.assertLess(sd15_html.index(preprocessor_tag), sd15_html.index(sd15_tag))
         self.assertLess(sd15_html.index(preset_tag), sd15_html.index(sd15_tag))
@@ -33,6 +36,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
     def test_sd15_img2img_page_includes_controlnet_scripts_before_img2img(self):
         sd15_img2img_html = (ROOT / "frontend" / "sd15" / "img2img.html").read_text(encoding="utf-8")
         validator_tag = '<script src="../workflow_input_validator.js?v=1"></script>'
+        adapter_panel_tag = '<script src="../components/adapter_panel.js?v=1"></script>'
         panel_tag = '<script src="../components/controlnet_panel.js?v=3"></script>'
         preprocessor_tag = '<script src="../components/controlnet_preprocessor.js?v=3"></script>'
         preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
@@ -41,6 +45,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         img2img_tag = '<script src="img2img.js?v=6"></script>'
 
         self.assertIn(validator_tag, sd15_img2img_html)
+        self.assertIn(adapter_panel_tag, sd15_img2img_html)
         self.assertIn(panel_tag, sd15_img2img_html)
         self.assertIn(preprocessor_tag, sd15_img2img_html)
         self.assertIn(preset_tag, sd15_img2img_html)
@@ -48,6 +53,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn(ip_adapter_tag, sd15_img2img_html)
         self.assertIn(img2img_tag, sd15_img2img_html)
         self.assertLess(sd15_img2img_html.index(validator_tag), sd15_img2img_html.index(img2img_tag))
+        self.assertLess(sd15_img2img_html.index(adapter_panel_tag), sd15_img2img_html.index(img2img_tag))
         self.assertLess(sd15_img2img_html.index(panel_tag), sd15_img2img_html.index(img2img_tag))
         self.assertLess(
             sd15_img2img_html.index(preprocessor_tag), sd15_img2img_html.index(img2img_tag)
@@ -59,6 +65,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
     def test_sd15_inpaint_page_includes_controlnet_scripts_before_inpaint(self):
         sd15_inpaint_html = (ROOT / "frontend" / "sd15" / "inpainting.html").read_text(encoding="utf-8")
         validator_tag = '<script src="../workflow_input_validator.js?v=1"></script>'
+        adapter_panel_tag = '<script src="../components/adapter_panel.js?v=1"></script>'
         panel_tag = '<script src="../components/controlnet_panel.js?v=3"></script>'
         preprocessor_tag = '<script src="../components/controlnet_preprocessor.js?v=3"></script>'
         preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
@@ -67,6 +74,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         inpaint_tag = '<script src="inpainting.js?v=6"></script>'
 
         self.assertIn(validator_tag, sd15_inpaint_html)
+        self.assertIn(adapter_panel_tag, sd15_inpaint_html)
         self.assertIn(panel_tag, sd15_inpaint_html)
         self.assertIn(preprocessor_tag, sd15_inpaint_html)
         self.assertIn(preset_tag, sd15_inpaint_html)
@@ -74,6 +82,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn(ip_adapter_tag, sd15_inpaint_html)
         self.assertIn(inpaint_tag, sd15_inpaint_html)
         self.assertLess(sd15_inpaint_html.index(validator_tag), sd15_inpaint_html.index(inpaint_tag))
+        self.assertLess(sd15_inpaint_html.index(adapter_panel_tag), sd15_inpaint_html.index(inpaint_tag))
         self.assertLess(sd15_inpaint_html.index(panel_tag), sd15_inpaint_html.index(inpaint_tag))
         self.assertLess(
             sd15_inpaint_html.index(preprocessor_tag), sd15_inpaint_html.index(inpaint_tag)
@@ -86,6 +95,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         sdxl_html = (ROOT / "frontend" / "sdxl" / "text2img.html").read_text(
             encoding="utf-8"
         )
+        sdxl_ip_adapter_tag = '<script src="../components/sdxl_ip_adapter_panel.js?v=1"></script>'
         panel_tag = '<script src="../components/controlnet_panel.js?v=2"></script>'
         preprocessor_tag = '<script src="../components/controlnet_preprocessor.js?v=3"></script>'
         lora_tag = '<script src="../components/lora_panel.js?v=1"></script>'
@@ -96,16 +106,19 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn(preprocessor_tag, sdxl_html)
         self.assertIn(lora_tag, sdxl_html)
         self.assertIn(preset_tag, sdxl_html)
+        self.assertIn(sdxl_ip_adapter_tag, sdxl_html)
         self.assertIn(sdxl_tag, sdxl_html)
         self.assertLess(sdxl_html.index(panel_tag), sdxl_html.index(sdxl_tag))
         self.assertLess(sdxl_html.index(preprocessor_tag), sdxl_html.index(sdxl_tag))
         self.assertLess(sdxl_html.index(lora_tag), sdxl_html.index(sdxl_tag))
         self.assertLess(sdxl_html.index(preset_tag), sdxl_html.index(sdxl_tag))
+        self.assertLess(sdxl_html.index(sdxl_ip_adapter_tag), sdxl_html.index(sdxl_tag))
 
     def test_sdxl_img2img_page_includes_controlnet_scripts_before_sdxl_img2img(self):
         sdxl_img2img_html = (ROOT / "frontend" / "sdxl" / "img2img.html").read_text(
             encoding="utf-8"
         )
+        sdxl_ip_adapter_tag = '<script src="../components/sdxl_ip_adapter_panel.js?v=1"></script>'
         panel_tag = '<script src="../components/controlnet_panel.js?v=2"></script>'
         preprocessor_tag = '<script src="../components/controlnet_preprocessor.js?v=3"></script>'
         lora_tag = '<script src="../components/lora_panel.js?v=1"></script>'
@@ -116,16 +129,19 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn(preprocessor_tag, sdxl_img2img_html)
         self.assertIn(lora_tag, sdxl_img2img_html)
         self.assertIn(preset_tag, sdxl_img2img_html)
+        self.assertIn(sdxl_ip_adapter_tag, sdxl_img2img_html)
         self.assertIn(sdxl_img2img_tag, sdxl_img2img_html)
         self.assertLess(sdxl_img2img_html.index(panel_tag), sdxl_img2img_html.index(sdxl_img2img_tag))
         self.assertLess(sdxl_img2img_html.index(preprocessor_tag), sdxl_img2img_html.index(sdxl_img2img_tag))
         self.assertLess(sdxl_img2img_html.index(lora_tag), sdxl_img2img_html.index(sdxl_img2img_tag))
         self.assertLess(sdxl_img2img_html.index(preset_tag), sdxl_img2img_html.index(sdxl_img2img_tag))
+        self.assertLess(sdxl_img2img_html.index(sdxl_ip_adapter_tag), sdxl_img2img_html.index(sdxl_img2img_tag))
 
     def test_sdxl_inpaint_page_includes_controlnet_scripts_before_sdxl_inpaint(self):
         sdxl_inpaint_html = (ROOT / "frontend" / "sdxl" / "inpaint.html").read_text(
             encoding="utf-8"
         )
+        sdxl_ip_adapter_tag = '<script src="../components/sdxl_ip_adapter_panel.js?v=1"></script>'
         panel_tag = '<script src="../components/controlnet_panel.js?v=2"></script>'
         preprocessor_tag = '<script src="../components/controlnet_preprocessor.js?v=3"></script>'
         lora_tag = '<script src="../components/lora_panel.js?v=1"></script>'
@@ -136,11 +152,13 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn(preprocessor_tag, sdxl_inpaint_html)
         self.assertIn(lora_tag, sdxl_inpaint_html)
         self.assertIn(preset_tag, sdxl_inpaint_html)
+        self.assertIn(sdxl_ip_adapter_tag, sdxl_inpaint_html)
         self.assertIn(sdxl_inpaint_tag, sdxl_inpaint_html)
         self.assertLess(sdxl_inpaint_html.index(panel_tag), sdxl_inpaint_html.index(sdxl_inpaint_tag))
         self.assertLess(sdxl_inpaint_html.index(preprocessor_tag), sdxl_inpaint_html.index(sdxl_inpaint_tag))
         self.assertLess(sdxl_inpaint_html.index(lora_tag), sdxl_inpaint_html.index(sdxl_inpaint_tag))
         self.assertLess(sdxl_inpaint_html.index(preset_tag), sdxl_inpaint_html.index(sdxl_inpaint_tag))
+        self.assertLess(sdxl_inpaint_html.index(sdxl_ip_adapter_tag), sdxl_inpaint_html.index(sdxl_inpaint_tag))
 
     def test_controlnet_panel_script_exposes_expected_api(self):
         panel_js = (ROOT / "frontend" / "components" / "controlnet_panel.js").read_text(encoding="utf-8")
@@ -283,27 +301,34 @@ class FrontendControlNetScriptTests(unittest.TestCase):
 
     def test_sd15_page_wires_ip_adapter_controls(self):
         sd15_html = (ROOT / "frontend" / "sd15" / "text2img.html").read_text(encoding="utf-8")
+        adapter_panel_js = (ROOT / "frontend" / "components" / "adapter_panel.js").read_text(
+            encoding="utf-8"
+        )
 
-        self.assertIn('id="adapter-modal-open"', sd15_html)
-        self.assertIn('id="adapter-modal"', sd15_html)
-        self.assertIn('data-adapter-tab="overview"', sd15_html)
-        self.assertIn('data-adapter-tab="controlnet"', sd15_html)
-        self.assertIn('data-adapter-tab="lora"', sd15_html)
-        self.assertIn('data-adapter-tab="ipadapter"', sd15_html)
-        self.assertIn('id="adapter-overview-controlnet-count"', sd15_html)
-        self.assertIn('id="controlnet-panel-root"', sd15_html)
-        self.assertIn('id="lora-panel-root"', sd15_html)
-        self.assertIn('id="ip_adapter_panel"', sd15_html)
-        self.assertIn('id="ip_adapter_toggle"', sd15_html)
-        self.assertIn('id="ip_adapter_content"', sd15_html)
-        self.assertIn('id="ip_adapter_enabled"', sd15_html)
-        self.assertIn('id="ip_adapter_image"', sd15_html)
-        self.assertIn('id="ip_adapter_preview"', sd15_html)
-        self.assertIn('id="ip_adapter_mask_image"', sd15_html)
-        self.assertIn('id="ip_adapter_mask_editor_open"', sd15_html)
-        self.assertIn('id="ip_adapter_mask_preview"', sd15_html)
-        self.assertIn('id="ip_adapter_scale"', sd15_html)
+        self.assertIn('id="adapter-panel-root"', sd15_html)
+        self.assertIn('data-ip-adapter-toggle-label="Use image prompt"', sd15_html)
         self.assertIn("ip_adapter_panel.js?v=2", sd15_html)
+        self.assertIn('id="adapter-modal-open"', adapter_panel_js)
+        self.assertIn('id="adapter-modal"', adapter_panel_js)
+        self.assertIn('data-adapter-tab="overview"', adapter_panel_js)
+        self.assertIn('data-adapter-tab="controlnet"', adapter_panel_js)
+        self.assertIn('data-adapter-tab="lora"', adapter_panel_js)
+        self.assertIn('data-adapter-tab="ipadapter"', adapter_panel_js)
+        self.assertIn('id="adapter-overview-controlnet-count"', adapter_panel_js)
+        self.assertIn('id="controlnet-panel-root"', adapter_panel_js)
+        self.assertIn('id="lora-panel-root"', adapter_panel_js)
+        self.assertIn('id="ip_adapter_panel"', adapter_panel_js)
+        self.assertIn('id="ip_adapter_toggle"', adapter_panel_js)
+        self.assertIn('id="ip_adapter_content"', adapter_panel_js)
+        self.assertIn('id="ip_adapter_enabled"', adapter_panel_js)
+        self.assertIn('id="ip_adapter_image"', adapter_panel_js)
+        self.assertIn('id="ip_adapter_preview"', adapter_panel_js)
+        self.assertIn('id="ip_adapter_mask_image"', adapter_panel_js)
+        self.assertIn('id="ip_adapter_mask_editor_open"', adapter_panel_js)
+        self.assertIn('id="ip_adapter_mask_preview"', adapter_panel_js)
+        self.assertIn('id="ip_adapter_scale"', adapter_panel_js)
+        self.assertIn("window.AdapterPanel", adapter_panel_js)
+        self.assertIn("adapter-panel:loaded", adapter_panel_js)
 
     def test_adapter_modal_allows_preprocessor_modal_to_stack_above_it(self):
         style_css = (ROOT / "frontend" / "style.css").read_text(encoding="utf-8")
@@ -352,25 +377,8 @@ class FrontendControlNetScriptTests(unittest.TestCase):
     def test_sd15_img2img_page_wires_ip_adapter_controls(self):
         img2img_html = (ROOT / "frontend" / "sd15" / "img2img.html").read_text(encoding="utf-8")
 
-        self.assertIn('id="adapter-modal-open"', img2img_html)
-        self.assertIn('id="adapter-modal"', img2img_html)
-        self.assertIn('data-adapter-tab="overview"', img2img_html)
-        self.assertIn('data-adapter-tab="controlnet"', img2img_html)
-        self.assertIn('data-adapter-tab="lora"', img2img_html)
-        self.assertIn('data-adapter-tab="ipadapter"', img2img_html)
-        self.assertIn('id="adapter-overview-controlnet-count"', img2img_html)
-        self.assertIn('id="controlnet-panel-root"', img2img_html)
-        self.assertIn('id="lora-panel-root"', img2img_html)
-        self.assertIn('id="ip_adapter_panel"', img2img_html)
-        self.assertIn('id="ip_adapter_toggle"', img2img_html)
-        self.assertIn('id="ip_adapter_content"', img2img_html)
-        self.assertIn('id="ip_adapter_enabled"', img2img_html)
-        self.assertIn('id="ip_adapter_image"', img2img_html)
-        self.assertIn('id="ip_adapter_preview"', img2img_html)
-        self.assertIn('id="ip_adapter_mask_image"', img2img_html)
-        self.assertIn('id="ip_adapter_mask_editor_open"', img2img_html)
-        self.assertIn('id="ip_adapter_mask_preview"', img2img_html)
-        self.assertIn('id="ip_adapter_scale"', img2img_html)
+        self.assertIn('id="adapter-panel-root"', img2img_html)
+        self.assertIn('data-ip-adapter-toggle-label="Use image prompt reference"', img2img_html)
         self.assertIn("ip_adapter_panel.js?v=2", img2img_html)
 
     def test_sd15_img2img_script_wires_ip_adapter_payload_and_guardrails(self):
@@ -421,25 +429,8 @@ class FrontendControlNetScriptTests(unittest.TestCase):
             encoding="utf-8"
         )
 
-        self.assertIn('id="adapter-modal-open"', inpaint_html)
-        self.assertIn('id="adapter-modal"', inpaint_html)
-        self.assertIn('data-adapter-tab="overview"', inpaint_html)
-        self.assertIn('data-adapter-tab="controlnet"', inpaint_html)
-        self.assertIn('data-adapter-tab="lora"', inpaint_html)
-        self.assertIn('data-adapter-tab="ipadapter"', inpaint_html)
-        self.assertIn('id="adapter-overview-controlnet-count"', inpaint_html)
-        self.assertIn('id="controlnet-panel-root"', inpaint_html)
-        self.assertIn('id="lora-panel-root"', inpaint_html)
-        self.assertIn('id="ip_adapter_panel"', inpaint_html)
-        self.assertIn('id="ip_adapter_toggle"', inpaint_html)
-        self.assertIn('id="ip_adapter_content"', inpaint_html)
-        self.assertIn('id="ip_adapter_enabled"', inpaint_html)
-        self.assertIn('id="ip_adapter_image"', inpaint_html)
-        self.assertIn('id="ip_adapter_preview"', inpaint_html)
-        self.assertIn('id="ip_adapter_mask_image"', inpaint_html)
-        self.assertIn('id="ip_adapter_mask_editor_open"', inpaint_html)
-        self.assertIn('id="ip_adapter_mask_preview"', inpaint_html)
-        self.assertIn('id="ip_adapter_scale"', inpaint_html)
+        self.assertIn('id="adapter-panel-root"', inpaint_html)
+        self.assertIn('data-ip-adapter-toggle-label="Use image prompt reference"', inpaint_html)
         self.assertIn("ip_adapter_panel.js?v=2", inpaint_html)
 
     def test_sd15_inpaint_script_wires_ip_adapter_payload_and_guardrails(self):
@@ -517,19 +508,30 @@ class FrontendControlNetScriptTests(unittest.TestCase):
 
     def test_sdxl_page_wires_ip_adapter_controls(self):
         sdxl_html = (ROOT / "frontend" / "sdxl" / "text2img.html").read_text(encoding="utf-8")
+        sdxl_ip_adapter_html = (
+            ROOT / "frontend" / "components" / "sdxl_ip_adapter_panel.html"
+        ).read_text(encoding="utf-8")
+        sdxl_ip_adapter_js = (
+            ROOT / "frontend" / "components" / "sdxl_ip_adapter_panel.js"
+        ).read_text(encoding="utf-8")
 
-        self.assertIn('id="ip_adapter_panel"', sdxl_html)
-        self.assertIn('id="ip_adapter_toggle"', sdxl_html)
-        self.assertIn('id="ip_adapter_content"', sdxl_html)
-        self.assertIn('id="ip_adapter_enabled"', sdxl_html)
-        self.assertIn('id="ip_adapter_image"', sdxl_html)
-        self.assertIn('id="ip_adapter_preview"', sdxl_html)
-        self.assertIn('id="ip_adapter_scale"', sdxl_html)
+        self.assertIn('id="sdxl-ip-adapter-panel-root"', sdxl_html)
+        self.assertIn('data-ip-adapter-toggle-label="Use image prompt"', sdxl_html)
+        self.assertIn('id="ip_adapter_panel"', sdxl_ip_adapter_html)
+        self.assertIn('id="ip_adapter_toggle"', sdxl_ip_adapter_html)
+        self.assertIn('id="ip_adapter_content"', sdxl_ip_adapter_html)
+        self.assertIn('id="ip_adapter_enabled"', sdxl_ip_adapter_html)
+        self.assertIn('id="ip_adapter_image"', sdxl_ip_adapter_html)
+        self.assertIn('id="ip_adapter_preview"', sdxl_ip_adapter_html)
+        self.assertIn('id="ip_adapter_scale"', sdxl_ip_adapter_html)
+        self.assertIn("window.SdxlIpAdapterPanel", sdxl_ip_adapter_js)
+        self.assertIn("sdxl-ip-adapter-panel:loaded", sdxl_ip_adapter_js)
         self.assertIn("ip_adapter_panel.js?v=1", sdxl_html)
 
     def test_sdxl_script_wires_ip_adapter_payload_and_guardrails(self):
         sdxl_js = (ROOT / "frontend" / "sdxl" / "text2img.js").read_text(encoding="utf-8")
 
+        self.assertIn("window.SdxlIpAdapterPanel?.load?.()", sdxl_js)
         self.assertIn("window.IpAdapterPanel?.init()", sdxl_js)
         self.assertIn("getIpAdapterImageFile", sdxl_js)
         self.assertIn("WorkflowClient.uploadArtifact(", sdxl_js)
@@ -572,14 +574,10 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         )
         sdxl_img2img_js = (ROOT / "frontend" / "sdxl" / "img2img.js").read_text(encoding="utf-8")
 
-        self.assertIn('id="ip_adapter_panel"', sdxl_img2img_html)
-        self.assertIn('id="ip_adapter_toggle"', sdxl_img2img_html)
-        self.assertIn('id="ip_adapter_content"', sdxl_img2img_html)
-        self.assertIn('id="ip_adapter_enabled"', sdxl_img2img_html)
-        self.assertIn('id="ip_adapter_image"', sdxl_img2img_html)
-        self.assertIn('id="ip_adapter_preview"', sdxl_img2img_html)
-        self.assertIn('id="ip_adapter_scale"', sdxl_img2img_html)
+        self.assertIn('id="sdxl-ip-adapter-panel-root"', sdxl_img2img_html)
+        self.assertIn('data-ip-adapter-toggle-label="Use image prompt reference"', sdxl_img2img_html)
         self.assertIn("ip_adapter_panel.js?v=1", sdxl_img2img_html)
+        self.assertIn("window.SdxlIpAdapterPanel?.load?.()", sdxl_img2img_js)
         self.assertIn("window.IpAdapterPanel?.init()", sdxl_img2img_js)
         self.assertIn("getIpAdapterImageFile", sdxl_img2img_js)
         self.assertIn("taskInputs.ip_adapter = {", sdxl_img2img_js)
@@ -614,14 +612,10 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         )
         sdxl_inpaint_js = (ROOT / "frontend" / "sdxl" / "inpaint.js").read_text(encoding="utf-8")
 
-        self.assertIn('id="ip_adapter_panel"', sdxl_inpaint_html)
-        self.assertIn('id="ip_adapter_toggle"', sdxl_inpaint_html)
-        self.assertIn('id="ip_adapter_content"', sdxl_inpaint_html)
-        self.assertIn('id="ip_adapter_enabled"', sdxl_inpaint_html)
-        self.assertIn('id="ip_adapter_image"', sdxl_inpaint_html)
-        self.assertIn('id="ip_adapter_preview"', sdxl_inpaint_html)
-        self.assertIn('id="ip_adapter_scale"', sdxl_inpaint_html)
+        self.assertIn('id="sdxl-ip-adapter-panel-root"', sdxl_inpaint_html)
+        self.assertIn('data-ip-adapter-toggle-label="Use image prompt reference"', sdxl_inpaint_html)
         self.assertIn("ip_adapter_panel.js?v=1", sdxl_inpaint_html)
+        self.assertIn("window.SdxlIpAdapterPanel?.load?.()", sdxl_inpaint_js)
         self.assertIn("window.IpAdapterPanel?.init()", sdxl_inpaint_js)
         self.assertIn("getIpAdapterImageFile", sdxl_inpaint_js)
         self.assertIn("taskInputs.ip_adapter = {", sdxl_inpaint_js)

@@ -379,6 +379,7 @@ async function loadModels() {
  */
 function initSd15Img2ImgPage() {
     gallery.render();
+    window.AdapterPanel?.render?.();
     initAdapterModal();
     window.IpAdapterPanel?.init({
         getMaskBackdropFile: () => document.getElementById("initial_image")?.files?.[0] ?? null,

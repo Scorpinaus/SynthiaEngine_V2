@@ -10,6 +10,7 @@ let activeJobToken = 0;
 let activeEventSource = null;
 let controlNetUiReady = Promise.resolve();
 let loraPanelReady = Promise.resolve();
+let ipAdapterPanelReady = Promise.resolve();
 
 const DEFAULTS = {
     ip_adapter_scale: 0.6,
@@ -156,7 +157,7 @@ function collectSdxlInpaintPresetSettings() {
 }
 
 async function applySdxlInpaintPresetSettings(settings) {
-    await Promise.all([controlNetUiReady, loraPanelReady]);
+    await Promise.all([controlNetUiReady, loraPanelReady, ipAdapterPanelReady]);
 
     setInputValue("prompt", settings.prompt);
     setInputValue("negative_prompt", settings.negative_prompt);
@@ -294,7 +295,14 @@ if (window.ControlNetPreprocessor?.init) {
         console.warn("ControlNet init failed:", error);
     });
 }
-window.IpAdapterPanel?.init();
+ipAdapterPanelReady =
+    (window.SdxlIpAdapterPanel?.load?.() ?? Promise.resolve())
+        .then(() => {
+            window.IpAdapterPanel?.init();
+        })
+        .catch((error) => {
+            console.warn("SDXL IP-Adapter UI init failed:", error);
+        });
 loraPanelReady = window.LoraPanel?.init({ apiBase: API_BASE, family: "sdxl" }) ?? Promise.resolve();
 window.PresetPanel?.init({
     apiBase: API_BASE,
@@ -547,6 +555,7 @@ async function generateBlurMask() {
 async function generateSdxlInpaint() {
     const token = ++activeJobToken;
     closeActiveEventSource();
+    await ipAdapterPanelReady;
     const controlnetEnabled = Boolean(document.getElementById("controlnet-enabled")?.checked);
     const ipAdapterEnabled = Boolean(document.getElementById("ip_adapter_enabled")?.checked);
     const ipAdapterImageFile = getIpAdapterImageFile();
