@@ -23,6 +23,7 @@ from backend.utilities.pipeline import (
     cleanup_memory,
     get_batch_output_dir,
     make_batch_id,
+    release_pipeline,
     resolve_model_source,
 )
 from backend.utilities.schedulers import create_scheduler
@@ -39,23 +40,6 @@ configure_logging()
 def _should_use_flux_fill_pipeline(model_name: str | None, source: str, version: str) -> bool:
     joined = " ".join([model_name or "", source or "", version or ""]).lower()
     return "flux" in joined and "fill" in joined
-
-
-def _release_pipeline(pipe: Any) -> None:
-    if pipe is None:
-        return
-
-    if hasattr(pipe, "maybe_free_model_hooks"):
-        try:
-            pipe.maybe_free_model_hooks()
-        except Exception as exc:  # pragma: no cover - defensive cleanup
-            logger.warning("Failed to free model hooks: %s", exc)
-
-    if hasattr(pipe, "remove_all_hooks"):
-        try:
-            pipe.remove_all_hooks()
-        except Exception as exc:  # pragma: no cover - defensive cleanup
-            logger.warning("Failed to remove pipeline hooks: %s", exc)
 
 
 """
@@ -273,9 +257,8 @@ def generate_text2img(params: dict[str, object]) -> dict[str, list[str]]:
             except Exception as exc:  # pragma: no cover - defensive cleanup
                 logger.warning("Failed to unload LoRA weights: %s", exc)
 
-        _release_pipeline(pipe)
+        release_pipeline(pipe, logger=logger)
         pipe = None
-        cleanup_memory()
 
     #9.  Return output
     return {"images": [f"/outputs/{name}" for name in filenames]}
@@ -384,9 +367,8 @@ def generate_img2img(params: dict[str, object]) -> dict[str, list[str]]:
             except Exception as exc:  # pragma: no cover - defensive cleanup
                 logger.warning("Failed to unload LoRA weights: %s", exc)
 
-        _release_pipeline(pipe)
+        release_pipeline(pipe, logger=logger)
         pipe = None
-        cleanup_memory()
 
     #9. Return output
     return {"images": [f"/outputs/{name}" for name in filenames]}
@@ -496,9 +478,8 @@ def generate_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
             except Exception as exc:  # pragma: no cover - defensive cleanup
                 logger.warning("Failed to unload LoRA weights: %s", exc)
 
-        _release_pipeline(pipe)
+        release_pipeline(pipe, logger=logger)
         pipe = None
-        cleanup_memory()
 
     # 9. Return output
     return {"images": [f"/outputs/{name}" for name in filenames]}

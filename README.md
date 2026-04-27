@@ -49,12 +49,24 @@ Artifacts are **ephemeral** and are cleaned up when the workflow finishes.
 ### 3) Task types
 
 Current task types are documented in `docs/WORKFLOW_API.md` and implemented in `backend/workflow/`:
-- SD1.5: `sd15.text2img`, `sd15.img2img`, `sd15.inpaint`, `sd15.controlnet.text2img`, `sd15.hires_fix`
-- SDXL: `sdxl.text2img`, `sdxl.img2img`, `sdxl.inpaint`
+- SD1.5: `sd15.ip_adapter.encode`, `sd15.text2img`, `sd15.animatediff.text2video`, `sd15.img2img`, `sd15.inpaint`, `sd15.controlnet.text2img`, `sd15.hires_fix`
+- SDXL: `sdxl.ip_adapter.encode`, `sdxl.text2img`, `sdxl.controlnet.text2img`, `sdxl.img2img`, `sdxl.inpaint`
 - Flux: `flux.text2img`, `flux.img2img`, `flux.inpaint`
 - Qwen-Image: `qwen-image.text2img`, `qwen-image.img2img`, `qwen-image.inpaint`
-- Z-Image: `z-image.text2img`, `z-image.img2img`
+- Z-Image: `z-image.text2img`, `z-image.img2img`, `z-image.inpaint`
 - Utility: `controlnet.preprocess`
+
+### 4) Model family capabilities
+
+The machine-readable source for this matrix is `GET /api/workflow/catalog`.
+
+| Family | text2img | text2video | img2img | inpaint | ControlNet | Hi-Res Fix | LoRA | IP-Adapter | true CFG |
+|---|---|---|---|---|---|---|---|---|---|
+| `sd15` | yes | yes | yes | yes | yes | yes | yes | yes | no |
+| `sdxl` | yes | no | yes | yes | yes | no | yes | yes | no |
+| `flux` | yes | no | yes | yes | no | no | yes | no | no |
+| `qwen-image` | yes | no | yes | yes | no | no | yes | no | yes |
+| `z-image` | yes | no | yes | yes | no | no | yes | no | no |
 
 ## Quickstart (Windows)
 
@@ -99,14 +111,21 @@ Note: `requirements.txt` currently references a local editable dependency `-e ./
 ## API docs
 
 - Full contract: `docs/WORKFLOW_API.md`
+- Pipeline lifecycle and memory cleanup policy: `docs/PIPELINE_LIFECYCLE.md`
 - Helpful discovery endpoints:
   - `GET /api/workflow/task-types`
   - `GET /api/workflow/schema`
   - `GET /api/workflow/catalog`
 
-## Known issues / next steps
+## Runtime maintenance
 
-See `next_steps.txt` for the current roadmap and known limitations (e.g., pipeline lifecycle/cleanup and OOM scenarios under some workloads).
+Before changing generation runtime code, read `docs/PIPELINE_LIFECYCLE.md`.
+Pipeline cleanup is task-scoped by default, and adapter/hook/memory cleanup must
+stay in `finally` paths so failed renders do not leave GPU state behind.
+
+## Current limitations
+
+Use the workflow catalog and `docs/WORKFLOW_API.md` as the current source of truth for supported task fields and feature combinations. Some advanced combinations are intentionally limited, such as IP-Adapter with ControlNet, and SD1.5 LCM with ControlNet/IP-Adapter. Runtime changes should also follow `docs/PIPELINE_LIFECYCLE.md` so failed renders do not leave GPU state behind.
 
 ## License
 

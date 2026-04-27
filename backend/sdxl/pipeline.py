@@ -27,9 +27,9 @@ from backend.utilities.pipeline import (
     build_fixed_step_timesteps,
     build_png_metadata,
     build_batch_output_relpath,
-    cleanup_memory,
     get_batch_output_dir,
     make_batch_id,
+    release_pipeline,
     resolve_model_source,
 )
 from backend.utilities.schedulers import create_scheduler
@@ -272,23 +272,6 @@ def _cleanup_lora_adapters(pipe, adapter_names: list[str]) -> None:
         pipe.unload_lora_weights()
     except Exception:
         logger.exception("Failed to unload LoRA weights cleanly.")
-
-
-def _release_pipeline(pipe) -> None:
-    if pipe is None:
-        return
-
-    if hasattr(pipe, "maybe_free_model_hooks"):
-        try:
-            pipe.maybe_free_model_hooks()
-        except Exception:
-            logger.exception("Failed to free SDXL pipeline model hooks.")
-
-    if hasattr(pipe, "remove_all_hooks"):
-        try:
-            pipe.remove_all_hooks()
-        except Exception:
-            logger.exception("Failed to remove SDXL pipeline hooks.")
 
 
 def _metadata_without_runtime_images(params: dict[str, object]) -> dict[str, object]:
@@ -596,9 +579,8 @@ def generate_controlnet_text2img(params: dict[str, object],) -> dict[str, list[s
             logger.info("Image %s saved to %s", i, Path(relpath).name)
             filenames.append(relpath)
     finally:
-        _release_pipeline(pipe)
+        release_pipeline(pipe, logger=logger)
         pipe = None
-        cleanup_memory()
 
     #9. Return list of image names
     return {"images": [f"/outputs/{name}" for name in filenames]}
@@ -715,9 +697,8 @@ def generate_img2img_controlnet(params: dict[str, object],) -> dict[str, list[st
             filenames.append(relpath)
     finally:
         _cleanup_lora_adapters(pipe, adapter_names)
-        _release_pipeline(pipe)
+        release_pipeline(pipe, logger=logger)
         pipe = None
-        cleanup_memory()
 
     # 9. Return output back to workflow calling method
     return {"images": [f"/outputs/{name}" for name in filenames]}
@@ -858,9 +839,8 @@ def generate_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
         ip_adapter_enabled = False
         _cleanup_lora_adapters(pipe, adapter_names)
         adapter_names = []
-        _release_pipeline(pipe)
+        release_pipeline(pipe, logger=logger)
         pipe = None
-        cleanup_memory()
 
         # Decode latents to images
         images: list[Image.Image] = []
@@ -892,9 +872,8 @@ def generate_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
         if pipe is not None:
             IpAdapterManager.cleanup(pipe, ip_adapter_enabled)
             _cleanup_lora_adapters(pipe, adapter_names)
-            _release_pipeline(pipe)
+            release_pipeline(pipe, logger=logger)
             pipe = None
-        cleanup_memory()
 
 
 @torch.inference_mode()
@@ -999,9 +978,8 @@ def generate_img2img(params: dict[str, object],) -> dict[str, list[str]]:
         ip_adapter_enabled = False
         _cleanup_lora_adapters(pipe, adapter_names)
         adapter_names = []
-        _release_pipeline(pipe)
+        release_pipeline(pipe, logger=logger)
         pipe = None
-        cleanup_memory()
 
         for i, (latents, current_seed) in enumerate(zip(latents_batch, seed_batch, strict=True)):
             # Decode latent to image after the render pipeline has been released.
@@ -1033,9 +1011,8 @@ def generate_img2img(params: dict[str, object],) -> dict[str, list[str]]:
         if pipe is not None:
             IpAdapterManager.cleanup(pipe, ip_adapter_enabled)
             _cleanup_lora_adapters(pipe, adapter_names)
-            _release_pipeline(pipe)
+            release_pipeline(pipe, logger=logger)
             pipe = None
-        cleanup_memory()
     #9. Return output back to workflow calling method
     return {"images": [f"/outputs/{name}" for name in filenames]}
 
@@ -1161,9 +1138,8 @@ def generate_inpaint(params: dict[str, object],) -> dict[str, list[str]]:
     finally:
         IpAdapterManager.cleanup(pipe, ip_adapter_enabled)
         _cleanup_lora_adapters(pipe, adapter_names)
-        _release_pipeline(pipe)
+        release_pipeline(pipe, logger=logger)
         pipe = None
-        cleanup_memory()
 
     # 9. Return output back to workflow calling method
     return {"images": [f"/outputs/{name}" for name in filenames]}
@@ -1281,9 +1257,8 @@ def generate_inpaint_controlnet(params: dict[str, object],) -> dict[str, list[st
             filenames.append(relpath)
     finally:
         _cleanup_lora_adapters(pipe, adapter_names)
-        _release_pipeline(pipe)
+        release_pipeline(pipe, logger=logger)
         pipe = None
-        cleanup_memory()
 
     # 9. Return output back to workflow calling method
     return {"images": [f"/outputs/{name}" for name in filenames]}

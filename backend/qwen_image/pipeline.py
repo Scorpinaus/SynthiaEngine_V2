@@ -13,6 +13,7 @@ from backend.utilities.pipeline import (
     build_batch_output_relpath,
     get_batch_output_dir,
     make_batch_id,
+    release_pipeline,
     resolve_model_source,
 )
 from backend.utilities.schedulers import create_scheduler
@@ -200,7 +201,12 @@ def generate_text2img(params: dict[str, object]) -> dict[str, list[str]]:
                 filenames.append(build_batch_output_relpath(batch_id, filename.name))
     finally:
         if adapter_names and hasattr(pipe, "unload_lora_weights"):
-            pipe.unload_lora_weights()
+            try:
+                pipe.unload_lora_weights()
+            except Exception:
+                logger.exception("Failed to unload Qwen-Image LoRA weights.")
+        release_pipeline(pipe, logger=logger)
+        pipe = None
 
     return {"images": [f"/outputs/{name}" for name in filenames]}
 
@@ -303,7 +309,12 @@ def generate_img2img(params: dict[str, object]) -> dict[str, list[str]]:
                 filenames.append(build_batch_output_relpath(batch_id, filename.name))
     finally:
         if adapter_names and hasattr(pipe, "unload_lora_weights"):
-            pipe.unload_lora_weights()
+            try:
+                pipe.unload_lora_weights()
+            except Exception:
+                logger.exception("Failed to unload Qwen-Image LoRA weights.")
+        release_pipeline(pipe, logger=logger)
+        pipe = None
 
     return {"images": [f"/outputs/{name}" for name in filenames]}
 
@@ -407,6 +418,11 @@ def generate_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
                 filenames.append(build_batch_output_relpath(batch_id, filename.name))
     finally:
         if adapter_names and hasattr(pipe, "unload_lora_weights"):
-            pipe.unload_lora_weights()
+            try:
+                pipe.unload_lora_weights()
+            except Exception:
+                logger.exception("Failed to unload Qwen-Image LoRA weights.")
+        release_pipeline(pipe, logger=logger)
+        pipe = None
 
     return {"images": [f"/outputs/{name}" for name in filenames]}

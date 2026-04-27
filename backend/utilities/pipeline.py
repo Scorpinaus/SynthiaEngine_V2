@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import gc
+import logging
 import random
 import time
 from pathlib import Path
+from typing import Any
 
 import torch
 from PIL.PngImagePlugin import PngInfo
@@ -72,3 +74,27 @@ def cleanup_memory(*, clear_cuda: bool = True) -> None:
     gc.collect()
     if clear_cuda and torch.cuda.is_available():
         torch.cuda.empty_cache()
+
+
+def release_pipeline(
+    pipe: Any | None,
+    *,
+    clear_cuda: bool = True,
+    logger: logging.Logger | None = None,
+) -> None:
+    """Best-effort Diffusers pipeline hook release followed by memory cleanup."""
+    log = logger or logging.getLogger(__name__)
+    if pipe is not None:
+        if hasattr(pipe, "maybe_free_model_hooks"):
+            try:
+                pipe.maybe_free_model_hooks()
+            except Exception:
+                log.exception("Failed to free pipeline model hooks.")
+
+        if hasattr(pipe, "remove_all_hooks"):
+            try:
+                pipe.remove_all_hooks()
+            except Exception:
+                log.exception("Failed to remove pipeline hooks.")
+
+    cleanup_memory(clear_cuda=clear_cuda)

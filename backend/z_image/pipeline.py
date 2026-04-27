@@ -22,6 +22,7 @@ from backend.utilities.pipeline import (
     cleanup_memory,
     get_batch_output_dir,
     make_batch_id,
+    release_pipeline,
     resolve_model_source,
 )
 from backend.utilities.schedulers import create_scheduler
@@ -272,52 +273,58 @@ def generate_text2img(params: dict[str, object]) -> dict[str, list[str]]:
 
     #6. Create list of filenames
     filenames: list[str] = []
-    with GEN_LOCK:
-        #7. Render image one by one
-        for i in range(num_images):
-            # Set current seed
-            current_seed = base_seed + i
-            generator = torch.Generator(device="cpu").manual_seed(current_seed)
-            
-            # Render image
-            with torch.autocast("cuda", dtype=torch.bfloat16):
-                call_kwargs = dict(
-                    prompt=prompt,
-                    num_inference_steps=steps,
-                    guidance_scale=guidance_scale,
-                    width=width,
-                    height=height,
-                    generator=generator,
-                )
-                # Only include negative_prompt if user actually provided one
-                if negative_prompt:
-                    call_kwargs["negative_prompt"] = negative_prompt
+    try:
+        with GEN_LOCK:
+            #7. Render image one by one
+            for i in range(num_images):
+                # Set current seed
+                current_seed = base_seed + i
+                generator = torch.Generator(device="cpu").manual_seed(current_seed)
+                
+                # Render image
+                with torch.autocast("cuda", dtype=torch.bfloat16):
+                    call_kwargs = dict(
+                        prompt=prompt,
+                        num_inference_steps=steps,
+                        guidance_scale=guidance_scale,
+                        width=width,
+                        height=height,
+                        generator=generator,
+                    )
+                    # Only include negative_prompt if user actually provided one
+                    if negative_prompt:
+                        call_kwargs["negative_prompt"] = negative_prompt
 
-                image = pipe(**call_kwargs).images[0]
+                    image = pipe(**call_kwargs).images[0]
 
-            # Define filenames & Create image_params metadata dict to store metadata
-            filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
-            image_params = dict(params)
-            image_params.update({
-                "mode": "txt2img",
-                "pipeline": "z-image",
-                "seed": current_seed,
-                "batch_id": batch_id,
-            })
-            pnginfo = build_png_metadata(image_params)
-            
-            # Save filename to rendered image
-            image.save(filename, pnginfo=pnginfo)
-            logger.info("Image %s saved to %s", i, filename.name)
-            filenames.append(build_batch_output_relpath(batch_id, filename.name))
-            
-            # Clean-up memory to prevent OOM
-            del image
-            cleanup_memory()
-
-    # 8. Unload lora weights & clean memory
-    if adapter_names and hasattr(pipe, "unload_lora_weights"):
-        pipe.unload_lora_weights()
+                # Define filenames & Create image_params metadata dict to store metadata
+                filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
+                image_params = dict(params)
+                image_params.update({
+                    "mode": "txt2img",
+                    "pipeline": "z-image",
+                    "seed": current_seed,
+                    "batch_id": batch_id,
+                })
+                pnginfo = build_png_metadata(image_params)
+                
+                # Save filename to rendered image
+                image.save(filename, pnginfo=pnginfo)
+                logger.info("Image %s saved to %s", i, filename.name)
+                filenames.append(build_batch_output_relpath(batch_id, filename.name))
+                
+                # Clean-up memory to prevent OOM
+                del image
+                cleanup_memory()
+    finally:
+        # 8. Unload lora weights & clean memory
+        if adapter_names and hasattr(pipe, "unload_lora_weights"):
+            try:
+                pipe.unload_lora_weights()
+            except Exception:
+                logger.exception("Failed to unload Z-Image LoRA weights.")
+        release_pipeline(pipe, logger=logger)
+        pipe = None
 
     # 9. Return output
     return {"images": [f"/outputs/{name}" for name in filenames]}
@@ -413,8 +420,12 @@ def generate_img2img(params: dict[str, object]) -> dict[str, list[str]]:
     finally:
         #8. Unload lora weights & clean memory
         if adapter_names and hasattr(pipe, "unload_lora_weights"):
-            pipe.unload_lora_weights()
-        cleanup_memory()
+            try:
+                pipe.unload_lora_weights()
+            except Exception:
+                logger.exception("Failed to unload Z-Image LoRA weights.")
+        release_pipeline(pipe, logger=logger)
+        pipe = None
 
     #9. Return output back to workflow calling method
     return {"images": [f"/outputs/{name}" for name in filenames]}
@@ -515,8 +526,12 @@ def generate_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
     finally:
         #8. Unload loras and final memory clean-up
         if adapter_names and hasattr(pipe, "unload_lora_weights"):
-            pipe.unload_lora_weights()
-        cleanup_memory()
+            try:
+                pipe.unload_lora_weights()
+            except Exception:
+                logger.exception("Failed to unload Z-Image LoRA weights.")
+        release_pipeline(pipe, logger=logger)
+        pipe = None
 
     #9. Return output back to workflow calling method
     return {"images": [f"/outputs/{name}" for name in filenames]}

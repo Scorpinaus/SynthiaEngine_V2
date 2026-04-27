@@ -113,12 +113,37 @@ Responsibilities:
 
 Current task families in `TASK_REGISTRY`:
 
-- SD1.5: `sd15.text2img`, `sd15.img2img`, `sd15.inpaint`, `sd15.controlnet.text2img`, `sd15.hires_fix`
-- SDXL: `sdxl.text2img`, `sdxl.controlnet.text2img`, `sdxl.img2img`, `sdxl.inpaint`
+- SD1.5: `sd15.ip_adapter.encode`, `sd15.text2img`, `sd15.animatediff.text2video`, `sd15.img2img`, `sd15.inpaint`, `sd15.controlnet.text2img`, `sd15.hires_fix`
+- SDXL: `sdxl.ip_adapter.encode`, `sdxl.text2img`, `sdxl.controlnet.text2img`, `sdxl.img2img`, `sdxl.inpaint`
 - Flux: `flux.text2img`, `flux.img2img`, `flux.inpaint`
 - Qwen-Image: `qwen-image.text2img`, `qwen-image.img2img`, `qwen-image.inpaint`
 - Z-Image: `z-image.text2img`, `z-image.img2img`, `z-image.inpaint`
 - Utility: `controlnet.preprocess`
+
+The task registry and the generated workflow catalog are the source of truth for
+the supported task identifiers. `docs/WORKFLOW_API.md` documents the public
+contract and feature-combination notes in more detail.
+
+### 3.3.1 Feature Surface by Model Family
+
+This matrix summarizes the current generation surface exposed by workflow
+tasks. The same information is available to clients at
+`GET /api/workflow/catalog` under `capabilities`.
+
+| Family | text2img | text2video | img2img | inpaint | ControlNet | Hi-Res Fix | LoRA | IP-Adapter | true CFG |
+|---|---|---|---|---|---|---|---|---|---|
+| `sd15` | yes | yes | yes | yes | yes | yes | yes | yes | no |
+| `sdxl` | yes | no | yes | yes | yes | no | yes | yes | no |
+| `flux` | yes | no | yes | yes | no | no | yes | no | no |
+| `qwen-image` | yes | no | yes | yes | no | no | yes | no | yes |
+| `z-image` | yes | no | yes | yes | no | no | yes | no | no |
+
+Important family-specific boundaries:
+
+- SD1.5 has the widest surface: AnimateDiff text-to-video, ControlNet and multi-ControlNet, Hi-Res Fix, LoRA, IP-Adapter, and LCM mode.
+- SDXL supports ControlNet, multi-ControlNet, LoRA, and IP-Adapter across the image tasks, but IP-Adapter and ControlNet combinations are intentionally rejected for img2img/inpaint.
+- Flux, Qwen-Image, and Z-Image expose the core text2img/img2img/inpaint surface with LoRA and scheduler selection.
+- Qwen-Image additionally exposes `true_cfg_scale`.
 
 ### 3.4 Pipeline Runtime Layer
 
@@ -315,3 +340,14 @@ If artifact inputs are used:
 - Queue-backed execution with idempotency and cancellation support
 - Local-file output model with metadata-rich PNG artifacts
 - Static frontend with shared JS clients and per-workflow page scripts
+
+## 7. Pipeline Lifecycle and Memory Policy
+
+Generation pipelines are job-scoped by default: a task loads the pipeline it
+needs, applies runtime options, generates outputs, and releases adapters, hooks,
+pipeline references, and memory in a `finally` block.
+
+The current serialized execution model protects local GPU memory, but it does
+not replace explicit cleanup. Runtime changes should follow
+`docs/PIPELINE_LIFECYCLE.md` before adding new pipeline loading, adapter, or
+offload behavior.

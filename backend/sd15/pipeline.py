@@ -45,6 +45,7 @@ from backend.utilities.pipeline import (
     build_batch_output_relpath,
     get_batch_output_dir,
     make_batch_id,
+    release_pipeline,
     resolve_model_source,
 )
 from backend.utilities.schedulers import create_scheduler
@@ -932,6 +933,7 @@ def generate_images(params: dict[str, object],):
     finally:
         IpAdapterManager.cleanup(pipe, ip_adapter_enabled)
         _cleanup_lora_adapters(pipe, adapter_names)
+        release_pipeline(pipe, logger=logger)
     # Return list of filenames
     return filenames
 
@@ -1196,6 +1198,7 @@ def generate_images_img2img(params: dict[str, object],):
     finally:
         IpAdapterManager.cleanup(pipe, ip_adapter_enabled)
         _cleanup_lora_adapters(pipe, adapter_names)
+        release_pipeline(pipe, logger=logger)
 
     return filenames
 
@@ -1312,6 +1315,7 @@ def generate_images_img2img_controlnet(params: dict[str, object],) -> list[str]:
             filenames.append(build_batch_output_relpath(batch_id, filename.name))
     finally:
         _cleanup_lora_adapters(pipe, adapter_names)
+        release_pipeline(pipe, logger=logger)
 
     return filenames
 
@@ -1561,6 +1565,7 @@ def generate_images_inpaint(params: dict[str, object],):
     finally:
         IpAdapterManager.cleanup(pipe, ip_adapter_enabled)
         _cleanup_lora_adapters(pipe, adapter_names)
+        release_pipeline(pipe, logger=logger)
 
     return filenames
 
@@ -1681,6 +1686,7 @@ def generate_images_inpaint_controlnet(params: dict[str, object],) -> list[str]:
             filenames.append(build_batch_output_relpath(batch_id, filename.name))
     finally:
         _cleanup_lora_adapters(pipe, adapter_names)
+        release_pipeline(pipe, logger=logger)
 
     return filenames
 
@@ -1798,5 +1804,6 @@ def run_sd15_hires_fix(
             relpaths.append(build_batch_output_relpath(batch_id, filename.name))
     finally:
         _cleanup_lora_adapters(pipe, adapter_names)
+        release_pipeline(pipe, logger=logger)
 
     return relpaths
