@@ -7,6 +7,10 @@ from PIL import Image
 _LCM_LORA_MODEL_ID = "latent-consistency/lcm-lora-sdv1-5"
 _LCM_DEFAULT_STEPS = 4
 _LCM_DEFAULT_CFG = 0.0
+_SD15_INPAINT_CONTROLNET_MODEL_IDS = {
+    "lllyasviel/control_v11p_sd15_inpaint",
+}
+_SD15_INPAINT_CONDITION_PREPROCESSOR_ID = "inpaint-condition"
 _LCM_MIN_STEPS = 1
 _LCM_MAX_STEPS = 8
 _LCM_MIN_CFG = 0.0
@@ -630,9 +634,6 @@ def run_sd15_inpaint(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str, 
         control_images_raw = inputs.get("control_images")
         if control_images_raw is not None and not isinstance(control_images_raw, list):
             raise ValueError("control_images must be a list of image references")
-        if control_image_input is None and not control_images_raw:
-            raise ValueError("control_image is required when using ControlNet in sd15.inpaint")
-
         control_guidance_start = float(inputs.get("control_guidance_start", 0.0))
         control_guidance_end = float(inputs.get("control_guidance_end", 1.0))
         if control_guidance_start > control_guidance_end:
@@ -660,6 +661,15 @@ def run_sd15_inpaint(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str, 
                 _open_image_ref(image_ref).convert("RGB").resize((width, height))
                 for image_ref in control_images_raw
             )
+        derive_inpaint_condition = (
+            not control_images
+            and len(controlnet_models) == 1
+            and controlnet_models[0] in _SD15_INPAINT_CONTROLNET_MODEL_IDS
+        )
+        if derive_inpaint_condition:
+            control_images = [initial_image.copy()]
+        elif not control_images:
+            raise ValueError("control_image is required when using ControlNet in sd15.inpaint")
 
         if len(controlnet_models) > _MAX_CONTROLNET_MODELS:
             raise ValueError(
@@ -722,6 +732,8 @@ def run_sd15_inpaint(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str, 
                 )
         else:
             controlnet_preprocessor_ids = [controlnet_preprocessor_id] * controlnet_count
+        if derive_inpaint_condition and controlnet_preprocessor_ids == [None]:
+            controlnet_preprocessor_ids = [_SD15_INPAINT_CONDITION_PREPROCESSOR_ID]
 
         controlnet_compat_mode = str(inputs.get("controlnet_compat_mode") or "warn").lower()
         warnings: list[str] = []
@@ -796,6 +808,7 @@ def run_sd15_inpaint(inputs: dict[str, Any], deps: dict[str, Any]) -> dict[str, 
             "controlnet_guess_mode": bool(inputs.get("controlnet_guess_mode", False)),
             "control_guidance_start": control_guidance_start,
             "control_guidance_end": control_guidance_end,
+            "controlnet_inpaint_condition": derive_inpaint_condition,
             "lora_adapters": lora_adapters,
             "batch_id": batch_id,
         }

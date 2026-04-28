@@ -4,6 +4,7 @@ from PIL import Image
 
 from backend.sd15.pipeline import (
     _enable_xformers_memory_efficient_attention_if_available,
+    _make_inpaint_controlnet_condition,
     _resize_control_image_to_target,
 )
 
@@ -84,6 +85,21 @@ class Sd15ControlNetXformersTests(unittest.TestCase):
 
         self.assertTrue(enabled)
         self.assertTrue(pipe.enabled)
+
+
+class Sd15InpaintControlNetConditionTests(unittest.TestCase):
+    def test_inpaint_condition_sets_masked_pixels_to_negative_one(self):
+        image = Image.new("RGB", (2, 1), color=(255, 128, 0))
+        mask = Image.new("L", (2, 1), color=0)
+        mask.putpixel((1, 0), 255)
+
+        condition = _make_inpaint_controlnet_condition(image, mask)
+
+        self.assertEqual(tuple(condition.shape), (1, 3, 1, 2))
+        self.assertGreaterEqual(float(condition[0, 0, 0, 0]), 0.99)
+        self.assertEqual(float(condition[0, 0, 0, 1]), -1.0)
+        self.assertEqual(float(condition[0, 1, 0, 1]), -1.0)
+        self.assertEqual(float(condition[0, 2, 0, 1]), -1.0)
 
 
 if __name__ == "__main__":

@@ -483,6 +483,10 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("controlnetEnabled", inpaint_js)
         self.assertIn("control_images", inpaint_js)
         self.assertIn("controlnet_models", inpaint_js)
+        self.assertIn("controlnet_inpaint_condition", inpaint_js)
+        self.assertIn("lllyasviel/control_v11p_sd15_inpaint", inpaint_js)
+        self.assertIn("inpaint-condition", inpaint_js)
+        self.assertIn("no separate preprocessor image is needed", inpaint_js)
 
     def test_sd15_inpaint_script_wires_lora_panel_and_payload(self):
         inpaint_js = (ROOT / "frontend" / "sd15" / "inpainting.js").read_text(encoding="utf-8")

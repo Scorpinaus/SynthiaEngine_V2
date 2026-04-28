@@ -14,6 +14,7 @@ aim to be deterministic (seeded) and side-effectful only in well-defined ways
 import torch
 import logging
 import math
+import numpy as np
 from contextlib import contextmanager
 from pathlib import Path
 from typing import cast
@@ -163,6 +164,25 @@ def _resize_control_image_to_target(
     if isinstance(control_image, list):
         return [_resize_single(image, index=i) for i, image in enumerate(control_image)]
     return _resize_single(control_image)
+
+
+def _make_inpaint_controlnet_condition(
+    image: Image.Image,
+    mask_image: Image.Image,
+) -> torch.Tensor:
+    """
+    Build the special conditioning tensor expected by SD1.5 inpaint ControlNet.
+
+    The ControlNet v1.1 inpaint checkpoint is conditioned on the original image
+    with masked pixels set to -1.0, matching the Diffusers model-card example.
+    """
+    rgb_image = image.convert("RGB")
+    mask = mask_image.convert("L").resize(rgb_image.size)
+    image_array = np.array(rgb_image).astype(np.float32) / 255.0
+    mask_array = np.array(mask).astype(np.float32) / 255.0
+    image_array[mask_array > 0.5] = -1.0
+    image_array = np.expand_dims(image_array, 0).transpose(0, 3, 1, 2)
+    return torch.from_numpy(image_array)
 
 
 def _enable_xformers_memory_efficient_attention_if_available(pipe) -> bool:
@@ -1600,6 +1620,7 @@ def generate_images_inpaint_controlnet(params: dict[str, object],) -> list[str]:
     controlnet_guess_mode = bool(params.get("controlnet_guess_mode", False))
     control_guidance_start = float(params.get("control_guidance_start", 0.0))
     control_guidance_end = float(params.get("control_guidance_end", 1.0))
+    controlnet_inpaint_condition = bool(params.get("controlnet_inpaint_condition", False))
     lora_adapters = params.get("lora_adapters")
     batch_id = cast(str | None, params.get("batch_id"))
 
@@ -1614,11 +1635,14 @@ def generate_images_inpaint_controlnet(params: dict[str, object],) -> list[str]:
 
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
     width, height = initial_image.size
-    control_image = _resize_control_image_to_target(
-        control_image,
-        target_width=width,
-        target_height=height,
-    )
+    if controlnet_inpaint_condition:
+        control_image = _make_inpaint_controlnet_condition(initial_image, mask_image)
+    else:
+        control_image = _resize_control_image_to_target(
+            cast(Image.Image | list[Image.Image], control_image),
+            target_width=width,
+            target_height=height,
+        )
 
     pipe = load_controlnet_inpaint_pipeline(model, controlnet_model)
     pipe.scheduler = create_scheduler(scheduler, pipe)

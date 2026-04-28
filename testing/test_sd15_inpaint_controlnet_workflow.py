@@ -720,6 +720,70 @@ class Sd15InpaintControlNetWorkflowPlumbingTests(unittest.TestCase):
                     _ctx=None,
                 )
 
+    def test_inpaint_controlnet_model_derives_control_image_from_mask(self):
+        captured = {}
+
+        def _fake_generate_images_inpaint_controlnet(params):
+            captured.update(params)
+            return ["batch/out.png"]
+
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+                with patch(
+                    "backend.workflow.generate_images_inpaint_controlnet",
+                    side_effect=_fake_generate_images_inpaint_controlnet,
+                ):
+                    result = _sd15_inpaint(
+                        {
+                            "initial_image": {
+                                "artifact_id": "a0123456789abcdef0123456789abcdef"
+                            },
+                            "mask_image": {
+                                "artifact_id": "a0123456789abcdef0123456789abcdef"
+                            },
+                            "prompt": "test prompt",
+                            "controlnet_model": "lllyasviel/control_v11p_sd15_inpaint",
+                        },
+                        _ctx=None,
+                    )
+
+        self.assertEqual(result["batch_id"], "batch123")
+        self.assertEqual(captured["controlnet_model"], "lllyasviel/control_v11p_sd15_inpaint")
+        self.assertTrue(captured["controlnet_inpaint_condition"])
+        self.assertIn("control_image", captured)
+
+    def test_inpaint_condition_preprocessor_is_compatible_with_inpaint_model(self):
+        captured = {}
+
+        def _fake_generate_images_inpaint_controlnet(params):
+            captured.update(params)
+            return ["batch/out.png"]
+
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+                with patch(
+                    "backend.workflow.generate_images_inpaint_controlnet",
+                    side_effect=_fake_generate_images_inpaint_controlnet,
+                ):
+                    result = _sd15_inpaint(
+                        {
+                            "initial_image": {
+                                "artifact_id": "a0123456789abcdef0123456789abcdef"
+                            },
+                            "mask_image": {
+                                "artifact_id": "a0123456789abcdef0123456789abcdef"
+                            },
+                            "prompt": "test prompt",
+                            "controlnet_model": "lllyasviel/control_v11p_sd15_inpaint",
+                            "controlnet_preprocessor_id": "inpaint-condition",
+                            "controlnet_compat_mode": "error",
+                        },
+                        _ctx=None,
+                    )
+
+        self.assertEqual(result["images"], ["/outputs/batch/out.png"])
+        self.assertTrue(captured["controlnet_inpaint_condition"])
+
     def test_warn_mode_returns_warning_on_mismatch(self):
         with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with patch("backend.workflow.make_batch_id", return_value="batch123"):

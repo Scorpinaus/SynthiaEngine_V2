@@ -28,6 +28,8 @@ const DEFAULTS = {
     lcm_scheduler: "lcm",
     ip_adapter_scale: 0.6,
 };
+const SD15_INPAINT_CONTROLNET_MODEL = "lllyasviel/control_v11p_sd15_inpaint";
+const SD15_INPAINT_CONTROLNET_PREPROCESSOR_ID = "inpaint-condition";
 
 // Token incremented per generateInpaint() call to ignore stale SSE events from prior jobs.
 let activeJobToken = 0;
@@ -53,6 +55,10 @@ function getIpAdapterImageFile() {
     return document.getElementById("ip_adapter_image")?.files?.[0] ?? null;
 }
 
+function isInpaintControlNetConditionEnabled() {
+    return Boolean(document.getElementById("controlnet_inpaint_condition")?.checked);
+}
+
 let controlNetUiReady = Promise.resolve();
 let loraPanelReady = Promise.resolve();
 
@@ -71,6 +77,7 @@ function setText(elementId, value) {
 
 function collectAdapterSummaries() {
     const controlFallbackState = getControlNetState();
+    const inpaintConditionEnabled = isInpaintControlNetConditionEnabled();
     const loraFallback = window.LoraPanel?.getSelectedAdapters?.() ?? [];
     const control = window.ControlNetPanel?.getSummary?.() ?? {
         availablePreprocessors: controlFallbackState?.preprocessors?.size ?? 0,
@@ -78,6 +85,12 @@ function collectAdapterSummaries() {
         activeItems: controlFallbackState?.controlItems?.length ?? 0,
         enabled: Boolean(document.getElementById("controlnet-enabled")?.checked),
     };
+    control.availablePreprocessors = Number(control.availablePreprocessors ?? control.totalPreprocessors ?? 0) + 1;
+    control.totalPreprocessors = Number(control.totalPreprocessors ?? 0) + 1;
+    if (inpaintConditionEnabled) {
+        control.activeItems = Number(control.activeItems ?? 0) + 1;
+        control.enabled = true;
+    }
     const lora = window.LoraPanel?.getSummary?.() ?? {
         available: 0,
         selected: Array.isArray(loraFallback) ? loraFallback.length : 0,
@@ -141,6 +154,44 @@ function updateAdapterSummary() {
             ? `Image prompt enabled${ipAdapter.hasReference ? " with reference image" : ""}${ipAdapter.hasMask ? " and mask" : ""}.`
             : "Image prompt disabled."
     );
+}
+
+function installInpaintControlNetConditionOption() {
+    const settings = document.querySelector("#controlnet-content .controlnet-settings");
+    if (!settings || document.getElementById("controlnet_inpaint_condition")) {
+        return;
+    }
+
+    const row = document.createElement("label");
+    row.className = "field inline-field";
+    row.innerHTML = `
+        <input id="controlnet_inpaint_condition" type="checkbox" />
+        <span>Use SD1.5 inpaint ControlNet condition</span>
+    `;
+    const hint = document.createElement("div");
+    hint.className = "field-hint";
+    hint.textContent = "Uses the current initial image and mask; no separate preprocessor image is needed.";
+    settings.insertBefore(hint, settings.firstChild);
+    settings.insertBefore(row, hint);
+
+    row.querySelector("input")?.addEventListener("change", (event) => {
+        const enabled = Boolean(event.target?.checked);
+        if (enabled) {
+            const controlnetToggle = document.getElementById("controlnet-enabled");
+            if (controlnetToggle) {
+                controlnetToggle.checked = true;
+            }
+        }
+        window.ControlNetPanel?.updateIndicator?.();
+        window.ControlNetPanel?.updateActiveFlag?.();
+        if (enabled) {
+            const status = document.getElementById("controlnet-status");
+            if (status) {
+                status.textContent = "Inpaint ControlNet condition ready.";
+            }
+        }
+        updateAdapterSummary();
+    });
 }
 
 function setAdapterTab(tabName) {
@@ -292,6 +343,7 @@ function collectSd15InpaintPresetSettings() {
         control_guidance_end: WorkflowClient.readNumberValue("control_guidance_end", 1.0),
         controlnet_guess_mode: Boolean(document.getElementById("controlnet_guess_mode")?.checked),
         controlnet_compat_mode: WorkflowClient.readTextValue("controlnet_compat_mode", "warn"),
+        controlnet_inpaint_condition: isInpaintControlNetConditionEnabled(),
         lora_adapters: window.LoraPanel?.getSelectedAdapters?.() ?? [],
         lcm_enabled: isLcmModeEnabled(),
         ip_adapter_enabled: Boolean(document.getElementById("ip_adapter_enabled")?.checked),
@@ -323,6 +375,11 @@ async function applySd15InpaintPresetSettings(settings) {
     setInputValue("control_guidance_end", settings.control_guidance_end);
     setCheckboxValue("controlnet_guess_mode", settings.controlnet_guess_mode);
     setInputValue("controlnet_compat_mode", settings.controlnet_compat_mode);
+    setCheckboxValue("controlnet_inpaint_condition", settings.controlnet_inpaint_condition);
+    if (settings.controlnet_inpaint_condition) {
+        setCheckboxValue("controlnet-enabled", true);
+        setText("controlnet-status", "Inpaint ControlNet condition ready.");
+    }
     setCheckboxValue("ip_adapter_enabled", settings.ip_adapter_enabled);
     setInputValue("ip_adapter_scale", settings.ip_adapter_scale);
     if (settings.lcm_enabled) {
@@ -482,6 +539,10 @@ function initSd15InpaintingPage() {
             console.warn("ControlNet init failed:", error);
         });
     }
+    controlNetUiReady.then(() => {
+        installInpaintControlNetConditionOption();
+        updateAdapterSummary();
+    });
     // Optional LoRA panel integration (only active if that script is present on the page).
     loraPanelReady = window.LoraPanel?.init({ apiBase: API_BASE, family: "sd15" }) ?? Promise.resolve();
     loraPanelReady.then(() => {
@@ -681,6 +742,34 @@ async function setControlNetInputs(inputs, defaults, controlnetState) {
     );
 
     const controlItems = Array.isArray(controlnetState?.controlItems) ? controlnetState.controlItems : [];
+    if (isInpaintControlNetConditionEnabled()) {
+        if (controlItems.length > 0 || controlnetState?.previewBlob) {
+            throw new Error("SD1.5 inpaint ControlNet condition cannot be combined with preprocessor control images yet.");
+        }
+        inputs.Controlnet = {
+            enabled: true,
+            controlnetConditioningScale: controlnet_conditioning_scale,
+            controlGuidanceStart: control_guidance_start,
+            controlGuidanceEnd: control_guidance_end,
+            controlnetGuessMode: controlnet_guess_mode,
+            controlnetPreprocessors: [
+                {
+                    model_id: SD15_INPAINT_CONTROLNET_MODEL,
+                    conditioning_scale: controlnet_conditioning_scale,
+                    preprocessor_id: SD15_INPAINT_CONTROLNET_PREPROCESSOR_ID,
+                },
+            ],
+        };
+        inputs.controlnet_model = SD15_INPAINT_CONTROLNET_MODEL;
+        inputs.controlnet_preprocessor_id = SD15_INPAINT_CONTROLNET_PREPROCESSOR_ID;
+        inputs.controlnet_conditioning_scale = controlnet_conditioning_scale;
+        inputs.controlnet_guess_mode = controlnet_guess_mode;
+        inputs.control_guidance_start = control_guidance_start;
+        inputs.control_guidance_end = control_guidance_end;
+        inputs.controlnet_compat_mode = controlnet_compat_mode;
+        return inputs;
+    }
+
     if (controlItems.length === 0 && !controlnetState?.previewBlob) {
         throw new Error("ControlNet enabled but no preprocessor output image is ready.");
     }

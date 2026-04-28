@@ -15,6 +15,7 @@ from backend.adapters.controlnet_preprocessors import (
     get_preprocessor,
     list_preprocessors,
 )
+from backend.adapters.controlnet_preprocessor_registry import CONTROLNET_PREPROCESSOR_REGISTRY
 from backend.main import list_controlnet_preprocessors, run_controlnet_preprocessor
 from backend.workflow import _controlnet_preprocess
 
@@ -66,6 +67,7 @@ class ControlNetPreprocessorValidationTests(unittest.TestCase):
             "normal-midas",
             "lineart-standard",
             "shuffle",
+            "ip2p-source",
             "softedge-hed",
             "softedge-hedsafe",
             "scribble-hed",
@@ -87,6 +89,17 @@ class ControlNetPreprocessorValidationTests(unittest.TestCase):
         self.assertEqual(defs["mediapipe-face"].param_schema["max_faces"].type, "int")
         self.assertEqual(defs["teed"].param_schema["safe_steps"].type, "int")
         self.assertEqual(defs["anyline"].defaults["detect_resolution"], 1280)
+        self.assertEqual(defs["ip2p-source"].param_schema, {})
+
+    def test_ip2p_source_preprocessor_returns_rgb_source_image(self):
+        preprocessor = get_preprocessor("ip2p-source")
+        image = Image.new("RGBA", (3, 2), color=(10, 20, 30, 128))
+
+        processed = preprocessor.process(image, {})
+
+        self.assertEqual(processed.mode, "RGB")
+        self.assertEqual(processed.size, image.size)
+        self.assertEqual(processed.getpixel((0, 0)), (10, 20, 30))
 
     def test_bool_params_are_coerced_from_form_strings(self):
         preprocessor = get_preprocessor("softedge-hedsafe")
@@ -115,6 +128,24 @@ class ControlNetPreprocessorValidationTests(unittest.TestCase):
 
 
 class ControlNetPreprocessorApiTests(unittest.TestCase):
+    def test_registry_includes_derived_inpaint_condition_mapping(self):
+        inpaint = next(
+            entry for entry in CONTROLNET_PREPROCESSOR_REGISTRY if entry.id == "inpaint-condition"
+        )
+        self.assertIn(
+            "lllyasviel/control_v11p_sd15_inpaint",
+            inpaint.recommended_sd15_control_models,
+        )
+
+    def test_registry_includes_ip2p_source_mapping(self):
+        ip2p = next(
+            entry for entry in CONTROLNET_PREPROCESSOR_REGISTRY if entry.id == "ip2p-source"
+        )
+        self.assertIn(
+            "lllyasviel/control_v11e_sd15_ip2p",
+            ip2p.recommended_sd15_control_models,
+        )
+
     def test_list_endpoint_includes_schema_and_compatibility(self):
         response = asyncio.run(list_controlnet_preprocessors())
         canny = next(item for item in response if item.id == "canny")
@@ -129,6 +160,12 @@ class ControlNetPreprocessorApiTests(unittest.TestCase):
         mediapipe_face = next(item for item in response if item.id == "mediapipe-face")
         self.assertIsNotNone(mediapipe_face.available)
         self.assertIn("CrucibleAI/ControlNetMediaPipeFace", mediapipe_face.recommended_sd15_control_models)
+        ip2p = next(item for item in response if item.id == "ip2p-source")
+        self.assertEqual(ip2p.param_schema, {})
+        self.assertIn(
+            "lllyasviel/control_v11e_sd15_ip2p",
+            ip2p.recommended_sd15_control_models,
+        )
 
     def test_preprocess_endpoint_returns_400_for_invalid_params(self):
         with self.assertRaises(HTTPException) as exc:

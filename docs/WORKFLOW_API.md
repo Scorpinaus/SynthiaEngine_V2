@@ -371,6 +371,8 @@ Implemented SD1.5-oriented preprocessor ids:
 - Depth/normal: `midas-depth`, `depth-zoe`, `depth-leres`, `depth-leres-plus`, `normal-midas`, `normal-bae`
 - Pose/lines/structure: `openpose`, `dwpose`, `mlsd`, `lineart`, `lineart-anime`, `lineart-standard`, `teed`, `anyline`, `shuffle`
 - Face/segmentation: `mediapipe-face`, `sam-mobile`, `sam`
+- Instruct-pix2pix source condition: `ip2p-source` passes the uploaded source image through unchanged for `lllyasviel/control_v11e_sd15_ip2p`.
+- Derived inpaint condition: `inpaint-condition` is a compatibility id for `lllyasviel/control_v11p_sd15_inpaint`; the backend derives its condition from `initial_image` + `mask_image` instead of running `/api/controlnet/preprocess`.
 
 Some heavier processors are exposed as optional entries. The catalog includes `available`, `unavailable_reason`, and `install_hint` so clients can disable processors that require extra local dependencies. `dwpose` requires `easy-dwpose`, `mediapipe-face` requires `mediapipe`, `sam` downloads a large Segment Anything checkpoint, `sam-mobile` uses MobileSAM, and `teed`/`anyline` use their upstream checkpoint repos.
 
@@ -422,6 +424,7 @@ Validation behavior:
 - Param values are type-coerced/validated against `param_schema` bounds.
 - Returns `400` with an actionable message for invalid params.
 - Returns `503` when an optional heavy preprocessor is unavailable because a runtime dependency is missing.
+- `ip2p-source` is a no-op pass-through processor for instruction-based image editing. Use the source image as `image`, then pair the resulting ControlNet image with `controlnet_model: "lllyasviel/control_v11e_sd15_ip2p"` and an edit-style prompt such as `"make it on fire"`.
 
 Frontend note (SD1.5 page):
 - `frontend/components/controlnet_panel.html` is loaded by `frontend/components/controlnet_panel.js`.
@@ -433,6 +436,7 @@ Frontend note (SD1.5 page):
 - `frontend/sd15/img2img.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()`.
 - `frontend/sd15/img2img.js` uploads the optional SD1.5 IP-Adapter reference image, creates a `sd15.ip_adapter.encode` task, and sends the resulting `image_embeds` into `sd15.img2img.inputs.ip_adapter.image_embeds`. It uploads the optional IP-Adapter mask as `sd15.img2img.inputs.ip_adapter.mask_image`.
 - `frontend/sd15/inpainting.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()`.
+- `frontend/sd15/inpainting.js` adds an SD1.5 inpaint ControlNet condition toggle that sends `lllyasviel/control_v11p_sd15_inpaint` + `inpaint-condition` without uploading a separate ControlNet preprocessor image.
 - `frontend/sd15/inpainting.js` uploads the optional SD1.5 IP-Adapter reference image, creates a `sd15.ip_adapter.encode` task, and sends the resulting `image_embeds` into `sd15.inpaint.inputs.ip_adapter.image_embeds`. It uploads the optional IP-Adapter mask as `sd15.inpaint.inputs.ip_adapter.mask_image`.
 - `frontend/components/ip_adapter_panel.js` supports either uploading an IP-Adapter mask image or creating one in a lightweight canvas editor. White = apply image prompt; black = suppress image prompt.
 - `frontend/components/controlnet_panel.html` groups ControlNet runtime knobs (`controlnet_conditioning_scale`, `controlnet_guess_mode`, `control_guidance_start`, `control_guidance_end`).
@@ -724,6 +728,7 @@ LoRA adapter targeting:
 `sd15.inpaint` optional ControlNet input notes:
 - Existing `sd15.inpaint` payloads remain valid without any ControlNet fields.
 - To enable ControlNet, provide `control_image` (single) or `control_image` + `control_images` (multi).
+- Exception: for `controlnet_model: "lllyasviel/control_v11p_sd15_inpaint"` with `controlnet_preprocessor_id: "inpaint-condition"`, `control_image` may be omitted. The backend builds the Diffusers inpaint ControlNet condition from `initial_image` and `mask_image` by marking masked pixels in the conditioning image.
 - `controlnet_model` defaults to `lllyasviel/control_v11p_sd15_canny`.
 - `controlnet_models`, `controlnet_conditioning_scales`, `controlnet_preprocessor_ids` are optional list forms and must align to resolved ControlNet count.
 - Runtime controls mirror text2img/img2img: `controlnet_conditioning_scale`, `controlnet_guess_mode`, `control_guidance_start`, `control_guidance_end`, `controlnet_compat_mode`.

@@ -539,6 +539,19 @@ class ContentShufflePreprocessor(ControlNetAuxPreprocessor):
     )
 
 
+class Ip2pSourcePreprocessor(BasePreprocessor):
+    definition = PreprocessorDefinition(
+        id="ip2p-source",
+        name="IP2P Source Image",
+        description="Uses the uploaded source image directly for instruct-pix2pix ControlNet.",
+        defaults={},
+        param_schema={},
+    )
+
+    def run(self, image: Image.Image, params: dict[str, Any]) -> Image.Image:
+        return image.convert("RGB")
+
+
 class PidiNetPreprocessor(ControlNetAuxPreprocessor):
     detector_names = ["PidiNetDetector"]
     pretrained_model_or_path = "lllyasviel/Annotators"
@@ -783,6 +796,7 @@ _PREPROCESSORS: list[BasePreprocessor] = [
     LineartAnimePreprocessor(),
     LineartStandardPreprocessor(),
     ContentShufflePreprocessor(),
+    Ip2pSourcePreprocessor(),
     PidiNetPreprocessor(),
     SoftedgePidiNetPreprocessor(),
     SoftedgePidiNetSafePreprocessor(),

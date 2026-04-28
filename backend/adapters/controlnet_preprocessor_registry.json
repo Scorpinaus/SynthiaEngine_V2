@@ -222,6 +222,18 @@
         "legacy_aliases": []
     },
     {
+        "id": "ip2p-source",
+        "name": "IP2P Source Image",
+        "description": "Pass-through source image condition for SD1.5 instruct-pix2pix ControlNet.",
+        "repo_id": null,
+        "revision": null,
+        "local_path": null,
+        "recommended_sd15_control_models": [
+            "lllyasviel/control_v11e_sd15_ip2p"
+        ],
+        "legacy_aliases": []
+    },
+    {
         "id": "pidinet",
         "name": "PidiNet",
         "description": "PiDiNet edge detector via controlnet-aux.",
@@ -332,6 +344,18 @@
         "legacy_aliases": [
             "lllyasviel/sd-controlnet-seg"
         ]
+    },
+    {
+        "id": "inpaint-condition",
+        "name": "Inpaint Condition",
+        "description": "Derived SD1.5 inpaint ControlNet condition built from the initial image and inpaint mask.",
+        "repo_id": null,
+        "revision": null,
+        "local_path": null,
+        "recommended_sd15_control_models": [
+            "lllyasviel/control_v11p_sd15_inpaint"
+        ],
+        "legacy_aliases": []
     },
     {
         "id": "teed",

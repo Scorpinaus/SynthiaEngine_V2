@@ -229,6 +229,35 @@ class Sd15ControlNetWorkflowPlumbingTests(unittest.TestCase):
                     _ctx=None,
                 )
 
+    def test_error_mode_accepts_ip2p_source_pairing(self):
+        captured = {}
+
+        def _fake_generate_images_controlnet(params):
+            captured.update(params)
+            return ["batch/out.png"]
+
+        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+                with patch(
+                    "backend.workflow.generate_images_controlnet",
+                    side_effect=_fake_generate_images_controlnet,
+                ):
+                    result = _sd15_controlnet_text2img(
+                        {
+                            "control_image": {
+                                "artifact_id": "a0123456789abcdef0123456789abcdef"
+                            },
+                            "prompt": "make it on fire",
+                            "controlnet_model": "lllyasviel/control_v11e_sd15_ip2p",
+                            "controlnet_preprocessor_id": "ip2p-source",
+                            "controlnet_compat_mode": "error",
+                        },
+                        _ctx=None,
+                    )
+
+        self.assertEqual(result["images"], ["/outputs/batch/out.png"])
+        self.assertEqual(captured["controlnet_model"], "lllyasviel/control_v11e_sd15_ip2p")
+
     def test_multi_controlnet_passes_list_kwargs_and_warns_for_perf(self):
         captured = {}
 
