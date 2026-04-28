@@ -40,6 +40,7 @@ _MODEL_FAMILY_METADATA: dict[str, dict[str, Any]] = {
     "sd15": {"label": "SD 1.5", "aliases": ["sd1.5"]},
     "sdxl": {"label": "SDXL", "aliases": []},
     "flux": {"label": "Flux", "aliases": []},
+    "wan": {"label": "WAN", "aliases": ["wan2.1", "wan2.2"]},
     "qwen-image": {"label": "Qwen-Image", "aliases": ["qwen"]},
     "z-image": {"label": "Z-Image", "aliases": ["zimage"]},
 }
@@ -47,7 +48,7 @@ _MODEL_FAMILY_METADATA: dict[str, dict[str, Any]] = {
 
 def _infer_model_family(task_type: str) -> str | None:
     prefix = task_type.split(".", 1)[0]
-    if prefix in {"sd15", "sdxl", "flux"}:
+    if prefix in {"sd15", "sdxl", "flux", "wan"}:
         return prefix
     if prefix == "qwen-image":
         return "qwen-image"

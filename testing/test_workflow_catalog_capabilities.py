@@ -8,6 +8,7 @@ def test_workflow_catalog_exposes_model_capabilities_matrix():
     assert "sd15" in capabilities
     assert "sdxl" in capabilities
     assert "flux" in capabilities
+    assert "wan" in capabilities
     assert "qwen-image" in capabilities
     assert "z-image" in capabilities
 
@@ -40,6 +41,13 @@ def test_workflow_capability_features_for_core_families():
     assert flux["inpaint"] is True
     assert flux["controlnet"] is False
     assert flux["lora_adapters"] is True
+
+    wan = capabilities["wan"]["features"]
+    assert wan["text2img"] is False
+    assert wan["text2video"] is True
+    assert wan["img2img"] is False
+    assert wan["inpaint"] is False
+    assert wan["controlnet"] is False
 
     qwen = capabilities["qwen-image"]["features"]
     assert qwen["text2video"] is False

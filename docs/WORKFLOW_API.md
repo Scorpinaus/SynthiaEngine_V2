@@ -1,6 +1,6 @@
 # Workflow-Only API Contract (v2)
 
-This project uses a **single workflow job API** for all generation (SD1.5, SDXL, Flux, Qwen-Image, Z-Image). Image inputs are uploaded as **artifacts** first, then referenced by `artifact_id` in workflow task inputs.
+This project uses a **single workflow job API** for all generation (SD1.5, SDXL, WAN, Flux, Qwen-Image, Z-Image). Image inputs are uploaded as **artifacts** first, then referenced by `artifact_id` in workflow task inputs.
 
 Registry persistence note:
 - `/lora-models` entries are persisted in `database/lora_registry.sqlite3`.
@@ -35,7 +35,7 @@ Response (201):
 - Includes PNG image records and video records such as MP4/WebM/MOV.
 - Existing fields are preserved for compatibility. New consumers can use `media_type` to choose image or video rendering.
 - PNG records include embedded text metadata when available.
-- Video records load adjacent AnimateDiff JSON sidecars named `video_<batch_id>.mp4.json` when present.
+- Video records load adjacent JSON sidecars named `video_<batch_id>.mp4.json` when present.
 - Video records still infer `metadata.batch_id` from `outputs/batch_<batch_id>/...` paths when no sidecar is available.
 
 Response (200):
@@ -174,7 +174,7 @@ Response:
 ```
 
 Notes:
-- `capabilities` is a model-family matrix for builder UIs. Current families include `sd15`, `sdxl`, `flux`, `qwen-image`, and `z-image`.
+- `capabilities` is a model-family matrix for builder UIs. Current families include `sd15`, `sdxl`, `wan`, `flux`, `qwen-image`, and `z-image`.
 - `ui_hints` is best-effort metadata for workflow builders (labels, widgets, suggested min/max, option lists, etc.).
 - `output_schema` describes the per-task result object stored under `result.tasks[taskId]`.
 
@@ -446,6 +446,7 @@ Frontend note (SD1.5 page):
 - `frontend/components/controlnet_preprocessor.html` also carries inline layout styles as a last-resort cache-resistant fallback.
 - The preprocessor modal collapses to one column only on narrow screens (`<=700px`).
 - `frontend/sd15/animatediff.html` serves SD1.5 AnimateDiff text-to-video generation and renders `videos` outputs in `frontend/components/video_gallery.js`.
+- `frontend/wan/text2video.html` serves WAN text-to-video generation and renders `videos` outputs in `frontend/components/video_gallery.js`.
 - `frontend/sdxl/text2img.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()` for `sdxl.controlnet.text2img`.
 - `frontend/sdxl/text2img.js` uploads the optional SDXL IP-Adapter reference image through `/api/artifacts` and sends it as `sdxl.text2img.inputs.ip_adapter.image`.
 - `frontend/sdxl/img2img.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()` for `sdxl.img2img` optional ControlNet usage.
@@ -540,6 +541,7 @@ Resolution behavior:
 
 - SD1.5: `sd15.ip_adapter.encode`, `sd15.text2img`, `sd15.animatediff.text2video`, `sd15.img2img`, `sd15.inpaint`, `sd15.controlnet.text2img`, `sd15.hires_fix`
 - SDXL: `sdxl.ip_adapter.encode`, `sdxl.text2img`, `sdxl.controlnet.text2img`, `sdxl.img2img`, `sdxl.inpaint`
+- WAN: `wan.text2video`
 - Flux: `flux.text2img`, `flux.img2img`, `flux.inpaint`
 - Qwen-Image: `qwen-image.text2img`, `qwen-image.img2img`, `qwen-image.inpaint`
 - Z-Image: `z-image.text2img`, `z-image.img2img`, `z-image.inpaint`
@@ -553,6 +555,7 @@ This same matrix is available in machine-readable form at `GET /api/workflow/cat
 |---|---|---|---|---|---|---|---|---|---|
 | `sd15` | yes | yes | yes | yes | yes | yes | yes | yes | no |
 | `sdxl` | yes | no | yes | yes | yes | no | yes | yes | no |
+| `wan` (`wan2.1`, `wan2.2`) | no | yes | no | no | no | no | no | no | no |
 | `flux` | yes | no | yes | yes | no | no | yes | no | no |
 | `qwen-image` | yes | no | yes | yes | no | no | yes | no | yes |
 | `z-image` (`zimage`) | yes | no | yes | yes | no | no | yes | no | no |
@@ -645,6 +648,24 @@ LoRA adapter targeting:
 `sd15.animatediff.text2video` output notes:
 - Returns `{ "batch_id": "...", "videos": ["/outputs/...mp4"] }`.
 - Writes batch video metadata to `outputs/batch_<batch_id>/video_<batch_id>.mp4.json`; `/history` uses this sidecar to show prompt and generation settings for SD1.5 AnimateDiff videos.
+
+`wan.text2video` input notes:
+- `prompt` / `negative_prompt`: prompt text.
+- `model`: defaults to `Wan-AI/Wan2.1-T2V-1.3B-Diffusers`.
+- `width` / `height`: fixed initial contract is `832x480` (480P).
+- `num_frames`: must be one of `33`, `49`, or `81`.
+- `steps`: inference steps (default `30`).
+- `guidance_scale`: guidance scale (default `6.0`).
+- `fps`: MP4 export frame rate (default `16`).
+- `seed`: optional seed; `null` or `0` selects a random base seed.
+- `num_videos`: fixed to `1`; WAN uses the existing single workflow generation queue.
+- `memory_preset`: fixed to `"safe"`; backend loads the VAE in float32, uses bfloat16 pipeline weights, sets 480P `flow_shift=3.0`, and enables Diffusers model CPU offload.
+- `batch_id`: optional batch identifier.
+
+`wan.text2video` output notes:
+- Returns `{ "batch_id": "...", "videos": ["/outputs/...mp4"] }`.
+- Writes batch video metadata to `outputs/batch_<batch_id>/video_<batch_id>.mp4.json`; `/history` uses this sidecar to show prompt and WAN generation settings.
+- WAN 2.2 planning note: `WanPipeline` also supports WAN 2.2 text-to-video models, but the initial public contract is locked to WAN 2.1 T2V 1.3B 480P for safer memory behavior and compatibility.
 
 `controlnet.preprocess` input notes:
 - `image`: image reference

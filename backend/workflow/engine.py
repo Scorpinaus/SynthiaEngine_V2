@@ -39,6 +39,7 @@ from backend.workflow.schema_input import (
     SdxlInpaintInputs,
     SdxlIpAdapterEncodeInputs,
     SdxlText2ImgInputs,
+    WanText2VideoInputs,
     ZImageImg2ImgInputs,
     ZImageInpaintInputs,
     ZImageText2ImgInputs,
@@ -124,6 +125,7 @@ from backend.sd15.pipeline import (
     run_sd15_hires_fix,
 )
 from backend.sd15.animatediff_pipeline import generate_videos_text2video
+from backend.wan.pipeline import generate_text2video as generate_wan_text2video
 import backend.sdxl.pipeline as sdxl_pipeline_module
 
 logger = logging.getLogger(__name__)
@@ -143,6 +145,8 @@ TASK_INPUT_MODELS: dict[str, type[BaseModel]] = {
     "sd15.controlnet.text2img": Sd15ControlNetText2ImgInputs,
     "sd15.hires_fix": Sd15HiresFixInputs,
     "sd15.ip_adapter.encode": Sd15IpAdapterEncodeInputs,
+    # WAN tasks
+    "wan.text2video": WanText2VideoInputs,
     # ControlNet utility tasks
     "controlnet.preprocess": ControlNetPreprocessInputs,
     # SDXL tasks
@@ -175,6 +179,8 @@ TASK_OUTPUT_MODELS: dict[str, type[BaseModel]] = {
     "sd15.controlnet.text2img": Sd15ControlNetText2ImgOutput,
     "sd15.hires_fix": ImagesWithBatchOutput,
     "sd15.ip_adapter.encode": Sd15IpAdapterEncodeOutput,
+    # WAN tasks
+    "wan.text2video": VideosWithBatchOutput,
     # ControlNet utility tasks
     "controlnet.preprocess": ControlNetPreprocessOutput,
     # SDXL tasks
@@ -287,6 +293,35 @@ def _controlnet_preprocess(inputs: dict[str, Any], _ctx: WorkflowContext) -> dic
 
 def _sd15_hires_fix(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
     return _run_sd15_hires_fix(inputs, _sd15_runtime_deps())
+
+
+def _wan_runtime_deps() -> dict[str, Any]:
+    return {
+        "make_batch_id": make_batch_id,
+        "generate_text2video": generate_wan_text2video,
+    }
+
+
+def _wan_text2video(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
+    generate_text2video = _wan_runtime_deps()["generate_text2video"]
+    batch_id = str(inputs.get("batch_id") or make_batch_id())
+    generation_params = {
+        "prompt": str(inputs["prompt"]),
+        "negative_prompt": str(inputs.get("negative_prompt") or ""),
+        "steps": int(inputs.get("steps") or 30),
+        "guidance_scale": float(inputs.get("guidance_scale") or 6.0),
+        "width": int(inputs.get("width") or 832),
+        "height": int(inputs.get("height") or 480),
+        "seed": inputs.get("seed"),
+        "model": str(inputs.get("model") or "Wan-AI/Wan2.1-T2V-1.3B-Diffusers"),
+        "num_frames": int(inputs.get("num_frames") or 49),
+        "fps": int(inputs.get("fps") or 16),
+        "num_videos": int(inputs.get("num_videos") or 1),
+        "memory_preset": str(inputs.get("memory_preset") or "safe"),
+        "batch_id": batch_id,
+    }
+    filenames = generate_text2video(generation_params)
+    return {"batch_id": batch_id, "videos": [f"/outputs/{name}" for name in filenames]}
 
 
 
@@ -421,6 +456,8 @@ TASK_REGISTRY: dict[str, Callable[[dict[str, Any], WorkflowContext], dict[str, A
     "sd15.controlnet.text2img": _sd15_controlnet_text2img,
     "sd15.hires_fix": _sd15_hires_fix,
     "sd15.ip_adapter.encode": _sd15_ip_adapter_encode,
+    # WAN tasks
+    "wan.text2video": _wan_text2video,
     # ControlNet utility tasks
     "controlnet.preprocess": _controlnet_preprocess,
     # SDXL tasks

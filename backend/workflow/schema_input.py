@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal, TypeAlias
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 _DEFAULT_SD15_CONTROLNET_MODEL = "lllyasviel/control_v11p_sd15_canny"
 _DEFAULT_SDXL_CONTROLNET_MODEL = "diffusers/controlnet-canny-sdxl-1.0"
@@ -142,6 +142,29 @@ class Sd15AnimateDiffText2VideoInputs(BaseModel):
     lora: Sd15UnifiedLoraContract | None = None
     weighting_policy: str = "diffusers-like"
     batch_id: str | None = None
+
+
+class WanText2VideoInputs(BaseModel):
+    prompt: str
+    negative_prompt: str = ""
+    steps: int = Field(default=30, ge=1, le=200)
+    guidance_scale: float = Field(default=6.0, ge=0.0, le=30.0)
+    width: int = Field(default=832, ge=64, le=2048)
+    height: int = Field(default=480, ge=64, le=2048)
+    seed: int | None = None
+    model: str = "Wan-AI/Wan2.1-T2V-1.3B-Diffusers"
+    num_frames: int = 49
+    fps: int = Field(default=16, ge=1, le=60)
+    num_videos: int = Field(default=1, ge=1, le=1)
+    memory_preset: Literal["safe"] = "safe"
+    batch_id: str | None = None
+
+    @field_validator("num_frames")
+    @classmethod
+    def _validate_num_frames(cls, value: int) -> int:
+        if value not in {33, 49, 81}:
+            raise ValueError("num_frames must be one of 33, 49, 81 for wan.text2video")
+        return value
 
 
 class Sd15Img2ImgInputs(BaseModel):
