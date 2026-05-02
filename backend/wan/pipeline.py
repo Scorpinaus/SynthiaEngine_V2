@@ -12,6 +12,7 @@ import torch
 from diffusers.utils import export_to_video, load_video
 
 from backend.config import OUTPUT_DIR
+from backend.quantization import build_diffusers_pipeline_quantization_config
 from backend.utilities.logging import configure_logging
 from backend.utilities.pipeline import (
     build_batch_output_relpath,
@@ -85,7 +86,12 @@ def _make_wan_generator(seed: int) -> torch.Generator:
     return torch.Generator(device=device).manual_seed(seed)
 
 
-def load_text2video_pipeline(model_id: str, *, memory_preset: str = "safe"):
+def load_text2video_pipeline(
+    model_id: str,
+    *,
+    memory_preset: str = "safe",
+    quantization: str = "none",
+):
     """Load a WAN text-to-video pipeline using the safe memory preset."""
     if memory_preset != "safe":
         raise ValueError("memory_preset must be 'safe' for wan.text2video")
@@ -100,10 +106,19 @@ def load_text2video_pipeline(model_id: str, *, memory_preset: str = "safe"):
         subfolder="vae",
         torch_dtype=torch.float32,
     )
+    quantization_config = build_diffusers_pipeline_quantization_config(
+        quantization,
+        components_to_quantize=["transformer", "text_encoder"],
+        task_type="wan.text2video",
+    )
+    kwargs: dict[str, Any] = {}
+    if quantization_config is not None:
+        kwargs["quantization_config"] = quantization_config
     pipe = WanPipeline.from_pretrained(
         model_id,
         vae=vae,
         torch_dtype=torch.bfloat16,
+        **kwargs,
     )
     pipe.scheduler = UniPCMultistepScheduler.from_config(
         pipe.scheduler.config,
@@ -111,21 +126,6 @@ def load_text2video_pipeline(model_id: str, *, memory_preset: str = "safe"):
     )
     pipe.enable_model_cpu_offload()
     return pipe
-
-
-def _build_wan_i2v_quantization_config(quantization: str):
-    if quantization == "none":
-        return None
-    if quantization != "bnb_8bit":
-        raise ValueError("quantization must be 'none' or 'bnb_8bit' for wan.image2video")
-
-    from diffusers.quantizers import PipelineQuantizationConfig
-
-    return PipelineQuantizationConfig(
-        quant_backend="bitsandbytes_8bit",
-        quant_kwargs={"load_in_8bit": True},
-        components_to_quantize=["transformer", "text_encoder"],
-    )
 
 
 def _apply_wan_i2v_memory_preset(pipe: object, *, memory_preset: str) -> None:
@@ -177,7 +177,11 @@ def load_image2video_pipeline(
     logger.warning(
         "WAN I2V 14B 480P is slow and experimental. Expect heavy CPU offload, high RAM use, and long runtimes."
     )
-    quantization_config = _build_wan_i2v_quantization_config(quantization)
+    quantization_config = build_diffusers_pipeline_quantization_config(
+        quantization,
+        components_to_quantize=["transformer", "text_encoder"],
+        task_type="wan.image2video",
+    )
     image_encoder = CLIPVisionModel.from_pretrained(
         model_id,
         subfolder="image_encoder",
@@ -206,7 +210,12 @@ def load_image2video_pipeline(
     return pipe
 
 
-def load_vace_pipeline(model_id: str, *, memory_preset: str = "safe"):
+def load_vace_pipeline(
+    model_id: str,
+    *,
+    memory_preset: str = "safe",
+    quantization: str = "none",
+):
     """Load a WAN VACE pipeline using the safe memory preset."""
     if memory_preset != "safe":
         raise ValueError("memory_preset must be 'safe' for wan.text2video")
@@ -221,10 +230,19 @@ def load_vace_pipeline(model_id: str, *, memory_preset: str = "safe"):
         subfolder="vae",
         torch_dtype=torch.float32,
     )
+    quantization_config = build_diffusers_pipeline_quantization_config(
+        quantization,
+        components_to_quantize=["transformer", "text_encoder"],
+        task_type="wan.text2video",
+    )
+    kwargs: dict[str, Any] = {}
+    if quantization_config is not None:
+        kwargs["quantization_config"] = quantization_config
     pipe = WanVACEPipeline.from_pretrained(
         model_id,
         vae=vae,
         torch_dtype=torch.bfloat16,
+        **kwargs,
     )
     pipe.scheduler = UniPCMultistepScheduler.from_config(
         pipe.scheduler.config,
@@ -283,6 +301,7 @@ def generate_text2video(params: dict[str, object]) -> list[str]:
     mask_image = params.get("mask_image")
     conditioning_video = params.get("conditioning_video")
     conditioning_scale = float(params.get("conditioning_scale") or 1.0)
+    quantization = str(params.get("quantization") or "none")
     batch_id = params.get("batch_id")
     is_vace = (
         "vace" in model.lower()
@@ -291,7 +310,7 @@ def generate_text2video(params: dict[str, object]) -> list[str]:
         or conditioning_video is not None
     )
 
-    _validate_wan_i2v_frame_count(num_frames)
+    _validate_wan_frame_count(num_frames)
     if fps < 1:
         raise ValueError("fps must be >= 1")
     if num_videos != 1:
@@ -329,7 +348,7 @@ def generate_text2video(params: dict[str, object]) -> list[str]:
 
     logger.info(
         "Generate WAN %s: model=%s seed=%s steps=%s guidance_scale=%s size=%sx%s "
-        "num_frames=%s fps=%s memory_preset=%s",
+        "num_frames=%s fps=%s memory_preset=%s quantization=%s",
         "VACE" if is_vace else "T2V",
         model,
         base_seed,
@@ -340,6 +359,7 @@ def generate_text2video(params: dict[str, object]) -> list[str]:
         num_frames,
         fps,
         memory_preset,
+        quantization,
     )
 
     output_name = f"{batch_id}_{base_seed}.mp4"
@@ -358,6 +378,7 @@ def generate_text2video(params: dict[str, object]) -> list[str]:
         "fps": fps,
         "num_videos": num_videos,
         "memory_preset": memory_preset,
+        "quantization": quantization,
         "vace": {
             "enabled": is_vace,
             "has_reference_image": reference_image is not None,
@@ -372,7 +393,11 @@ def generate_text2video(params: dict[str, object]) -> list[str]:
     }
 
     if is_vace:
-        pipe = load_vace_pipeline(model, memory_preset=memory_preset)
+        pipe = load_vace_pipeline(
+            model,
+            memory_preset=memory_preset,
+            quantization=quantization,
+        )
         video, mask, reference_images = _prepare_vace_conditions(
             conditioning_video=conditioning_video,
             mask_image=mask_image,
@@ -396,7 +421,11 @@ def generate_text2video(params: dict[str, object]) -> list[str]:
             generator=_make_wan_generator(base_seed),
         )
     else:
-        pipe = load_text2video_pipeline(model, memory_preset=memory_preset)
+        pipe = load_text2video_pipeline(
+            model,
+            memory_preset=memory_preset,
+            quantization=quantization,
+        )
         result = pipe(
             prompt=prompt,
             negative_prompt=negative_prompt,
@@ -445,7 +474,7 @@ def generate_image2video(params: dict[str, object]) -> list[str]:
         raise ValueError("experimental_ack must be true for wan.image2video")
     if not isinstance(image, Image.Image):
         raise ValueError("image must resolve to an image for wan.image2video")
-    _validate_wan_frame_count(num_frames)
+    _validate_wan_i2v_frame_count(num_frames)
     _validate_wan_i2v_resolution(width, height)
     if fps < 1:
         raise ValueError("fps must be >= 1")

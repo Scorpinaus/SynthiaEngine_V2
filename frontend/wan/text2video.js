@@ -11,6 +11,7 @@ const WAN_DEFAULTS = {
     fps: 16,
     num_videos: 1,
     memory_preset: "safe",
+    quantization: "none",
     model: "D:\\diffusion\\diffusers\\Wan2.1-T2V-1.3B-Diffusers",
     vaceModel: "D:\\diffusion\\diffusers\\Wan2.1-VACE-1.3B-diffusers",
     conditioning_scale: 1.0,
@@ -104,6 +105,10 @@ async function collectWanInputs(defaults) {
         memory_preset: WorkflowClient.readTextValue(
             "memory_preset",
             defaults.memory_preset ?? WAN_DEFAULTS.memory_preset
+        ),
+        quantization: WorkflowClient.readTextValue(
+            "quantization",
+            defaults.quantization ?? WAN_DEFAULTS.quantization
         ),
     };
 
@@ -218,6 +223,7 @@ function initWanPage() {
                     num_frames: "num_frames",
                     fps: "fps",
                     memory_preset: "memory_preset",
+                    quantization: "quantization",
                     conditioning_scale: "conditioning_scale",
                 });
                 setWanMode(readWanMode());

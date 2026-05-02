@@ -167,6 +167,7 @@ class WanText2VideoInputs(BaseModel):
     fps: int = Field(default=16, ge=1, le=60)
     num_videos: int = Field(default=1, ge=1, le=1)
     memory_preset: Literal["safe"] = "safe"
+    quantization: Literal["none", "bnb_8bit"] = "none"
     reference_image: ImageRef | None = Field(
         default=None,
         description='Optional Wan VACE reference image: {"artifact_id":"..."} OR "@artifact:..." OR "/outputs/...".',

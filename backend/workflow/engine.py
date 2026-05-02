@@ -327,6 +327,7 @@ def _wan_text2video(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, 
         "fps": int(inputs.get("fps") or 16),
         "num_videos": int(inputs.get("num_videos") or 1),
         "memory_preset": str(inputs.get("memory_preset") or "safe"),
+        "quantization": str(inputs.get("quantization") or "none"),
         "reference_image": (
             deps["open_image_ref"](inputs["reference_image"])
             if inputs.get("reference_image") is not None

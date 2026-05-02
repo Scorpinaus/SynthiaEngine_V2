@@ -664,6 +664,7 @@ LoRA adapter targeting:
 - `seed`: optional seed; `null` or `0` selects a random base seed.
 - `num_videos`: fixed to `1`; WAN uses the existing single workflow generation queue.
 - `memory_preset`: fixed to `"safe"`; backend loads the VAE in float32, uses bfloat16 pipeline weights, sets 480P `flow_shift=3.0`, and enables Diffusers model CPU offload.
+- `quantization`: `"none"` by default, or `"bnb_8bit"` to request bitsandbytes 8-bit quantization for the standard T2V or VACE transformer and text encoder. The VAE stays full precision.
 - VACE additions:
   - `conditioning_video`: single video artifact/output reference. Required for the VACE conditioning path.
   - `mask_image`: single image artifact/output reference. Required when `conditioning_video` is provided. Black pixels condition/preserve the source video region; white pixels mark regions to generate.
@@ -689,7 +690,7 @@ LoRA adapter targeting:
 - `seed`: optional seed; `null` or `0` selects a random base seed.
 - `num_videos`: fixed to `1`.
 - `memory_preset`: `"offload"` by default, or experimental `"group_offload"` when the installed Diffusers version supports group offloading for the loaded components.
-- `quantization`: `"none"` by default, or `"bnb_8bit"` to request bitsandbytes 8-bit quantization for the transformer and text encoder. The VAE and image encoder stay full precision.
+- `quantization`: `"none"` by default, or `"bnb_8bit"` to request Diffusers bitsandbytes 8-bit quantization for the transformer and text encoder. The VAE and image encoder stay full precision. This mode requires compatible installed `diffusers`, `transformers`, `accelerate`, and `bitsandbytes` packages.
 - `experimental_ack`: must be `true`; this is an explicit warning gate for the slow experimental runtime path.
 - `batch_id`: optional batch identifier.
 
