@@ -23,15 +23,19 @@ class FrontendWanScriptTests(unittest.TestCase):
 
         self.assertIn('const TASK_WAN_TEXT2VIDEO = "wan.text2video";', js)
         self.assertIn('model: "Wan-AI/Wan2.1-T2V-1.3B-Diffusers"', js)
+        self.assertIn('vaceModel: "Wan-AI/Wan2.1-VACE-1.3B-diffusers"', js)
         self.assertIn("width: 832", js)
         self.assertIn("height: 480", js)
+        self.assertIn("readResolution", js)
+        self.assertIn("WorkflowClient.uploadArtifact", js)
+        self.assertIn("conditioning_video", js)
         self.assertIn("memory_preset: \"safe\"", js)
         self.assertIn("return: \"@t1.videos\"", js)
         self.assertIn("WorkflowInputValidator?.assertTaskInputs", js)
         self.assertIn("WorkflowClient.submitWorkflow", js)
         self.assertIn("videoGallery.setVideos", js)
 
-    def test_wan_page_exposes_frame_options_and_fixed_480p_controls(self):
+    def test_wan_page_exposes_frame_options_resolution_and_vace_controls(self):
         html = (ROOT / "frontend" / "wan" / "text2video.html").read_text(encoding="utf-8")
 
         self.assertIn('id="num_frames"', html)
@@ -40,7 +44,15 @@ class FrontendWanScriptTests(unittest.TestCase):
         self.assertIn('<option value="81">81</option>', html)
         self.assertIn('id="width"', html)
         self.assertIn('id="height"', html)
+        self.assertIn('id="resolution"', html)
+        self.assertIn('<option value="832x480" selected>832 x 480</option>', html)
+        self.assertIn('<option value="512x512">512 x 512</option>', html)
         self.assertIn('id="memory_preset"', html)
+        self.assertIn('id="wan_mode"', html)
+        self.assertIn('id="reference_image"', html)
+        self.assertIn('id="mask_image"', html)
+        self.assertIn('id="conditioning_video"', html)
+        self.assertIn('id="conditioning_scale"', html)
 
     def test_nav_bar_links_wan_page(self):
         js = (ROOT / "frontend" / "components" / "nav_bar.js").read_text(encoding="utf-8")

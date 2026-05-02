@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal, TypeAlias
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 _DEFAULT_SD15_CONTROLNET_MODEL = "lllyasviel/control_v11p_sd15_canny"
 _DEFAULT_SDXL_CONTROLNET_MODEL = "diffusers/controlnet-canny-sdxl-1.0"
@@ -28,8 +28,18 @@ class EmbedArtifactRef(BaseModel):
     )
 
 
+class VideoArtifactRef(BaseModel):
+    artifact_id: str = Field(
+        ...,
+        description="Video artifact id returned by POST /api/artifacts.",
+        pattern=r"^v[0-9a-f]{32}$",
+        examples=["v0123456789abcdef0123456789abcdef"],
+    )
+
+
 ImageRef: TypeAlias = ArtifactRef | str
 EmbedRef: TypeAlias = EmbedArtifactRef | str
+VideoRef: TypeAlias = VideoArtifactRef | str
 
 
 class Sd15UnifiedLoraContract(BaseModel):
@@ -157,6 +167,19 @@ class WanText2VideoInputs(BaseModel):
     fps: int = Field(default=16, ge=1, le=60)
     num_videos: int = Field(default=1, ge=1, le=1)
     memory_preset: Literal["safe"] = "safe"
+    reference_image: ImageRef | None = Field(
+        default=None,
+        description='Optional Wan VACE reference image: {"artifact_id":"..."} OR "@artifact:..." OR "/outputs/...".',
+    )
+    mask_image: ImageRef | None = Field(
+        default=None,
+        description='Optional Wan VACE mask image. Black conditions/preserves; white generates.',
+    )
+    conditioning_video: VideoRef | None = Field(
+        default=None,
+        description='Optional Wan VACE conditioning video: {"artifact_id":"..."} OR "@artifact:..." OR "/outputs/...".',
+    )
+    conditioning_scale: float = Field(default=1.0, ge=0.0, le=2.0)
     batch_id: str | None = None
 
     @field_validator("num_frames")
@@ -165,6 +188,12 @@ class WanText2VideoInputs(BaseModel):
         if value not in {33, 49, 81}:
             raise ValueError("num_frames must be one of 33, 49, 81 for wan.text2video")
         return value
+
+    @model_validator(mode="after")
+    def _validate_resolution(self) -> "WanText2VideoInputs":
+        if (self.width, self.height) not in {(832, 480), (512, 512)}:
+            raise ValueError("wan.text2video supports only 832x480 or 512x512 output.")
+        return self
 
 
 class Sd15Img2ImgInputs(BaseModel):

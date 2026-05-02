@@ -80,6 +80,7 @@ from backend.workflow import (
     build_workflow_catalog,
     save_artifact_png,
 )
+from backend.workflow.utility import save_artifact_file
 
 configure_logging(role=os.getenv("SYNTHA_LOG_ROLE", "api"))
 
@@ -98,6 +99,7 @@ app.mount("/outputs", StaticFiles(directory=OUTPUT_DIR), name="outputs")
 ALLOWED_JOB_KINDS = {"workflow"}
 HISTORY_IMAGE_EXTENSIONS = {".png"}
 HISTORY_VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov"}
+UPLOAD_VIDEO_EXTENSIONS = HISTORY_VIDEO_EXTENSIONS | {".gif"}
 
 
 def _validate_lora_name(name: str | None) -> str | None:
@@ -620,8 +622,18 @@ class ArtifactResponse(BaseModel):
 
 @app.post("/api/artifacts", response_model=ArtifactResponse, status_code=201)
 async def upload_artifact(file: UploadFile = File(...)):
-    """Upload an image artifact and persist it under `OUTPUT_DIR`."""
+    """Upload an image or video artifact and persist it under `OUTPUT_DIR`."""
     file_bytes = await file.read()
+    filename = file.filename or ""
+    extension = Path(filename).suffix.lower()
+    content_type = (file.content_type or "").lower()
+    if extension == ".gif" or content_type.startswith("video/"):
+        try:
+            artifact = save_artifact_file(file_bytes, extension=extension or ".mp4")
+        except ValueError as save_exc:
+            raise HTTPException(status_code=400, detail=str(save_exc)) from save_exc
+        return ArtifactResponse(**artifact)
+
     try:
         image = Image.open(BytesIO(file_bytes))
         # Force decode early to catch truncated/invalid image streams.
@@ -629,11 +641,16 @@ async def upload_artifact(file: UploadFile = File(...)):
         if image.mode == "P":
             # Palette images don't carry alpha in a convenient way for later steps.
             image = image.convert("RGBA")
+        artifact = save_artifact_png(image, prefix="a")
+        return ArtifactResponse(**artifact)
     except Exception as exc:
-        raise HTTPException(status_code=400, detail="Invalid image file.") from exc
-
-    artifact = save_artifact_png(image, prefix="a")
-    return ArtifactResponse(**artifact)
+        if extension in UPLOAD_VIDEO_EXTENSIONS:
+            try:
+                artifact = save_artifact_file(file_bytes, extension=extension or ".mp4")
+            except ValueError as save_exc:
+                raise HTTPException(status_code=400, detail=str(save_exc)) from save_exc
+            return ArtifactResponse(**artifact)
+        raise HTTPException(status_code=400, detail="Invalid image or video file.") from exc
 
 
 @app.get("/models", response_model=list[ModelRegistryEntry])

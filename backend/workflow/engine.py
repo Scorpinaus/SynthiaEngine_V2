@@ -77,6 +77,7 @@ from backend.workflow.utility import (
     _normalized_lora_adapters,
     _normalized_sd15_lora_adapters,
     _open_image_ref,
+    _open_video_ref,
     _remap_img2img_strength,
     _resolve_refs,
     _validate_artifact_id,
@@ -299,11 +300,14 @@ def _wan_runtime_deps() -> dict[str, Any]:
     return {
         "make_batch_id": make_batch_id,
         "generate_text2video": generate_wan_text2video,
+        "open_image_ref": _open_image_ref,
+        "open_video_ref": _open_video_ref,
     }
 
 
 def _wan_text2video(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
-    generate_text2video = _wan_runtime_deps()["generate_text2video"]
+    deps = _wan_runtime_deps()
+    generate_text2video = deps["generate_text2video"]
     batch_id = str(inputs.get("batch_id") or make_batch_id())
     generation_params = {
         "prompt": str(inputs["prompt"]),
@@ -318,6 +322,22 @@ def _wan_text2video(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, 
         "fps": int(inputs.get("fps") or 16),
         "num_videos": int(inputs.get("num_videos") or 1),
         "memory_preset": str(inputs.get("memory_preset") or "safe"),
+        "reference_image": (
+            deps["open_image_ref"](inputs["reference_image"])
+            if inputs.get("reference_image") is not None
+            else None
+        ),
+        "mask_image": (
+            deps["open_image_ref"](inputs["mask_image"])
+            if inputs.get("mask_image") is not None
+            else None
+        ),
+        "conditioning_video": (
+            deps["open_video_ref"](inputs["conditioning_video"])
+            if inputs.get("conditioning_video") is not None
+            else None
+        ),
+        "conditioning_scale": float(inputs.get("conditioning_scale") or 1.0),
         "batch_id": batch_id,
     }
     filenames = generate_text2video(generation_params)

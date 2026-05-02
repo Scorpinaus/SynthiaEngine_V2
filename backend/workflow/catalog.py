@@ -129,6 +129,20 @@ def _build_task_ui_hints(task_type: str, model_cls: type[BaseModel]) -> dict[str
                 help="Upload via /api/artifacts, or reference a prior task output (e.g. @t1.images[0]).",
             )
 
+        if field_name == "reference_image":
+            hint.update(
+                widget="image_ref",
+                accepts=["artifact", "outputs", "task_ref"],
+                help="Upload via /api/artifacts, or reference a prior image output.",
+            )
+
+        if field_name == "conditioning_video":
+            hint.update(
+                widget="video_ref",
+                accepts=["artifact", "outputs", "task_ref"],
+                help="Upload via /api/artifacts, or reference a prior video output.",
+            )
+
         if field_name in {"images", "control_images"}:
             hint.update(
                 widget="image_list_ref",

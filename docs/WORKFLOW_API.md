@@ -1,6 +1,6 @@
 # Workflow-Only API Contract (v2)
 
-This project uses a **single workflow job API** for all generation (SD1.5, SDXL, WAN, Flux, Qwen-Image, Z-Image). Image inputs are uploaded as **artifacts** first, then referenced by `artifact_id` in workflow task inputs.
+This project uses a **single workflow job API** for all generation (SD1.5, SDXL, WAN, Flux, Qwen-Image, Z-Image). Image and video inputs are uploaded as **artifacts** first, then referenced by `artifact_id` in workflow task inputs.
 
 Registry persistence note:
 - `/lora-models` entries are persisted in `database/lora_registry.sqlite3`.
@@ -10,13 +10,14 @@ Registry persistence note:
 
 ## Endpoints
 
-### Upload an artifact (image input)
+### Upload an artifact (image/video input)
 
 `POST /api/artifacts` (multipart/form-data)
 
-- Form field: `file` (image)
+- Form field: `file` (image or video)
 - Returns: `artifact_id` + `url` + `path`
 - Artifact lifecycle: **ephemeral** -- artifacts are deleted automatically when the workflow finishes (success/fail/canceled).
+- Image artifact ids use the `a...` prefix and are stored as PNG. Video artifact ids use the `v...` prefix and preserve supported extensions (`.mp4`, `.webm`, `.mov`, `.gif`).
 
 Response (201):
 ```json
@@ -652,7 +653,8 @@ LoRA adapter targeting:
 `wan.text2video` input notes:
 - `prompt` / `negative_prompt`: prompt text.
 - `model`: defaults to `Wan-AI/Wan2.1-T2V-1.3B-Diffusers`.
-- `width` / `height`: fixed initial contract is `832x480` (480P).
+- `model`: set `Wan-AI/Wan2.1-VACE-1.3B-diffusers` for VACE controllable generation.
+- `width` / `height`: supported values are `832x480` and `512x512`.
 - `num_frames`: must be one of `33`, `49`, or `81`.
 - `steps`: inference steps (default `30`).
 - `guidance_scale`: guidance scale (default `6.0`).
@@ -660,12 +662,17 @@ LoRA adapter targeting:
 - `seed`: optional seed; `null` or `0` selects a random base seed.
 - `num_videos`: fixed to `1`; WAN uses the existing single workflow generation queue.
 - `memory_preset`: fixed to `"safe"`; backend loads the VAE in float32, uses bfloat16 pipeline weights, sets 480P `flow_shift=3.0`, and enables Diffusers model CPU offload.
+- VACE additions:
+  - `conditioning_video`: single video artifact/output reference. Required for the VACE conditioning path.
+  - `mask_image`: single image artifact/output reference. Required when `conditioning_video` is provided. Black pixels condition/preserve the source video region; white pixels mark regions to generate.
+  - `reference_image`: single image artifact/output reference for subject/composition conditioning. Required for the VACE conditioning path.
+  - `conditioning_scale`: VACE conditioning scale in `[0, 2]` (default `1.0`).
 - `batch_id`: optional batch identifier.
 
 `wan.text2video` output notes:
 - Returns `{ "batch_id": "...", "videos": ["/outputs/...mp4"] }`.
 - Writes batch video metadata to `outputs/batch_<batch_id>/video_<batch_id>.mp4.json`; `/history` uses this sidecar to show prompt and WAN generation settings.
-- WAN 2.2 planning note: `WanPipeline` also supports WAN 2.2 text-to-video models, but the initial public contract is locked to WAN 2.1 T2V 1.3B 480P for safer memory behavior and compatibility.
+- WAN 2.2 planning note: `WanPipeline` supports WAN 2.2 text-to-video models, but official Wan-AI VACE Diffusers coverage is centered on Wan2.1 VACE. Community Wan2.2 VACE/Fun checkpoints may be evaluated later behind the same single-video constraints.
 
 `controlnet.preprocess` input notes:
 - `image`: image reference

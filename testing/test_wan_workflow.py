@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from PIL import Image
 from pydantic import ValidationError
 
 from backend.workflow import (
@@ -11,6 +12,8 @@ from backend.workflow import (
     build_workflow_catalog,
 )
 from backend.wan.pipeline import (
+    generate_text2video,
+    _validate_wan_resolution,
     _validate_wan_frame_count,
     _wan_video_metadata_path,
     _write_wan_video_metadata,
@@ -30,6 +33,10 @@ class WanText2VideoSchemaTests(unittest.TestCase):
         self.assertEqual(inputs.guidance_scale, 6.0)
         self.assertEqual(inputs.memory_preset, "safe")
         self.assertEqual(inputs.num_videos, 1)
+        self.assertIsNone(inputs.reference_image)
+        self.assertIsNone(inputs.mask_image)
+        self.assertIsNone(inputs.conditioning_video)
+        self.assertEqual(inputs.conditioning_scale, 1.0)
 
     def test_prompt_is_required(self):
         with self.assertRaises(ValidationError):
@@ -44,6 +51,21 @@ class WanText2VideoSchemaTests(unittest.TestCase):
 
         with self.assertRaises(ValidationError):
             WanText2VideoInputs(prompt="test", num_frames=65)
+
+    def test_only_supported_resolutions_are_allowed(self):
+        WanText2VideoInputs(prompt="test", width=832, height=480)
+        WanText2VideoInputs(prompt="test", width=512, height=512)
+        _validate_wan_resolution(832, 480)
+        _validate_wan_resolution(512, 512)
+
+        with self.assertRaises(ValidationError):
+            WanText2VideoInputs(prompt="test", width=768, height=512)
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "wan.text2video supports only 832x480 or 512x512 output.",
+        ):
+            _validate_wan_resolution(768, 512)
 
 
 class WanText2VideoWorkflowTests(unittest.TestCase):
@@ -122,6 +144,45 @@ class WanText2VideoWorkflowTests(unittest.TestCase):
         self.assertEqual(captured["memory_preset"], "safe")
         self.assertEqual(captured["batch_id"], "batch123")
 
+    def test_wan_task_passes_vace_media_refs(self):
+        captured = {}
+        reference = Image.new("RGB", (32, 32), "blue")
+        mask = Image.new("L", (32, 32), 255)
+        video_path = Path("conditioning.mp4")
+
+        def _fake_generate_videos(params):
+            captured.update(params)
+            return ["batch/out.mp4"]
+
+        with patch("backend.workflow.make_batch_id", return_value="batch123"):
+            with patch("backend.workflow._open_image_ref", side_effect=[reference, mask]):
+                with patch("backend.workflow._open_video_ref", return_value=video_path):
+                    with patch(
+                        "backend.workflow.generate_wan_text2video",
+                        side_effect=_fake_generate_videos,
+                    ):
+                        result = _wan_text2video(
+                            {
+                                "prompt": "test prompt",
+                                "width": 512,
+                                "height": 512,
+                                "model": "Wan-AI/Wan2.1-VACE-1.3B-diffusers",
+                                "reference_image": {"artifact_id": "a0123456789abcdef0123456789abcdef"},
+                                "mask_image": {"artifact_id": "a1123456789abcdef0123456789abcdef"},
+                                "conditioning_video": {"artifact_id": "v0123456789abcdef0123456789abcdef"},
+                                "conditioning_scale": 0.75,
+                            },
+                            _ctx=None,
+                        )
+
+        self.assertEqual(result["videos"], ["/outputs/batch/out.mp4"])
+        self.assertIs(captured["reference_image"], reference)
+        self.assertIs(captured["mask_image"], mask)
+        self.assertEqual(captured["conditioning_video"], video_path)
+        self.assertEqual(captured["conditioning_scale"], 0.75)
+        self.assertEqual(captured["width"], 512)
+        self.assertEqual(captured["height"], 512)
+
     def test_wan_task_is_exposed_in_catalog(self):
         catalog = build_workflow_catalog()
 
@@ -140,6 +201,22 @@ class WanText2VideoWorkflowTests(unittest.TestCase):
             "num_frames must be one of 33, 49, 81 for wan.text2video",
         ):
             _validate_wan_frame_count(65)
+
+    def test_vace_requires_reference_image(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            "reference_image is required for Wan VACE generation.",
+        ):
+            generate_text2video(
+                {
+                    "prompt": "test prompt",
+                    "model": "Wan-AI/Wan2.1-VACE-1.3B-diffusers",
+                    "conditioning_video": Path("conditioning.mp4"),
+                    "mask_image": Image.new("L", (32, 32), 255),
+                    "width": 512,
+                    "height": 512,
+                }
+            )
 
 
 if __name__ == "__main__":
