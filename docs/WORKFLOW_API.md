@@ -652,8 +652,9 @@ LoRA adapter targeting:
 
 `wan.text2video` input notes:
 - `prompt` / `negative_prompt`: prompt text.
-- `model`: defaults to `Wan-AI/Wan2.1-T2V-1.3B-Diffusers`.
-- `model`: set `Wan-AI/Wan2.1-VACE-1.3B-diffusers` for VACE controllable generation.
+- `model`: defaults to the local Diffusers folder `D:\diffusion\diffusers\Wan2.1-T2V-1.3B-Diffusers`.
+- `model`: set `D:\diffusion\diffusers\Wan2.1-VACE-1.3B-diffusers` for the local VACE controllable generation model.
+- After both local folders are present, the Hugging Face cache copies for `Wan-AI/Wan2.1-T2V-1.3B-Diffusers` and `Wan-AI/Wan2.1-VACE-1.3B-diffusers` are not required by SynthaEngine defaults.
 - `width` / `height`: supported values are `832x480` and `512x512`.
 - `num_frames`: must be one of `33`, `49`, or `81`.
 - `steps`: inference steps (default `30`).

@@ -22,8 +22,14 @@ class FrontendWanScriptTests(unittest.TestCase):
         js = (ROOT / "frontend" / "wan" / "text2video.js").read_text(encoding="utf-8")
 
         self.assertIn('const TASK_WAN_TEXT2VIDEO = "wan.text2video";', js)
-        self.assertIn('model: "Wan-AI/Wan2.1-T2V-1.3B-Diffusers"', js)
-        self.assertIn('vaceModel: "Wan-AI/Wan2.1-VACE-1.3B-diffusers"', js)
+        self.assertIn(
+            'model: "D:\\\\diffusion\\\\diffusers\\\\Wan2.1-T2V-1.3B-Diffusers"',
+            js,
+        )
+        self.assertIn(
+            'vaceModel: "D:\\\\diffusion\\\\diffusers\\\\Wan2.1-VACE-1.3B-diffusers"',
+            js,
+        )
         self.assertIn("width: 832", js)
         self.assertIn("height: 480", js)
         self.assertIn("readResolution", js)

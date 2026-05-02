@@ -22,8 +22,8 @@ from backend.utilities.pipeline import (
 logger = logging.getLogger(__name__)
 configure_logging()
 
-_DEFAULT_MODEL_ID = "Wan-AI/Wan2.1-T2V-1.3B-Diffusers"
-_DEFAULT_VACE_MODEL_ID = "Wan-AI/Wan2.1-VACE-1.3B-diffusers"
+_DEFAULT_MODEL_ID = r"D:\diffusion\diffusers\Wan2.1-T2V-1.3B-Diffusers"
+_DEFAULT_VACE_MODEL_ID = r"D:\diffusion\diffusers\Wan2.1-VACE-1.3B-diffusers"
 _SUPPORTED_FRAME_COUNTS = {33, 49, 81}
 _SUPPORTED_RESOLUTIONS = {(832, 480), (512, 512)}
 _DEFAULT_NEGATIVE_PROMPT = (
@@ -236,7 +236,6 @@ def generate_text2video(params: dict[str, object]) -> list[str]:
         memory_preset,
     )
 
-    pipe = load_text2video_pipeline(model, memory_preset=memory_preset)
     output_name = f"{batch_id}_{base_seed}.mp4"
     relative_path = build_batch_output_relpath(batch_id, output_name)
     metadata_path = _wan_video_metadata_path(batch_output_dir, batch_id)

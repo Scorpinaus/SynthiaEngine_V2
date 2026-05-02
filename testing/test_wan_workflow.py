@@ -1,4 +1,5 @@
 import json
+from types import SimpleNamespace
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -19,12 +20,15 @@ from backend.wan.pipeline import (
     _write_wan_video_metadata,
 )
 
+LOCAL_T2V_MODEL = r"D:\diffusion\diffusers\Wan2.1-T2V-1.3B-Diffusers"
+LOCAL_VACE_MODEL = r"D:\diffusion\diffusers\Wan2.1-VACE-1.3B-diffusers"
+
 
 class WanText2VideoSchemaTests(unittest.TestCase):
     def test_defaults_target_wan21_t2v_13b_480p_safe_memory(self):
         inputs = WanText2VideoInputs(prompt="test prompt")
 
-        self.assertEqual(inputs.model, "Wan-AI/Wan2.1-T2V-1.3B-Diffusers")
+        self.assertEqual(inputs.model, LOCAL_T2V_MODEL)
         self.assertEqual(inputs.width, 832)
         self.assertEqual(inputs.height, 480)
         self.assertEqual(inputs.num_frames, 49)
@@ -119,7 +123,7 @@ class WanText2VideoWorkflowTests(unittest.TestCase):
                         "width": 832,
                         "height": 480,
                         "seed": 123,
-                        "model": "Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
+                        "model": LOCAL_T2V_MODEL,
                         "num_frames": 81,
                         "fps": 16,
                         "num_videos": 1,
@@ -137,7 +141,7 @@ class WanText2VideoWorkflowTests(unittest.TestCase):
         self.assertEqual(captured["width"], 832)
         self.assertEqual(captured["height"], 480)
         self.assertEqual(captured["seed"], 123)
-        self.assertEqual(captured["model"], "Wan-AI/Wan2.1-T2V-1.3B-Diffusers")
+        self.assertEqual(captured["model"], LOCAL_T2V_MODEL)
         self.assertEqual(captured["num_frames"], 81)
         self.assertEqual(captured["fps"], 16)
         self.assertEqual(captured["num_videos"], 1)
@@ -217,6 +221,44 @@ class WanText2VideoWorkflowTests(unittest.TestCase):
                     "height": 512,
                 }
             )
+
+    def test_vace_generation_uses_local_vace_pipeline_without_t2v_loader(self):
+        loaded_models = []
+
+        class _FakeVacePipe:
+            def __call__(self, **_kwargs):
+                return SimpleNamespace(frames=[["frame"]])
+
+        def _fake_load_vace(model, *, memory_preset):
+            loaded_models.append((model, memory_preset))
+            return _FakeVacePipe()
+
+        with patch(
+            "backend.wan.pipeline.load_text2video_pipeline",
+            side_effect=AssertionError("T2V loader should not be used for VACE"),
+        ):
+            with patch("backend.wan.pipeline.load_vace_pipeline", side_effect=_fake_load_vace):
+                with patch(
+                    "backend.wan.pipeline._prepare_vace_conditions",
+                    return_value=(["video-frame"], ["mask-frame"], ["reference-frame"]),
+                ):
+                    with patch("backend.wan.pipeline.export_to_video"):
+                        output = generate_text2video(
+                            {
+                                "prompt": "test prompt",
+                                "model": LOCAL_T2V_MODEL,
+                                "conditioning_video": Path("conditioning.mp4"),
+                                "mask_image": Image.new("L", (32, 32), 255),
+                                "reference_image": Image.new("RGB", (32, 32), "blue"),
+                                "width": 512,
+                                "height": 512,
+                                "seed": 123,
+                                "batch_id": "batch123",
+                            }
+                        )
+
+        self.assertEqual(loaded_models, [(LOCAL_VACE_MODEL, "safe")])
+        self.assertEqual(output, ["batch_batch123/batch123_123.mp4"])
 
 
 if __name__ == "__main__":

@@ -11,8 +11,8 @@ const WAN_DEFAULTS = {
     fps: 16,
     num_videos: 1,
     memory_preset: "safe",
-    model: "Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
-    vaceModel: "Wan-AI/Wan2.1-VACE-1.3B-diffusers",
+    model: "D:\\diffusion\\diffusers\\Wan2.1-T2V-1.3B-Diffusers",
+    vaceModel: "D:\\diffusion\\diffusers\\Wan2.1-VACE-1.3B-diffusers",
     conditioning_scale: 1.0,
 };
 

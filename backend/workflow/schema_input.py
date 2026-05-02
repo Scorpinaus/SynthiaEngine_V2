@@ -162,7 +162,7 @@ class WanText2VideoInputs(BaseModel):
     width: int = Field(default=832, ge=64, le=2048)
     height: int = Field(default=480, ge=64, le=2048)
     seed: int | None = None
-    model: str = "Wan-AI/Wan2.1-T2V-1.3B-Diffusers"
+    model: str = r"D:\diffusion\diffusers\Wan2.1-T2V-1.3B-Diffusers"
     num_frames: int = 49
     fps: int = Field(default=16, ge=1, le=60)
     num_videos: int = Field(default=1, ge=1, le=1)
