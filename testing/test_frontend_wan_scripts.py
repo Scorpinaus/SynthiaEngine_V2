@@ -41,6 +41,50 @@ class FrontendWanScriptTests(unittest.TestCase):
         self.assertIn("WorkflowClient.submitWorkflow", js)
         self.assertIn("videoGallery.setVideos", js)
 
+    def test_wan_i2v_page_includes_expected_scripts_in_order(self):
+        html = (ROOT / "frontend" / "wan" / "image2video.html").read_text(encoding="utf-8")
+        viewer_tag = '<script src="../components/video_gallery.js?v=1"></script>'
+        validator_tag = '<script src="../workflow_input_validator.js?v=1"></script>'
+        wan_tag = '<script src="image2video.js?v=1"></script>'
+
+        self.assertIn(viewer_tag, html)
+        self.assertIn(validator_tag, html)
+        self.assertIn(wan_tag, html)
+        self.assertLess(html.index(viewer_tag), html.index(wan_tag))
+        self.assertLess(html.index(validator_tag), html.index(wan_tag))
+
+    def test_wan_i2v_script_wires_expected_task_and_payload(self):
+        js = (ROOT / "frontend" / "wan" / "image2video.js").read_text(encoding="utf-8")
+
+        self.assertIn('const TASK_WAN_IMAGE2VIDEO = "wan.image2video";', js)
+        self.assertIn(
+            'model: "D:\\\\diffusion\\\\diffusers\\\\Wan2.1-I2V-14B-480P-Diffusers"',
+            js,
+        )
+        self.assertIn("width: 832", js)
+        self.assertIn("height: 480", js)
+        self.assertIn("num_frames: 81", js)
+        self.assertIn("memory_preset: \"offload\"", js)
+        self.assertIn("quantization: \"none\"", js)
+        self.assertIn("experimental_ack: true", js)
+        self.assertIn("WorkflowClient.uploadArtifact", js)
+        self.assertIn("image: { artifact_id: imageArtifact.artifact_id }", js)
+        self.assertIn("return: \"@t1.videos\"", js)
+        self.assertIn("WorkflowInputValidator?.assertTaskInputs", js)
+        self.assertIn("WorkflowClient.submitWorkflow", js)
+        self.assertIn("videoGallery.setVideos", js)
+
+    def test_wan_i2v_page_exposes_image_memory_quantization_and_warning(self):
+        html = (ROOT / "frontend" / "wan" / "image2video.html").read_text(encoding="utf-8")
+
+        self.assertIn('id="image"', html)
+        self.assertIn('id="memory_preset"', html)
+        self.assertIn('<option value="offload" selected>CPU Offload</option>', html)
+        self.assertIn('id="quantization"', html)
+        self.assertIn('<option value="bnb_8bit">8-bit Transformer/Text Encoder</option>', html)
+        self.assertIn('id="experimental_ack"', html)
+        self.assertIn("Slow / experimental", html)
+
     def test_wan_page_exposes_frame_options_resolution_and_vace_controls(self):
         html = (ROOT / "frontend" / "wan" / "text2video.html").read_text(encoding="utf-8")
 
@@ -65,6 +109,8 @@ class FrontendWanScriptTests(unittest.TestCase):
 
         self.assertIn('href: "wan/text2video.html"', js)
         self.assertIn('label: "WAN Text2Video"', js)
+        self.assertIn('href: "wan/image2video.html"', js)
+        self.assertIn('label: "WAN I2V 14B"', js)
 
 
 if __name__ == "__main__":

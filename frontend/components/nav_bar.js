@@ -22,6 +22,7 @@ const NAV_GROUPS = [
             { href: "sd15/text2img.html", label: "SD 1.5 Text2Img" },
             { href: "sd15/animatediff.html", label: "SD 1.5 AnimateDiff" },
             { href: "wan/text2video.html", label: "WAN Text2Video" },
+            { href: "wan/image2video.html", label: "WAN I2V 14B" },
             { href: "sd15/img2img.html", label: "SD 1.5 Img2Img" },
             { href: "sd15/inpainting.html", label: "SD 1.5 Inpaint" },
             { href: "sdxl/text2img.html", label: "SDXL Text2Img" },

@@ -196,6 +196,41 @@ class WanText2VideoInputs(BaseModel):
         return self
 
 
+class WanImage2VideoInputs(BaseModel):
+    image: ImageRef = Field(
+        ...,
+        description='Input image for WAN I2V: {"artifact_id":"..."} OR "@artifact:..." OR "/outputs/...".',
+    )
+    prompt: str
+    negative_prompt: str = ""
+    steps: int = Field(default=50, ge=1, le=200)
+    guidance_scale: float = Field(default=5.0, ge=0.0, le=30.0)
+    width: int = Field(default=832, ge=64, le=2048)
+    height: int = Field(default=480, ge=64, le=2048)
+    seed: int | None = None
+    model: str = r"D:\diffusion\diffusers\Wan2.1-I2V-14B-480P-Diffusers"
+    num_frames: int = 81
+    fps: int = Field(default=16, ge=1, le=60)
+    num_videos: int = Field(default=1, ge=1, le=1)
+    memory_preset: Literal["offload", "group_offload"] = "offload"
+    quantization: Literal["none", "bnb_8bit"] = "none"
+    experimental_ack: bool = True
+    batch_id: str | None = None
+
+    @field_validator("num_frames")
+    @classmethod
+    def _validate_num_frames(cls, value: int) -> int:
+        if value not in {33, 49, 81}:
+            raise ValueError("num_frames must be one of 33, 49, 81 for wan.image2video")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_resolution(self) -> "WanImage2VideoInputs":
+        if (self.width, self.height) != (832, 480):
+            raise ValueError("wan.image2video supports only 832x480 output.")
+        return self
+
+
 class Sd15Img2ImgInputs(BaseModel):
     initial_image: ImageRef = Field(
         ...,

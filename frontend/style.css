@@ -103,6 +103,25 @@ body {
     color: #6b645c;
 }
 
+.warning-panel {
+    border-left: 4px solid #a33b24;
+    background: #fff4ed;
+    padding: 10px 12px;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.warning-panel strong {
+    color: #7d2618;
+}
+
+.checkbox-field {
+    align-items: center;
+    grid-template-columns: auto 1fr;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
 .field-row {
     display: grid;
     grid-template-columns: 1fr 1fr;

@@ -8,11 +8,14 @@ from PIL import Image
 from pydantic import ValidationError
 
 from backend.workflow import (
+    WanImage2VideoInputs,
     WanText2VideoInputs,
+    _wan_image2video,
     _wan_text2video,
     build_workflow_catalog,
 )
 from backend.wan.pipeline import (
+    generate_image2video,
     generate_text2video,
     _validate_wan_resolution,
     _validate_wan_frame_count,
@@ -22,6 +25,7 @@ from backend.wan.pipeline import (
 
 LOCAL_T2V_MODEL = r"D:\diffusion\diffusers\Wan2.1-T2V-1.3B-Diffusers"
 LOCAL_VACE_MODEL = r"D:\diffusion\diffusers\Wan2.1-VACE-1.3B-diffusers"
+WAN_I2V_MODEL = r"D:\diffusion\diffusers\Wan2.1-I2V-14B-480P-Diffusers"
 
 
 class WanText2VideoSchemaTests(unittest.TestCase):
@@ -70,6 +74,46 @@ class WanText2VideoSchemaTests(unittest.TestCase):
             "wan.text2video supports only 832x480 or 512x512 output.",
         ):
             _validate_wan_resolution(768, 512)
+
+
+class WanImage2VideoSchemaTests(unittest.TestCase):
+    def test_defaults_target_wan21_i2v_14b_480p_experimental_offload(self):
+        inputs = WanImage2VideoInputs(
+            prompt="test prompt",
+            image={"artifact_id": "a0123456789abcdef0123456789abcdef"},
+        )
+
+        self.assertEqual(inputs.model, WAN_I2V_MODEL)
+        self.assertEqual(inputs.width, 832)
+        self.assertEqual(inputs.height, 480)
+        self.assertEqual(inputs.num_frames, 81)
+        self.assertEqual(inputs.fps, 16)
+        self.assertEqual(inputs.steps, 50)
+        self.assertEqual(inputs.guidance_scale, 5.0)
+        self.assertEqual(inputs.memory_preset, "offload")
+        self.assertEqual(inputs.num_videos, 1)
+        self.assertEqual(inputs.experimental_ack, True)
+        self.assertEqual(inputs.quantization, "none")
+
+    def test_image_is_required(self):
+        with self.assertRaises(ValidationError):
+            WanImage2VideoInputs(prompt="test prompt")
+
+    def test_only_480p_resolution_is_allowed(self):
+        WanImage2VideoInputs(
+            prompt="test",
+            image={"artifact_id": "a0123456789abcdef0123456789abcdef"},
+            width=832,
+            height=480,
+        )
+
+        with self.assertRaises(ValidationError):
+            WanImage2VideoInputs(
+                prompt="test",
+                image={"artifact_id": "a0123456789abcdef0123456789abcdef"},
+                width=512,
+                height=512,
+            )
 
 
 class WanText2VideoWorkflowTests(unittest.TestCase):
@@ -191,8 +235,10 @@ class WanText2VideoWorkflowTests(unittest.TestCase):
         catalog = build_workflow_catalog()
 
         self.assertIn("wan.text2video", catalog["tasks"])
+        self.assertIn("wan.image2video", catalog["tasks"])
         self.assertIn("wan", catalog["capabilities"])
         self.assertIn("wan.text2video", catalog["capabilities"]["wan"]["task_types"])
+        self.assertIn("wan.image2video", catalog["capabilities"]["wan"]["task_types"])
         self.assertTrue(catalog["capabilities"]["wan"]["features"]["text2video"])
 
     def test_wan_frame_count_validation_message_is_actionable(self):
@@ -259,6 +305,74 @@ class WanText2VideoWorkflowTests(unittest.TestCase):
 
         self.assertEqual(loaded_models, [(LOCAL_VACE_MODEL, "safe")])
         self.assertEqual(output, ["batch_batch123/batch123_123.mp4"])
+
+
+class WanImage2VideoWorkflowTests(unittest.TestCase):
+    def test_wan_i2v_task_passes_expected_generation_params(self):
+        captured = {}
+        image = Image.new("RGB", (640, 360), "blue")
+
+        def _fake_generate_videos(params):
+            captured.update(params)
+            return ["batch/out.mp4"]
+
+        with patch("backend.workflow.make_batch_id", return_value="batch123"):
+            with patch("backend.workflow._open_image_ref", return_value=image):
+                with patch(
+                    "backend.workflow.generate_wan_image2video",
+                    side_effect=_fake_generate_videos,
+                ):
+                    result = _wan_image2video(
+                        {
+                            "prompt": "test prompt",
+                            "negative_prompt": "bad",
+                            "image": {"artifact_id": "a0123456789abcdef0123456789abcdef"},
+                            "steps": 40,
+                            "guidance_scale": 4.5,
+                            "width": 832,
+                            "height": 480,
+                            "seed": 123,
+                            "model": WAN_I2V_MODEL,
+                            "num_frames": 81,
+                            "fps": 16,
+                            "num_videos": 1,
+                            "memory_preset": "offload",
+                            "quantization": "bnb_8bit",
+                            "experimental_ack": True,
+                        },
+                        _ctx=None,
+                    )
+
+        self.assertEqual(result["batch_id"], "batch123")
+        self.assertEqual(result["videos"], ["/outputs/batch/out.mp4"])
+        self.assertIs(captured["image"], image)
+        self.assertEqual(captured["prompt"], "test prompt")
+        self.assertEqual(captured["negative_prompt"], "bad")
+        self.assertEqual(captured["steps"], 40)
+        self.assertEqual(captured["guidance_scale"], 4.5)
+        self.assertEqual(captured["width"], 832)
+        self.assertEqual(captured["height"], 480)
+        self.assertEqual(captured["seed"], 123)
+        self.assertEqual(captured["model"], WAN_I2V_MODEL)
+        self.assertEqual(captured["num_frames"], 81)
+        self.assertEqual(captured["fps"], 16)
+        self.assertEqual(captured["num_videos"], 1)
+        self.assertEqual(captured["memory_preset"], "offload")
+        self.assertEqual(captured["quantization"], "bnb_8bit")
+        self.assertEqual(captured["batch_id"], "batch123")
+
+    def test_wan_i2v_generation_requires_experimental_ack(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            "experimental_ack must be true for wan.image2video",
+        ):
+            generate_image2video(
+                {
+                    "prompt": "test prompt",
+                    "image": Image.new("RGB", (32, 32), "blue"),
+                    "experimental_ack": False,
+                }
+            )
 
 
 if __name__ == "__main__":

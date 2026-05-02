@@ -17,6 +17,7 @@ from backend.utilities.pipeline import (
     build_batch_output_relpath,
     get_batch_output_dir,
     make_batch_id,
+    release_pipeline,
 )
 
 logger = logging.getLogger(__name__)
@@ -24,8 +25,10 @@ configure_logging()
 
 _DEFAULT_MODEL_ID = r"D:\diffusion\diffusers\Wan2.1-T2V-1.3B-Diffusers"
 _DEFAULT_VACE_MODEL_ID = r"D:\diffusion\diffusers\Wan2.1-VACE-1.3B-diffusers"
+_DEFAULT_I2V_MODEL_ID = r"D:\diffusion\diffusers\Wan2.1-I2V-14B-480P-Diffusers"
 _SUPPORTED_FRAME_COUNTS = {33, 49, 81}
 _SUPPORTED_RESOLUTIONS = {(832, 480), (512, 512)}
+_SUPPORTED_I2V_RESOLUTION = (832, 480)
 _DEFAULT_NEGATIVE_PROMPT = (
     "Bright tones, overexposed, static, blurred details, subtitles, style, works, "
     "paintings, images, static, overall gray, worst quality, low quality, JPEG "
@@ -62,9 +65,19 @@ def _validate_wan_frame_count(num_frames: int) -> None:
         raise ValueError("num_frames must be one of 33, 49, 81 for wan.text2video")
 
 
+def _validate_wan_i2v_frame_count(num_frames: int) -> None:
+    if num_frames not in _SUPPORTED_FRAME_COUNTS:
+        raise ValueError("num_frames must be one of 33, 49, 81 for wan.image2video")
+
+
 def _validate_wan_resolution(width: int, height: int) -> None:
     if (width, height) not in _SUPPORTED_RESOLUTIONS:
         raise ValueError("wan.text2video supports only 832x480 or 512x512 output.")
+
+
+def _validate_wan_i2v_resolution(width: int, height: int) -> None:
+    if (width, height) != _SUPPORTED_I2V_RESOLUTION:
+        raise ValueError("wan.image2video supports only 832x480 output.")
 
 
 def _make_wan_generator(seed: int) -> torch.Generator:
@@ -97,6 +110,99 @@ def load_text2video_pipeline(model_id: str, *, memory_preset: str = "safe"):
         flow_shift=3.0,
     )
     pipe.enable_model_cpu_offload()
+    return pipe
+
+
+def _build_wan_i2v_quantization_config(quantization: str):
+    if quantization == "none":
+        return None
+    if quantization != "bnb_8bit":
+        raise ValueError("quantization must be 'none' or 'bnb_8bit' for wan.image2video")
+
+    from diffusers.quantizers import PipelineQuantizationConfig
+
+    return PipelineQuantizationConfig(
+        quant_backend="bitsandbytes_8bit",
+        quant_kwargs={"load_in_8bit": True},
+        components_to_quantize=["transformer", "text_encoder"],
+    )
+
+
+def _apply_wan_i2v_memory_preset(pipe: object, *, memory_preset: str) -> None:
+    if memory_preset == "offload":
+        pipe.enable_model_cpu_offload()
+        return
+
+    if memory_preset != "group_offload":
+        raise ValueError("memory_preset must be 'offload' or 'group_offload' for wan.image2video")
+
+    from diffusers.hooks.group_offloading import apply_group_offloading
+
+    onload_device = torch.device("cuda")
+    offload_device = torch.device("cpu")
+    text_encoder = getattr(pipe, "text_encoder", None)
+    transformer = getattr(pipe, "transformer", None)
+    if text_encoder is not None:
+        apply_group_offloading(
+            text_encoder,
+            onload_device=onload_device,
+            offload_device=offload_device,
+            offload_type="block_level",
+            num_blocks_per_group=4,
+        )
+    if transformer is not None and hasattr(transformer, "enable_group_offload"):
+        transformer.enable_group_offload(
+            onload_device=onload_device,
+            offload_device=offload_device,
+            offload_type="leaf_level",
+            use_stream=True,
+        )
+    pipe.to("cuda")
+
+
+def load_image2video_pipeline(
+    model_id: str,
+    *,
+    memory_preset: str = "offload",
+    quantization: str = "none",
+):
+    """Load a WAN 14B image-to-video pipeline with explicit experimental memory controls."""
+    if not torch.cuda.is_available():
+        raise RuntimeError("CUDA is required for wan.image2video generation.")
+
+    from diffusers import AutoencoderKLWan, WanImageToVideoPipeline
+    from diffusers.schedulers.scheduling_unipc_multistep import UniPCMultistepScheduler
+    from transformers import CLIPVisionModel
+
+    logger.warning(
+        "WAN I2V 14B 480P is slow and experimental. Expect heavy CPU offload, high RAM use, and long runtimes."
+    )
+    quantization_config = _build_wan_i2v_quantization_config(quantization)
+    image_encoder = CLIPVisionModel.from_pretrained(
+        model_id,
+        subfolder="image_encoder",
+        torch_dtype=torch.float32,
+    )
+    vae = AutoencoderKLWan.from_pretrained(
+        model_id,
+        subfolder="vae",
+        torch_dtype=torch.float32,
+    )
+    kwargs: dict[str, Any] = {}
+    if quantization_config is not None:
+        kwargs["quantization_config"] = quantization_config
+    pipe = WanImageToVideoPipeline.from_pretrained(
+        model_id,
+        vae=vae,
+        image_encoder=image_encoder,
+        torch_dtype=torch.bfloat16,
+        **kwargs,
+    )
+    pipe.scheduler = UniPCMultistepScheduler.from_config(
+        pipe.scheduler.config,
+        flow_shift=3.0,
+    )
+    _apply_wan_i2v_memory_preset(pipe, memory_preset=memory_preset)
     return pipe
 
 
@@ -185,7 +291,7 @@ def generate_text2video(params: dict[str, object]) -> list[str]:
         or conditioning_video is not None
     )
 
-    _validate_wan_frame_count(num_frames)
+    _validate_wan_i2v_frame_count(num_frames)
     if fps < 1:
         raise ValueError("fps must be >= 1")
     if num_videos != 1:
@@ -312,4 +418,114 @@ def generate_text2video(params: dict[str, object]) -> list[str]:
     )
     _write_wan_video_metadata(metadata_path, metadata)
     logger.info("WAN video saved to %s", output_name)
+    return [relative_path]
+
+
+@torch.inference_mode()
+def generate_image2video(params: dict[str, object]) -> list[str]:
+    """Generate WAN image-to-video MP4 files and return relative output paths."""
+    image = params["image"]
+    prompt = str(params["prompt"])
+    negative_prompt = str(params.get("negative_prompt") or _DEFAULT_NEGATIVE_PROMPT)
+    steps = int(params.get("steps") or 50)
+    guidance_scale = float(params.get("guidance_scale") or 5.0)
+    width = int(params.get("width") or 832)
+    height = int(params.get("height") or 480)
+    seed = params.get("seed")
+    model = str(params.get("model") or _DEFAULT_I2V_MODEL_ID)
+    num_frames = int(params.get("num_frames") or 81)
+    fps = int(params.get("fps") or 16)
+    num_videos = int(params.get("num_videos") or 1)
+    memory_preset = str(params.get("memory_preset") or "offload")
+    quantization = str(params.get("quantization") or "none")
+    experimental_ack = bool(params.get("experimental_ack", False))
+    batch_id = params.get("batch_id")
+
+    if not experimental_ack:
+        raise ValueError("experimental_ack must be true for wan.image2video")
+    if not isinstance(image, Image.Image):
+        raise ValueError("image must resolve to an image for wan.image2video")
+    _validate_wan_frame_count(num_frames)
+    _validate_wan_i2v_resolution(width, height)
+    if fps < 1:
+        raise ValueError("fps must be >= 1")
+    if num_videos != 1:
+        raise ValueError("num_videos must be 1 for wan.image2video")
+    if memory_preset not in {"offload", "group_offload"}:
+        raise ValueError("memory_preset must be 'offload' or 'group_offload' for wan.image2video")
+    if quantization not in {"none", "bnb_8bit"}:
+        raise ValueError("quantization must be 'none' or 'bnb_8bit' for wan.image2video")
+
+    logger.warning(
+        "Generating WAN I2V 14B 480P: slow / experimental path enabled; memory_preset=%s quantization=%s",
+        memory_preset,
+        quantization,
+    )
+    if seed is None or seed == 0:
+        base_seed = torch.randint(0, 2**31, (1,)).item()
+    else:
+        base_seed = int(seed)
+
+    if batch_id is None:
+        batch_id = make_batch_id()
+    batch_id = str(batch_id)
+    batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
+
+    output_name = f"{batch_id}_{base_seed}.mp4"
+    relative_path = build_batch_output_relpath(batch_id, output_name)
+    metadata_path = _wan_video_metadata_path(batch_output_dir, batch_id)
+    metadata: dict[str, Any] = {
+        "mode": "wan.image2video",
+        "prompt": prompt,
+        "negative_prompt": negative_prompt,
+        "steps": steps,
+        "guidance_scale": guidance_scale,
+        "width": width,
+        "height": height,
+        "model": model,
+        "num_frames": num_frames,
+        "fps": fps,
+        "num_videos": num_videos,
+        "memory_preset": memory_preset,
+        "quantization": quantization,
+        "experimental_ack": experimental_ack,
+        "batch_id": batch_id,
+        "base_seed": base_seed,
+        "seed": base_seed,
+        "videos": [],
+    }
+
+    pipe = None
+    try:
+        pipe = load_image2video_pipeline(
+            model,
+            memory_preset=memory_preset,
+            quantization=quantization,
+        )
+        source_image = image.convert("RGB").resize((width, height), Image.Resampling.LANCZOS)
+        result = pipe(
+            image=source_image,
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            height=height,
+            width=width,
+            num_frames=num_frames,
+            num_inference_steps=steps,
+            guidance_scale=guidance_scale,
+            generator=_make_wan_generator(base_seed),
+        )
+        export_to_video(result.frames[0], batch_output_dir / output_name, fps=fps)
+    finally:
+        release_pipeline(pipe, logger=logger)
+
+    metadata["videos"].append(
+        {
+            "filename": output_name,
+            "path": relative_path,
+            "seed": base_seed,
+            "index": 0,
+        }
+    )
+    _write_wan_video_metadata(metadata_path, metadata)
+    logger.info("WAN I2V video saved to %s", output_name)
     return [relative_path]

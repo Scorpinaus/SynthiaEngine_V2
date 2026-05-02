@@ -447,7 +447,8 @@ Frontend note (SD1.5 page):
 - `frontend/components/controlnet_preprocessor.html` also carries inline layout styles as a last-resort cache-resistant fallback.
 - The preprocessor modal collapses to one column only on narrow screens (`<=700px`).
 - `frontend/sd15/animatediff.html` serves SD1.5 AnimateDiff text-to-video generation and renders `videos` outputs in `frontend/components/video_gallery.js`.
-- `frontend/wan/text2video.html` serves WAN text-to-video generation and renders `videos` outputs in `frontend/components/video_gallery.js`.
+- `frontend/wan/text2video.html` serves WAN text-to-video and VACE 1.3B generation and renders `videos` outputs in `frontend/components/video_gallery.js`.
+- `frontend/wan/image2video.html` serves experimental WAN I2V 14B 480P generation and renders `videos` outputs in `frontend/components/video_gallery.js`.
 - `frontend/sdxl/text2img.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()` for `sdxl.controlnet.text2img`.
 - `frontend/sdxl/text2img.js` uploads the optional SDXL IP-Adapter reference image through `/api/artifacts` and sends it as `sdxl.text2img.inputs.ip_adapter.image`.
 - `frontend/sdxl/img2img.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()` for `sdxl.img2img` optional ControlNet usage.
@@ -542,7 +543,7 @@ Resolution behavior:
 
 - SD1.5: `sd15.ip_adapter.encode`, `sd15.text2img`, `sd15.animatediff.text2video`, `sd15.img2img`, `sd15.inpaint`, `sd15.controlnet.text2img`, `sd15.hires_fix`
 - SDXL: `sdxl.ip_adapter.encode`, `sdxl.text2img`, `sdxl.controlnet.text2img`, `sdxl.img2img`, `sdxl.inpaint`
-- WAN: `wan.text2video`
+- WAN: `wan.text2video`, `wan.image2video`
 - Flux: `flux.text2img`, `flux.img2img`, `flux.inpaint`
 - Qwen-Image: `qwen-image.text2img`, `qwen-image.img2img`, `qwen-image.inpaint`
 - Z-Image: `z-image.text2img`, `z-image.img2img`, `z-image.inpaint`
@@ -674,6 +675,27 @@ LoRA adapter targeting:
 - Returns `{ "batch_id": "...", "videos": ["/outputs/...mp4"] }`.
 - Writes batch video metadata to `outputs/batch_<batch_id>/video_<batch_id>.mp4.json`; `/history` uses this sidecar to show prompt and WAN generation settings.
 - WAN 2.2 planning note: `WanPipeline` supports WAN 2.2 text-to-video models, but official Wan-AI VACE Diffusers coverage is centered on Wan2.1 VACE. Community Wan2.2 VACE/Fun checkpoints may be evaluated later behind the same single-video constraints.
+
+`wan.image2video` input notes:
+- Experimental WAN 2.1 I2V 14B 480P path. Expect slow generation, heavy CPU offload, high RAM use, and long runtimes.
+- `image`: required image artifact/output reference (`{"artifact_id":"..."}`, `"@artifact:..."`, or `"/outputs/..."`).
+- `prompt` / `negative_prompt`: prompt text.
+- `model`: defaults to the local Diffusers folder `D:\diffusion\diffusers\Wan2.1-I2V-14B-480P-Diffusers`.
+- `width` / `height`: fixed to `832x480` for the initial 480P support.
+- `num_frames`: must be one of `33`, `49`, or `81`; default `81`.
+- `steps`: inference steps (default `50`).
+- `guidance_scale`: guidance scale (default `5.0`).
+- `fps`: MP4 export frame rate (default `16`).
+- `seed`: optional seed; `null` or `0` selects a random base seed.
+- `num_videos`: fixed to `1`.
+- `memory_preset`: `"offload"` by default, or experimental `"group_offload"` when the installed Diffusers version supports group offloading for the loaded components.
+- `quantization`: `"none"` by default, or `"bnb_8bit"` to request bitsandbytes 8-bit quantization for the transformer and text encoder. The VAE and image encoder stay full precision.
+- `experimental_ack`: must be `true`; this is an explicit warning gate for the slow experimental runtime path.
+- `batch_id`: optional batch identifier.
+
+`wan.image2video` output notes:
+- Returns `{ "batch_id": "...", "videos": ["/outputs/...mp4"] }`.
+- Writes batch video metadata to `outputs/batch_<batch_id>/video_<batch_id>.mp4.json`; `/history` uses this sidecar to show prompt and WAN I2V generation settings.
 
 `controlnet.preprocess` input notes:
 - `image`: image reference

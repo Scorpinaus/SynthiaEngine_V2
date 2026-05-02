@@ -67,6 +67,8 @@ def _build_task_ui_hints(task_type: str, model_cls: type[BaseModel]) -> dict[str
         title = f"{task_type} (Text to Image)"
     elif task_type.endswith(".text2video"):
         title = f"{task_type} (Text to Video)"
+    elif task_type.endswith(".image2video"):
+        title = f"{task_type} (Image to Video)"
     elif task_type.endswith(".img2img"):
         title = f"{task_type} (Image to Image)"
     elif task_type.endswith(".inpaint"):

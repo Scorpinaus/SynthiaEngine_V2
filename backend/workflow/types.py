@@ -16,6 +16,7 @@ TaskType = Literal[
     "sd15.hires_fix",
     "sd15.ip_adapter.encode",
     "wan.text2video",
+    "wan.image2video",
     "controlnet.preprocess",
     "sdxl.ip_adapter.encode",
     "sdxl.text2img",
