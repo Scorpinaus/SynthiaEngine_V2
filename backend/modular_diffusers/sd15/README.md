@@ -12,8 +12,16 @@ This folder is a local Modular Diffusers repository for Phase 1 SD1.5 migration 
 
 ## Files
 
-- `block.py`: prompt/latents/denoise/decode step blocks, sequential workflow blocks, and auto-routing block selection
-- `modular_config.json`: block loading config for the installed Diffusers modular runtime
+- `modular_pipeline.py`: SD1.5 `ModularPipeline` subclass plus shared input/output schemas
+- `encoders.py`: input validation and prompt encoding blocks
+- `before_denoise.py`: timestep, image/mask preprocessing, VAE encode, and latent preparation blocks
+- `denoise.py`: SD1.5 denoising block
+- `decoders.py`: latent decode block
+- `modular_blocks_sd15.py`: sequential workflow blocks and auto-routing block selection
+- `__init__.py`: public SD1.5 modular package exports
+- `block.py`: compatibility shim that keeps the legacy `block.SD15AutoBlocks` dynamic loading path working
+- `modular_config.json`: block loading config used by the installed Diffusers modular runtime
+- `config.json`: custom block `auto_map` mirror matching the current Hugging Face modular repository documentation
 - `modular_model_index.json`: component loading specs for the local modular repo
 
 ## Local Usage
@@ -142,7 +150,9 @@ images = pipe(
 
 ## Notes
 
-- This Diffusers installation expects `modular_config.json` for custom block loading.
-- `ModularPipeline.from_pretrained(...)` is lazy; call `load_components()` before inference.
+- `ModularPipeline.from_pretrained(...)` is lazy; it resolves the custom block code and component loading specs, but does not load model weights.
+- `image_processor` and `mask_processor` are config-created `VaeImageProcessor` components, following the newer ModularPipeline component-spec pattern.
+- Call `load_components()` before inference. Validation-only calls can exercise cheap input checks without loading components.
+- Custom block loading uses Hugging Face's dynamic module cache. In sandboxed or CI environments, set `HF_MODULES_CACHE` to a writable directory before importing Diffusers.
 - You can replace `pipe.scheduler` after `load_components()` if you want to test scheduler variants.
-- ControlNet, LoRA, and file-output orchestration are still not implemented in this modular test repo.
+- ControlNet and file-output orchestration are still not implemented in this modular test repo.

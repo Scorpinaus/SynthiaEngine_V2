@@ -392,51 +392,55 @@ def generate_text2video(params: dict[str, object]) -> list[str]:
         "videos": [],
     }
 
-    if is_vace:
-        pipe = load_vace_pipeline(
-            model,
-            memory_preset=memory_preset,
-            quantization=quantization,
-        )
-        video, mask, reference_images = _prepare_vace_conditions(
-            conditioning_video=conditioning_video,
-            mask_image=mask_image,
-            reference_image=reference_image,
-            width=width,
-            height=height,
-            num_frames=num_frames,
-        )
-        result = pipe(
-            video=video,
-            mask=mask,
-            reference_images=reference_images,
-            prompt=prompt,
-            negative_prompt=negative_prompt,
-            height=height,
-            width=width,
-            num_frames=num_frames,
-            num_inference_steps=steps,
-            guidance_scale=guidance_scale,
-            conditioning_scale=conditioning_scale,
-            generator=_make_wan_generator(base_seed),
-        )
-    else:
-        pipe = load_text2video_pipeline(
-            model,
-            memory_preset=memory_preset,
-            quantization=quantization,
-        )
-        result = pipe(
-            prompt=prompt,
-            negative_prompt=negative_prompt,
-            height=height,
-            width=width,
-            num_frames=num_frames,
-            num_inference_steps=steps,
-            guidance_scale=guidance_scale,
-            generator=_make_wan_generator(base_seed),
-        )
-    export_to_video(result.frames[0], batch_output_dir / output_name, fps=fps)
+    pipe = None
+    try:
+        if is_vace:
+            pipe = load_vace_pipeline(
+                model,
+                memory_preset=memory_preset,
+                quantization=quantization,
+            )
+            video, mask, reference_images = _prepare_vace_conditions(
+                conditioning_video=conditioning_video,
+                mask_image=mask_image,
+                reference_image=reference_image,
+                width=width,
+                height=height,
+                num_frames=num_frames,
+            )
+            result = pipe(
+                video=video,
+                mask=mask,
+                reference_images=reference_images,
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                height=height,
+                width=width,
+                num_frames=num_frames,
+                num_inference_steps=steps,
+                guidance_scale=guidance_scale,
+                conditioning_scale=conditioning_scale,
+                generator=_make_wan_generator(base_seed),
+            )
+        else:
+            pipe = load_text2video_pipeline(
+                model,
+                memory_preset=memory_preset,
+                quantization=quantization,
+            )
+            result = pipe(
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                height=height,
+                width=width,
+                num_frames=num_frames,
+                num_inference_steps=steps,
+                guidance_scale=guidance_scale,
+                generator=_make_wan_generator(base_seed),
+            )
+        export_to_video(result.frames[0], batch_output_dir / output_name, fps=fps)
+    finally:
+        release_pipeline(pipe, logger=logger)
     metadata["videos"].append(
         {
             "filename": output_name,

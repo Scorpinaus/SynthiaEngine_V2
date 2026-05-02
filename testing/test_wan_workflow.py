@@ -359,6 +359,43 @@ class WanText2VideoWorkflowTests(unittest.TestCase):
         )
         self.assertEqual(output, ["batch_batch123/batch123_123.mp4"])
 
+    def test_vace_generation_releases_pipeline_after_render(self):
+        released = []
+
+        class _FakeVacePipe:
+            def __call__(self, **_kwargs):
+                return SimpleNamespace(frames=[["frame"]])
+
+        def _fake_load_vace(_model, *, memory_preset, quantization):
+            return _FakeVacePipe()
+
+        with patch("backend.wan.pipeline.load_vace_pipeline", side_effect=_fake_load_vace):
+            with patch(
+                "backend.wan.pipeline._prepare_vace_conditions",
+                return_value=(["video-frame"], ["mask-frame"], ["reference-frame"]),
+            ):
+                with patch("backend.wan.pipeline.export_to_video"):
+                    with patch(
+                        "backend.wan.pipeline.release_pipeline",
+                        side_effect=lambda pipe, logger=None: released.append(pipe),
+                    ):
+                        generate_text2video(
+                            {
+                                "prompt": "test prompt",
+                                "model": "Wan-AI/Wan2.1-VACE-1.3B-diffusers",
+                                "conditioning_video": Path("conditioning.mp4"),
+                                "mask_image": Image.new("L", (32, 32), 255),
+                                "reference_image": Image.new("RGB", (32, 32), "blue"),
+                                "width": 512,
+                                "height": 512,
+                                "seed": 123,
+                                "batch_id": "batch123",
+                            }
+                        )
+
+        self.assertEqual(len(released), 1)
+        self.assertIsInstance(released[0], _FakeVacePipe)
+
     def test_wan_t2v_generation_passes_quantization_to_loader(self):
         loaded = []
 
@@ -384,6 +421,34 @@ class WanText2VideoWorkflowTests(unittest.TestCase):
 
         self.assertEqual(loaded, [(LOCAL_T2V_MODEL, "safe", "bnb_8bit")])
         self.assertEqual(output, ["batch_batch123/batch123_123.mp4"])
+
+    def test_wan_t2v_generation_releases_pipeline_after_render(self):
+        released = []
+
+        class _FakePipe:
+            def __call__(self, **_kwargs):
+                return SimpleNamespace(frames=[["frame"]])
+
+        def _fake_load_t2v(_model, *, memory_preset, quantization):
+            return _FakePipe()
+
+        with patch("backend.wan.pipeline.load_text2video_pipeline", side_effect=_fake_load_t2v):
+            with patch("backend.wan.pipeline.export_to_video"):
+                with patch(
+                    "backend.wan.pipeline.release_pipeline",
+                    side_effect=lambda pipe, logger=None: released.append(pipe),
+                ):
+                    generate_text2video(
+                        {
+                            "prompt": "test prompt",
+                            "model": LOCAL_T2V_MODEL,
+                            "seed": 123,
+                            "batch_id": "batch123",
+                        }
+                    )
+
+        self.assertEqual(len(released), 1)
+        self.assertIsInstance(released[0], _FakePipe)
 
 
 class WanImage2VideoWorkflowTests(unittest.TestCase):

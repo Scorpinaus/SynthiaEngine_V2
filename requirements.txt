@@ -10,7 +10,7 @@ Pillow>=10.4.0
 numpy>=1.26.0
 psutil>=6.1.0
 
-diffusers>=0.37.0
+diffusers>=0.38.0
 transformers>=4.47.0
 sentencepiece>=0.2.0
 protobuf >=6.33.2

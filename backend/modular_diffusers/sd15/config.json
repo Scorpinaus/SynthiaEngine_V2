@@ -1,0 +1,6 @@
+{
+  "_class_name": "SD15AutoBlocks",
+  "auto_map": {
+    "ModularPipelineBlocks": "block.SD15AutoBlocks"
+  }
+}

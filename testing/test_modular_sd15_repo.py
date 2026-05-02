@@ -1,10 +1,17 @@
+import os
 from pathlib import Path
+import sys
 
 import numpy as np
 from PIL import Image
 import pytest
 import torch
 
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+os.environ.setdefault("HF_MODULES_CACHE", str(REPO_ROOT / ".pytest_cache" / "hf_modules"))
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 diffusers = pytest.importorskip("diffusers")
 pytest.importorskip("transformers")
@@ -13,7 +20,6 @@ from diffusers import ModularPipeline
 from diffusers.schedulers import DDIMScheduler
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
 SD15_MODULAR_REPO = REPO_ROOT / "backend" / "modular_diffusers" / "sd15"
 
 
@@ -21,10 +27,58 @@ def test_sd15_modular_repo_loads_custom_blocks():
     pipe = ModularPipeline.from_pretrained(str(SD15_MODULAR_REPO), trust_remote_code=True)
 
     assert pipe.blocks.__class__.__name__ == "SD15AutoBlocks"
-    assert set(pipe.components.keys()) == {"tokenizer", "text_encoder", "unet", "vae", "scheduler"}
+    assert set(pipe.components.keys()) == {
+        "tokenizer",
+        "text_encoder",
+        "unet",
+        "vae",
+        "scheduler",
+        "image_processor",
+        "mask_processor",
+    }
+    assert pipe.image_processor.__class__.__name__ == "VaeImageProcessor"
+    assert pipe.mask_processor.__class__.__name__ == "VaeImageProcessor"
     assert pipe.blocks.get_execution_blocks().__class__.__name__ == "SD15Text2ImgBlocks"
     assert pipe.blocks.get_execution_blocks(image=True).__class__.__name__ == "SD15Img2ImgBlocks"
     assert pipe.blocks.get_execution_blocks(image=True, mask_image=True).__class__.__name__ == "SD15InpaintBlocks"
+
+
+def test_sd15_modular_repo_exposes_sdxl_style_modules_and_pipeline_defaults():
+    from backend.modular_diffusers.sd15 import SD15AutoBlocks, SD15ModularPipeline
+    from backend.modular_diffusers.sd15.before_denoise import SD15Text2ImgLatentsStep
+    from backend.modular_diffusers.sd15.decoders import SD15DecodeStep
+    from backend.modular_diffusers.sd15.denoise import SD15DenoiseStep
+    from backend.modular_diffusers.sd15.encoders import SD15PromptEncodingStep
+    from backend.modular_diffusers.sd15.modular_blocks_sd15 import SD15Text2ImgBlocks
+
+    pipe = SD15ModularPipeline(blocks=SD15AutoBlocks())
+
+    assert pipe.default_blocks_name == "SD15AutoBlocks"
+    assert pipe.default_sample_size == 64
+    assert pipe.vae_scale_factor == 8
+    assert pipe.default_height == 512
+    assert pipe.default_width == 512
+    assert pipe.num_channels_unet == 4
+    assert pipe.num_channels_latents == 4
+    assert SD15Text2ImgBlocks.block_classes == [
+        pytest.importorskip("backend.modular_diffusers.sd15.encoders").SD15InputValidationStep,
+        SD15PromptEncodingStep,
+        SD15Text2ImgLatentsStep,
+        SD15DenoiseStep,
+        SD15DecodeStep,
+    ]
+
+
+def test_sd15_modular_repo_exposes_input_schema_with_pipeline_image_inputs():
+    from diffusers.image_processor import PipelineImageInput
+
+    from backend.modular_diffusers.sd15.modular_pipeline import SD15_INPUTS_SCHEMA
+
+    assert SD15_INPUTS_SCHEMA["height"].default is None
+    assert SD15_INPUTS_SCHEMA["width"].default is None
+    assert SD15_INPUTS_SCHEMA["image"].type_hint is PipelineImageInput
+    assert SD15_INPUTS_SCHEMA["mask_image"].type_hint is PipelineImageInput
+    assert SD15_INPUTS_SCHEMA["output_type"].default == "pil"
 
 
 @pytest.mark.integration
