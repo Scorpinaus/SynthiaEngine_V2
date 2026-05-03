@@ -8,6 +8,7 @@ import torch
 import torch.nn.functional as F
 from transformers import CLIPTextModel, CLIPTokenizer
 
+from diffusers.guiders import ClassifierFreeGuidance
 from diffusers.image_processor import PipelineImageInput, VaeImageProcessor
 from diffusers.models import AutoencoderKL, UNet2DConditionModel
 from diffusers.modular_pipelines import AutoPipelineBlocks, ModularPipelineBlocks, PipelineState, SequentialPipelineBlocks
@@ -130,8 +131,21 @@ class SD15WorkflowUtils:
         )
 
     @staticmethod
+    def guider_spec() -> ComponentSpec:
+        return ComponentSpec(
+            "guider",
+            ClassifierFreeGuidance,
+            config={"guidance_scale": 7.5},
+            default_creation_method="from_config",
+        )
+
+    @staticmethod
     def prompt_components() -> list[ComponentSpec]:
-        return [SD15WorkflowUtils.tokenizer_spec(), SD15WorkflowUtils.text_encoder_spec()]
+        return [
+            SD15WorkflowUtils.tokenizer_spec(),
+            SD15WorkflowUtils.text_encoder_spec(),
+            SD15WorkflowUtils.guider_spec(),
+        ]
 
     @staticmethod
     def latent_components(include_image: bool = False, include_mask: bool = False) -> list[ComponentSpec]:
@@ -144,7 +158,7 @@ class SD15WorkflowUtils:
 
     @staticmethod
     def denoise_components() -> list[ComponentSpec]:
-        return [SD15WorkflowUtils.unet_spec(), SD15WorkflowUtils.scheduler_spec()]
+        return [SD15WorkflowUtils.unet_spec(), SD15WorkflowUtils.scheduler_spec(), SD15WorkflowUtils.guider_spec()]
 
     @staticmethod
     def decode_components() -> list[ComponentSpec]:
@@ -160,6 +174,7 @@ class SD15WorkflowUtils:
             SD15WorkflowUtils.scheduler_spec(),
             SD15WorkflowUtils.image_processor_spec(),
             SD15WorkflowUtils.mask_processor_spec(),
+            SD15WorkflowUtils.guider_spec(),
         ]
 
     @staticmethod
@@ -230,9 +245,7 @@ class SD15WorkflowUtils:
         if prompt is not None:
             return 1
         if prompt_embeds is not None:
-            num_conditions = 2 if guidance_scale > 1.0 else 1
-            effective_batch_size = int(prompt_embeds.shape[0]) // num_conditions
-            return max(1, effective_batch_size // num_images_per_prompt)
+            return max(1, int(prompt_embeds.shape[0]) // num_images_per_prompt)
         raise ValueError("Unable to determine batch size from inputs.")
 
     @staticmethod
@@ -266,6 +279,7 @@ class SD15WorkflowUtils:
             inputs.insert(1, InputParam("strength", type_hint=float, default=0.8))
         if include_mask:
             inputs.insert(1, InputParam("mask_image", type_hint=PipelineImageInput, required=True))
+            inputs.insert(2, InputParam("padding_mask_crop", type_hint=int | None))
         return inputs
 
     @staticmethod
@@ -276,6 +290,7 @@ class SD15WorkflowUtils:
     def prompt_encoding_outputs() -> list[OutputParam]:
         return [
             OutputParam("prompt_embeds", type_hint=torch.Tensor),
+            OutputParam("negative_prompt_embeds", type_hint=torch.Tensor | None),
             OutputParam("batch_size", type_hint=int),
         ]
 
@@ -292,6 +307,11 @@ class SD15WorkflowUtils:
                     OutputParam("image_latents", type_hint=torch.Tensor),
                     OutputParam("latent_noise", type_hint=torch.Tensor),
                     OutputParam("mask", type_hint=torch.Tensor),
+                    OutputParam("masked_image_latents", type_hint=torch.Tensor),
+                    OutputParam("original_image", type_hint=PIL.Image.Image | None),
+                    OutputParam("original_mask_image", type_hint=PIL.Image.Image | None),
+                    OutputParam("crops_coords", type_hint=tuple[int, int, int, int] | None),
+                    OutputParam("resize_mode", type_hint=str),
                 ]
             )
         return outputs
@@ -308,16 +328,16 @@ class SD15WorkflowUtils:
         dtype: torch.dtype,
         num_images_per_prompt: int,
         guidance_scale: float,
-    ) -> torch.Tensor:
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
         prompt_embeds = prompt_embeds.to(device=device, dtype=dtype)
         prompt_embeds = prompt_embeds.repeat_interleave(num_images_per_prompt, dim=0)
         if guidance_scale <= 1.0:
-            return prompt_embeds
+            return prompt_embeds, None
         if negative_prompt_embeds is None:
             negative_prompt_embeds = torch.zeros_like(prompt_embeds[: prompt_embeds.shape[0] // num_images_per_prompt])
         negative_prompt_embeds = negative_prompt_embeds.to(device=device, dtype=dtype)
         negative_prompt_embeds = negative_prompt_embeds.repeat_interleave(num_images_per_prompt, dim=0)
-        return torch.cat([negative_prompt_embeds, prompt_embeds], dim=0)
+        return prompt_embeds, negative_prompt_embeds
 
     @staticmethod
     def encode_prompt(
@@ -327,7 +347,7 @@ class SD15WorkflowUtils:
         device: torch.device,
         num_images_per_prompt: int,
         guidance_scale: float,
-    ) -> torch.Tensor:
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
         do_classifier_free_guidance = guidance_scale > 1.0
         prompt_batch = [prompt] if isinstance(prompt, str) else prompt
         batch_size = len(prompt_batch)
@@ -342,7 +362,7 @@ class SD15WorkflowUtils:
         prompt_embeds = prompt_embeds.to(device=device, dtype=components.text_encoder.dtype)
         prompt_embeds = prompt_embeds.repeat_interleave(num_images_per_prompt, dim=0)
         if not do_classifier_free_guidance:
-            return prompt_embeds
+            return prompt_embeds, None
 
         if negative_prompt is None:
             negative_prompt_batch = [""] * batch_size
@@ -364,13 +384,15 @@ class SD15WorkflowUtils:
         negative_prompt_embeds = components.text_encoder(uncond_inputs.input_ids.to(device), return_dict=False)[0]
         negative_prompt_embeds = negative_prompt_embeds.to(device=device, dtype=components.text_encoder.dtype)
         negative_prompt_embeds = negative_prompt_embeds.repeat_interleave(num_images_per_prompt, dim=0)
-        return torch.cat([negative_prompt_embeds, prompt_embeds], dim=0)
+        return prompt_embeds, negative_prompt_embeds
 
     @staticmethod
     def validate_and_resolve_image_inputs(block_state, require_mask: bool = False) -> tuple[Any, Any]:
         image = getattr(block_state, "image", None)
         mask_image = getattr(block_state, "mask_image", None)
         strength = getattr(block_state, "strength", None)
+        padding_mask_crop = getattr(block_state, "padding_mask_crop", None)
+        output_type = getattr(block_state, "output_type", "pil")
         if require_mask and mask_image is None:
             raise ValueError("`mask_image` is required for inpaint.")
         if mask_image is not None and image is None:
@@ -387,7 +409,27 @@ class SD15WorkflowUtils:
             and image.size != mask_image.size
         ):
             raise ValueError("`image` and `mask_image` must have the same size for inpaint.")
+        if padding_mask_crop is not None:
+            if not isinstance(image, PIL.Image.Image):
+                raise ValueError(f"`padding_mask_crop` requires `image` to be a PIL image, not {type(image)}.")
+            if not isinstance(mask_image, PIL.Image.Image):
+                raise ValueError(f"`padding_mask_crop` requires `mask_image` to be a PIL image, not {type(mask_image)}.")
+            if output_type != "pil":
+                raise ValueError(f"`padding_mask_crop` requires `output_type='pil'`, not {output_type!r}.")
         return image, mask_image
+
+    @staticmethod
+    def resolve_inpaint_crop(components, mask_image, width: int, height: int, padding_mask_crop: int | None):
+        if padding_mask_crop is None:
+            return None, "default"
+        mask_processor = getattr(components, "mask_processor", None) or VaeImageProcessor(
+            vae_scale_factor=SD15WorkflowUtils.vae_scale_factor(components),
+            do_normalize=False,
+            do_binarize=True,
+            do_convert_grayscale=True,
+        )
+        crops_coords = mask_processor.get_crop_region(mask_image, width, height, pad=padding_mask_crop)
+        return crops_coords, "fill"
 
     @staticmethod
     def get_batch_size_for_image(image: PIL.Image.Image | list[PIL.Image.Image] | torch.Tensor) -> int:
@@ -407,7 +449,9 @@ class SD15WorkflowUtils:
     def validate_latents(components, latents: torch.Tensor | None, batch_size: int, height: int, width: int) -> None:
         if latents is None:
             return
-        in_channels = 4 if getattr(components, "unet", None) is None else components.unet.config.in_channels
+        in_channels = SD15_LATENT_CHANNELS
+        if getattr(components, "vae", None) is not None:
+            in_channels = getattr(components.vae.config, "latent_channels", in_channels)
         expected_shape = (
             batch_size,
             in_channels,
@@ -473,8 +517,23 @@ class SD15WorkflowUtils:
         return tensor
 
     @staticmethod
-    def prepare_img2img_latents(components, image, batch_size, num_images_per_prompt, height, width, dtype, device, generator, timestep):
-        image_tensor = SD15WorkflowUtils.preprocess_image(components, image, height, width, device, dtype)
+    def prepare_img2img_latents(
+        components,
+        image,
+        batch_size,
+        num_images_per_prompt,
+        height,
+        width,
+        dtype,
+        device,
+        generator,
+        timestep,
+        crops_coords=None,
+        resize_mode: str = "default",
+    ):
+        image_tensor = SD15WorkflowUtils.preprocess_image(
+            components, image, height, width, device, dtype, crops_coords=crops_coords, resize_mode=resize_mode
+        )
         image_latents = SD15WorkflowUtils.encode_image_latents(components, image_tensor, generator, dtype)
         effective_batch_size = batch_size * num_images_per_prompt
         image_latents = SD15WorkflowUtils.expand_batch(image_latents, effective_batch_size, "image latents")
@@ -482,15 +541,66 @@ class SD15WorkflowUtils:
         return components.scheduler.add_noise(image_latents, noise, timestep), image_latents, noise
 
     @staticmethod
-    def prepare_mask_latents(components, mask_image, batch_size, num_images_per_prompt, height, width, dtype, device):
-        mask = SD15WorkflowUtils.preprocess_mask(components, mask_image, height, width, device, dtype)
+    def prepare_mask_latents(
+        components,
+        mask_image,
+        batch_size,
+        num_images_per_prompt,
+        height,
+        width,
+        dtype,
+        device,
+        crops_coords=None,
+        resize_mode: str = "default",
+    ):
+        mask = SD15WorkflowUtils.preprocess_mask(
+            components, mask_image, height, width, device, dtype, crops_coords=crops_coords, resize_mode=resize_mode
+        )
         return SD15WorkflowUtils.expand_batch(mask, batch_size * num_images_per_prompt, "mask")
 
     @staticmethod
+    def prepare_masked_image_latents(
+        components,
+        image,
+        mask_image,
+        batch_size,
+        num_images_per_prompt,
+        height,
+        width,
+        dtype,
+        device,
+        generator,
+        crops_coords=None,
+        resize_mode: str = "default",
+    ):
+        image_tensor = SD15WorkflowUtils.preprocess_image(
+            components, image, height, width, device, dtype, crops_coords=crops_coords, resize_mode=resize_mode
+        )
+        mask_processor = getattr(components, "mask_processor", None) or VaeImageProcessor(
+            vae_scale_factor=SD15WorkflowUtils.vae_scale_factor(components),
+            do_normalize=False,
+            do_binarize=True,
+            do_convert_grayscale=True,
+        )
+        mask_condition = mask_processor.preprocess(
+            mask_image, height=height, width=width, crops_coords=crops_coords, resize_mode=resize_mode
+        ).to(device=device, dtype=dtype)
+        masked_image = image_tensor * (mask_condition < 0.5)
+        masked_image_latents = SD15WorkflowUtils.encode_image_latents(components, masked_image, generator, dtype)
+        return SD15WorkflowUtils.expand_batch(
+            masked_image_latents,
+            batch_size * num_images_per_prompt,
+            "masked image latents",
+        )
+
+    @staticmethod
     def prepare_text2img_latents(components, batch_size, height, width, dtype, device, generator, latents):
+        in_channels = SD15_LATENT_CHANNELS
+        if getattr(components, "vae", None) is not None:
+            in_channels = getattr(components.vae.config, "latent_channels", in_channels)
         shape = (
             batch_size,
-            components.unet.config.in_channels,
+            in_channels,
             height // SD15WorkflowUtils.vae_scale_factor(components),
             width // SD15WorkflowUtils.vae_scale_factor(components),
         )
@@ -510,7 +620,14 @@ class SD15WorkflowUtils:
         return extra_step_kwargs
 
     @staticmethod
-    def decode_latents(components, latents: torch.Tensor, output_type: str):
+    def decode_latents(
+        components,
+        latents: torch.Tensor,
+        output_type: str,
+        original_image=None,
+        mask_image=None,
+        crops_coords=None,
+    ):
         if output_type == "latent":
             return latents
         needs_upcast = bool(getattr(components.vae.config, "force_upcast", False))
@@ -525,25 +642,50 @@ class SD15WorkflowUtils:
         image_processor = getattr(components, "image_processor", None) or VaeImageProcessor(
             vae_scale_factor=SD15WorkflowUtils.vae_scale_factor(components)
         )
-        return image_processor.postprocess(image, output_type=output_type)
+        images = image_processor.postprocess(image, output_type=output_type)
+        if crops_coords is not None:
+            images = [image_processor.apply_overlay(mask_image, original_image, image, crops_coords) for image in images]
+        return images
 
     @staticmethod
-    def preprocess_image(components, image, height: int, width: int, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+    def preprocess_image(
+        components,
+        image,
+        height: int,
+        width: int,
+        device: torch.device,
+        dtype: torch.dtype,
+        crops_coords=None,
+        resize_mode: str = "default",
+    ) -> torch.Tensor:
         image_processor = getattr(components, "image_processor", None) or VaeImageProcessor(
             vae_scale_factor=SD15WorkflowUtils.vae_scale_factor(components)
         )
-        image_tensor = image_processor.preprocess(image, height=height, width=width)
+        image_tensor = image_processor.preprocess(
+            image, height=height, width=width, crops_coords=crops_coords, resize_mode=resize_mode
+        )
         return image_tensor.to(device=device, dtype=dtype)
 
     @staticmethod
-    def preprocess_mask(components, mask_image, height: int, width: int, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+    def preprocess_mask(
+        components,
+        mask_image,
+        height: int,
+        width: int,
+        device: torch.device,
+        dtype: torch.dtype,
+        crops_coords=None,
+        resize_mode: str = "default",
+    ) -> torch.Tensor:
         mask_processor = getattr(components, "mask_processor", None) or VaeImageProcessor(
             vae_scale_factor=SD15WorkflowUtils.vae_scale_factor(components),
             do_normalize=False,
             do_binarize=True,
             do_convert_grayscale=True,
         )
-        mask = mask_processor.preprocess(mask_image, height=height, width=width)
+        mask = mask_processor.preprocess(
+            mask_image, height=height, width=width, crops_coords=crops_coords, resize_mode=resize_mode
+        )
         latent_height = height // SD15WorkflowUtils.vae_scale_factor(components)
         latent_width = width // SD15WorkflowUtils.vae_scale_factor(components)
         if mask.shape[-2:] != (latent_height, latent_width):

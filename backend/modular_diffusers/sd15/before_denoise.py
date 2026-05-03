@@ -59,7 +59,7 @@ class SD15Img2ImgLatentsStep(ModularPipelineBlocks):
 
     @property
     def expected_components(self) -> list[ComponentSpec]:
-        return SD15WorkflowUtils.latent_components(include_image=True, include_mask=True)
+        return SD15WorkflowUtils.latent_components(include_image=True)
 
     @property
     def inputs(self) -> list[InputParam]:
@@ -118,6 +118,11 @@ class SD15Img2ImgLatentsStep(ModularPipelineBlocks):
             block_state.image_latents = image_latents
             block_state.latent_noise = latent_noise
         block_state.mask = None
+        block_state.masked_image_latents = None
+        block_state.original_image = None
+        block_state.original_mask_image = None
+        block_state.crops_coords = None
+        block_state.resize_mode = "default"
         self.set_block_state(state, block_state)
         return components, state
 
@@ -131,7 +136,7 @@ class SD15InpaintLatentsStep(ModularPipelineBlocks):
 
     @property
     def expected_components(self) -> list[ComponentSpec]:
-        return SD15WorkflowUtils.latent_components(include_image=True)
+        return SD15WorkflowUtils.latent_components(include_image=True, include_mask=True)
 
     @property
     def inputs(self) -> list[InputParam]:
@@ -155,6 +160,18 @@ class SD15InpaintLatentsStep(ModularPipelineBlocks):
         SD15WorkflowUtils.validate_image_batch(mask_image, batch_size, "mask_image")
         image_batch_size = batch_size * block_state.num_images_per_prompt
         SD15WorkflowUtils.validate_latents(components, block_state.latents, image_batch_size, height, width)
+        crops_coords, resize_mode = SD15WorkflowUtils.resolve_inpaint_crop(
+            components,
+            mask_image,
+            width,
+            height,
+            getattr(block_state, "padding_mask_crop", None),
+        )
+        num_channels_unet = components.unet.config.in_channels
+        if num_channels_unet not in (4, 9):
+            raise ValueError(
+                f"The SD1.5 inpaint UNet should have either 4 or 9 input channels, not {num_channels_unet}."
+            )
         timesteps, num_inference_steps = retrieve_timesteps(
             components.scheduler,
             num_inference_steps=block_state.num_inference_steps,
@@ -167,6 +184,10 @@ class SD15InpaintLatentsStep(ModularPipelineBlocks):
         block_state.num_inference_steps = num_inference_steps
         block_state.height = height
         block_state.width = width
+        block_state.original_image = image if crops_coords is not None else None
+        block_state.original_mask_image = mask_image if crops_coords is not None else None
+        block_state.crops_coords = crops_coords
+        block_state.resize_mode = resize_mode
         if block_state.latents is not None:
             block_state.latents = SD15WorkflowUtils.prepare_text2img_latents(
                 components, image_batch_size, height, width, block_state.prompt_embeds.dtype, device, block_state.generator, block_state.latents
@@ -186,10 +207,12 @@ class SD15InpaintLatentsStep(ModularPipelineBlocks):
                 device,
                 block_state.generator,
                 latent_timestep,
+                crops_coords=crops_coords,
+                resize_mode=resize_mode,
             )
             block_state.latents = latents
-            block_state.image_latents = image_latents
-            block_state.latent_noise = latent_noise
+            block_state.image_latents = image_latents if num_channels_unet == 4 else None
+            block_state.latent_noise = latent_noise if num_channels_unet == 4 else None
         block_state.mask = SD15WorkflowUtils.prepare_mask_latents(
             components,
             mask_image,
@@ -199,7 +222,34 @@ class SD15InpaintLatentsStep(ModularPipelineBlocks):
             width,
             block_state.prompt_embeds.dtype,
             device,
+            crops_coords=crops_coords,
+            resize_mode=resize_mode,
         )
+        if num_channels_unet == 9:
+            block_state.masked_image_latents = SD15WorkflowUtils.prepare_masked_image_latents(
+                components,
+                image,
+                mask_image,
+                batch_size,
+                block_state.num_images_per_prompt,
+                height,
+                width,
+                block_state.prompt_embeds.dtype,
+                device,
+                block_state.generator,
+                crops_coords=crops_coords,
+                resize_mode=resize_mode,
+            )
+            num_channels_mask = block_state.mask.shape[1]
+            num_channels_masked_image = block_state.masked_image_latents.shape[1]
+            if block_state.latents.shape[1] + num_channels_mask + num_channels_masked_image != num_channels_unet:
+                raise ValueError(
+                    "Incorrect SD1.5 inpaint channel configuration: "
+                    f"latents({block_state.latents.shape[1]}) + mask({num_channels_mask}) + "
+                    f"masked_image_latents({num_channels_masked_image}) != unet.in_channels({num_channels_unet})."
+                )
+        else:
+            block_state.masked_image_latents = None
         self.set_block_state(state, block_state)
         return components, state
 

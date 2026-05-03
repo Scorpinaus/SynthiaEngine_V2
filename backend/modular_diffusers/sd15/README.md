@@ -20,6 +20,7 @@ This folder is a local Modular Diffusers repository for Phase 1 SD1.5 migration 
 - `modular_blocks_sd15.py`: sequential workflow blocks and auto-routing block selection
 - `__init__.py`: public SD1.5 modular package exports
 - `block.py`: compatibility shim that keeps the legacy `block.SD15AutoBlocks` dynamic loading path working
+- `sd15_modular_inpaint.py`: standalone inpaint smoke script, defaulting to the SD1.5 inpaint checkpoint
 - `modular_config.json`: block loading config used by the installed Diffusers modular runtime
 - `config.json`: custom block `auto_map` mirror matching the current Hugging Face modular repository documentation
 - `modular_model_index.json`: component loading specs for the local modular repo
@@ -81,6 +82,25 @@ Example with custom prompt and output path:
   --output backend\modular_diffusers\sd15\outputs\img2img_result.png
 ```
 
+Run the standalone inpaint script:
+
+```powershell
+.venv\Scripts\python backend\modular_diffusers\sd15\sd15_modular_inpaint.py `
+  --image input.png `
+  --mask-image mask.png
+```
+
+Example with custom prompt and output path:
+
+```powershell
+.venv\Scripts\python backend\modular_diffusers\sd15\sd15_modular_inpaint.py `
+  --image input.png `
+  --mask-image mask.png `
+  --prompt "replace the masked area with a glowing portal" `
+  --padding-mask-crop 32 `
+  --output backend\modular_diffusers\sd15\outputs\inpaint_result.png
+```
+
 ## Img2Img / Inpaint
 
 The modular block supports img2img by passing:
@@ -138,6 +158,7 @@ images = pipe(
     negative_prompt="blurry, distorted",
     image=init_image,
     mask_image=mask_image,
+    padding_mask_crop=32,
     strength=0.75,
     num_inference_steps=30,
     guidance_scale=7.5,
@@ -151,7 +172,10 @@ images = pipe(
 ## Notes
 
 - `ModularPipeline.from_pretrained(...)` is lazy; it resolves the custom block code and component loading specs, but does not load model weights.
-- `image_processor` and `mask_processor` are config-created `VaeImageProcessor` components, following the newer ModularPipeline component-spec pattern.
+- `image_processor`, `mask_processor`, and `guider` are config-created components, following the newer ModularPipeline component-spec pattern.
+- Classifier-free guidance is handled through Diffusers' experimental `ClassifierFreeGuidance` component instead of manually concatenating/chunking UNet batches.
+- Inpaint supports both standard 4-channel SD1.5 UNets with post-step mask blending and 9-channel inpaint UNets with `latents + mask + masked_image_latents` denoiser inputs.
+- `padding_mask_crop` is available for inpaint with PIL `image`/`mask_image` inputs and `output_type="pil"`. It crops around the detected mask region before inpainting, then overlays the result back onto the original image.
 - Call `load_components()` before inference. Validation-only calls can exercise cheap input checks without loading components.
 - Custom block loading uses Hugging Face's dynamic module cache. In sandboxed or CI environments, set `HF_MODULES_CACHE` to a writable directory before importing Diffusers.
 - You can replace `pipe.scheduler` after `load_components()` if you want to test scheduler variants.

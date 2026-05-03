@@ -15,7 +15,13 @@ class SD15DecodeStep(ModularPipelineBlocks):
 
     @property
     def inputs(self) -> list[InputParam]:
-        return [InputParam("latents", type_hint=torch.Tensor, required=True), SD15WorkflowUtils.output_input_param()]
+        return [
+            InputParam("latents", type_hint=torch.Tensor, required=True),
+            SD15WorkflowUtils.output_input_param(),
+            InputParam("original_image", type_hint=PIL.Image.Image | None),
+            InputParam("original_mask_image", type_hint=PIL.Image.Image | None),
+            InputParam("crops_coords", type_hint=tuple[int, int, int, int] | None),
+        ]
 
     @property
     def intermediate_outputs(self) -> list[OutputParam]:
@@ -24,7 +30,14 @@ class SD15DecodeStep(ModularPipelineBlocks):
     @torch.no_grad()
     def __call__(self, components, state: PipelineState):
         block_state = self.get_block_state(state)
-        block_state.images = SD15WorkflowUtils.decode_latents(components, block_state.latents, block_state.output_type)
+        block_state.images = SD15WorkflowUtils.decode_latents(
+            components,
+            block_state.latents,
+            block_state.output_type,
+            original_image=getattr(block_state, "original_image", None),
+            mask_image=getattr(block_state, "original_mask_image", None),
+            crops_coords=getattr(block_state, "crops_coords", None),
+        )
         self.set_block_state(state, block_state)
         return components, state
 

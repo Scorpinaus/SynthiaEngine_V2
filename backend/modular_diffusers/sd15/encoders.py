@@ -24,6 +24,8 @@ class SD15InputValidationStep(ModularPipelineBlocks):
             InputParam("image", type_hint=PIL.Image.Image | list[PIL.Image.Image] | torch.Tensor | None),
             InputParam("mask_image", type_hint=PIL.Image.Image | list[PIL.Image.Image] | torch.Tensor | None),
             InputParam("strength", type_hint=float, default=0.8),
+            InputParam("padding_mask_crop", type_hint=int | None),
+            InputParam("output_type", type_hint=str, default="pil"),
         ]
 
     @property
@@ -83,7 +85,7 @@ class SD15PromptEncodingStep(ModularPipelineBlocks):
         text_encoder_dtype = getattr(components.text_encoder, "dtype", torch.float32)
         if getattr(block_state, "prompt_embeds", None) is not None:
             block_state.batch_size = int(block_state.prompt_embeds.shape[0])
-            block_state.prompt_embeds = SD15WorkflowUtils.prepare_prompt_embeds(
+            block_state.prompt_embeds, block_state.negative_prompt_embeds = SD15WorkflowUtils.prepare_prompt_embeds(
                 prompt_embeds=block_state.prompt_embeds,
                 negative_prompt_embeds=getattr(block_state, "negative_prompt_embeds", None),
                 device=device,
@@ -93,7 +95,7 @@ class SD15PromptEncodingStep(ModularPipelineBlocks):
             )
         else:
             block_state.batch_size = SD15WorkflowUtils.batch_size_from_state(block_state)
-            block_state.prompt_embeds = SD15WorkflowUtils.encode_prompt(
+            block_state.prompt_embeds, block_state.negative_prompt_embeds = SD15WorkflowUtils.encode_prompt(
                 components=components,
                 prompt=block_state.prompt,
                 negative_prompt=getattr(block_state, "negative_prompt", None),

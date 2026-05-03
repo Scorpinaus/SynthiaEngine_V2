@@ -75,6 +75,11 @@ SD15_INPUTS_SCHEMA = {
     "mask_image": InputParam(
         "mask_image", type_hint=PipelineImageInput, required=True, description="Mask image for inpainting"
     ),
+    "padding_mask_crop": InputParam(
+        "padding_mask_crop",
+        type_hint=int | None,
+        description="Optional padding around the detected mask crop for inpainting",
+    ),
     "height": InputParam("height", type_hint=int | None, description="Output height in pixels"),
     "width": InputParam("width", type_hint=int | None, description="Output width in pixels"),
     "num_images_per_prompt": InputParam(
@@ -119,6 +124,12 @@ SD15_INTERMEDIATE_OUTPUTS_SCHEMA = {
     ),
     "latent_noise": OutputParam("latent_noise", type_hint=torch.Tensor, description="Noise added to image latents"),
     "mask": OutputParam("mask", type_hint=torch.Tensor, description="Prepared inpaint mask latents"),
+    "masked_image_latents": OutputParam(
+        "masked_image_latents", type_hint=torch.Tensor, description="Encoded masked reference image latents"
+    ),
+    "crops_coords": OutputParam(
+        "crops_coords", type_hint=tuple[int, int, int, int] | None, description="Inpaint crop coordinates"
+    ),
     "images": OutputParam(
         "images",
         type_hint=list[PIL.Image.Image] | torch.Tensor | np.ndarray,
