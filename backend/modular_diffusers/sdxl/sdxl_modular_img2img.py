@@ -1,4 +1,4 @@
-"""Run a simple text-to-image inference with Diffusers' built-in SDXL modular pipeline."""
+"""Run a simple img2img inference with Diffusers' built-in SDXL modular pipeline."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import argparse
 from pathlib import Path
 
 import torch
+from PIL import Image
 from diffusers import ModularPipeline
 
 from backend.modular_diffusers.sdxl.adapters import (
@@ -15,13 +16,15 @@ from backend.modular_diffusers.sdxl.adapters import (
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-DEFAULT_OUTPUT_PATH = SCRIPT_DIR / "outputs" / "sdxl_modular_text2img.png"
+DEFAULT_OUTPUT_PATH = SCRIPT_DIR / "outputs" / "sdxl_modular_img2img.png"
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run SDXL Modular Diffusers text-to-image inference.")
-    parser.add_argument("--prompt", default="a cinematic portrait of an astronaut in a neon jungle", help="Positive prompt text.")
+    parser = argparse.ArgumentParser(description="Run SDXL Modular Diffusers img2img inference.")
+    parser.add_argument("--image", type=Path, required=True, help="Path to the input image.")
+    parser.add_argument("--prompt", default="turn this into a cinematic matte painting", help="Positive prompt text.")
     parser.add_argument("--negative-prompt", default="blurry, distorted, low quality", help="Negative prompt text.")
+    parser.add_argument("--strength", type=float, default=0.75, help="Img2img denoising strength.")
     parser.add_argument("--steps", type=int, default=30, help="Number of denoising steps.")
     parser.add_argument("--guidance-scale", type=float, default=5.0, help="Classifier-free guidance scale.")
     parser.add_argument("--width", type=int, default=1024, help="Output image width.")
@@ -49,6 +52,8 @@ def main() -> None:
     dtype = torch.float16 if device == "cuda" else torch.float32
     generator = torch.Generator(device=device).manual_seed(args.seed)
 
+    init_image = Image.open(args.image).convert("RGB")
+
     pipe = ModularPipeline.from_pretrained(args.model)
     pipe.load_components(torch_dtype=dtype)
     apply_sdxl_modular_adapters_from_args(pipe, args)
@@ -57,6 +62,8 @@ def main() -> None:
     image = pipe(
         prompt=args.prompt,
         negative_prompt=args.negative_prompt,
+        image=init_image,
+        strength=args.strength,
         num_inference_steps=args.steps,
         guidance_scale=args.guidance_scale,
         width=args.width,
