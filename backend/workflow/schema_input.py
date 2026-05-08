@@ -650,3 +650,24 @@ class ZImageInpaintInputs(BaseModel):
     model: str | None = None
     num_images: int = 1
     lora_adapters: Any | None = None
+
+
+class ErnieImageText2ImgInputs(BaseModel):
+    prompt: str = ""
+    steps: int = Field(default=8, ge=1, le=50)
+    guidance_scale: float = Field(default=1.0, ge=0.0, le=30.0)
+    width: int = Field(default=768, ge=64, le=1536)
+    height: int = Field(default=768, ge=64, le=1536)
+    seed: int | None = None
+    model: str | None = None
+    num_images: int = Field(default=1, ge=1, le=1)
+    use_pe: bool = False
+    load_pe: bool = False
+    memory_preset: Literal["model_offload", "sequential_offload"] = "sequential_offload"
+    execution_mode: Literal["subprocess", "in_process"] = "subprocess"
+
+    @model_validator(mode="after")
+    def _validate_pe_loading(self) -> "ErnieImageText2ImgInputs":
+        if self.use_pe and not self.load_pe:
+            raise ValueError("use_pe=true requires load_pe=true")
+        return self

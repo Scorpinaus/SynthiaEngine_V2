@@ -106,5 +106,14 @@
     "model_id": 12,
     "version": "dev",
     "link": "D:\\diffusion\\diffusers\\FLUX.1-dev"
+  },
+  {
+    "name": "ERNIE-Image-Turbo",
+    "family": "ernie-image",
+    "model_type": "diffusers",
+    "location_type": "local",
+    "model_id": 13,
+    "version": "turbo",
+    "link": "D:\\diffusion\\diffusers\\Ernie-Image-Turbo"
   }
 ]

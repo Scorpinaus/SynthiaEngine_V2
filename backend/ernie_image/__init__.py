@@ -1,0 +1,1 @@
+"""ERNIE-Image pipeline package."""

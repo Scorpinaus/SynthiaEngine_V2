@@ -16,6 +16,7 @@ from backend.utilities.pipeline import get_batch_output_dir, make_batch_id
 from backend.workflow.schema_input import (
     ArtifactRef,
     ControlNetPreprocessInputs,
+    ErnieImageText2ImgInputs,
     FluxImg2ImgInputs,
     FluxInpaintInputs,
     FluxText2ImgInputs,
@@ -117,6 +118,9 @@ from backend.workflow.qwen_image import (
     run_qwen_image_img2img_task as _run_qwen_image_img2img,
     run_qwen_image_inpaint_task as _run_qwen_image_inpaint,
 )
+from backend.workflow.ernie_image import (
+    run_ernie_image_text2img_task as _run_ernie_image_text2img,
+)
 from backend.sd15.pipeline import (
     generate_images,
     generate_images_controlnet,
@@ -171,6 +175,7 @@ TASK_INPUT_MODELS: dict[str, type[BaseModel]] = {
     "z-image.text2img": ZImageText2ImgInputs,
     "z-image.img2img": ZImageImg2ImgInputs,
     "z-image.inpaint": ZImageInpaintInputs,
+    "ernie-image.text2img": ErnieImageText2ImgInputs,
 }
 
 
@@ -206,6 +211,7 @@ TASK_OUTPUT_MODELS: dict[str, type[BaseModel]] = {
     "z-image.text2img": ImagesOutput,
     "z-image.img2img": ImagesOutput,
     "z-image.inpaint": ImagesOutput,
+    "ernie-image.text2img": ImagesOutput,
 }
 
 
@@ -502,6 +508,15 @@ def _z_image_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str,
     return _run_z_image_inpaint(inputs, _z_image_runtime_deps())
 
 
+def _ernie_image_runtime_deps() -> dict[str, Any]:
+    ernie_image_pipeline_module = importlib.import_module("backend.ernie_image.pipeline")
+    return {"generate_text2img": ernie_image_pipeline_module.generate_text2img}
+
+
+def _ernie_image_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
+    return _run_ernie_image_text2img(inputs, _ernie_image_runtime_deps())
+
+
 TASK_REGISTRY: dict[str, Callable[[dict[str, Any], WorkflowContext], dict[str, Any]]] = {
     # SD15 tasks
     "sd15.text2img": _sd15_text2img,
@@ -534,6 +549,7 @@ TASK_REGISTRY: dict[str, Callable[[dict[str, Any], WorkflowContext], dict[str, A
     "z-image.text2img": _z_image_text2img,
     "z-image.img2img": _z_image_img2img,
     "z-image.inpaint": _z_image_inpaint,
+    "ernie-image.text2img": _ernie_image_text2img,
 }
 
 

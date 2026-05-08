@@ -32,6 +32,7 @@ TaskType = Literal[
     "z-image.text2img",
     "z-image.img2img",
     "z-image.inpaint",
+    "ernie-image.text2img",
 ]
 
 

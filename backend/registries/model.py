@@ -284,6 +284,8 @@ def get_model_family(model_name: str | None) -> str | None:
             return "sdxl"
         if re.search(r"qwen[-_\\s]?image", lowered):
             return "qwen-image"
+        if re.search(r"ernie[-_\\s]?image|ernie", lowered):
+            return "ernie-image"
         if re.search(r"z[-_\\s]?image|turbo", lowered):
             return "z-image-turbo"
         if re.search(r"sd[\\s_-]*1\\.?5|sd15", lowered):

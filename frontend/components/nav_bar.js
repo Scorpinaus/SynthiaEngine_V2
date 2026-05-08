@@ -34,6 +34,7 @@ const NAV_GROUPS = [
             { href: "qwen_image/text2img.html", label: "Qwen-Image Text2Img" },
             { href: "qwen_image/img2img.html", label: "Qwen-Image Img2Img" },
             { href: "qwen_image/inpaint.html", label: "Qwen-Image Inpaint" },
+            { href: "ernie_image/text2img.html", label: "ERNIE-Image Text2Img" },
             { href: "flux/text2img.html", label: "Flux Text2Img" },
             { href: "flux/img2img.html", label: "Flux Img2Img" },
             { href: "flux/inpaint.html", label: "Flux Inpaint" },

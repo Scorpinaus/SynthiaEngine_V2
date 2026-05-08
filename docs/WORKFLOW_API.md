@@ -1,6 +1,6 @@
 # Workflow-Only API Contract (v2)
 
-This project uses a **single workflow job API** for all generation (SD1.5, SDXL, WAN, Flux, Qwen-Image, Z-Image). Image and video inputs are uploaded as **artifacts** first, then referenced by `artifact_id` in workflow task inputs.
+This project uses a **single workflow job API** for all generation (SD1.5, SDXL, WAN, Flux, Qwen-Image, Z-Image, ERNIE-Image). Image and video inputs are uploaded as **artifacts** first, then referenced by `artifact_id` in workflow task inputs.
 
 Registry persistence note:
 - `/lora-models` entries are persisted in `database/lora_registry.sqlite3`.
@@ -175,7 +175,7 @@ Response:
 ```
 
 Notes:
-- `capabilities` is a model-family matrix for builder UIs. Current families include `sd15`, `sdxl`, `wan`, `flux`, `qwen-image`, and `z-image`.
+- `capabilities` is a model-family matrix for builder UIs. Current families include `sd15`, `sdxl`, `wan`, `flux`, `qwen-image`, `z-image`, and `ernie-image`.
 - `ui_hints` is best-effort metadata for workflow builders (labels, widgets, suggested min/max, option lists, etc.).
 - `output_schema` describes the per-task result object stored under `result.tasks[taskId]`.
 
@@ -547,6 +547,7 @@ Resolution behavior:
 - Flux: `flux.text2img`, `flux.img2img`, `flux.inpaint`
 - Qwen-Image: `qwen-image.text2img`, `qwen-image.img2img`, `qwen-image.inpaint`
 - Z-Image: `z-image.text2img`, `z-image.img2img`, `z-image.inpaint`
+- ERNIE-Image: `ernie-image.text2img`
 - ControlNet utility: `controlnet.preprocess`
 
 ## Model capabilities matrix
@@ -561,6 +562,7 @@ This same matrix is available in machine-readable form at `GET /api/workflow/cat
 | `flux` | yes | no | yes | yes | no | no | yes | no | no |
 | `qwen-image` | yes | no | yes | yes | no | no | yes | no | yes |
 | `z-image` (`zimage`) | yes | no | yes | yes | no | no | yes | no | no |
+| `ernie-image` (`ernie`) | yes | no | no | no | no | no | no | no | no |
 
 Task inputs/outputs are task-specific. As a convention, image-generating tasks return:
 - `images`: list of `"/outputs/..."` URLs
@@ -1038,6 +1040,45 @@ Example two-step SDXL IP-Adapter workflow:
 - Each adapter may provide `strength` (default `1.0`).
 - Family validation is enforced: only LoRAs registered with `lora_model_family: "z-image"` are accepted for `z-image.inpaint`.
 - Invalid adapter references (for example missing `lora_id`, unknown id, or incompatible family) fail the task with a validation/runtime error.
+
+`ernie-image.text2img` input notes:
+- Initial support is text-to-image only through Diffusers `ErnieImagePipeline`.
+- Defaults are tuned for Windows 11 with 64 GB system RAM and 12 GB VRAM: `steps: 8`, `guidance_scale: 1.0`, `width: 768`, `height: 768`, `num_images: 1`, `use_pe: false`, `load_pe: false`, `memory_preset: "sequential_offload"`, and `execution_mode: "subprocess"`.
+- `model`: optional base model registry name. If omitted, backend uses the first registered `ernie-image` model, falling back to Hub model `baidu/ERNIE-Image-Turbo`.
+- `memory_preset`: `"sequential_offload"` is safest on 12 GB VRAM and slower; `"model_offload"` may be faster but can OOM at larger resolutions.
+- `execution_mode`: `"subprocess"` runs ERNIE in a short-lived child process so Windows can reclaim system RAM after generation; `"in_process"` keeps the older direct execution path for debugging.
+- `use_pe`: enables the ERNIE prompt enhancer when supported by the installed Diffusers pipeline. Keep disabled for first smoke tests on 12 GB VRAM.
+- `load_pe`: loads the PE prompt enhancer components. Keep disabled when `use_pe` is false to reduce RAM/VRAM pressure. `use_pe: true` requires `load_pe: true`.
+- `num_images` is fixed to `1`; submit multiple jobs instead of batching to keep VRAM/RAM pressure predictable.
+- Scheduler, LoRA, img2img, inpaint, ControlNet, and quantization are outside the initial ERNIE-Image contract.
+
+Example ERNIE-Image workflow:
+
+```json
+{
+  "kind": "workflow",
+  "payload": {
+    "tasks": [
+      {
+        "id": "t1",
+        "type": "ernie-image.text2img",
+        "inputs": {
+          "prompt": "a quiet sunlit library with glass walls",
+          "steps": 8,
+          "guidance_scale": 1.0,
+          "width": 768,
+          "height": 768,
+          "memory_preset": "sequential_offload",
+          "execution_mode": "subprocess",
+          "use_pe": false,
+          "load_pe": false
+        }
+      }
+    ],
+    "return": "@t1.images"
+  }
+}
+```
 
 ## Example: img2img workflow (artifact input)
 

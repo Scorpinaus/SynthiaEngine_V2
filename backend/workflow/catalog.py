@@ -43,6 +43,7 @@ _MODEL_FAMILY_METADATA: dict[str, dict[str, Any]] = {
     "wan": {"label": "WAN", "aliases": ["wan2.1", "wan2.2"]},
     "qwen-image": {"label": "Qwen-Image", "aliases": ["qwen"]},
     "z-image": {"label": "Z-Image", "aliases": ["zimage"]},
+    "ernie-image": {"label": "ERNIE-Image", "aliases": ["ernie"]},
 }
 
 
@@ -54,6 +55,8 @@ def _infer_model_family(task_type: str) -> str | None:
         return "qwen-image"
     if prefix == "z-image":
         return "z-image"
+    if prefix == "ernie-image":
+        return "ernie-image"
     return None
 
 
@@ -159,6 +162,12 @@ def _build_task_ui_hints(task_type: str, model_cls: type[BaseModel]) -> dict[str
 
         if field_name == "free_init_method":
             hint.update(widget="select", options=["butterworth", "ideal", "gaussian"])
+
+        if field_name == "memory_preset":
+            hint.update(widget="select", options=["sequential_offload", "model_offload"])
+
+        if field_name == "execution_mode" and task_type == "ernie-image.text2img":
+            hint.update(widget="select", options=["subprocess", "in_process"])
 
         if field_name == "model":
             if family:
