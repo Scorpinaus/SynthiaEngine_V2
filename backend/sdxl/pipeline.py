@@ -38,6 +38,7 @@ from backend.utilities.pipeline import (
     resolve_model_source,
 )
 from backend.utilities.schedulers import create_scheduler
+from backend.sdxl.subprocess_io import serialize_params_for_subprocess
 
 logger = logging.getLogger(__name__)
 configure_logging()
@@ -290,7 +291,6 @@ def _metadata_without_runtime_images(params: dict[str, object]) -> dict[str, obj
 
 
 def _run_sdxl_subprocess(operation: str, params: dict[str, object]) -> dict[str, list[str]]:
-    from backend.sdxl.subprocess_io import serialize_params_for_subprocess
 
     with tempfile.TemporaryDirectory(prefix="sdxl_") as tmpdir:
         tmp_path = Path(tmpdir)

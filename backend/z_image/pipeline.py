@@ -4,17 +4,13 @@ import re
 import subprocess
 import sys
 import tempfile
+import torch
+import threading
 from typing import Any
 from pathlib import Path
 
-import torch
-from diffusers import ZImageImg2ImgPipeline, ZImagePipeline
-try:
-    from diffusers import ZImageInpaintPipeline
-except ImportError:  # pragma: no cover - depends on installed diffusers version
-    ZImageInpaintPipeline = None
+from diffusers import ZImageImg2ImgPipeline, ZImagePipeline, ZImageInpaintPipeline
 
-import threading
 
 from backend.config import OUTPUT_DIR
 from backend.utilities.logging import configure_logging
@@ -31,8 +27,8 @@ from backend.utilities.pipeline import (
     resolve_model_source,
 )
 from backend.utilities.schedulers import create_scheduler
+from backend.z_image.subprocess_io import serialize_params_for_subprocess
 
-GEN_LOCK = threading.Lock()
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _Z_IMAGE_SUBPROCESS_SEMAPHORE = threading.Semaphore(1)
 
@@ -148,7 +144,6 @@ def _cleanup_lora_adapters(pipe: Any | None, adapter_names: list[str]) -> None:
 
 
 def _run_z_image_subprocess(operation: str, params: dict[str, object]) -> dict[str, list[str]]:
-    from backend.z_image.subprocess_io import serialize_params_for_subprocess
 
     with tempfile.TemporaryDirectory(prefix="z_image_") as tmpdir:
         tmp_path = Path(tmpdir)
@@ -347,48 +342,47 @@ def generate_text2img_in_process(params: dict[str, object]) -> dict[str, list[st
         #5. Load lora into pipeline
         adapter_names = _apply_lora_adapters(pipe, lora_adapters)
 
-        with GEN_LOCK:
-            #7. Render image one by one
-            for i in range(num_images):
-                # Set current seed
-                current_seed = base_seed + i
-                generator = torch.Generator(device="cpu").manual_seed(current_seed)
-                
-                # Render image
-                with torch.autocast("cuda", dtype=torch.bfloat16):
-                    call_kwargs = dict(
-                        prompt=prompt,
-                        num_inference_steps=steps,
-                        guidance_scale=guidance_scale,
-                        width=width,
-                        height=height,
-                        generator=generator,
-                    )
-                    # Only include negative_prompt if user actually provided one
-                    if negative_prompt:
-                        call_kwargs["negative_prompt"] = negative_prompt
+        #7. Render image one by one
+        for i in range(num_images):
+            # Set current seed
+            current_seed = base_seed + i
+            generator = torch.Generator(device="cpu").manual_seed(current_seed)
 
-                    image = pipe(**call_kwargs).images[0]
+            # Render image
+            with torch.autocast("cuda", dtype=torch.bfloat16):
+                call_kwargs = dict(
+                    prompt=prompt,
+                    num_inference_steps=steps,
+                    guidance_scale=guidance_scale,
+                    width=width,
+                    height=height,
+                    generator=generator,
+                )
+                # Only include negative_prompt if user actually provided one
+                if negative_prompt:
+                    call_kwargs["negative_prompt"] = negative_prompt
 
-                # Define filenames & Create image_params metadata dict to store metadata
-                filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
-                image_params = dict(params)
-                image_params.update({
-                    "mode": "txt2img",
-                    "pipeline": "z-image",
-                    "seed": current_seed,
-                    "batch_id": batch_id,
-                })
-                pnginfo = build_png_metadata(image_params)
-                
-                # Save filename to rendered image
-                image.save(filename, pnginfo=pnginfo)
-                logger.info("Image %s saved to %s", i, filename.name)
-                filenames.append(build_batch_output_relpath(batch_id, filename.name))
-                
-                # Clean-up memory to prevent OOM
-                del image
-                cleanup_memory()
+                image = pipe(**call_kwargs).images[0]
+
+            # Define filenames & Create image_params metadata dict to store metadata
+            filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
+            image_params = dict(params)
+            image_params.update({
+                "mode": "txt2img",
+                "pipeline": "z-image",
+                "seed": current_seed,
+                "batch_id": batch_id,
+            })
+            pnginfo = build_png_metadata(image_params)
+
+            # Save filename to rendered image
+            image.save(filename, pnginfo=pnginfo)
+            logger.info("Image %s saved to %s", i, filename.name)
+            filenames.append(build_batch_output_relpath(batch_id, filename.name))
+
+            # Clean-up memory to prevent OOM
+            del image
+            cleanup_memory()
     finally:
         # 8. Unload lora weights & clean memory
         _cleanup_lora_adapters(pipe, adapter_names)
@@ -444,50 +438,49 @@ def generate_img2img_in_process(params: dict[str, object]) -> dict[str, list[str
         #5. Load lora into pipeline
         adapter_names = _apply_lora_adapters(pipe, lora_adapters)
 
-        with GEN_LOCK:
-            for i in range(num_images):
-                # Set current seed
-                current_seed = base_seed + i
-                generator = torch.Generator(device="cpu").manual_seed(current_seed)
+        for i in range(num_images):
+            # Set current seed
+            current_seed = base_seed + i
+            generator = torch.Generator(device="cpu").manual_seed(current_seed)
 
-                # Render image
-                with torch.autocast("cuda", dtype=torch.bfloat16):
-                    call_kwargs = dict(
-                        prompt=prompt,
-                        image=initial_image,
-                        strength=strength,
-                        num_inference_steps=steps,
-                        guidance_scale=guidance_scale,
-                        width=width,
-                        height=height,
-                        generator=generator,
-                    )
-                    if negative_prompt:
-                        call_kwargs["negative_prompt"] = negative_prompt
-
-                    image = pipe(**call_kwargs).images[0]
-
-                #define filenames & Create image_params metadata dict to save image metadata
-                filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
-                image_params = dict(params)
-                image_params.update(
-                    {
-                        "mode": "img2img",
-                        "pipeline": "z-image",
-                        "seed": current_seed,
-                        "batch_id": batch_id,
-                    }
+            # Render image
+            with torch.autocast("cuda", dtype=torch.bfloat16):
+                call_kwargs = dict(
+                    prompt=prompt,
+                    image=initial_image,
+                    strength=strength,
+                    num_inference_steps=steps,
+                    guidance_scale=guidance_scale,
+                    width=width,
+                    height=height,
+                    generator=generator,
                 )
-                pnginfo = build_png_metadata(image_params)
-                
-                # Save filename to rendered image
-                image.save(filename, pnginfo=pnginfo)
-                logger.info("Image %s saved to %s", i, filename.name)
-                filenames.append(build_batch_output_relpath(batch_id, filename.name))
+                if negative_prompt:
+                    call_kwargs["negative_prompt"] = negative_prompt
 
-                #Clean-up intermediate memory to prevent OOM
-                del image
-                cleanup_memory()
+                image = pipe(**call_kwargs).images[0]
+
+            #define filenames & Create image_params metadata dict to save image metadata
+            filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
+            image_params = dict(params)
+            image_params.update(
+                {
+                    "mode": "img2img",
+                    "pipeline": "z-image",
+                    "seed": current_seed,
+                    "batch_id": batch_id,
+                }
+            )
+            pnginfo = build_png_metadata(image_params)
+
+            # Save filename to rendered image
+            image.save(filename, pnginfo=pnginfo)
+            logger.info("Image %s saved to %s", i, filename.name)
+            filenames.append(build_batch_output_relpath(batch_id, filename.name))
+
+            #Clean-up intermediate memory to prevent OOM
+            del image
+            cleanup_memory()
     finally:
         #8. Unload lora weights & clean memory
         _cleanup_lora_adapters(pipe, adapter_names)
@@ -544,53 +537,52 @@ def generate_inpaint_in_process(params: dict[str, object]) -> dict[str, list[str
         #5. Load lora into pipeline
         adapter_names = _apply_lora_adapters(pipe, lora_adapters)
 
-        with GEN_LOCK:
-            for i in range(num_images):
-                # Set current seed
-                current_seed = base_seed + i
-                generator = torch.Generator(device="cpu").manual_seed(current_seed)
+        for i in range(num_images):
+            # Set current seed
+            current_seed = base_seed + i
+            generator = torch.Generator(device="cpu").manual_seed(current_seed)
 
-                # Render image
-                with torch.autocast("cuda", dtype=torch.bfloat16):
-                    call_kwargs: dict[str, object] = {
-                        "prompt": prompt,
-                        "image": initial_image,
-                        "mask_image": mask_image,
-                        "strength": strength,
-                        "num_inference_steps": steps,
-                        "guidance_scale": guidance_scale,
-                        "generator": generator,
-                    }
-                    if negative_prompt:
-                        call_kwargs["negative_prompt"] = negative_prompt
+            # Render image
+            with torch.autocast("cuda", dtype=torch.bfloat16):
+                call_kwargs: dict[str, object] = {
+                    "prompt": prompt,
+                    "image": initial_image,
+                    "mask_image": mask_image,
+                    "strength": strength,
+                    "num_inference_steps": steps,
+                    "guidance_scale": guidance_scale,
+                    "generator": generator,
+                }
+                if negative_prompt:
+                    call_kwargs["negative_prompt"] = negative_prompt
 
-                    image = pipe(**call_kwargs).images[0]
+                image = pipe(**call_kwargs).images[0]
 
-                # Define filenames & Create image_params to store image metadata
-                filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
-                image_params = dict(params)
-                image_params.pop("initial_image", None)
-                image_params.pop("mask_image", None)
-                image_params.update(
-                    {
-                        "mode": "inpaint",
-                        "pipeline": "z-image",
-                        "width": width,
-                        "height": height,
-                        "seed": current_seed,
-                        "batch_id": batch_id,
-                    }
-                )
-                pnginfo = build_png_metadata(image_params)
-                
-                # Save filename to rendered image
-                image.save(filename, pnginfo=pnginfo)
-                logger.info("Image %s saved to %s", i, filename.name)
-                filenames.append(build_batch_output_relpath(batch_id, filename.name))
-                
-                # Memory cleanup
-                del image
-                cleanup_memory()
+            # Define filenames & Create image_params to store image metadata
+            filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
+            image_params = dict(params)
+            image_params.pop("initial_image", None)
+            image_params.pop("mask_image", None)
+            image_params.update(
+                {
+                    "mode": "inpaint",
+                    "pipeline": "z-image",
+                    "width": width,
+                    "height": height,
+                    "seed": current_seed,
+                    "batch_id": batch_id,
+                }
+            )
+            pnginfo = build_png_metadata(image_params)
+
+            # Save filename to rendered image
+            image.save(filename, pnginfo=pnginfo)
+            logger.info("Image %s saved to %s", i, filename.name)
+            filenames.append(build_batch_output_relpath(batch_id, filename.name))
+
+            # Memory cleanup
+            del image
+            cleanup_memory()
     finally:
         #8. Unload loras and final memory clean-up
         _cleanup_lora_adapters(pipe, adapter_names)

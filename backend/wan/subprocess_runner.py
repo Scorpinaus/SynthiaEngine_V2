@@ -15,7 +15,6 @@ from backend.wan.pipeline import (
 
 def _dispatch_table() -> dict[str, Callable[[dict[str, object]], list[str]]]:
 
-
     return {
         "text2video": generate_text2video_in_process,
         "image2video": generate_image2video_in_process,

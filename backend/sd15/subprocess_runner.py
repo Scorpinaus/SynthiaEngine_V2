@@ -7,10 +7,9 @@ from pathlib import Path
 from typing import Callable
 
 from backend.sd15.subprocess_io import deserialize_params_from_subprocess
-
-
-def _dispatch_table() -> dict[str, Callable[[dict[str, object]], list[str]]]:
-    from backend.sd15.pipeline import (
+from backend.utilities.pipeline import cleanup_memory
+from backend.sd15.animatediff_pipeline import generate_videos_text2video_in_process
+from backend.sd15.pipeline import (
         generate_images_controlnet_in_process,
         generate_images_img2img_controlnet_in_process,
         generate_images_img2img_in_process,
@@ -19,6 +18,8 @@ def _dispatch_table() -> dict[str, Callable[[dict[str, object]], list[str]]]:
         generate_images_inpaint_in_process,
     )
 
+def _dispatch_table() -> dict[str, Callable[[dict[str, object]], list[str]]]:
+
     return {
         "text2img": generate_images_in_process,
         "controlnet_text2img": generate_images_controlnet_in_process,
@@ -26,6 +27,7 @@ def _dispatch_table() -> dict[str, Callable[[dict[str, object]], list[str]]]:
         "img2img_controlnet": generate_images_img2img_controlnet_in_process,
         "inpaint": generate_images_inpaint_in_process,
         "inpaint_controlnet": generate_images_inpaint_controlnet_in_process,
+        "animatediff_text2video": generate_videos_text2video_in_process,
     }
 
 
@@ -38,6 +40,7 @@ def main(argv: list[str] | None = None) -> int:
     input_path = Path(args[0])
     output_path = Path(args[1])
 
+    exit_code = 1
     try:
         payload = json.loads(input_path.read_text(encoding="utf-8"))
         if not isinstance(payload, dict):
@@ -58,7 +61,7 @@ def main(argv: list[str] | None = None) -> int:
             json.dumps({"ok": True, "result": result}),
             encoding="utf-8",
         )
-        return 0
+        exit_code = 0
     except Exception as exc:
         result_payload = {
             "ok": False,
@@ -68,7 +71,13 @@ def main(argv: list[str] | None = None) -> int:
         }
         output_path.write_text(json.dumps(result_payload), encoding="utf-8")
         print(result_payload["traceback"], file=sys.stderr)
-        return 1
+    finally:
+        try:
+            cleanup_memory()
+        except Exception:
+            print("SD1.5 subprocess cleanup failed:", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
+    return exit_code
 
 
 if __name__ == "__main__":

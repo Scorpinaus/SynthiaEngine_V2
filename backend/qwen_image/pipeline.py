@@ -23,6 +23,7 @@ from backend.utilities.pipeline import (
     resolve_model_source,
 )
 from backend.utilities.schedulers import create_scheduler
+from backend.qwen_image.subprocess_io import serialize_params_for_subprocess
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _QWEN_IMAGE_SUBPROCESS_SEMAPHORE = threading.Semaphore(1)
@@ -122,7 +123,7 @@ def load_inpaint_pipeline(model_name: str | None) -> QwenImageInpaintPipeline:
 """ Methods involving generation using Qwen_Image related pipelines """
 
 def _run_qwen_image_subprocess(operation: str, params: dict[str, object]) -> dict[str, list[str]]:
-    from backend.qwen_image.subprocess_io import serialize_params_for_subprocess
+
 
     with tempfile.TemporaryDirectory(prefix="qwen_image_") as tmpdir:
         tmp_path = Path(tmpdir)

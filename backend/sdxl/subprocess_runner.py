@@ -8,10 +8,7 @@ from typing import Callable
 
 from backend.sdxl.subprocess_io import deserialize_params_from_subprocess
 from backend.utilities.pipeline import cleanup_memory
-
-
-def _dispatch_table() -> dict[str, Callable[[dict[str, object]], dict[str, list[str]]]]:
-    from backend.sdxl.pipeline import (
+from backend.sdxl.pipeline import (
         generate_controlnet_text2img_in_process,
         generate_img2img_controlnet_in_process,
         generate_img2img_in_process,
@@ -19,6 +16,8 @@ def _dispatch_table() -> dict[str, Callable[[dict[str, object]], dict[str, list[
         generate_inpaint_in_process,
         generate_text2img_in_process,
     )
+
+def _dispatch_table() -> dict[str, Callable[[dict[str, object]], dict[str, list[str]]]]:
 
     return {
         "text2img": generate_text2img_in_process,

@@ -8,14 +8,13 @@ from typing import Callable
 
 from backend.flux.subprocess_io import deserialize_params_from_subprocess
 from backend.utilities.pipeline import cleanup_memory
-
-
-def _dispatch_table() -> dict[str, Callable[[dict[str, object]], dict[str, list[str]]]]:
-    from backend.flux.pipeline import (
+from backend.flux.pipeline import (
         generate_img2img_in_process,
         generate_inpaint_in_process,
         generate_text2img_in_process,
     )
+
+def _dispatch_table() -> dict[str, Callable[[dict[str, object]], dict[str, list[str]]]]:
 
     return {
         "text2img": generate_text2img_in_process,

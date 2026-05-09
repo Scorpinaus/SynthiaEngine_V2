@@ -23,7 +23,14 @@ from backend.config import OUTPUT_DIR
 from backend.utilities.logging import configure_logging
 from backend.lora.utils import apply_lora_adapters_with_validation, write_lora_coverage_report
 from backend.registries.model import get_model_entry
-from backend.utilities.pipeline import build_batch_output_relpath, get_batch_output_dir, make_batch_id, resolve_model_source
+from backend.utilities.pipeline import (
+    build_batch_output_relpath,
+    get_batch_output_dir,
+    make_batch_id,
+    release_pipeline,
+    resolve_model_source,
+)
+from backend.sd15.pipeline import _run_sd15_subprocess
 from backend.utilities.prompt import build_prompt_embeddings
 from backend.utilities.schedulers import create_scheduler
 
@@ -318,8 +325,12 @@ def load_text2video_pipeline(
     return pipe
 
 
-@torch.inference_mode()
 def generate_videos_text2video(params: dict[str, object]) -> list[str]:
+    return _run_sd15_subprocess("animatediff_text2video", params)
+
+
+@torch.inference_mode()
+def generate_videos_text2video_in_process(params: dict[str, object]) -> list[str]:
     """Generate SD1.5 AnimateDiff videos, write MP4 files, and return relative paths."""
     prompt = str(params["prompt"])
     negative_prompt = str(params.get("negative_prompt") or "")
@@ -539,5 +550,6 @@ def generate_videos_text2video(params: dict[str, object]) -> list[str]:
         if free_init_enabled:
             _disable_free_init(pipe)
         _cleanup_lora_adapters(pipe, adapter_names)
+        release_pipeline(pipe, logger=logger)
 
     return filenames

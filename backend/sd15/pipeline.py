@@ -63,6 +63,7 @@ from backend.utilities.pipeline_layer_logging import (
     collect_pipeline_layers,
 )
 from backend.lora.utils import apply_lora_adapters_with_validation, write_lora_coverage_report
+from backend.sd15.subprocess_io import serialize_params_for_subprocess
 
 logger = logging.getLogger(__name__)
 configure_logging()
@@ -302,7 +303,6 @@ def _build_ip_adapter_kwargs(
 
 
 def _run_sd15_subprocess(operation: str, params: dict[str, object]) -> list[str]:
-    from backend.sd15.subprocess_io import serialize_params_for_subprocess
 
     with tempfile.TemporaryDirectory(prefix="sd15_") as tmpdir:
         tmp_path = Path(tmpdir)
@@ -325,7 +325,12 @@ def _run_sd15_subprocess(operation: str, params: dict[str, object]) -> list[str]
             str(output_path),
         ]
         with _SD15_SUBPROCESS_SEMAPHORE:
-            completed = subprocess.run(cmd, cwd=str(_REPO_ROOT))
+            completed = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                cwd=str(_REPO_ROOT),
+            )
 
         if not output_path.exists():
             raise RuntimeError("SD1.5 subprocess failed: No subprocess result was written.")
