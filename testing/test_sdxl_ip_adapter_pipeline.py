@@ -398,7 +398,7 @@ class SdxlIpAdapterPipelineTests(unittest.TestCase):
             events.append("render")
             return _FakeLatents()
 
-        def _fake_release_pipeline(pipe):
+        def _fake_release_pipeline(pipe, **_kwargs):
             self.assertIs(pipe, fake_pipe)
             events.append("release")
 
@@ -422,7 +422,7 @@ class SdxlIpAdapterPipelineTests(unittest.TestCase):
                                 side_effect=_fake_render_text2img_latents,
                             ):
                                 with patch(
-                                    "backend.sdxl.pipeline._release_pipeline",
+                                    "backend.sdxl.pipeline.release_pipeline",
                                     side_effect=_fake_release_pipeline,
                                 ):
                                     with patch(
@@ -437,7 +437,7 @@ class SdxlIpAdapterPipelineTests(unittest.TestCase):
                                                 "backend.sdxl.pipeline.get_batch_output_dir",
                                                 return_value=Path(tmpdir),
                                             ):
-                                                result = sdxl_pipeline.generate_text2img(
+                                                result = sdxl_pipeline.generate_text2img_in_process(
                                                     {
                                                         "prompt": "test prompt",
                                                         "negative_prompt": "",
@@ -492,7 +492,7 @@ class SdxlIpAdapterPipelineTests(unittest.TestCase):
                                             "backend.sdxl.pipeline.get_batch_output_dir",
                                             return_value=Path(tmpdir),
                                         ):
-                                            result = sdxl_pipeline.generate_text2img(
+                                            result = sdxl_pipeline.generate_text2img_in_process(
                                                 {
                                                     "prompt": "test prompt",
                                                     "negative_prompt": "",
@@ -582,7 +582,7 @@ class SdxlIpAdapterPipelineTests(unittest.TestCase):
                                                     "backend.sdxl.pipeline.get_batch_output_dir",
                                                     return_value=Path(tmpdir),
                                                 ):
-                                                    result = sdxl_pipeline.generate_text2img(
+                                                    result = sdxl_pipeline.generate_text2img_in_process(
                                                         {
                                                             "prompt": "test prompt",
                                                             "negative_prompt": "",
@@ -633,7 +633,7 @@ class SdxlIpAdapterPipelineTests(unittest.TestCase):
             events.append("render")
             return _FakeLatents()
 
-        def _fake_release_pipeline(pipe):
+        def _fake_release_pipeline(pipe, **_kwargs):
             self.assertIs(pipe, fake_pipe)
             events.append("release")
 
@@ -657,7 +657,7 @@ class SdxlIpAdapterPipelineTests(unittest.TestCase):
                                 side_effect=_fake_render_img2img_latents,
                             ):
                                 with patch(
-                                    "backend.sdxl.pipeline._release_pipeline",
+                                    "backend.sdxl.pipeline.release_pipeline",
                                     side_effect=_fake_release_pipeline,
                                 ):
                                     with patch(
@@ -672,7 +672,7 @@ class SdxlIpAdapterPipelineTests(unittest.TestCase):
                                                 "backend.sdxl.pipeline.get_batch_output_dir",
                                                 return_value=Path(tmpdir),
                                             ):
-                                                result = sdxl_pipeline.generate_img2img(
+                                                result = sdxl_pipeline.generate_img2img_in_process(
                                                     {
                                                         "initial_image": initial_image,
                                                         "strength": 0.65,
@@ -731,7 +731,7 @@ class SdxlIpAdapterPipelineTests(unittest.TestCase):
                                             "backend.sdxl.pipeline.get_batch_output_dir",
                                             return_value=Path(tmpdir),
                                         ):
-                                            result = sdxl_pipeline.generate_img2img(
+                                            result = sdxl_pipeline.generate_img2img_in_process(
                                                 {
                                                     "initial_image": initial_image,
                                                     "strength": 0.65,
@@ -802,7 +802,7 @@ class SdxlIpAdapterPipelineTests(unittest.TestCase):
                                         "backend.sdxl.pipeline.get_batch_output_dir",
                                         return_value=Path(tmpdir),
                                     ):
-                                        result = sdxl_pipeline.generate_inpaint(
+                                        result = sdxl_pipeline.generate_inpaint_in_process(
                                             {
                                                 "initial_image": initial_image,
                                                 "mask_image": mask_image,

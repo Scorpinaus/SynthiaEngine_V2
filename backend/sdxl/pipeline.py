@@ -1,4 +1,9 @@
+import json
 import logging
+import subprocess
+import sys
+import tempfile
+import threading
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -41,6 +46,8 @@ _DEFAULT_IP_ADAPTER_MODEL = "h94/IP-Adapter"
 _DEFAULT_IP_ADAPTER_SUBFOLDER = "sdxl_models"
 _DEFAULT_IP_ADAPTER_WEIGHT_NAME = "ip-adapter_sdxl.bin"
 _DEFAULT_IP_ADAPTER_SCALE = 0.6
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_SDXL_SUBPROCESS_SEMAPHORE = threading.Semaphore(1)
 
 """ 
     Private Helper functions
@@ -282,6 +289,73 @@ def _metadata_without_runtime_images(params: dict[str, object]) -> dict[str, obj
     }
 
 
+def _run_sdxl_subprocess(operation: str, params: dict[str, object]) -> dict[str, list[str]]:
+    from backend.sdxl.subprocess_io import serialize_params_for_subprocess
+
+    with tempfile.TemporaryDirectory(prefix="sdxl_") as tmpdir:
+        tmp_path = Path(tmpdir)
+        input_path = tmp_path / "input.json"
+        output_path = tmp_path / "output.json"
+        payload = {
+            "operation": operation,
+            "params": serialize_params_for_subprocess(params, tmp_path),
+        }
+        input_path.write_text(
+            json.dumps(payload, separators=(",", ": ")),
+            encoding="utf-8",
+        )
+
+        cmd = [
+            sys.executable,
+            "-m",
+            "backend.sdxl.subprocess_runner",
+            str(input_path),
+            str(output_path),
+        ]
+        with _SDXL_SUBPROCESS_SEMAPHORE:
+            completed = subprocess.run(cmd, cwd=str(_REPO_ROOT))
+
+        if not output_path.exists():
+            raise RuntimeError("SDXL subprocess failed: No subprocess result was written.")
+
+        result_payload = json.loads(output_path.read_text(encoding="utf-8"))
+        if completed.returncode != 0 or not result_payload.get("ok"):
+            detail = result_payload.get("error") or "Unknown subprocess failure."
+            error_type = result_payload.get("error_type")
+            if error_type:
+                detail = f"{error_type}: {detail}"
+            raise RuntimeError(f"SDXL subprocess failed: {detail}")
+
+        result = result_payload.get("result")
+        if not isinstance(result, dict) or not isinstance(result.get("images"), list):
+            raise RuntimeError("SDXL subprocess returned an invalid result.")
+        return {"images": [str(path) for path in result["images"]]}
+
+
+def generate_controlnet_text2img(params: dict[str, object]) -> dict[str, list[str]]:
+    return _run_sdxl_subprocess("controlnet_text2img", params)
+
+
+def generate_img2img_controlnet(params: dict[str, object]) -> dict[str, list[str]]:
+    return _run_sdxl_subprocess("img2img_controlnet", params)
+
+
+def generate_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
+    return _run_sdxl_subprocess("text2img", payload)
+
+
+def generate_img2img(params: dict[str, object]) -> dict[str, list[str]]:
+    return _run_sdxl_subprocess("img2img", params)
+
+
+def generate_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
+    return _run_sdxl_subprocess("inpaint", params)
+
+
+def generate_inpaint_controlnet(params: dict[str, object]) -> dict[str, list[str]]:
+    return _run_sdxl_subprocess("inpaint_controlnet", params)
+
+
 """
     Load SDXL Pipeline Functions
 """
@@ -488,7 +562,7 @@ def load_controlnet_inpaint_pipeline(
 """
 
 @torch.inference_mode()
-def generate_controlnet_text2img(params: dict[str, object],) -> dict[str, list[str]]:
+def generate_controlnet_text2img_in_process(params: dict[str, object],) -> dict[str, list[str]]:
     #1. Load and create local method variables + ensure correct formatting from input dict
     prompt = str(params["prompt"])
     negative_prompt = str(params["negative_prompt"])
@@ -587,7 +661,7 @@ def generate_controlnet_text2img(params: dict[str, object],) -> dict[str, list[s
 
 
 @torch.inference_mode()
-def generate_img2img_controlnet(params: dict[str, object],) -> dict[str, list[str]]:
+def generate_img2img_controlnet_in_process(params: dict[str, object],) -> dict[str, list[str]]:
     #1. Load and create local method variables + ensure correct formatting from input dict
     initial_image = params["initial_image"]
     strength = float(params["strength"])
@@ -705,7 +779,7 @@ def generate_img2img_controlnet(params: dict[str, object],) -> dict[str, list[st
 
 
 @torch.inference_mode()
-def generate_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
+def generate_text2img_in_process(payload: dict[str, object]) -> dict[str, list[str]]:
     
     #1. Load and create local method variables + ensure correct formatting from input dict
     prompt = str(payload["prompt"])
@@ -877,7 +951,7 @@ def generate_text2img(payload: dict[str, object]) -> dict[str, list[str]]:
 
 
 @torch.inference_mode()
-def generate_img2img(params: dict[str, object],) -> dict[str, list[str]]:
+def generate_img2img_in_process(params: dict[str, object],) -> dict[str, list[str]]:
     #1. Load and create local method variables + ensure correct formatting from input dict
     initial_image = params["initial_image"]
     strength = float(params["strength"])
@@ -1018,7 +1092,7 @@ def generate_img2img(params: dict[str, object],) -> dict[str, list[str]]:
 
 
 @torch.inference_mode()
-def generate_inpaint(params: dict[str, object],) -> dict[str, list[str]]:
+def generate_inpaint_in_process(params: dict[str, object],) -> dict[str, list[str]]:
     #1. Load and create local method variables + ensure correct formatting from input dict
     initial_image = params["initial_image"]
     mask_image = params["mask_image"]
@@ -1146,7 +1220,7 @@ def generate_inpaint(params: dict[str, object],) -> dict[str, list[str]]:
 
 
 @torch.inference_mode()
-def generate_inpaint_controlnet(params: dict[str, object],) -> dict[str, list[str]]:
+def generate_inpaint_controlnet_in_process(params: dict[str, object],) -> dict[str, list[str]]:
     #1. Load and create local method variables + ensure correct formatting from input dict
     initial_image = params["initial_image"]
     mask_image = params["mask_image"]

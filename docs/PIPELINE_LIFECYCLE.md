@@ -40,6 +40,10 @@ This keeps the public workflow contract unchanged while letting process exit be
 the final cleanup boundary for CUDA, VRAM, and large Python heap allocations.
 SD1.5 subprocess launches are serialized with a default concurrency limit of
 one per API worker process to avoid overlapping model loads and VRAM spikes.
+SDXL image renders use the same one-shot subprocess pattern for text-to-image,
+img2img, inpaint, and ControlNet variants. The public generation functions keep
+their existing response shapes while child processes own Diffusers pipeline load,
+inference, output writes, cleanup, and process exit.
 ERNIE-Image text-to-image renders follow the same one-shot subprocess pattern
 by default, with a serialized parent-side launch gate and child-side cleanup
 before process exit.
@@ -122,8 +126,8 @@ Use `try`/`finally` around pipeline usage. Avoid cleanup only on the success pat
 
 - SD1.5: subprocess-backed for image renders. The child process still runs
   task-scoped cleanup, and process exit provides the final memory boundary.
-- SDXL: mostly compliant. It already has local pipeline release behavior and
-  final memory cleanup in the main generation paths.
+- SDXL: subprocess-backed for image renders. The child process still runs
+  task-scoped cleanup, and process exit provides the final memory boundary.
 - Flux: mostly compliant. It uses offload and local release behavior.
 - Qwen-Image: partially compliant. It unloads LoRA adapters but should add
   final pipeline release and memory cleanup.
