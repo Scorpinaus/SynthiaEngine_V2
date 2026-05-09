@@ -122,6 +122,22 @@ body {
     letter-spacing: 0;
 }
 
+.checkbox-row {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    gap: 10px;
+    font-size: 15px;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.checkbox-row input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+}
+
 .field-row {
     display: grid;
     grid-template-columns: 1fr 1fr;
