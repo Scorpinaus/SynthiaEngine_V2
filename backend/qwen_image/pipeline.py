@@ -24,7 +24,6 @@ from backend.utilities.pipeline import (
 )
 from backend.utilities.schedulers import create_scheduler
 
-GEN_LOCK = threading.Lock()
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _QWEN_IMAGE_SUBPROCESS_SEMAPHORE = threading.Semaphore(1)
 
@@ -229,44 +228,43 @@ def generate_text2img_in_process(params: dict[str, object]) -> dict[str, list[st
         if report_path is not None:
             logger.info("LoRA coverage report saved to %s", report_path)
 
-        with GEN_LOCK:
-            for i in range(num_images):
-                current_seed = base_seed + i
-                generator = torch.Generator(device="cpu").manual_seed(current_seed)
+        for i in range(num_images):
+            current_seed = base_seed + i
+            generator = torch.Generator(device="cpu").manual_seed(current_seed)
 
-                with torch.autocast("cuda", dtype=torch.bfloat16):
-                    call_kwargs: dict[str, object] = {
-                        "prompt": prompt,
-                        "num_inference_steps": steps,
-                        "true_cfg_scale": true_cfg_scale,
-                        "guidance_scale": guidance_scale,
-                        "width": width,
-                        "height": height,
-                        "generator": generator,
-                    }
-                    if negative_prompt:
-                        call_kwargs["negative_prompt"] = negative_prompt
+            with torch.autocast("cuda", dtype=torch.bfloat16):
+                call_kwargs: dict[str, object] = {
+                    "prompt": prompt,
+                    "num_inference_steps": steps,
+                    "true_cfg_scale": true_cfg_scale,
+                    "guidance_scale": guidance_scale,
+                    "width": width,
+                    "height": height,
+                    "generator": generator,
+                }
+                if negative_prompt:
+                    call_kwargs["negative_prompt"] = negative_prompt
 
-                    image = pipe(**call_kwargs).images[0]
+                image = pipe(**call_kwargs).images[0]
 
-                filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
-                image_params = dict(params)
-                image_params.update(
-                    {
-                        "mode": "txt2img",
-                        "pipeline": "qwen-image",
-                        "seed": current_seed,
-                        "batch_id": batch_id,
-                    }
-                )
-                pnginfo = build_png_metadata(image_params)
-                image.save(filename, pnginfo=pnginfo)
-                logger.info("Image %s saved to %s", i, filename.name)
+            filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
+            image_params = dict(params)
+            image_params.update(
+                {
+                    "mode": "txt2img",
+                    "pipeline": "qwen-image",
+                    "seed": current_seed,
+                    "batch_id": batch_id,
+                }
+            )
+            pnginfo = build_png_metadata(image_params)
+            image.save(filename, pnginfo=pnginfo)
+            logger.info("Image %s saved to %s", i, filename.name)
 
-                filenames.append(build_batch_output_relpath(batch_id, filename.name))
+            filenames.append(build_batch_output_relpath(batch_id, filename.name))
 
-                del image
-                cleanup_memory()
+            del image
+            cleanup_memory()
     finally:
         if pipe is not None and adapter_names and hasattr(pipe, "unload_lora_weights"):
             try:
@@ -336,50 +334,49 @@ def generate_img2img_in_process(params: dict[str, object]) -> dict[str, list[str
         if report_path is not None:
             logger.info("LoRA coverage report saved to %s", report_path)
 
-        with GEN_LOCK:
-            for i in range(num_images):
-                current_seed = base_seed + i
-                generator = torch.Generator(device="cpu").manual_seed(current_seed)
+        for i in range(num_images):
+            current_seed = base_seed + i
+            generator = torch.Generator(device="cpu").manual_seed(current_seed)
 
-                with torch.autocast("cuda", dtype=torch.bfloat16):
-                    call_kwargs: dict[str, object] = {
-                        "prompt": prompt,
-                        "image": initial_image,
-                        "strength": strength,
-                        "num_inference_steps": steps,
-                        "true_cfg_scale": true_cfg_scale,
-                        "guidance_scale": guidance_scale,
-                        "width": width,
-                        "height": height,
-                        "generator": generator,
-                    }
-                    if negative_prompt:
-                        call_kwargs["negative_prompt"] = negative_prompt
+            with torch.autocast("cuda", dtype=torch.bfloat16):
+                call_kwargs: dict[str, object] = {
+                    "prompt": prompt,
+                    "image": initial_image,
+                    "strength": strength,
+                    "num_inference_steps": steps,
+                    "true_cfg_scale": true_cfg_scale,
+                    "guidance_scale": guidance_scale,
+                    "width": width,
+                    "height": height,
+                    "generator": generator,
+                }
+                if negative_prompt:
+                    call_kwargs["negative_prompt"] = negative_prompt
 
-                    image = pipe(**call_kwargs).images[0]
+                image = pipe(**call_kwargs).images[0]
 
-                filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
-                image_width, image_height = initial_image.size
-                image_params = dict(params)
-                image_params.pop("initial_image", None)
-                image_params.update(
-                    {
-                        "mode": "img2img",
-                        "pipeline": "qwen-image",
-                        "width": image_width,
-                        "height": image_height,
-                        "seed": current_seed,
-                        "batch_id": batch_id,
-                    }
-                )
-                pnginfo = build_png_metadata(image_params)
-                image.save(filename, pnginfo=pnginfo)
-                logger.info("Image %s saved to %s", i, filename.name)
+            filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
+            image_width, image_height = initial_image.size
+            image_params = dict(params)
+            image_params.pop("initial_image", None)
+            image_params.update(
+                {
+                    "mode": "img2img",
+                    "pipeline": "qwen-image",
+                    "width": image_width,
+                    "height": image_height,
+                    "seed": current_seed,
+                    "batch_id": batch_id,
+                }
+            )
+            pnginfo = build_png_metadata(image_params)
+            image.save(filename, pnginfo=pnginfo)
+            logger.info("Image %s saved to %s", i, filename.name)
 
-                filenames.append(build_batch_output_relpath(batch_id, filename.name))
+            filenames.append(build_batch_output_relpath(batch_id, filename.name))
 
-                del image
-                cleanup_memory()
+            del image
+            cleanup_memory()
     finally:
         if pipe is not None and adapter_names and hasattr(pipe, "unload_lora_weights"):
             try:
@@ -451,49 +448,48 @@ def generate_inpaint_in_process(params: dict[str, object]) -> dict[str, list[str
         if report_path is not None:
             logger.info("LoRA coverage report saved to %s", report_path)
 
-        with GEN_LOCK:
-            for i in range(num_images):
-                current_seed = base_seed + i
-                generator = torch.Generator(device="cpu").manual_seed(current_seed)
+        for i in range(num_images):
+            current_seed = base_seed + i
+            generator = torch.Generator(device="cpu").manual_seed(current_seed)
 
-                with torch.autocast("cuda", dtype=torch.bfloat16):
-                    call_kwargs: dict[str, object] = {
-                        "prompt": prompt,
-                        "image": initial_image,
-                        "mask_image": mask_image,
-                        "strength": strength,
-                        "num_inference_steps": steps,
-                        "true_cfg_scale": true_cfg_scale,
-                        "guidance_scale": guidance_scale,
-                        "generator": generator,
-                    }
-                    if negative_prompt:
-                        call_kwargs["negative_prompt"] = negative_prompt
+            with torch.autocast("cuda", dtype=torch.bfloat16):
+                call_kwargs: dict[str, object] = {
+                    "prompt": prompt,
+                    "image": initial_image,
+                    "mask_image": mask_image,
+                    "strength": strength,
+                    "num_inference_steps": steps,
+                    "true_cfg_scale": true_cfg_scale,
+                    "guidance_scale": guidance_scale,
+                    "generator": generator,
+                }
+                if negative_prompt:
+                    call_kwargs["negative_prompt"] = negative_prompt
 
-                    image = pipe(**call_kwargs).images[0]
+                image = pipe(**call_kwargs).images[0]
 
-                filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
-                image_params = dict(params)
-                image_params.pop("initial_image", None)
-                image_params.pop("mask_image", None)
-                image_params.update(
-                    {
-                        "mode": "inpaint",
-                        "pipeline": "qwen-image",
-                        "width": width,
-                        "height": height,
-                        "seed": current_seed,
-                        "batch_id": batch_id,
-                    }
-                )
-                pnginfo = build_png_metadata(image_params)
-                image.save(filename, pnginfo=pnginfo)
-                logger.info("Image %s saved to %s", i, filename.name)
+            filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
+            image_params = dict(params)
+            image_params.pop("initial_image", None)
+            image_params.pop("mask_image", None)
+            image_params.update(
+                {
+                    "mode": "inpaint",
+                    "pipeline": "qwen-image",
+                    "width": width,
+                    "height": height,
+                    "seed": current_seed,
+                    "batch_id": batch_id,
+                }
+            )
+            pnginfo = build_png_metadata(image_params)
+            image.save(filename, pnginfo=pnginfo)
+            logger.info("Image %s saved to %s", i, filename.name)
 
-                filenames.append(build_batch_output_relpath(batch_id, filename.name))
+            filenames.append(build_batch_output_relpath(batch_id, filename.name))
 
-                del image
-                cleanup_memory()
+            del image
+            cleanup_memory()
     finally:
         if pipe is not None and adapter_names and hasattr(pipe, "unload_lora_weights"):
             try:

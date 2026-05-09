@@ -14,6 +14,11 @@ from typing import Any
 from PIL import Image
 import torch
 from diffusers.utils import export_to_video, load_video
+from diffusers import AutoencoderKLWan, WanPipeline, WanImageToVideoPipeline, WanVACEPipeline
+from diffusers.schedulers.scheduling_unipc_multistep import UniPCMultistepScheduler
+from diffusers.hooks.group_offloading import apply_group_offloading
+
+from transformers import CLIPVisionModel
 
 from backend.config import OUTPUT_DIR
 from backend.quantization import build_diffusers_pipeline_quantization_config
@@ -24,6 +29,7 @@ from backend.utilities.pipeline import (
     make_batch_id,
     release_pipeline,
 )
+from backend.wan.subprocess_io import serialize_params_for_subprocess
 
 logger = logging.getLogger(__name__)
 configure_logging()
@@ -104,9 +110,6 @@ def load_text2video_pipeline(
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required for wan.text2video generation.")
 
-    from diffusers import AutoencoderKLWan, WanPipeline
-    from diffusers.schedulers.scheduling_unipc_multistep import UniPCMultistepScheduler
-
     vae = AutoencoderKLWan.from_pretrained(
         model_id,
         subfolder="vae",
@@ -142,8 +145,6 @@ def _apply_wan_i2v_memory_preset(pipe: object, *, memory_preset: str) -> None:
     if memory_preset != "group_offload":
         raise ValueError("memory_preset must be 'offload' or 'group_offload' for wan.image2video")
 
-    from diffusers.hooks.group_offloading import apply_group_offloading
-
     onload_device = torch.device("cuda")
     offload_device = torch.device("cpu")
     text_encoder = getattr(pipe, "text_encoder", None)
@@ -175,10 +176,6 @@ def load_image2video_pipeline(
     """Load a WAN 14B image-to-video pipeline with explicit experimental memory controls."""
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required for wan.image2video generation.")
-
-    from diffusers import AutoencoderKLWan, WanImageToVideoPipeline
-    from diffusers.schedulers.scheduling_unipc_multistep import UniPCMultistepScheduler
-    from transformers import CLIPVisionModel
 
     logger.warning(
         "WAN I2V 14B 480P is slow and experimental. Expect heavy CPU offload, high RAM use, and long runtimes."
@@ -227,9 +224,6 @@ def load_vace_pipeline(
         raise ValueError("memory_preset must be 'safe' for wan.text2video")
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required for wan.text2video generation.")
-
-    from diffusers import AutoencoderKLWan, WanVACEPipeline
-    from diffusers.schedulers.scheduling_unipc_multistep import UniPCMultistepScheduler
 
     vae = AutoencoderKLWan.from_pretrained(
         model_id,
@@ -289,7 +283,6 @@ def _prepare_vace_conditions(
 
 
 def _run_wan_subprocess(operation: str, params: dict[str, object]) -> list[str]:
-    from backend.wan.subprocess_io import serialize_params_for_subprocess
 
     with tempfile.TemporaryDirectory(prefix="wan_") as tmpdir:
         tmp_path = Path(tmpdir)

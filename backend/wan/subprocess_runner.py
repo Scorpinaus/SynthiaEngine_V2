@@ -8,13 +8,13 @@ from typing import Callable
 
 from backend.utilities.pipeline import cleanup_memory
 from backend.wan.subprocess_io import deserialize_params_from_subprocess
-
-
-def _dispatch_table() -> dict[str, Callable[[dict[str, object]], list[str]]]:
-    from backend.wan.pipeline import (
+from backend.wan.pipeline import (
         generate_image2video_in_process,
         generate_text2video_in_process,
     )
+
+def _dispatch_table() -> dict[str, Callable[[dict[str, object]], list[str]]]:
+
 
     return {
         "text2video": generate_text2video_in_process,
