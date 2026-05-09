@@ -12,8 +12,13 @@ aim to be deterministic (seeded) and side-effectful only in well-defined ways
 """
 
 import torch
+import json
 import logging
 import math
+import subprocess
+import sys
+import tempfile
+import threading
 import numpy as np
 from contextlib import contextmanager
 from pathlib import Path
@@ -70,6 +75,8 @@ _DEFAULT_IP_ADAPTER_MODEL = "h94/IP-Adapter"
 _DEFAULT_IP_ADAPTER_SUBFOLDER = "models"
 _DEFAULT_IP_ADAPTER_WEIGHT_NAME = "ip-adapter_sd15.bin"
 _DEFAULT_IP_ADAPTER_SCALE = 0.6
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_SD15_SUBPROCESS_SEMAPHORE = threading.Semaphore(1)
 
 """
     Helper functions
@@ -292,6 +299,74 @@ def _build_ip_adapter_kwargs(
     if masks is not None:
         kwargs["cross_attention_kwargs"] = {"ip_adapter_masks": masks}
     return kwargs
+
+
+def _run_sd15_subprocess(operation: str, params: dict[str, object]) -> list[str]:
+    from backend.sd15.subprocess_io import serialize_params_for_subprocess
+
+    with tempfile.TemporaryDirectory(prefix="sd15_") as tmpdir:
+        tmp_path = Path(tmpdir)
+        input_path = tmp_path / "input.json"
+        output_path = tmp_path / "output.json"
+        payload = {
+            "operation": operation,
+            "params": serialize_params_for_subprocess(params, tmp_path),
+        }
+        input_path.write_text(
+            json.dumps(payload, separators=(",", ": ")),
+            encoding="utf-8",
+        )
+
+        cmd = [
+            sys.executable,
+            "-m",
+            "backend.sd15.subprocess_runner",
+            str(input_path),
+            str(output_path),
+        ]
+        with _SD15_SUBPROCESS_SEMAPHORE:
+            completed = subprocess.run(cmd, capture_output=True, text=True, cwd=str(_REPO_ROOT))
+
+        if not output_path.exists():
+            detail = completed.stderr.strip() or completed.stdout.strip() or "No subprocess result was written."
+            raise RuntimeError(f"SD1.5 subprocess failed: {detail}")
+
+        result_payload = json.loads(output_path.read_text(encoding="utf-8"))
+        if completed.returncode != 0 or not result_payload.get("ok"):
+            detail = result_payload.get("error") or completed.stderr.strip() or "Unknown subprocess failure."
+            error_type = result_payload.get("error_type")
+            if error_type:
+                detail = f"{error_type}: {detail}"
+            raise RuntimeError(f"SD1.5 subprocess failed: {detail}")
+
+        result = result_payload.get("result")
+        if not isinstance(result, list):
+            raise RuntimeError("SD1.5 subprocess returned an invalid result.")
+        return [str(path) for path in result]
+
+
+def generate_images_controlnet(params: dict[str, object]) -> list[str]:
+    return _run_sd15_subprocess("controlnet_text2img", params)
+
+
+def generate_images(params: dict[str, object]) -> list[str]:
+    return _run_sd15_subprocess("text2img", params)
+
+
+def generate_images_img2img(params: dict[str, object]) -> list[str]:
+    return _run_sd15_subprocess("img2img", params)
+
+
+def generate_images_img2img_controlnet(params: dict[str, object]) -> list[str]:
+    return _run_sd15_subprocess("img2img_controlnet", params)
+
+
+def generate_images_inpaint(params: dict[str, object]) -> list[str]:
+    return _run_sd15_subprocess("inpaint", params)
+
+
+def generate_images_inpaint_controlnet(params: dict[str, object]) -> list[str]:
+    return _run_sd15_subprocess("inpaint_controlnet", params)
 
 
 @contextmanager
@@ -555,7 +630,7 @@ def load_controlnet_inpaint_pipeline(model_name: str | None, controlnet_model: s
 """
 
 @torch.inference_mode()
-def generate_images_controlnet(params: dict[str, object],) -> list[str]:
+def generate_images_controlnet_in_process(params: dict[str, object],) -> list[str]:
     """
     Generate SD1.5 + ControlNet images and write PNG outputs to disk.
 
@@ -693,7 +768,7 @@ def generate_images_controlnet(params: dict[str, object],) -> list[str]:
     return filenames
 
 @torch.inference_mode()
-def generate_images(params: dict[str, object],):
+def generate_images_in_process(params: dict[str, object],) -> list[str]:
     """
     Generate SD1.5 txt2img images, write PNG outputs, and return relative paths.
 
@@ -958,7 +1033,7 @@ def generate_images(params: dict[str, object],):
     return filenames
 
 @torch.inference_mode()
-def generate_images_img2img(params: dict[str, object],):
+def generate_images_img2img_in_process(params: dict[str, object],) -> list[str]:
     """
     Generate SD1.5 img2img outputs from an initial image and write PNG files.
 
@@ -1223,7 +1298,7 @@ def generate_images_img2img(params: dict[str, object],):
     return filenames
 
 @torch.inference_mode()
-def generate_images_img2img_controlnet(params: dict[str, object],) -> list[str]:
+def generate_images_img2img_controlnet_in_process(params: dict[str, object],) -> list[str]:
     """
     Generate SD1.5 img2img + ControlNet outputs and write PNG files.
 
@@ -1340,7 +1415,7 @@ def generate_images_img2img_controlnet(params: dict[str, object],) -> list[str]:
     return filenames
 
 @torch.inference_mode()
-def generate_images_inpaint(params: dict[str, object],):
+def generate_images_inpaint_in_process(params: dict[str, object],) -> list[str]:
     """
     Generate SD1.5 inpaint outputs from an initial image and mask.
 
@@ -1590,7 +1665,7 @@ def generate_images_inpaint(params: dict[str, object],):
     return filenames
 
 @torch.inference_mode()
-def generate_images_inpaint_controlnet(params: dict[str, object],) -> list[str]:
+def generate_images_inpaint_controlnet_in_process(params: dict[str, object],) -> list[str]:
     """
     Generate SD1.5 inpaint + ControlNet outputs and write PNG files.
 

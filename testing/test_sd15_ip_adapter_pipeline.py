@@ -204,7 +204,7 @@ class Sd15IpAdapterPipelineTests(unittest.TestCase):
                                 "backend.sd15.pipeline.get_batch_output_dir",
                                 return_value=Path(tmpdir),
                             ):
-                                filenames = sd15_pipeline.generate_images(
+                                filenames = sd15_pipeline.generate_images_in_process(
                                     {
                                         "prompt": "test prompt",
                                         "negative_prompt": "",
@@ -278,7 +278,7 @@ class Sd15IpAdapterPipelineTests(unittest.TestCase):
                                     with patch(
                                         "backend.sd15.pipeline.validate_ip_adapter_embeds_metadata"
                                     ) as validate_embeds:
-                                        sd15_pipeline.generate_images(
+                                        sd15_pipeline.generate_images_in_process(
                                             {
                                                 "prompt": "test prompt",
                                                 "negative_prompt": "",
@@ -332,7 +332,7 @@ class Sd15IpAdapterPipelineTests(unittest.TestCase):
                             "backend.sd15.pipeline.get_batch_output_dir",
                             return_value=Path(tmpdir),
                         ):
-                            filenames = sd15_pipeline.generate_images_img2img(
+                            filenames = sd15_pipeline.generate_images_img2img_in_process(
                                 {
                                     "initial_image": Image.new("RGB", (32, 32)),
                                     "prompt": "test prompt",
@@ -401,7 +401,7 @@ class Sd15IpAdapterPipelineTests(unittest.TestCase):
                                 with patch(
                                     "backend.sd15.pipeline.validate_ip_adapter_embeds_metadata"
                                 ) as validate_embeds:
-                                    sd15_pipeline.generate_images_img2img(
+                                    sd15_pipeline.generate_images_img2img_in_process(
                                         {
                                             "initial_image": Image.new("RGB", (32, 32)),
                                             "prompt": "test prompt",
@@ -441,7 +441,7 @@ class Sd15IpAdapterPipelineTests(unittest.TestCase):
                                 "backend.sd15.pipeline.get_batch_output_dir",
                                 return_value=Path(tmpdir),
                             ):
-                                filenames = sd15_pipeline.generate_images_inpaint(
+                                filenames = sd15_pipeline.generate_images_inpaint_in_process(
                                     {
                                         "initial_image": Image.new("RGB", (32, 32)),
                                         "mask_image": Image.new("L", (32, 32)),
@@ -512,7 +512,7 @@ class Sd15IpAdapterPipelineTests(unittest.TestCase):
                                     with patch(
                                         "backend.sd15.pipeline.validate_ip_adapter_embeds_metadata"
                                     ) as validate_embeds:
-                                        sd15_pipeline.generate_images_inpaint(
+                                        sd15_pipeline.generate_images_inpaint_in_process(
                                             {
                                                 "initial_image": Image.new("RGB", (32, 32)),
                                                 "mask_image": Image.new("L", (32, 32)),
@@ -563,7 +563,7 @@ class Sd15IpAdapterPipelineTests(unittest.TestCase):
                                     "prepare_masks",
                                     return_value=prepared_masks,
                                 ) as prepare_masks:
-                                    sd15_pipeline.generate_images(
+                                    sd15_pipeline.generate_images_in_process(
                                         {
                                             "prompt": "test prompt",
                                             "negative_prompt": "",
@@ -608,7 +608,7 @@ class Sd15IpAdapterPipelineTests(unittest.TestCase):
                                 "prepare_masks",
                                 return_value=prepared_masks,
                             ) as prepare_masks:
-                                sd15_pipeline.generate_images_img2img(
+                                sd15_pipeline.generate_images_img2img_in_process(
                                     {
                                         "initial_image": Image.new("RGB", (32, 32)),
                                         "prompt": "test prompt",
@@ -655,7 +655,7 @@ class Sd15IpAdapterPipelineTests(unittest.TestCase):
                                     "prepare_masks",
                                     return_value=prepared_masks,
                                 ) as prepare_masks:
-                                    sd15_pipeline.generate_images_inpaint(
+                                    sd15_pipeline.generate_images_inpaint_in_process(
                                         {
                                             "initial_image": Image.new("RGB", (32, 32)),
                                             "mask_image": Image.new("L", (32, 32)),

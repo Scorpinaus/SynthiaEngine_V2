@@ -33,6 +33,14 @@ That means a generation function should:
 Do not keep hidden module-level pipeline instances unless a future change adds an
 explicit cache with ownership, eviction, and cleanup rules.
 
+SD1.5 image renders run in a one-shot subprocess by default. The API worker
+serializes the task parameters, launches `backend.sd15.subprocess_runner`, and
+the child process loads Diffusers, runs inference, writes outputs, and exits.
+This keeps the public workflow contract unchanged while letting process exit be
+the final cleanup boundary for CUDA, VRAM, and large Python heap allocations.
+SD1.5 subprocess launches are serialized with a default concurrency limit of
+one per API worker process to avoid overlapping model loads and VRAM spikes.
+
 ## Required Cleanup Order
 
 Every generation function that creates a Diffusers pipeline should use this
@@ -109,8 +117,8 @@ Use `try`/`finally` around pipeline usage. Avoid cleanup only on the success pat
 
 ## Current Family Status
 
-- SD1.5: partially compliant. LoRA and IP-Adapter cleanup exist, but final
-  pipeline release and `cleanup_memory()` should be made consistent.
+- SD1.5: subprocess-backed for image renders. The child process still runs
+  task-scoped cleanup, and process exit provides the final memory boundary.
 - SDXL: mostly compliant. It already has local pipeline release behavior and
   final memory cleanup in the main generation paths.
 - Flux: mostly compliant. It uses offload and local release behavior.

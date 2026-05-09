@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from PIL import Image
 
-from backend.sd15.pipeline import generate_images_img2img
+from backend.sd15.pipeline import generate_images_img2img_in_process
 
 
 class FakeGenerator:
@@ -51,7 +51,7 @@ class Sd15Img2ImgLcmPipelineTests(unittest.TestCase):
                 with patch("backend.sd15.pipeline.load_img2img_pipeline", return_value=pipe):
                     with patch("backend.sd15.pipeline.create_scheduler", side_effect=_fake_create_scheduler):
                         with patch("backend.sd15.pipeline.torch.Generator", return_value=FakeGenerator()):
-                            filenames = generate_images_img2img(
+                            filenames = generate_images_img2img_in_process(
                                 {
                                     "initial_image": Image.new("RGB", (16, 16), color="black"),
                                     "prompt": "test prompt",
