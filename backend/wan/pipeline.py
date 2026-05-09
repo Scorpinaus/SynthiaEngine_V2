@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import json
 import logging
+import subprocess
+import sys
+import tempfile
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +28,8 @@ from backend.utilities.pipeline import (
 logger = logging.getLogger(__name__)
 configure_logging()
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_WAN_SUBPROCESS_SEMAPHORE = threading.Semaphore(1)
 _DEFAULT_MODEL_ID = r"D:\diffusion\diffusers\Wan2.1-T2V-1.3B-Diffusers"
 _DEFAULT_VACE_MODEL_ID = r"D:\diffusion\diffusers\Wan2.1-VACE-1.3B-diffusers"
 _DEFAULT_I2V_MODEL_ID = r"D:\diffusion\diffusers\Wan2.1-I2V-14B-480P-Diffusers"
@@ -282,8 +288,59 @@ def _prepare_vace_conditions(
     return video_frames, masks, reference_images
 
 
-@torch.inference_mode()
+def _run_wan_subprocess(operation: str, params: dict[str, object]) -> list[str]:
+    from backend.wan.subprocess_io import serialize_params_for_subprocess
+
+    with tempfile.TemporaryDirectory(prefix="wan_") as tmpdir:
+        tmp_path = Path(tmpdir)
+        input_path = tmp_path / "input.json"
+        output_path = tmp_path / "output.json"
+        payload = {
+            "operation": operation,
+            "params": serialize_params_for_subprocess(params, tmp_path),
+        }
+        input_path.write_text(
+            json.dumps(payload, separators=(",", ": ")),
+            encoding="utf-8",
+        )
+
+        cmd = [
+            sys.executable,
+            "-m",
+            "backend.wan.subprocess_runner",
+            str(input_path),
+            str(output_path),
+        ]
+        with _WAN_SUBPROCESS_SEMAPHORE:
+            completed = subprocess.run(cmd, cwd=str(_REPO_ROOT))
+
+        if not output_path.exists():
+            raise RuntimeError("WAN subprocess failed: No subprocess result was written.")
+
+        result_payload = json.loads(output_path.read_text(encoding="utf-8"))
+        if completed.returncode != 0 or not result_payload.get("ok"):
+            detail = result_payload.get("error") or "Unknown subprocess failure."
+            error_type = result_payload.get("error_type")
+            if error_type:
+                detail = f"{error_type}: {detail}"
+            raise RuntimeError(f"WAN subprocess failed: {detail}")
+
+        result = result_payload.get("result")
+        if not isinstance(result, list):
+            raise RuntimeError("WAN subprocess returned an invalid result.")
+        return [str(path) for path in result]
+
+
 def generate_text2video(params: dict[str, object]) -> list[str]:
+    return _run_wan_subprocess("text2video", params)
+
+
+def generate_image2video(params: dict[str, object]) -> list[str]:
+    return _run_wan_subprocess("image2video", params)
+
+
+@torch.inference_mode()
+def generate_text2video_in_process(params: dict[str, object]) -> list[str]:
     """Generate WAN text-to-video MP4 files and return relative output paths."""
     prompt = str(params["prompt"])
     negative_prompt = str(params.get("negative_prompt") or _DEFAULT_NEGATIVE_PROMPT)
@@ -455,7 +512,7 @@ def generate_text2video(params: dict[str, object]) -> list[str]:
 
 
 @torch.inference_mode()
-def generate_image2video(params: dict[str, object]) -> list[str]:
+def generate_image2video_in_process(params: dict[str, object]) -> list[str]:
     """Generate WAN image-to-video MP4 files and return relative output paths."""
     image = params["image"]
     prompt = str(params["prompt"])

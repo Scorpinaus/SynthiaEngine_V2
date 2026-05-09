@@ -51,6 +51,11 @@ Z-Image image renders use the same one-shot subprocess pattern for text-to-image
 img2img, and inpaint. The parent process serializes workflow parameters,
 including PIL image inputs for image-guided tasks, and the child process owns
 Diffusers pipeline load, inference, output writes, cleanup, and process exit.
+WAN video renders use the same one-shot subprocess pattern for text-to-video,
+VACE, and image-to-video. The parent process serializes workflow parameters,
+including PIL image inputs and local conditioning video paths, and the child
+process owns Diffusers pipeline load, inference, video export, cleanup, and
+process exit.
 
 ## Required Cleanup Order
 
@@ -141,6 +146,9 @@ Use `try`/`finally` around pipeline usage. Avoid cleanup only on the success pat
 - ERNIE-Image: subprocess-backed for text-to-image renders by default. The child
   process releases its pipeline in a task-scoped `finally`, runs final memory
   cleanup in the subprocess runner, and then exits.
+- WAN: subprocess-backed for text2video, VACE, and image2video. The child
+  process still runs task-scoped pipeline release, runs final memory cleanup in
+  the subprocess runner, and then exits.
 
 ## Future Cache Policy
 

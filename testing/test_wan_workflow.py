@@ -17,7 +17,9 @@ from backend.workflow import (
 )
 from backend.wan.pipeline import (
     generate_image2video,
+    generate_image2video_in_process,
     generate_text2video,
+    generate_text2video_in_process,
     load_image2video_pipeline,
     _validate_wan_resolution,
     _validate_wan_frame_count,
@@ -272,7 +274,7 @@ class WanText2VideoWorkflowTests(unittest.TestCase):
             ValueError,
             "reference_image is required for Wan VACE generation.",
         ):
-            generate_text2video(
+            generate_text2video_in_process(
                 {
                     "prompt": "test prompt",
                     "model": "Wan-AI/Wan2.1-VACE-1.3B-diffusers",
@@ -304,7 +306,7 @@ class WanText2VideoWorkflowTests(unittest.TestCase):
                     return_value=(["video-frame"], ["mask-frame"], ["reference-frame"]),
                 ):
                     with patch("backend.wan.pipeline.export_to_video"):
-                        output = generate_text2video(
+                        output = generate_text2video_in_process(
                             {
                                 "prompt": "test prompt",
                                 "model": LOCAL_T2V_MODEL,
@@ -338,7 +340,7 @@ class WanText2VideoWorkflowTests(unittest.TestCase):
                 return_value=(["video-frame"], ["mask-frame"], ["reference-frame"]),
             ):
                 with patch("backend.wan.pipeline.export_to_video"):
-                    output = generate_text2video(
+                    output = generate_text2video_in_process(
                         {
                             "prompt": "test prompt",
                             "model": "Wan-AI/Wan2.1-VACE-1.3B-diffusers",
@@ -379,7 +381,7 @@ class WanText2VideoWorkflowTests(unittest.TestCase):
                         "backend.wan.pipeline.release_pipeline",
                         side_effect=lambda pipe, logger=None: released.append(pipe),
                     ):
-                        generate_text2video(
+                        generate_text2video_in_process(
                             {
                                 "prompt": "test prompt",
                                 "model": "Wan-AI/Wan2.1-VACE-1.3B-diffusers",
@@ -409,7 +411,7 @@ class WanText2VideoWorkflowTests(unittest.TestCase):
 
         with patch("backend.wan.pipeline.load_text2video_pipeline", side_effect=_fake_load_t2v):
             with patch("backend.wan.pipeline.export_to_video"):
-                output = generate_text2video(
+                output = generate_text2video_in_process(
                     {
                         "prompt": "test prompt",
                         "model": LOCAL_T2V_MODEL,
@@ -438,7 +440,7 @@ class WanText2VideoWorkflowTests(unittest.TestCase):
                     "backend.wan.pipeline.release_pipeline",
                     side_effect=lambda pipe, logger=None: released.append(pipe),
                 ):
-                    generate_text2video(
+                    generate_text2video_in_process(
                         {
                             "prompt": "test prompt",
                             "model": LOCAL_T2V_MODEL,
@@ -510,7 +512,7 @@ class WanImage2VideoWorkflowTests(unittest.TestCase):
             ValueError,
             "experimental_ack must be true for wan.image2video",
         ):
-            generate_image2video(
+            generate_image2video_in_process(
                 {
                     "prompt": "test prompt",
                     "image": Image.new("RGB", (32, 32), "blue"),
@@ -533,7 +535,7 @@ class WanImage2VideoWorkflowTests(unittest.TestCase):
             ValueError,
             "num_frames must be one of 33, 49, 81 for wan.image2video",
         ):
-            generate_image2video(
+            generate_image2video_in_process(
                 {
                     "prompt": "test prompt",
                     "image": Image.new("RGB", (32, 32), "blue"),
@@ -555,7 +557,7 @@ class WanImage2VideoWorkflowTests(unittest.TestCase):
 
         with patch("backend.wan.pipeline.load_image2video_pipeline", side_effect=_fake_load_i2v):
             with patch("backend.wan.pipeline.export_to_video"):
-                output = generate_image2video(
+                output = generate_image2video_in_process(
                     {
                         "prompt": "test prompt",
                         "image": Image.new("RGB", (832, 480), "blue"),

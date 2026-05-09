@@ -678,6 +678,7 @@ LoRA adapter targeting:
 `wan.text2video` output notes:
 - Returns `{ "batch_id": "...", "videos": ["/outputs/...mp4"] }`.
 - Writes batch video metadata to `outputs/batch_<batch_id>/video_<batch_id>.mp4.json`; `/history` uses this sidecar to show prompt and WAN generation settings.
+- WAN text-to-video and VACE renders run in a short-lived subprocess so Windows can reclaim system RAM and VRAM after generation.
 - WAN 2.2 planning note: `WanPipeline` supports WAN 2.2 text-to-video models, but official Wan-AI VACE Diffusers coverage is centered on Wan2.1 VACE. Community Wan2.2 VACE/Fun checkpoints may be evaluated later behind the same single-video constraints.
 
 `wan.image2video` input notes:
@@ -700,6 +701,7 @@ LoRA adapter targeting:
 `wan.image2video` output notes:
 - Returns `{ "batch_id": "...", "videos": ["/outputs/...mp4"] }`.
 - Writes batch video metadata to `outputs/batch_<batch_id>/video_<batch_id>.mp4.json`; `/history` uses this sidecar to show prompt and WAN I2V generation settings.
+- WAN image-to-video renders run in a short-lived subprocess so Windows can reclaim system RAM and VRAM after generation.
 
 `controlnet.preprocess` input notes:
 - `image`: image reference
