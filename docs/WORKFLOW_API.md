@@ -456,6 +456,7 @@ Frontend note (SD1.5 page):
 - `frontend/sdxl/inpaint.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()` for `sdxl.inpaint` optional ControlNet usage.
 - `frontend/sdxl/inpaint.js` also consumes shared LoRA state via `window.LoraPanel.getSelectedAdapters()` for `sdxl.inpaint`.
 - `frontend/sdxl/inpaint.js` uploads the optional SDXL IP-Adapter reference image through `/api/artifacts` and sends it as `sdxl.inpaint.inputs.ip_adapter.image`.
+- `frontend/ernie_image/text2img.html` uses the shared Adapters modal with the LoRA tab enabled, and `frontend/ernie_image/text2img.js` sends selected adapters as `ernie-image.text2img.inputs.lora_adapters`.
 
 ## Job object
 
@@ -562,7 +563,7 @@ This same matrix is available in machine-readable form at `GET /api/workflow/cat
 | `flux` | yes | no | yes | yes | no | no | yes | no | no |
 | `qwen-image` | yes | no | yes | yes | no | no | yes | no | yes |
 | `z-image` (`zimage`) | yes | no | yes | yes | no | no | yes | no | no |
-| `ernie-image` (`ernie`) | yes | no | no | no | no | no | no | no | no |
+| `ernie-image` (`ernie`) | yes | no | no | no | no | no | yes | no | no |
 
 Task inputs/outputs are task-specific. As a convention, image-generating tasks return:
 - `images`: list of `"/outputs/..."` URLs
@@ -1045,13 +1046,18 @@ Example two-step SDXL IP-Adapter workflow:
 - Initial support is text-to-image only through Diffusers `ErnieImagePipeline`.
 - Defaults are tuned for Windows 11 with 64 GB system RAM and 12 GB VRAM: `steps: 8`, `guidance_scale: 1.0`, `width: 768`, `height: 768`, `num_images: 1`, `negative_prompt: ""`, `use_pe: false`, `load_pe: false`, and `memory_preset: "sequential_offload"`.
 - `model`: optional base model registry name. If omitted, backend uses the first registered `ernie-image` model, falling back to Hub model `baidu/ERNIE-Image-Turbo`.
+- `lora_adapters`: optional. When omitted or empty, text2img runs without LoRA adapters.
+- `lora_adapters` entries are resolved through the LoRA registry (`/lora-models`) by `lora_id`.
+- Family validation is enforced: only LoRAs registered with `lora_model_family: "ernie-image"` are accepted for `ernie-image.text2img`.
+- Runtime loading uses Diffusers `ErnieImagePipeline.load_lora_weights(...)` / `set_adapters(...)`; simple adapter `strength` values are the recommended initial contract.
+- Invalid adapter references (for example missing `lora_id`, unknown id, or incompatible family) fail the task with a validation/runtime error.
 - `negative_prompt`: optional text for things to avoid. Diffusers only applies negative conditioning when classifier-free guidance is active; for ERNIE this means `guidance_scale > 1.0`, so the default Turbo `guidance_scale: 1.0` effectively ignores it.
 - `memory_preset`: `"sequential_offload"` is safest on 12 GB VRAM and slower; `"model_offload"` may be faster but can OOM at larger resolutions.
 - ERNIE-Image renders run in a short-lived subprocess so Windows can reclaim system RAM after generation.
 - `use_pe`: enables the ERNIE prompt enhancer when supported by the installed Diffusers pipeline. Keep disabled for first smoke tests on 12 GB VRAM.
 - `load_pe`: loads the PE prompt enhancer components. Keep disabled when `use_pe` is false to reduce RAM/VRAM pressure. `use_pe: true` requires `load_pe: true`.
 - `num_images` is fixed to `1`; submit multiple jobs instead of batching to keep VRAM/RAM pressure predictable.
-- Scheduler, LoRA, img2img, inpaint, ControlNet, and quantization are outside the initial ERNIE-Image contract.
+- Scheduler, img2img, inpaint, ControlNet, IP-Adapter, and quantization are outside the initial ERNIE-Image contract.
 
 Example ERNIE-Image workflow:
 

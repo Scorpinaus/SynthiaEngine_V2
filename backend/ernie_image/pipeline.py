@@ -11,6 +11,7 @@ import torch
 from diffusers import ErnieImagePipeline
 
 from backend.config import OUTPUT_DIR
+from backend.lora.utils import apply_lora_adapters_with_validation, write_lora_coverage_report
 from backend.registries.model import ModelRegistryEntry, list_model_entries
 from backend.utilities.logging import configure_logging
 from backend.utilities.pipeline import (
@@ -19,7 +20,6 @@ from backend.utilities.pipeline import (
     cleanup_memory,
     get_batch_output_dir,
     make_batch_id,
-    release_pipeline,
     resolve_model_source,
 )
 
@@ -161,6 +161,7 @@ def _generate_text2img_subprocess_child(params: dict[str, object]) -> dict[str, 
     use_pe = bool(params.get("use_pe", False))
     load_pe = bool(params.get("load_pe", False))
     memory_preset = str(params.get("memory_preset") or "sequential_offload")
+    lora_adapters = params.get("lora_adapters")
 
     if use_pe and not load_pe:
         raise ValueError("use_pe=true requires load_pe=true")
@@ -171,7 +172,7 @@ def _generate_text2img_subprocess_child(params: dict[str, object]) -> dict[str, 
         base_seed = int(seed)
 
     logger.info(
-        "ERNIE-Image Generate: model=%s seed=%s steps=%s guidance_scale=%s size=%sx%s num_images=%s use_pe=%s load_pe=%s memory_preset=%s",
+        "ERNIE-Image T2I Generate: model=%s, seed=%s, steps=%s, guidance_scale=%s, WidthxHeight=%sx%s, num_images=%s, use_pe=%s, load_pe=%s, memory_preset=%s",
         model,
         base_seed,
         steps,
@@ -193,42 +194,48 @@ def _generate_text2img_subprocess_child(params: dict[str, object]) -> dict[str, 
     )
 
     filenames: list[str] = []
-    try:
-        for i in range(num_images):
-            current_seed = base_seed + i
-            generator = torch.Generator(device="cpu").manual_seed(current_seed)
+    _adapter_names, lora_coverage = apply_lora_adapters_with_validation(
+        pipe,
+        lora_adapters,  # type: ignore[arg-type]
+        expected_family="ernie-image",
+        validate=False,
+    )
+    report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
+    if report_path is not None:
+        logger.info("LoRA coverage report saved to %s", report_path)
 
-            call_kwargs: dict[str, object] = {
-                "prompt": prompt,
-                "negative_prompt": negative_prompt,
-                "num_inference_steps": steps,
-                "guidance_scale": guidance_scale,
-                "width": width,
-                "height": height,
-                "generator": generator,
-                "use_pe": use_pe,
+    for i in range(num_images):
+        current_seed = base_seed + i
+        generator = torch.Generator(device="cpu").manual_seed(current_seed)
+
+        call_kwargs: dict[str, object] = {
+            "prompt": prompt,
+            "negative_prompt": negative_prompt,
+            "num_inference_steps": steps,
+            "guidance_scale": guidance_scale,
+            "width": width,
+            "height": height,
+            "generator": generator,
+            "use_pe": use_pe,
+        }
+        image = pipe(**call_kwargs).images[0]
+
+        filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
+        image_params = dict(params)
+        image_params.update(
+            {
+                "mode": "txt2img",
+                "pipeline": "ernie-image",
+                "seed": current_seed,
+                "batch_id": batch_id,
             }
-            image = pipe(**call_kwargs).images[0]
+        )
+        pnginfo = build_png_metadata(image_params)
+        image.save(filename, pnginfo=pnginfo)
+        logger.info("Image %s saved to %s", i, filename.name)
+        filenames.append(build_batch_output_relpath(batch_id, filename.name))
 
-            filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
-            image_params = dict(params)
-            image_params.update(
-                {
-                    "mode": "txt2img",
-                    "pipeline": "ernie-image",
-                    "seed": current_seed,
-                    "batch_id": batch_id,
-                }
-            )
-            pnginfo = build_png_metadata(image_params)
-            image.save(filename, pnginfo=pnginfo)
-            logger.info("Image %s saved to %s", i, filename.name)
-            filenames.append(build_batch_output_relpath(batch_id, filename.name))
-
-            del image
-            cleanup_memory()
-    finally:
-        release_pipeline(pipe, logger=logger)
-        pipe = None
+        del image
+        cleanup_memory()
 
     return {"images": [f"/outputs/{name}" for name in filenames]}

@@ -11,10 +11,13 @@ class FrontendErnieImageScriptTests(unittest.TestCase):
             encoding="utf-8"
         )
         preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
-        ernie_tag = '<script src="text2img.js?v=1"></script>'
+        ernie_tag = '<script src="text2img.js?v=2"></script>'
 
         self.assertIn('<script src="../workflow_client.js?v=1"></script>', html)
         self.assertIn('<script src="../workflow_catalog.js?v=1"></script>', html)
+        self.assertIn('<script src="../components/lora_panel.js?v=2"></script>', html)
+        self.assertIn('<script src="../components/adapter_panel.js?v=1"></script>', html)
+        self.assertIn('<div id="adapter-panel-root"></div>', html)
         self.assertIn(preset_tag, html)
         self.assertIn(ernie_tag, html)
         self.assertLess(html.index(preset_tag), html.index(ernie_tag))
@@ -34,6 +37,10 @@ class FrontendErnieImageScriptTests(unittest.TestCase):
         self.assertIn("load_pe", js)
         self.assertIn("memory_preset", js)
         self.assertIn("negative_prompt", js)
+        self.assertIn('window.AdapterPanel?.render?.()', js)
+        self.assertIn('window.LoraPanel?.init({ apiBase: API_BASE, family: "ernie-image" })', js)
+        self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", js)
+        self.assertIn("inputs.lora_adapters = loraAdapters", js)
 
 
 if __name__ == "__main__":

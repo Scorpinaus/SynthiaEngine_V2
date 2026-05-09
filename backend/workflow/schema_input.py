@@ -665,6 +665,7 @@ class ErnieImageText2ImgInputs(BaseModel):
     use_pe: bool = False
     load_pe: bool = False
     memory_preset: Literal["model_offload", "sequential_offload"] = "sequential_offload"
+    lora_adapters: Any | None = None
 
     @model_validator(mode="after")
     def _validate_pe_loading(self) -> "ErnieImageText2ImgInputs":

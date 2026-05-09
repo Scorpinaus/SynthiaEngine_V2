@@ -8,6 +8,7 @@ gallery.render();
 
 let activeJobToken = 0;
 let activeEventSource = null;
+let loraPanelReady = Promise.resolve();
 
 function closeActiveEventSource() {
     if (activeEventSource) {
@@ -30,6 +31,118 @@ function setCheckboxValue(elementId, value) {
         return;
     }
     el.checked = Boolean(value);
+}
+
+function countLabel(count, singular, plural = `${singular}s`) {
+    const value = Number(count);
+    const safeCount = Number.isFinite(value) ? value : 0;
+    return `${safeCount} ${safeCount === 1 ? singular : plural}`;
+}
+
+function setText(elementId, value) {
+    const element = document.getElementById(elementId);
+    if (element) {
+        element.textContent = value;
+    }
+}
+
+function updateAdapterSummary() {
+    const selectedAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
+    const lora = window.LoraPanel?.getSummary?.() ?? {
+        available: 0,
+        selected: Array.isArray(selectedAdapters) ? selectedAdapters.length : 0,
+    };
+    const availableLoras = Number(lora.available ?? 0);
+    const selectedLoras = Number(lora.selected ?? 0);
+
+    setText(
+        "adapter_summary_label",
+        `${countLabel(availableLoras, "adapter available", "adapters available")} / ${countLabel(selectedLoras, "adapter active", "adapters active")}`
+    );
+    setText("adapter-tab-lora-badge", countLabel(selectedLoras, "selected", "selected"));
+    setText("adapter-overview-lora-count", countLabel(availableLoras, "LoRA available", "LoRAs available"));
+    setText(
+        "adapter-overview-lora-detail",
+        selectedLoras > 0 ? `${countLabel(selectedLoras, "LoRA")} selected.` : "No LoRAs selected."
+    );
+}
+
+function setAdapterTab(tabName) {
+    const target = String(tabName || "overview");
+    document.querySelectorAll("[data-adapter-tab]").forEach((tab) => {
+        const isActive = tab.getAttribute("data-adapter-tab") === target;
+        tab.classList.toggle("is-active", isActive);
+        tab.setAttribute("aria-selected", String(isActive));
+    });
+    document.querySelectorAll("[data-adapter-panel]").forEach((panel) => {
+        const isActive = panel.getAttribute("data-adapter-panel") === target;
+        panel.classList.toggle("is-active", isActive);
+        panel.toggleAttribute("hidden", !isActive);
+    });
+    updateAdapterSummary();
+}
+
+function setAdapterModalOpen(isOpen) {
+    const modal = document.getElementById("adapter-modal");
+    if (!modal) {
+        return;
+    }
+    modal.classList.toggle("hidden", !isOpen);
+    modal.setAttribute("aria-hidden", String(!isOpen));
+    if (isOpen) {
+        updateAdapterSummary();
+        document.getElementById("adapter-modal-close")?.focus();
+    } else {
+        document.getElementById("adapter-modal-open")?.focus();
+    }
+}
+
+function hideAdapterSection(sectionName) {
+    document.querySelector(`[data-adapter-tab="${sectionName}"]`)?.remove();
+    document.querySelector(`[data-adapter-panel="${sectionName}"]`)?.remove();
+    document.querySelector(`[data-adapter-tab-jump="${sectionName}"]`)?.remove();
+}
+
+function initAdapterModal() {
+    const modal = document.getElementById("adapter-modal");
+    if (!modal) {
+        return;
+    }
+    setText("adapter-modal-subtitle", "ERNIE-Image adapter stack");
+    hideAdapterSection("controlnet");
+    hideAdapterSection("ipadapter");
+    document.getElementById("adapter-modal-open")?.addEventListener("click", () => {
+        setAdapterModalOpen(true);
+    });
+    document.getElementById("adapter-modal-close")?.addEventListener("click", () => {
+        setAdapterModalOpen(false);
+    });
+    document.getElementById("adapter-modal-overlay")?.addEventListener("click", () => {
+        setAdapterModalOpen(false);
+    });
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !modal.classList.contains("hidden")) {
+            setAdapterModalOpen(false);
+        }
+    });
+    document.querySelectorAll("[data-adapter-tab]").forEach((tab) => {
+        tab.addEventListener("click", () => {
+            setAdapterTab(tab.getAttribute("data-adapter-tab"));
+        });
+    });
+    document.querySelectorAll("[data-adapter-tab-jump]").forEach((button) => {
+        button.addEventListener("click", () => {
+            setAdapterTab(button.getAttribute("data-adapter-tab-jump"));
+        });
+    });
+    window.addEventListener("adapter-summary-changed", updateAdapterSummary);
+    modal.addEventListener("change", () => {
+        window.setTimeout(updateAdapterSummary, 0);
+    });
+    modal.addEventListener("click", () => {
+        window.setTimeout(updateAdapterSummary, 0);
+    });
+    updateAdapterSummary();
 }
 
 function setModelSelection(value) {
@@ -69,10 +182,13 @@ function collectErnieImagePresetSettings() {
         use_pe: Boolean(document.getElementById("use_pe")?.checked),
         load_pe: Boolean(document.getElementById("load_pe")?.checked),
         memory_preset: WorkflowClient.readTextValue("memory_preset", "sequential_offload"),
+        lora_adapters: window.LoraPanel?.getSelectedAdapters?.() ?? [],
     };
 }
 
 async function applyErnieImagePresetSettings(settings) {
+    await loraPanelReady;
+
     setInputValue("prompt", settings.prompt);
     setInputValue("negative_prompt", settings.negative_prompt);
     setInputValue("steps", settings.steps);
@@ -85,6 +201,10 @@ async function applyErnieImagePresetSettings(settings) {
     setCheckboxValue("use_pe", settings.use_pe);
     setCheckboxValue("load_pe", settings.load_pe);
     setInputValue("memory_preset", settings.memory_preset);
+    if (Array.isArray(settings.lora_adapters)) {
+        window.LoraPanel?.setSelectedAdapters?.(settings.lora_adapters);
+        updateAdapterSummary();
+    }
 }
 
 async function loadModels() {
@@ -120,6 +240,13 @@ async function loadModels() {
 }
 
 loadModels();
+window.AdapterPanel?.render?.();
+initAdapterModal();
+loraPanelReady = window.LoraPanel?.init({ apiBase: API_BASE, family: "ernie-image" }) ?? Promise.resolve();
+loraPanelReady.then(() => {
+    updateAdapterSummary();
+    window.setTimeout(updateAdapterSummary, 500);
+});
 window.PresetPanel?.init({
     apiBase: API_BASE,
     family: "ernie-image",
@@ -197,6 +324,10 @@ async function generate() {
     const defaults = catalog?.tasks?.["ernie-image.text2img"]?.input_defaults ?? {};
     const inputs = {};
     baseInput(inputs, defaults);
+    const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
+    if (Array.isArray(loraAdapters) && loraAdapters.length > 0) {
+        inputs.lora_adapters = loraAdapters;
+    }
     console.log("Generate payload", inputs);
 
     try {

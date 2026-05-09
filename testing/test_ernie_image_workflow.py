@@ -34,6 +34,14 @@ class ErnieImageWorkflowTests(unittest.TestCase):
         self.assertFalse(inputs.use_pe)
         self.assertFalse(inputs.load_pe)
         self.assertEqual(inputs.memory_preset, "sequential_offload")
+        self.assertIsNone(inputs.lora_adapters)
+
+    def test_ernie_image_text2img_accepts_lora_adapters(self):
+        inputs = ErnieImageText2ImgInputs(
+            prompt="test",
+            lora_adapters=[{"lora_id": 101, "strength": 0.8}],
+        )
+        self.assertEqual(inputs.lora_adapters, [{"lora_id": 101, "strength": 0.8}])
 
     def test_ernie_image_text2img_forwards_runtime_controls(self):
         captured = {}
@@ -76,6 +84,27 @@ class ErnieImageWorkflowTests(unittest.TestCase):
         self.assertFalse(captured["load_pe"])
         self.assertEqual(captured["memory_preset"], "sequential_offload")
 
+    def test_ernie_image_text2img_forwards_lora_adapters(self):
+        captured = {}
+
+        def _fake_generate_text2img(payload):
+            captured.update(payload)
+            return {"images": ["/outputs/batch/out.png"]}
+
+        fake_module = SimpleNamespace(generate_text2img=_fake_generate_text2img)
+        with patch.dict("sys.modules", {"backend.ernie_image.pipeline": fake_module}):
+            result = _ernie_image_text2img(
+                {
+                    "prompt": "test prompt",
+                    "lora_adapters": [{"lora_id": 101, "strength": 0.8}],
+                },
+                _ctx=None,
+            )
+
+        self.assertEqual(result["images"], ["/outputs/batch/out.png"])
+        self.assertIn("lora_adapters", captured)
+        self.assertEqual(captured["lora_adapters"], [{"lora_id": 101, "strength": 0.8}])
+
     def test_ernie_image_rejects_use_pe_without_loading_pe(self):
         with self.assertRaisesRegex(ValueError, "use_pe=true requires load_pe=true"):
             ErnieImageText2ImgInputs(prompt="test", use_pe=True, load_pe=False)
@@ -91,6 +120,7 @@ class ErnieImageWorkflowTests(unittest.TestCase):
         )
         self.assertTrue(catalog["capabilities"]["ernie-image"]["features"]["text2img"])
         self.assertFalse(catalog["capabilities"]["ernie-image"]["features"]["img2img"])
+        self.assertTrue(catalog["capabilities"]["ernie-image"]["features"]["lora_adapters"])
 
         defaults = catalog["tasks"]["ernie-image.text2img"]["input_defaults"]
         self.assertEqual(defaults["steps"], 8)
@@ -101,6 +131,7 @@ class ErnieImageWorkflowTests(unittest.TestCase):
         self.assertFalse(defaults["use_pe"])
         self.assertFalse(defaults["load_pe"])
         self.assertEqual(defaults["memory_preset"], "sequential_offload")
+        self.assertIsNone(defaults["lora_adapters"])
         self.assertNotIn("execution_mode", defaults)
 
     def test_ernie_image_subprocess_bridge_invokes_child_and_reads_result(self):
@@ -151,7 +182,6 @@ class ErnieImageWorkflowTests(unittest.TestCase):
                     side_effect=lambda batch, name: f"{batch}/{name}",
                 ),
                 patch("backend.ernie_image.pipeline.cleanup_memory"),
-                patch("backend.ernie_image.pipeline.release_pipeline"),
             ):
                 result = _generate_text2img_subprocess_child(
                     {

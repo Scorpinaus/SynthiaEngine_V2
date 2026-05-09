@@ -510,7 +510,10 @@ def _z_image_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str,
 
 def _ernie_image_runtime_deps() -> dict[str, Any]:
     ernie_image_pipeline_module = importlib.import_module("backend.ernie_image.pipeline")
-    return {"generate_text2img": ernie_image_pipeline_module.generate_text2img}
+    return {
+        "generate_text2img": ernie_image_pipeline_module.generate_text2img,
+        "normalized_lora_adapters": _normalized_lora_adapters,
+    }
 
 
 def _ernie_image_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
