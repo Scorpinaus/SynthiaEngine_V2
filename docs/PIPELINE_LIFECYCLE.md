@@ -47,6 +47,11 @@ inference, output writes, cleanup, and process exit.
 ERNIE-Image text-to-image renders follow the same one-shot subprocess pattern
 by default, with a serialized parent-side launch gate and child-side cleanup
 before process exit.
+Qwen-Image image renders use the same one-shot subprocess pattern for
+text-to-image, img2img, and inpaint. The parent process serializes workflow
+parameters, including PIL image inputs for image-guided tasks, and the child
+process owns Diffusers pipeline load, inference, output writes, cleanup, and
+process exit.
 Flux image renders use the same one-shot subprocess pattern for text-to-image,
 img2img, and inpaint. The parent process serializes workflow parameters,
 including PIL image inputs for image-guided tasks, and the child process owns
@@ -144,8 +149,9 @@ Use `try`/`finally` around pipeline usage. Avoid cleanup only on the success pat
 - Flux: subprocess-backed for text2img, img2img, and inpaint. The child process
   still runs task-scoped pipeline release, runs final memory cleanup in the
   subprocess runner, and then exits.
-- Qwen-Image: partially compliant. It unloads LoRA adapters but should add
-  final pipeline release and memory cleanup.
+- Qwen-Image: subprocess-backed for text2img, img2img, and inpaint. The child
+  process still runs task-scoped pipeline release, runs final memory cleanup in
+  the subprocess runner, and then exits.
 - Z-Image: subprocess-backed for text2img, img2img, and inpaint. The child
   process still runs task-scoped cleanup, and process exit provides the final
   memory boundary.

@@ -1,5 +1,10 @@
+import json
 import logging
+import subprocess
+import sys
+import tempfile
 import threading
+from pathlib import Path
 
 import torch
 from diffusers import QwenImageImg2ImgPipeline, QwenImageInpaintPipeline, QwenImagePipeline
@@ -11,6 +16,7 @@ from backend.registries.model import get_model_entry
 from backend.utilities.pipeline import (
     build_png_metadata,
     build_batch_output_relpath,
+    cleanup_memory,
     get_batch_output_dir,
     make_batch_id,
     release_pipeline,
@@ -19,6 +25,8 @@ from backend.utilities.pipeline import (
 from backend.utilities.schedulers import create_scheduler
 
 GEN_LOCK = threading.Lock()
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_QWEN_IMAGE_SUBPROCESS_SEMAPHORE = threading.Semaphore(1)
 
 logger = logging.getLogger(__name__)
 configure_logging()
@@ -114,8 +122,63 @@ def load_inpaint_pipeline(model_name: str | None) -> QwenImageInpaintPipeline:
 
 """ Methods involving generation using Qwen_Image related pipelines """
 
-@torch.inference_mode()
+def _run_qwen_image_subprocess(operation: str, params: dict[str, object]) -> dict[str, list[str]]:
+    from backend.qwen_image.subprocess_io import serialize_params_for_subprocess
+
+    with tempfile.TemporaryDirectory(prefix="qwen_image_") as tmpdir:
+        tmp_path = Path(tmpdir)
+        input_path = tmp_path / "input.json"
+        output_path = tmp_path / "output.json"
+        payload = {
+            "operation": operation,
+            "params": serialize_params_for_subprocess(params, tmp_path),
+        }
+        input_path.write_text(
+            json.dumps(payload, separators=(",", ": ")),
+            encoding="utf-8",
+        )
+
+        cmd = [
+            sys.executable,
+            "-m",
+            "backend.qwen_image.subprocess_runner",
+            str(input_path),
+            str(output_path),
+        ]
+        with _QWEN_IMAGE_SUBPROCESS_SEMAPHORE:
+            completed = subprocess.run(cmd, cwd=str(_REPO_ROOT))
+
+        if not output_path.exists():
+            raise RuntimeError("Qwen-Image subprocess failed: No subprocess result was written.")
+
+        result_payload = json.loads(output_path.read_text(encoding="utf-8"))
+        if completed.returncode != 0 or not result_payload.get("ok"):
+            detail = result_payload.get("error") or "Unknown subprocess failure."
+            error_type = result_payload.get("error_type")
+            if error_type:
+                detail = f"{error_type}: {detail}"
+            raise RuntimeError(f"Qwen-Image subprocess failed: {detail}")
+
+        result = result_payload.get("result")
+        if not isinstance(result, dict) or not isinstance(result.get("images"), list):
+            raise RuntimeError("Qwen-Image subprocess returned an invalid result.")
+        return {"images": [str(path) for path in result["images"]]}
+
+
 def generate_text2img(params: dict[str, object]) -> dict[str, list[str]]:
+    return _run_qwen_image_subprocess("text2img", params)
+
+
+def generate_img2img(params: dict[str, object]) -> dict[str, list[str]]:
+    return _run_qwen_image_subprocess("img2img", params)
+
+
+def generate_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
+    return _run_qwen_image_subprocess("inpaint", params)
+
+
+@torch.inference_mode()
+def generate_text2img_in_process(params: dict[str, object]) -> dict[str, list[str]]:
     prompt = str(params.get("prompt") or "")
     negative_prompt = str(params.get("negative_prompt") or "").strip()
     steps = int(params.get("steps", 30))
@@ -138,7 +201,6 @@ def generate_text2img(params: dict[str, object]) -> dict[str, list[str]]:
     batch_id = make_batch_id()
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
-    pipe = load_text2img_pipeline(model)
     logger.info(
         "Qwen-Image Generate: model=%s seed=%s steps=%s true_cfg_scale=%s guidance_scale=%s size=%sx%s num_images=%s",
         model,
@@ -152,18 +214,21 @@ def generate_text2img(params: dict[str, object]) -> dict[str, list[str]]:
     )
 
     filenames: list[str] = []
-    pipe.scheduler = create_scheduler(scheduler, pipe)
-    adapter_names, lora_coverage = apply_lora_adapters_with_validation(
-        pipe,
-        lora_adapters,
-        expected_family="qwen-image",
-        validate=True,
-    )
-    report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
-    if report_path is not None:
-        logger.info("LoRA coverage report saved to %s", report_path)
-
+    pipe = None
+    adapter_names: list[str] = []
     try:
+        pipe = load_text2img_pipeline(model)
+        pipe.scheduler = create_scheduler(scheduler, pipe)
+        adapter_names, lora_coverage = apply_lora_adapters_with_validation(
+            pipe,
+            lora_adapters,
+            expected_family="qwen-image",
+            validate=True,
+        )
+        report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
+        if report_path is not None:
+            logger.info("LoRA coverage report saved to %s", report_path)
+
         with GEN_LOCK:
             for i in range(num_images):
                 current_seed = base_seed + i
@@ -199,8 +264,11 @@ def generate_text2img(params: dict[str, object]) -> dict[str, list[str]]:
                 logger.info("Image %s saved to %s", i, filename.name)
 
                 filenames.append(build_batch_output_relpath(batch_id, filename.name))
+
+                del image
+                cleanup_memory()
     finally:
-        if adapter_names and hasattr(pipe, "unload_lora_weights"):
+        if pipe is not None and adapter_names and hasattr(pipe, "unload_lora_weights"):
             try:
                 pipe.unload_lora_weights()
             except Exception:
@@ -212,7 +280,7 @@ def generate_text2img(params: dict[str, object]) -> dict[str, list[str]]:
 
 
 @torch.inference_mode()
-def generate_img2img(params: dict[str, object]) -> dict[str, list[str]]:
+def generate_img2img_in_process(params: dict[str, object]) -> dict[str, list[str]]:
     initial_image = params.get("initial_image")
     if initial_image is None:
         raise ValueError("initial_image is required")
@@ -239,7 +307,6 @@ def generate_img2img(params: dict[str, object]) -> dict[str, list[str]]:
     batch_id = make_batch_id()
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
-    pipe = load_img2img_pipeline(model)
     logger.info(
         "Qwen-Image Img2Img: model=%s seed=%s steps=%s true_cfg_scale=%s guidance_scale=%s size=%sx%s strength=%s num_images=%s",
         model,
@@ -254,18 +321,21 @@ def generate_img2img(params: dict[str, object]) -> dict[str, list[str]]:
     )
 
     filenames: list[str] = []
-    pipe.scheduler = create_scheduler(scheduler, pipe)
-    adapter_names, lora_coverage = apply_lora_adapters_with_validation(
-        pipe,
-        lora_adapters,
-        expected_family="qwen-image",
-        validate=True,
-    )
-    report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
-    if report_path is not None:
-        logger.info("LoRA coverage report saved to %s", report_path)
-
+    pipe = None
+    adapter_names: list[str] = []
     try:
+        pipe = load_img2img_pipeline(model)
+        pipe.scheduler = create_scheduler(scheduler, pipe)
+        adapter_names, lora_coverage = apply_lora_adapters_with_validation(
+            pipe,
+            lora_adapters,
+            expected_family="qwen-image",
+            validate=True,
+        )
+        report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
+        if report_path is not None:
+            logger.info("LoRA coverage report saved to %s", report_path)
+
         with GEN_LOCK:
             for i in range(num_images):
                 current_seed = base_seed + i
@@ -307,8 +377,11 @@ def generate_img2img(params: dict[str, object]) -> dict[str, list[str]]:
                 logger.info("Image %s saved to %s", i, filename.name)
 
                 filenames.append(build_batch_output_relpath(batch_id, filename.name))
+
+                del image
+                cleanup_memory()
     finally:
-        if adapter_names and hasattr(pipe, "unload_lora_weights"):
+        if pipe is not None and adapter_names and hasattr(pipe, "unload_lora_weights"):
             try:
                 pipe.unload_lora_weights()
             except Exception:
@@ -320,7 +393,7 @@ def generate_img2img(params: dict[str, object]) -> dict[str, list[str]]:
 
 
 @torch.inference_mode()
-def generate_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
+def generate_inpaint_in_process(params: dict[str, object]) -> dict[str, list[str]]:
     initial_image = params.get("initial_image")
     if initial_image is None:
         raise ValueError("initial_image is required")
@@ -348,7 +421,6 @@ def generate_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
     batch_id = make_batch_id()
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
-    pipe = load_inpaint_pipeline(model)
     width, height = initial_image.size
     logger.info(
         "Qwen-Image Inpaint: model=%s seed=%s steps=%s true_cfg_scale=%s guidance_scale=%s size=%sx%s strength=%s num_images=%s",
@@ -364,18 +436,21 @@ def generate_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
     )
 
     filenames: list[str] = []
-    pipe.scheduler = create_scheduler(scheduler, pipe)
-    adapter_names, lora_coverage = apply_lora_adapters_with_validation(
-        pipe,
-        lora_adapters,
-        expected_family="qwen-image",
-        validate=True,
-    )
-    report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
-    if report_path is not None:
-        logger.info("LoRA coverage report saved to %s", report_path)
-
+    pipe = None
+    adapter_names: list[str] = []
     try:
+        pipe = load_inpaint_pipeline(model)
+        pipe.scheduler = create_scheduler(scheduler, pipe)
+        adapter_names, lora_coverage = apply_lora_adapters_with_validation(
+            pipe,
+            lora_adapters,
+            expected_family="qwen-image",
+            validate=True,
+        )
+        report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
+        if report_path is not None:
+            logger.info("LoRA coverage report saved to %s", report_path)
+
         with GEN_LOCK:
             for i in range(num_images):
                 current_seed = base_seed + i
@@ -416,8 +491,11 @@ def generate_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
                 logger.info("Image %s saved to %s", i, filename.name)
 
                 filenames.append(build_batch_output_relpath(batch_id, filename.name))
+
+                del image
+                cleanup_memory()
     finally:
-        if adapter_names and hasattr(pipe, "unload_lora_weights"):
+        if pipe is not None and adapter_names and hasattr(pipe, "unload_lora_weights"):
             try:
                 pipe.unload_lora_weights()
             except Exception:

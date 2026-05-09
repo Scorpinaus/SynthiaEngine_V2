@@ -1,7 +1,7 @@
 """Shared Diffusers quantization helpers."""
 
 from __future__ import annotations
-
+from diffusers.quantizers import PipelineQuantizationConfig
 from typing import Sequence
 
 
@@ -20,7 +20,6 @@ def build_diffusers_pipeline_quantization_config(
     if quantization != "bnb_8bit":
         raise ValueError(f"quantization must be 'none' or 'bnb_8bit' for {task_type}")
 
-    from diffusers.quantizers import PipelineQuantizationConfig
 
     return PipelineQuantizationConfig(
         quant_backend="bitsandbytes_8bit",
