@@ -654,6 +654,7 @@ class ZImageInpaintInputs(BaseModel):
 
 class ErnieImageText2ImgInputs(BaseModel):
     prompt: str = ""
+    negative_prompt: str = ""
     steps: int = Field(default=8, ge=1, le=50)
     guidance_scale: float = Field(default=1.0, ge=0.0, le=30.0)
     width: int = Field(default=768, ge=64, le=1536)

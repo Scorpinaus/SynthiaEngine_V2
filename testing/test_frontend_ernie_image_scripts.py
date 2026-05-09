@@ -33,6 +33,7 @@ class FrontendErnieImageScriptTests(unittest.TestCase):
         self.assertIn("use_pe", js)
         self.assertIn("load_pe", js)
         self.assertIn("memory_preset", js)
+        self.assertIn("negative_prompt", js)
 
 
 if __name__ == "__main__":

@@ -150,6 +150,7 @@ def generate_text2img(params: dict[str, object]) -> dict[str, list[str]]:
 @torch.inference_mode()
 def _generate_text2img_subprocess_child(params: dict[str, object]) -> dict[str, list[str]]:
     prompt = str(params.get("prompt") or "")
+    negative_prompt = str(params.get("negative_prompt") or "")
     steps = int(params.get("steps", 8))
     guidance_scale = float(params.get("guidance_scale", 1.0))
     width = int(params.get("width", 768))
@@ -199,6 +200,7 @@ def _generate_text2img_subprocess_child(params: dict[str, object]) -> dict[str, 
 
             call_kwargs: dict[str, object] = {
                 "prompt": prompt,
+                "negative_prompt": negative_prompt,
                 "num_inference_steps": steps,
                 "guidance_scale": guidance_scale,
                 "width": width,

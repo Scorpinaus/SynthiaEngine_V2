@@ -7,7 +7,12 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from backend.ernie_image import subprocess_runner
-from backend.ernie_image.pipeline import generate_text2img, load_text2img_pipeline, run_text2img_subprocess
+from backend.ernie_image.pipeline import (
+    _generate_text2img_subprocess_child,
+    generate_text2img,
+    load_text2img_pipeline,
+    run_text2img_subprocess,
+)
 from backend.registries.model import ModelRegistryEntry
 from backend.workflow import (
     ErnieImageText2ImgInputs,
@@ -24,6 +29,7 @@ class ErnieImageWorkflowTests(unittest.TestCase):
         self.assertEqual(inputs.guidance_scale, 1.0)
         self.assertEqual(inputs.width, 768)
         self.assertEqual(inputs.height, 768)
+        self.assertEqual(inputs.negative_prompt, "")
         self.assertEqual(inputs.num_images, 1)
         self.assertFalse(inputs.use_pe)
         self.assertFalse(inputs.load_pe)
@@ -41,6 +47,7 @@ class ErnieImageWorkflowTests(unittest.TestCase):
             result = _ernie_image_text2img(
                 {
                     "prompt": "test prompt",
+                    "negative_prompt": "avoid blur",
                     "steps": 8,
                     "guidance_scale": 1.0,
                     "width": 768,
@@ -57,6 +64,7 @@ class ErnieImageWorkflowTests(unittest.TestCase):
 
         self.assertEqual(result["images"], ["/outputs/batch/out.png"])
         self.assertEqual(captured["prompt"], "test prompt")
+        self.assertEqual(captured["negative_prompt"], "avoid blur")
         self.assertEqual(captured["steps"], 8)
         self.assertEqual(captured["guidance_scale"], 1.0)
         self.assertEqual(captured["width"], 768)
@@ -89,6 +97,7 @@ class ErnieImageWorkflowTests(unittest.TestCase):
         self.assertEqual(defaults["guidance_scale"], 1.0)
         self.assertEqual(defaults["width"], 768)
         self.assertEqual(defaults["height"], 768)
+        self.assertEqual(defaults["negative_prompt"], "")
         self.assertFalse(defaults["use_pe"])
         self.assertFalse(defaults["load_pe"])
         self.assertEqual(defaults["memory_preset"], "sequential_offload")
@@ -97,7 +106,7 @@ class ErnieImageWorkflowTests(unittest.TestCase):
     def test_ernie_image_subprocess_bridge_invokes_child_and_reads_result(self):
         params = {"prompt": "test"}
 
-        def fake_run(cmd, capture_output, text, cwd):
+        def fake_run(cmd, cwd):
             input_path = Path(cmd[-2])
             output_path = Path(cmd[-1])
             self.assertEqual(
@@ -118,6 +127,51 @@ class ErnieImageWorkflowTests(unittest.TestCase):
         self.assertIn("-m", command)
         self.assertIn("backend.ernie_image.subprocess_runner", command)
 
+    def test_ernie_image_subprocess_child_forwards_negative_prompt(self):
+        captured = {}
+
+        class FakeImage:
+            def save(self, filename, pnginfo=None):
+                captured["saved_to"] = filename
+                captured["pnginfo"] = pnginfo
+
+        class FakePipe:
+            def __call__(self, **kwargs):
+                captured["call_kwargs"] = kwargs
+                return SimpleNamespace(images=[FakeImage()])
+
+        with tempfile.TemporaryDirectory(prefix="ernie_output_test_") as tmpdir:
+            with (
+                patch("backend.ernie_image.pipeline.load_text2img_pipeline", return_value=FakePipe()),
+                patch("backend.ernie_image.pipeline.make_batch_id", return_value="batch_test"),
+                patch("backend.ernie_image.pipeline.get_batch_output_dir", return_value=Path(tmpdir)),
+                patch("backend.ernie_image.pipeline.build_png_metadata", return_value=None),
+                patch(
+                    "backend.ernie_image.pipeline.build_batch_output_relpath",
+                    side_effect=lambda batch, name: f"{batch}/{name}",
+                ),
+                patch("backend.ernie_image.pipeline.cleanup_memory"),
+                patch("backend.ernie_image.pipeline.release_pipeline"),
+            ):
+                result = _generate_text2img_subprocess_child(
+                    {
+                        "prompt": "test prompt",
+                        "negative_prompt": "avoid blur",
+                        "steps": 8,
+                        "guidance_scale": 2.0,
+                        "width": 768,
+                        "height": 768,
+                        "seed": 123,
+                        "num_images": 1,
+                        "use_pe": False,
+                        "load_pe": False,
+                    }
+                )
+
+        self.assertEqual(captured["call_kwargs"]["prompt"], "test prompt")
+        self.assertEqual(captured["call_kwargs"]["negative_prompt"], "avoid blur")
+        self.assertEqual(result["images"], ["/outputs/batch_test/batch_test_123.png"])
+
     def test_ernie_image_rejects_direct_in_process_execution_mode(self):
         with self.assertRaisesRegex(ValueError, "supports only subprocess execution"):
             generate_text2img({"prompt": "test", "execution_mode": "in_process"})
@@ -133,7 +187,7 @@ class ErnieImageWorkflowTests(unittest.TestCase):
             def __exit__(self, exc_type, exc, traceback):
                 events.append("exit")
 
-        def fake_run(cmd, capture_output, text, cwd):
+        def fake_run(cmd, cwd):
             events.append("run")
             output_path = Path(cmd[-1])
             output_path.write_text(

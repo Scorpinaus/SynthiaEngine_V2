@@ -58,6 +58,7 @@ function setModelSelection(value) {
 function collectErnieImagePresetSettings() {
     return {
         prompt: WorkflowClient.readTextValue("prompt", ""),
+        negative_prompt: WorkflowClient.readTextValue("negative_prompt", ""),
         steps: WorkflowClient.readNumberValue("steps", 8, { integer: true }),
         guidance_scale: WorkflowClient.readNumberValue("cfg", 1.0),
         seed: WorkflowClient.readSeedValue("seed"),
@@ -73,6 +74,7 @@ function collectErnieImagePresetSettings() {
 
 async function applyErnieImagePresetSettings(settings) {
     setInputValue("prompt", settings.prompt);
+    setInputValue("negative_prompt", settings.negative_prompt);
     setInputValue("steps", settings.steps);
     setInputValue("cfg", settings.guidance_scale);
     setInputValue("seed", settings.seed);
@@ -130,6 +132,7 @@ if (window.WorkflowCatalog?.load) {
         .load(API_BASE)
         .then(() => {
             window.WorkflowCatalog.applyDefaultsToForm("ernie-image.text2img", {
+                negative_prompt: "negative_prompt",
                 steps: "steps",
                 cfg: "guidance_scale",
                 width: "width",
@@ -147,6 +150,10 @@ if (window.WorkflowCatalog?.load) {
 
 function baseInput(inputs, defaults) {
     const prompt = WorkflowClient.readTextValue("prompt", defaults.prompt ?? "");
+    const negative_prompt = WorkflowClient.readTextValue(
+        "negative_prompt",
+        defaults.negative_prompt ?? ""
+    );
     const steps = WorkflowClient.readNumberValue("steps", defaults.steps ?? 8, { integer: true });
     const guidance_scale = WorkflowClient.readNumberValue("cfg", defaults.guidance_scale ?? 1.0);
     const seed = WorkflowClient.readSeedValue("seed");
@@ -166,6 +173,7 @@ function baseInput(inputs, defaults) {
 
     Object.assign(inputs, {
         prompt,
+        negative_prompt,
         steps,
         guidance_scale,
         seed,
