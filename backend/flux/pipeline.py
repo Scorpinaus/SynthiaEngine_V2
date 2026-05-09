@@ -2,7 +2,12 @@
 Docstring for backend.flux.pipeline
 """
 import logging
+import json
+import subprocess
+import sys
+import tempfile
 import threading
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -32,6 +37,8 @@ from backend.utilities.schedulers import create_scheduler
     Static Variables and Logging
 """
 GEN_LOCK = threading.Lock()
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_FLUX_SUBPROCESS_SEMAPHORE = threading.Semaphore(1)
 
 logger = logging.getLogger(__name__)
 configure_logging()
@@ -40,6 +47,61 @@ configure_logging()
 def _should_use_flux_fill_pipeline(model_name: str | None, source: str, version: str) -> bool:
     joined = " ".join([model_name or "", source or "", version or ""]).lower()
     return "flux" in joined and "fill" in joined
+
+
+def _run_flux_subprocess(operation: str, params: dict[str, object]) -> dict[str, list[str]]:
+    from backend.flux.subprocess_io import serialize_params_for_subprocess
+
+    with tempfile.TemporaryDirectory(prefix="flux_") as tmpdir:
+        tmp_path = Path(tmpdir)
+        input_path = tmp_path / "input.json"
+        output_path = tmp_path / "output.json"
+        payload = {
+            "operation": operation,
+            "params": serialize_params_for_subprocess(params, tmp_path),
+        }
+        input_path.write_text(
+            json.dumps(payload, separators=(",", ": ")),
+            encoding="utf-8",
+        )
+
+        cmd = [
+            sys.executable,
+            "-m",
+            "backend.flux.subprocess_runner",
+            str(input_path),
+            str(output_path),
+        ]
+        with _FLUX_SUBPROCESS_SEMAPHORE:
+            completed = subprocess.run(cmd, cwd=str(_REPO_ROOT))
+
+        if not output_path.exists():
+            raise RuntimeError("Flux subprocess failed: No subprocess result was written.")
+
+        result_payload = json.loads(output_path.read_text(encoding="utf-8"))
+        if completed.returncode != 0 or not result_payload.get("ok"):
+            detail = result_payload.get("error") or "Unknown subprocess failure."
+            error_type = result_payload.get("error_type")
+            if error_type:
+                detail = f"{error_type}: {detail}"
+            raise RuntimeError(f"Flux subprocess failed: {detail}")
+
+        result = result_payload.get("result")
+        if not isinstance(result, dict) or not isinstance(result.get("images"), list):
+            raise RuntimeError("Flux subprocess returned an invalid result.")
+        return {"images": [str(path) for path in result["images"]]}
+
+
+def generate_text2img(params: dict[str, object]) -> dict[str, list[str]]:
+    return _run_flux_subprocess("text2img", params)
+
+
+def generate_img2img(params: dict[str, object]) -> dict[str, list[str]]:
+    return _run_flux_subprocess("img2img", params)
+
+
+def generate_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
+    return _run_flux_subprocess("inpaint", params)
 
 
 """
@@ -162,7 +224,7 @@ def load_inpaint_pipeline(model_name: str | None) -> Any:
 """
 
 @torch.inference_mode()
-def generate_text2img(params: dict[str, object]) -> dict[str, list[str]]:
+def generate_text2img_in_process(params: dict[str, object]) -> dict[str, list[str]]:
     # 1. Load and create local method variables + ensure correct formatting from input dict
     prompt = str(params["prompt"])
     negative_prompt = str(params["negative_prompt"])
@@ -191,26 +253,25 @@ def generate_text2img(params: dict[str, object]) -> dict[str, list[str]]:
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
     # 4. Load and create pipeline and scheduler
-    pipe = load_text2img_pipeline(model)
-    pipe.scheduler = create_scheduler(scheduler, pipe)
-    
-    # 5. Load lora into pipeline
-    adapter_names: list[str] = []
-    adapter_names, lora_coverage = apply_lora_adapters_with_validation(
-        pipe,
-        lora_adapters,
-        expected_family="flux",
-        validate=True,
-    )
-    report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
-    if report_path is not None:
-        logger.info("LoRA coverage report saved to %s", report_path)
-
-    #6. Create list of filenames
+    pipe = None
     filenames: list[str] = []
+    adapter_names: list[str] = []
     
     #7. Render image
     try:
+        pipe = load_text2img_pipeline(model)
+        pipe.scheduler = create_scheduler(scheduler, pipe)
+
+        adapter_names, lora_coverage = apply_lora_adapters_with_validation(
+            pipe,
+            lora_adapters,
+            expected_family="flux",
+            validate=True,
+        )
+        report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
+        if report_path is not None:
+            logger.info("LoRA coverage report saved to %s", report_path)
+
         with GEN_LOCK:
             for i in range(num_images):
                 # Define current seed
@@ -265,7 +326,7 @@ def generate_text2img(params: dict[str, object]) -> dict[str, list[str]]:
 
 
 @torch.inference_mode()
-def generate_img2img(params: dict[str, object]) -> dict[str, list[str]]:
+def generate_img2img_in_process(params: dict[str, object]) -> dict[str, list[str]]:
     #1. Load and create local method variables + ensure correct formatting from input dict
     initial_image = params["initial_image"]
     strength = float(params["strength"])
@@ -296,26 +357,25 @@ def generate_img2img(params: dict[str, object]) -> dict[str, list[str]]:
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
     #4. Load and create pipeline and scheduler
-    pipe = load_img2img_pipeline(model)
-    pipe.scheduler = create_scheduler(scheduler, pipe)
-    
-    #5. Load lora into pipeline
-    adapter_names: list[str] = []
-    adapter_names, lora_coverage = apply_lora_adapters_with_validation(
-        pipe,
-        lora_adapters,
-        expected_family="flux",
-        validate=True,
-    )
-    report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
-    if report_path is not None:
-        logger.info("LoRA coverage report saved to %s", report_path)
-
-    #6. Create list of filenames
+    pipe = None
     filenames: list[str] = []
+    adapter_names: list[str] = []
     
     #7. Render images one by one
     try:
+        pipe = load_img2img_pipeline(model)
+        pipe.scheduler = create_scheduler(scheduler, pipe)
+
+        adapter_names, lora_coverage = apply_lora_adapters_with_validation(
+            pipe,
+            lora_adapters,
+            expected_family="flux",
+            validate=True,
+        )
+        report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
+        if report_path is not None:
+            logger.info("LoRA coverage report saved to %s", report_path)
+
         with GEN_LOCK:
             for i in range(num_images):
                 #Set current seed
@@ -375,7 +435,7 @@ def generate_img2img(params: dict[str, object]) -> dict[str, list[str]]:
 
 
 @torch.inference_mode()
-def generate_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
+def generate_inpaint_in_process(params: dict[str, object]) -> dict[str, list[str]]:
     #1. Load and create local method variables + ensure correct formatting from input dict
     initial_image = params["initial_image"]
     mask_image = params["mask_image"]
@@ -405,26 +465,25 @@ def generate_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
     #4. Load and create pipeline and scheduler
-    pipe = load_inpaint_pipeline(model)
-    pipe.scheduler = create_scheduler(scheduler, pipe)
-
-    #5. Load lora into pipeline
-    adapter_names: list[str] = []
-    adapter_names, lora_coverage = apply_lora_adapters_with_validation(
-        pipe,
-        lora_adapters,
-        expected_family="flux",
-        validate=True,
-    )
-    report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
-    if report_path is not None:
-        logger.info("LoRA coverage report saved to %s", report_path)
-
-    #6. Create list of filenames
+    pipe = None
     filenames: list[str] = []
+    adapter_names: list[str] = []
     
     #7. Render image one by one
     try:
+        pipe = load_inpaint_pipeline(model)
+        pipe.scheduler = create_scheduler(scheduler, pipe)
+
+        adapter_names, lora_coverage = apply_lora_adapters_with_validation(
+            pipe,
+            lora_adapters,
+            expected_family="flux",
+            validate=True,
+        )
+        report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
+        if report_path is not None:
+            logger.info("LoRA coverage report saved to %s", report_path)
+
         with GEN_LOCK:
             for i in range(num_images):
                 # Set current seed
