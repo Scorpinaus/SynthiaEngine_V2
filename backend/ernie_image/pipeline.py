@@ -120,15 +120,14 @@ def run_text2img_subprocess(params: dict[str, object]) -> dict[str, list[str]]:
             str(output_path),
         ]
         with _ERNIE_IMAGE_SUBPROCESS_SEMAPHORE:
-            completed = subprocess.run(cmd, capture_output=True, text=True, cwd=str(_REPO_ROOT))
+            completed = subprocess.run(cmd, cwd=str(_REPO_ROOT))
 
         if not output_path.exists():
-            detail = completed.stderr.strip() or completed.stdout.strip() or "No subprocess result was written."
-            raise RuntimeError(f"ERNIE-Image subprocess failed: {detail}")
+            raise RuntimeError("ERNIE-Image subprocess failed: No subprocess result was written.")
 
         payload = json.loads(output_path.read_text(encoding="utf-8"))
         if completed.returncode != 0 or not payload.get("ok"):
-            detail = payload.get("error") or completed.stderr.strip() or "Unknown subprocess failure."
+            detail = payload.get("error") or "Unknown subprocess failure."
             error_type = payload.get("error_type")
             if error_type:
                 detail = f"{error_type}: {detail}"

@@ -325,15 +325,14 @@ def _run_sd15_subprocess(operation: str, params: dict[str, object]) -> list[str]
             str(output_path),
         ]
         with _SD15_SUBPROCESS_SEMAPHORE:
-            completed = subprocess.run(cmd, capture_output=True, text=True, cwd=str(_REPO_ROOT))
+            completed = subprocess.run(cmd, cwd=str(_REPO_ROOT))
 
         if not output_path.exists():
-            detail = completed.stderr.strip() or completed.stdout.strip() or "No subprocess result was written."
-            raise RuntimeError(f"SD1.5 subprocess failed: {detail}")
+            raise RuntimeError("SD1.5 subprocess failed: No subprocess result was written.")
 
         result_payload = json.loads(output_path.read_text(encoding="utf-8"))
         if completed.returncode != 0 or not result_payload.get("ok"):
-            detail = result_payload.get("error") or completed.stderr.strip() or "Unknown subprocess failure."
+            detail = result_payload.get("error") or "Unknown subprocess failure."
             error_type = result_payload.get("error_type")
             if error_type:
                 detail = f"{error_type}: {detail}"
