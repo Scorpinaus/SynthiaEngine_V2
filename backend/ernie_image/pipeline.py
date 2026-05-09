@@ -23,7 +23,7 @@ from backend.utilities.pipeline import (
     resolve_model_source,
 )
 
-GEN_LOCK = threading.Lock()
+_ERNIE_IMAGE_SUBPROCESS_SEMAPHORE = threading.Semaphore(1)
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 logger = logging.getLogger(__name__)
@@ -64,8 +64,7 @@ def _get_ernie_model_entry(model_name: str | None) -> ModelRegistryEntry:
 
 
 def load_text2img_pipeline(
-    model_name: str | None,
-    *,
+    model_name: str | None, *,
     memory_preset: Literal["model_offload", "sequential_offload"] = "sequential_offload",
     load_pe: bool = False,
 ) -> ErnieImagePipeline:
@@ -104,7 +103,6 @@ def load_text2img_pipeline(
 
 def run_text2img_subprocess(params: dict[str, object]) -> dict[str, list[str]]:
     child_params = dict(params)
-    child_params["execution_mode"] = "in_process"
 
     with tempfile.TemporaryDirectory(prefix="ernie_image_") as tmpdir:
         input_path = Path(tmpdir) / "input.json"
@@ -121,7 +119,8 @@ def run_text2img_subprocess(params: dict[str, object]) -> dict[str, list[str]]:
             str(input_path),
             str(output_path),
         ]
-        completed = subprocess.run(cmd, capture_output=True, text=True, cwd=str(_REPO_ROOT))
+        with _ERNIE_IMAGE_SUBPROCESS_SEMAPHORE:
+            completed = subprocess.run(cmd, capture_output=True, text=True, cwd=str(_REPO_ROOT))
 
         if not output_path.exists():
             detail = completed.stderr.strip() or completed.stdout.strip() or "No subprocess result was written."
@@ -143,16 +142,14 @@ def run_text2img_subprocess(params: dict[str, object]) -> dict[str, list[str]]:
 
 
 def generate_text2img(params: dict[str, object]) -> dict[str, list[str]]:
-    execution_mode = str(params.get("execution_mode") or "subprocess")
-    if execution_mode == "subprocess":
-        return run_text2img_subprocess(params)
-    if execution_mode == "in_process":
-        return generate_text2img_in_process(params)
-    raise ValueError(f"Unsupported ERNIE-Image execution_mode: {execution_mode}")
+    execution_mode = params.get("execution_mode")
+    if execution_mode not in (None, "", "subprocess"):
+        raise ValueError("ERNIE-Image supports only subprocess execution.")
+    return run_text2img_subprocess(params)
 
 
 @torch.inference_mode()
-def generate_text2img_in_process(params: dict[str, object]) -> dict[str, list[str]]:
+def _generate_text2img_subprocess_child(params: dict[str, object]) -> dict[str, list[str]]:
     prompt = str(params.get("prompt") or "")
     steps = int(params.get("steps", 8))
     guidance_scale = float(params.get("guidance_scale", 1.0))
@@ -197,39 +194,38 @@ def generate_text2img_in_process(params: dict[str, object]) -> dict[str, list[st
 
     filenames: list[str] = []
     try:
-        with GEN_LOCK:
-            for i in range(num_images):
-                current_seed = base_seed + i
-                generator = torch.Generator(device="cpu").manual_seed(current_seed)
+        for i in range(num_images):
+            current_seed = base_seed + i
+            generator = torch.Generator(device="cpu").manual_seed(current_seed)
 
-                call_kwargs: dict[str, object] = {
-                    "prompt": prompt,
-                    "num_inference_steps": steps,
-                    "guidance_scale": guidance_scale,
-                    "width": width,
-                    "height": height,
-                    "generator": generator,
-                    "use_pe": use_pe,
+            call_kwargs: dict[str, object] = {
+                "prompt": prompt,
+                "num_inference_steps": steps,
+                "guidance_scale": guidance_scale,
+                "width": width,
+                "height": height,
+                "generator": generator,
+                "use_pe": use_pe,
+            }
+            image = pipe(**call_kwargs).images[0]
+
+            filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
+            image_params = dict(params)
+            image_params.update(
+                {
+                    "mode": "txt2img",
+                    "pipeline": "ernie-image",
+                    "seed": current_seed,
+                    "batch_id": batch_id,
                 }
-                image = pipe(**call_kwargs).images[0]
+            )
+            pnginfo = build_png_metadata(image_params)
+            image.save(filename, pnginfo=pnginfo)
+            logger.info("Image %s saved to %s", i, filename.name)
+            filenames.append(build_batch_output_relpath(batch_id, filename.name))
 
-                filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
-                image_params = dict(params)
-                image_params.update(
-                    {
-                        "mode": "txt2img",
-                        "pipeline": "ernie-image",
-                        "seed": current_seed,
-                        "batch_id": batch_id,
-                    }
-                )
-                pnginfo = build_png_metadata(image_params)
-                image.save(filename, pnginfo=pnginfo)
-                logger.info("Image %s saved to %s", i, filename.name)
-                filenames.append(build_batch_output_relpath(batch_id, filename.name))
-
-                del image
-                cleanup_memory()
+            del image
+            cleanup_memory()
     finally:
         release_pipeline(pipe, logger=logger)
         pipe = None

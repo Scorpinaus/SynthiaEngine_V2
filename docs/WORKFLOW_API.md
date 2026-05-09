@@ -1043,10 +1043,10 @@ Example two-step SDXL IP-Adapter workflow:
 
 `ernie-image.text2img` input notes:
 - Initial support is text-to-image only through Diffusers `ErnieImagePipeline`.
-- Defaults are tuned for Windows 11 with 64 GB system RAM and 12 GB VRAM: `steps: 8`, `guidance_scale: 1.0`, `width: 768`, `height: 768`, `num_images: 1`, `use_pe: false`, `load_pe: false`, `memory_preset: "sequential_offload"`, and `execution_mode: "subprocess"`.
+- Defaults are tuned for Windows 11 with 64 GB system RAM and 12 GB VRAM: `steps: 8`, `guidance_scale: 1.0`, `width: 768`, `height: 768`, `num_images: 1`, `use_pe: false`, `load_pe: false`, and `memory_preset: "sequential_offload"`.
 - `model`: optional base model registry name. If omitted, backend uses the first registered `ernie-image` model, falling back to Hub model `baidu/ERNIE-Image-Turbo`.
 - `memory_preset`: `"sequential_offload"` is safest on 12 GB VRAM and slower; `"model_offload"` may be faster but can OOM at larger resolutions.
-- `execution_mode`: `"subprocess"` runs ERNIE in a short-lived child process so Windows can reclaim system RAM after generation; `"in_process"` keeps the older direct execution path for debugging.
+- ERNIE-Image renders run in a short-lived subprocess so Windows can reclaim system RAM after generation.
 - `use_pe`: enables the ERNIE prompt enhancer when supported by the installed Diffusers pipeline. Keep disabled for first smoke tests on 12 GB VRAM.
 - `load_pe`: loads the PE prompt enhancer components. Keep disabled when `use_pe` is false to reduce RAM/VRAM pressure. `use_pe: true` requires `load_pe: true`.
 - `num_images` is fixed to `1`; submit multiple jobs instead of batching to keep VRAM/RAM pressure predictable.
@@ -1069,7 +1069,6 @@ Example ERNIE-Image workflow:
           "width": 768,
           "height": 768,
           "memory_preset": "sequential_offload",
-          "execution_mode": "subprocess",
           "use_pe": false,
           "load_pe": false
         }

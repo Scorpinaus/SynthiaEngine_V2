@@ -32,7 +32,6 @@ class FrontendErnieImageScriptTests(unittest.TestCase):
         self.assertIn('tasks: [{ id: "t1", type: "ernie-image.text2img", inputs }]', js)
         self.assertIn("use_pe", js)
         self.assertIn("load_pe", js)
-        self.assertIn("execution_mode", js)
         self.assertIn("memory_preset", js)
 
 

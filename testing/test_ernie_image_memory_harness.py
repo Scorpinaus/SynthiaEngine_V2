@@ -25,7 +25,6 @@ def test_parse_args_defaults_are_low_memory_safe():
     assert args.memory_preset == "sequential_offload"
     assert args.use_pe is False
     assert args.load_pe is False
-    assert args.execution_mode == "subprocess"
     assert args.runs == 1
 
 
@@ -51,8 +50,6 @@ def test_build_generation_params_forwards_runtime_controls():
             "model_offload",
             "--use-pe",
             "--load-pe",
-            "--execution-mode",
-            "in_process",
             "--model",
             "ERNIE-Image-Turbo",
         ]
@@ -72,7 +69,6 @@ def test_build_generation_params_forwards_runtime_controls():
         "use_pe": True,
         "load_pe": True,
         "memory_preset": "model_offload",
-        "execution_mode": "in_process",
     }
 
 

@@ -40,6 +40,9 @@ This keeps the public workflow contract unchanged while letting process exit be
 the final cleanup boundary for CUDA, VRAM, and large Python heap allocations.
 SD1.5 subprocess launches are serialized with a default concurrency limit of
 one per API worker process to avoid overlapping model loads and VRAM spikes.
+ERNIE-Image text-to-image renders follow the same one-shot subprocess pattern
+by default, with a serialized parent-side launch gate and child-side cleanup
+before process exit.
 
 ## Required Cleanup Order
 
@@ -126,6 +129,9 @@ Use `try`/`finally` around pipeline usage. Avoid cleanup only on the success pat
   final pipeline release and memory cleanup.
 - Z-Image: partially compliant. It calls memory cleanup but should add hook
   release and more consistent `finally` coverage.
+- ERNIE-Image: subprocess-backed for text-to-image renders by default. The child
+  process releases its pipeline in a task-scoped `finally`, runs final memory
+  cleanup in the subprocess runner, and then exits.
 
 ## Future Cache Policy
 

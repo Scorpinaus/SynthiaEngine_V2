@@ -5,7 +5,8 @@ import sys
 import traceback
 from pathlib import Path
 
-from backend.ernie_image.pipeline import generate_text2img_in_process
+from backend.ernie_image.pipeline import _generate_text2img_subprocess_child
+from backend.utilities.pipeline import cleanup_memory
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -17,15 +18,15 @@ def main(argv: list[str] | None = None) -> int:
     input_path = Path(args[0])
     output_path = Path(args[1])
 
+    exit_code = 1
     try:
         params = json.loads(input_path.read_text(encoding="utf-8"))
         if not isinstance(params, dict):
             raise ValueError("Subprocess input JSON must be an object.")
-        params["execution_mode"] = "in_process"
-        result = generate_text2img_in_process(params)
+        result = _generate_text2img_subprocess_child(params)
         payload = {"ok": True, "result": result}
         output_path.write_text(json.dumps(payload), encoding="utf-8")
-        return 0
+        exit_code = 0
     except Exception as exc:
         payload = {
             "ok": False,
@@ -35,7 +36,13 @@ def main(argv: list[str] | None = None) -> int:
         }
         output_path.write_text(json.dumps(payload), encoding="utf-8")
         print(payload["traceback"], file=sys.stderr)
-        return 1
+    finally:
+        try:
+            cleanup_memory()
+        except Exception:
+            print("ERNIE-Image subprocess cleanup failed:", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
+    return exit_code
 
 
 if __name__ == "__main__":

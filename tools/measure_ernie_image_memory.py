@@ -41,12 +41,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--use-pe", action="store_true", help="Enable ERNIE prompt enhancement.")
     parser.add_argument("--load-pe", action="store_true", help="Load PE prompt enhancer components.")
-    parser.add_argument(
-        "--execution-mode",
-        choices=("subprocess", "in_process"),
-        default="subprocess",
-        help="Run ERNIE in a child process or inside this process.",
-    )
     parser.add_argument("--runs", type=int, default=1, help="Measured runs to execute.")
     parser.add_argument("--warmup-runs", type=int, default=0, help="Warmup runs excluded from the summary.")
     parser.add_argument("--output-json", type=Path, default=None, help="Optional path to write JSON results.")
@@ -66,7 +60,6 @@ def build_generation_params(args: argparse.Namespace) -> dict[str, object]:
         "use_pe": args.use_pe,
         "load_pe": args.load_pe,
         "memory_preset": args.memory_preset,
-        "execution_mode": args.execution_mode,
     }
 
 

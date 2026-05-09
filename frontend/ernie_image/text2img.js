@@ -68,7 +68,6 @@ function collectErnieImagePresetSettings() {
         use_pe: Boolean(document.getElementById("use_pe")?.checked),
         load_pe: Boolean(document.getElementById("load_pe")?.checked),
         memory_preset: WorkflowClient.readTextValue("memory_preset", "sequential_offload"),
-        execution_mode: WorkflowClient.readTextValue("execution_mode", "subprocess"),
     };
 }
 
@@ -84,7 +83,6 @@ async function applyErnieImagePresetSettings(settings) {
     setCheckboxValue("use_pe", settings.use_pe);
     setCheckboxValue("load_pe", settings.load_pe);
     setInputValue("memory_preset", settings.memory_preset);
-    setInputValue("execution_mode", settings.execution_mode);
 }
 
 async function loadModels() {
@@ -138,7 +136,6 @@ if (window.WorkflowCatalog?.load) {
                 height: "height",
                 num_images: "num_images",
                 memory_preset: "memory_preset",
-                execution_mode: "execution_mode",
             });
             const defaults =
                 window.WorkflowCatalog.getTask?.("ernie-image.text2img")?.input_defaults ?? {};
@@ -166,10 +163,6 @@ function baseInput(inputs, defaults) {
         "memory_preset",
         defaults.memory_preset ?? "sequential_offload"
     );
-    const execution_mode = WorkflowClient.readTextValue(
-        "execution_mode",
-        defaults.execution_mode ?? "subprocess"
-    );
 
     Object.assign(inputs, {
         prompt,
@@ -183,7 +176,6 @@ function baseInput(inputs, defaults) {
         use_pe,
         load_pe,
         memory_preset,
-        execution_mode,
     });
 
     return inputs;

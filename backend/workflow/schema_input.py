@@ -664,7 +664,6 @@ class ErnieImageText2ImgInputs(BaseModel):
     use_pe: bool = False
     load_pe: bool = False
     memory_preset: Literal["model_offload", "sequential_offload"] = "sequential_offload"
-    execution_mode: Literal["subprocess", "in_process"] = "subprocess"
 
     @model_validator(mode="after")
     def _validate_pe_loading(self) -> "ErnieImageText2ImgInputs":

@@ -1,10 +1,13 @@
 import unittest
+import json
 import subprocess
+import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from backend.ernie_image.pipeline import load_text2img_pipeline, run_text2img_subprocess
+from backend.ernie_image import subprocess_runner
+from backend.ernie_image.pipeline import generate_text2img, load_text2img_pipeline, run_text2img_subprocess
 from backend.registries.model import ModelRegistryEntry
 from backend.workflow import (
     ErnieImageText2ImgInputs,
@@ -25,7 +28,6 @@ class ErnieImageWorkflowTests(unittest.TestCase):
         self.assertFalse(inputs.use_pe)
         self.assertFalse(inputs.load_pe)
         self.assertEqual(inputs.memory_preset, "sequential_offload")
-        self.assertEqual(inputs.execution_mode, "subprocess")
 
     def test_ernie_image_text2img_forwards_runtime_controls(self):
         captured = {}
@@ -49,7 +51,6 @@ class ErnieImageWorkflowTests(unittest.TestCase):
                     "use_pe": False,
                     "load_pe": False,
                     "memory_preset": "sequential_offload",
-                    "execution_mode": "subprocess",
                 },
                 _ctx=None,
             )
@@ -66,7 +67,6 @@ class ErnieImageWorkflowTests(unittest.TestCase):
         self.assertFalse(captured["use_pe"])
         self.assertFalse(captured["load_pe"])
         self.assertEqual(captured["memory_preset"], "sequential_offload")
-        self.assertEqual(captured["execution_mode"], "subprocess")
 
     def test_ernie_image_rejects_use_pe_without_loading_pe(self):
         with self.assertRaisesRegex(ValueError, "use_pe=true requires load_pe=true"):
@@ -92,17 +92,17 @@ class ErnieImageWorkflowTests(unittest.TestCase):
         self.assertFalse(defaults["use_pe"])
         self.assertFalse(defaults["load_pe"])
         self.assertEqual(defaults["memory_preset"], "sequential_offload")
-        self.assertEqual(defaults["execution_mode"], "subprocess")
+        self.assertNotIn("execution_mode", defaults)
 
     def test_ernie_image_subprocess_bridge_invokes_child_and_reads_result(self):
-        params = {"prompt": "test", "execution_mode": "subprocess"}
+        params = {"prompt": "test"}
 
         def fake_run(cmd, capture_output, text, cwd):
             input_path = Path(cmd[-2])
             output_path = Path(cmd[-1])
             self.assertEqual(
                 __import__("json").loads(input_path.read_text(encoding="utf-8")),
-                {"prompt": "test", "execution_mode": "in_process"},
+                {"prompt": "test"},
             )
             output_path.write_text(
                 '{"ok": true, "result": {"images": ["/outputs/fake.png"]}}',
@@ -117,6 +117,72 @@ class ErnieImageWorkflowTests(unittest.TestCase):
         command = run_mock.call_args.args[0]
         self.assertIn("-m", command)
         self.assertIn("backend.ernie_image.subprocess_runner", command)
+
+    def test_ernie_image_rejects_direct_in_process_execution_mode(self):
+        with self.assertRaisesRegex(ValueError, "supports only subprocess execution"):
+            generate_text2img({"prompt": "test", "execution_mode": "in_process"})
+
+    def test_ernie_image_subprocess_bridge_uses_single_generation_gate(self):
+        events = []
+        params = {"prompt": "test"}
+
+        class FakeSemaphore:
+            def __enter__(self):
+                events.append("enter")
+
+            def __exit__(self, exc_type, exc, traceback):
+                events.append("exit")
+
+        def fake_run(cmd, capture_output, text, cwd):
+            events.append("run")
+            output_path = Path(cmd[-1])
+            output_path.write_text(
+                '{"ok": true, "result": {"images": ["/outputs/fake.png"]}}',
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        with (
+            patch("backend.ernie_image.pipeline._ERNIE_IMAGE_SUBPROCESS_SEMAPHORE", FakeSemaphore()),
+            patch("backend.ernie_image.pipeline.subprocess.run", side_effect=fake_run),
+        ):
+            result = run_text2img_subprocess(params)
+
+        self.assertEqual(result, {"images": ["/outputs/fake.png"]})
+        self.assertEqual(events, ["enter", "run", "exit"])
+
+    def test_ernie_image_subprocess_runner_cleans_memory_after_success(self):
+        with patch("backend.ernie_image.subprocess_runner._generate_text2img_subprocess_child") as generate:
+            with patch("backend.ernie_image.subprocess_runner.cleanup_memory") as cleanup:
+                generate.return_value = {"images": ["/outputs/fake.png"]}
+                with patch("sys.stderr"):
+                    with tempfile.TemporaryDirectory(prefix="ernie_runner_test_") as tmpdir:
+                        input_path = Path(tmpdir) / "input.json"
+                        output_path = Path(tmpdir) / "output.json"
+                        input_path.write_text('{"prompt": "test"}', encoding="utf-8")
+
+                        code = subprocess_runner.main([str(input_path), str(output_path)])
+
+        self.assertEqual(code, 0)
+        cleanup.assert_called_once()
+
+    def test_ernie_image_subprocess_runner_cleans_memory_after_failure(self):
+        with patch("backend.ernie_image.subprocess_runner._generate_text2img_subprocess_child") as generate:
+            with patch("backend.ernie_image.subprocess_runner.cleanup_memory") as cleanup:
+                generate.side_effect = RuntimeError("synthetic failure")
+                with patch("sys.stderr"):
+                    with tempfile.TemporaryDirectory(prefix="ernie_runner_test_") as tmpdir:
+                        input_path = Path(tmpdir) / "input.json"
+                        output_path = Path(tmpdir) / "output.json"
+                        input_path.write_text('{"prompt": "test"}', encoding="utf-8")
+
+                        code = subprocess_runner.main([str(input_path), str(output_path)])
+                        payload = json.loads(output_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(code, 1)
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["error_type"], "RuntimeError")
+        cleanup.assert_called_once()
 
     def test_ernie_image_pipeline_skips_pe_components_when_load_pe_false(self):
         captured = {}

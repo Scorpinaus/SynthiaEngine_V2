@@ -166,9 +166,6 @@ def _build_task_ui_hints(task_type: str, model_cls: type[BaseModel]) -> dict[str
         if field_name == "memory_preset":
             hint.update(widget="select", options=["sequential_offload", "model_offload"])
 
-        if field_name == "execution_mode" and task_type == "ernie-image.text2img":
-            hint.update(widget="select", options=["subprocess", "in_process"])
-
         if field_name == "model":
             if family:
                 hint.update(
