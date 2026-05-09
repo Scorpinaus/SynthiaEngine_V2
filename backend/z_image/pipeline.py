@@ -1,6 +1,11 @@
 import logging
+import json
 import re
+import subprocess
+import sys
+import tempfile
 from typing import Any
+from pathlib import Path
 
 import torch
 from diffusers import ZImageImg2ImgPipeline, ZImagePipeline
@@ -28,6 +33,8 @@ from backend.utilities.pipeline import (
 from backend.utilities.schedulers import create_scheduler
 
 GEN_LOCK = threading.Lock()
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_Z_IMAGE_SUBPROCESS_SEMAPHORE = threading.Semaphore(1)
 
 logger = logging.getLogger(__name__)
 configure_logging()
@@ -129,6 +136,70 @@ def _apply_lora_adapters(
         pipe.set_adapters(adapter_names, adapter_weights=adapter_weights)
 
     return adapter_names
+
+
+def _cleanup_lora_adapters(pipe: Any | None, adapter_names: list[str]) -> None:
+    if pipe is None or not adapter_names or not hasattr(pipe, "unload_lora_weights"):
+        return
+    try:
+        pipe.unload_lora_weights()
+    except Exception:
+        logger.exception("Failed to unload Z-Image LoRA weights.")
+
+
+def _run_z_image_subprocess(operation: str, params: dict[str, object]) -> dict[str, list[str]]:
+    from backend.z_image.subprocess_io import serialize_params_for_subprocess
+
+    with tempfile.TemporaryDirectory(prefix="z_image_") as tmpdir:
+        tmp_path = Path(tmpdir)
+        input_path = tmp_path / "input.json"
+        output_path = tmp_path / "output.json"
+        payload = {
+            "operation": operation,
+            "params": serialize_params_for_subprocess(params, tmp_path),
+        }
+        input_path.write_text(
+            json.dumps(payload, separators=(",", ": ")),
+            encoding="utf-8",
+        )
+
+        cmd = [
+            sys.executable,
+            "-m",
+            "backend.z_image.subprocess_runner",
+            str(input_path),
+            str(output_path),
+        ]
+        with _Z_IMAGE_SUBPROCESS_SEMAPHORE:
+            completed = subprocess.run(cmd, cwd=str(_REPO_ROOT))
+
+        if not output_path.exists():
+            raise RuntimeError("Z-Image subprocess failed: No subprocess result was written.")
+
+        result_payload = json.loads(output_path.read_text(encoding="utf-8"))
+        if completed.returncode != 0 or not result_payload.get("ok"):
+            detail = result_payload.get("error") or "Unknown subprocess failure."
+            error_type = result_payload.get("error_type")
+            if error_type:
+                detail = f"{error_type}: {detail}"
+            raise RuntimeError(f"Z-Image subprocess failed: {detail}")
+
+        result = result_payload.get("result")
+        if not isinstance(result, dict) or not isinstance(result.get("images"), list):
+            raise RuntimeError("Z-Image subprocess returned an invalid result.")
+        return {"images": [str(path) for path in result["images"]]}
+
+
+def generate_text2img(params: dict[str, object]) -> dict[str, list[str]]:
+    return _run_z_image_subprocess("text2img", params)
+
+
+def generate_img2img(params: dict[str, object]) -> dict[str, list[str]]:
+    return _run_z_image_subprocess("img2img", params)
+
+
+def generate_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
+    return _run_z_image_subprocess("inpaint", params)
 
 """
     Load Z-Image Pipelines
@@ -236,7 +307,7 @@ def load_inpaint_pipeline(model_name: str | None) -> Any:
 """
 
 @torch.inference_mode()
-def generate_text2img(params: dict[str, object]) -> dict[str, list[str]]:
+def generate_text2img_in_process(params: dict[str, object]) -> dict[str, list[str]]:
     #1. Load and create local method variables + ensure correct formatting from input dict
     prompt = str(params.get("prompt") or "")
     negative_prompt = str(params.get("negative_prompt") or "").strip()
@@ -264,16 +335,18 @@ def generate_text2img(params: dict[str, object]) -> dict[str, list[str]]:
     batch_id = make_batch_id()
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
-    #4. Load and create pipeline and scheduler
-    pipe = load_text2img_pipeline(model)
-    pipe.scheduler = create_scheduler(scheduler, pipe)
-
-    #5. Load lora into pipeline
-    adapter_names = _apply_lora_adapters(pipe, lora_adapters)
-
     #6. Create list of filenames
     filenames: list[str] = []
+    pipe = None
+    adapter_names: list[str] = []
     try:
+        #4. Load and create pipeline and scheduler
+        pipe = load_text2img_pipeline(model)
+        pipe.scheduler = create_scheduler(scheduler, pipe)
+
+        #5. Load lora into pipeline
+        adapter_names = _apply_lora_adapters(pipe, lora_adapters)
+
         with GEN_LOCK:
             #7. Render image one by one
             for i in range(num_images):
@@ -318,11 +391,7 @@ def generate_text2img(params: dict[str, object]) -> dict[str, list[str]]:
                 cleanup_memory()
     finally:
         # 8. Unload lora weights & clean memory
-        if adapter_names and hasattr(pipe, "unload_lora_weights"):
-            try:
-                pipe.unload_lora_weights()
-            except Exception:
-                logger.exception("Failed to unload Z-Image LoRA weights.")
+        _cleanup_lora_adapters(pipe, adapter_names)
         release_pipeline(pipe, logger=logger)
         pipe = None
 
@@ -331,7 +400,7 @@ def generate_text2img(params: dict[str, object]) -> dict[str, list[str]]:
 
 
 @torch.inference_mode()
-def generate_img2img(params: dict[str, object]) -> dict[str, list[str]]:
+def generate_img2img_in_process(params: dict[str, object]) -> dict[str, list[str]]:
     #1. Load and create local method variables + ensure correct formatting from input dict
     initial_image = params.get("initial_image")
     strength = float(params.get("strength", 0.75))
@@ -361,18 +430,20 @@ def generate_img2img(params: dict[str, object]) -> dict[str, list[str]]:
     batch_id = make_batch_id()
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
-    #4. Load and create pipeline and scheduler
-    pipe = load_img2img_pipeline(model)
-    pipe.scheduler = create_scheduler(scheduler, pipe)
-    
-    #5. Load lora into pipeline
-    adapter_names = _apply_lora_adapters(pipe, lora_adapters)
-
     #6. Create list of filenames
     filenames: list[str] = []
+    pipe = None
+    adapter_names: list[str] = []
     
     #7. Render image one by one
     try:
+        #4. Load and create pipeline and scheduler
+        pipe = load_img2img_pipeline(model)
+        pipe.scheduler = create_scheduler(scheduler, pipe)
+
+        #5. Load lora into pipeline
+        adapter_names = _apply_lora_adapters(pipe, lora_adapters)
+
         with GEN_LOCK:
             for i in range(num_images):
                 # Set current seed
@@ -419,11 +490,7 @@ def generate_img2img(params: dict[str, object]) -> dict[str, list[str]]:
                 cleanup_memory()
     finally:
         #8. Unload lora weights & clean memory
-        if adapter_names and hasattr(pipe, "unload_lora_weights"):
-            try:
-                pipe.unload_lora_weights()
-            except Exception:
-                logger.exception("Failed to unload Z-Image LoRA weights.")
+        _cleanup_lora_adapters(pipe, adapter_names)
         release_pipeline(pipe, logger=logger)
         pipe = None
 
@@ -432,7 +499,7 @@ def generate_img2img(params: dict[str, object]) -> dict[str, list[str]]:
 
 
 @torch.inference_mode()
-def generate_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
+def generate_inpaint_in_process(params: dict[str, object]) -> dict[str, list[str]]:
     #1. Load and create local method variables + ensure correct formatting from input dict
     initial_image = params["initial_image"]
     mask_image = params["mask_image"]
@@ -446,6 +513,7 @@ def generate_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
     num_images = int(params["num_images"])
     scheduler = str(params["scheduler"])
     lora_adapters = params["lora_adapters"]
+    width, height = initial_image.size
 
     #2. Check and set seed value
     if seed is None or seed == 0:
@@ -462,20 +530,20 @@ def generate_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
     batch_id = make_batch_id()
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
-    #4. Load and create pipeline and scheduler
-    pipe = load_inpaint_pipeline(model)
-    pipe.scheduler = create_scheduler(scheduler, pipe)
-        
-    width, height = initial_image.size
-    
-    #5. Load lora into pipeline
-    adapter_names = _apply_lora_adapters(pipe, lora_adapters)
-    
     #6. Create list of filenames
     filenames: list[str] = []
+    pipe = None
+    adapter_names: list[str] = []
     
     #7. Render image one by one
     try:
+        #4. Load and create pipeline and scheduler
+        pipe = load_inpaint_pipeline(model)
+        pipe.scheduler = create_scheduler(scheduler, pipe)
+
+        #5. Load lora into pipeline
+        adapter_names = _apply_lora_adapters(pipe, lora_adapters)
+
         with GEN_LOCK:
             for i in range(num_images):
                 # Set current seed
@@ -525,11 +593,7 @@ def generate_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
                 cleanup_memory()
     finally:
         #8. Unload loras and final memory clean-up
-        if adapter_names and hasattr(pipe, "unload_lora_weights"):
-            try:
-                pipe.unload_lora_weights()
-            except Exception:
-                logger.exception("Failed to unload Z-Image LoRA weights.")
+        _cleanup_lora_adapters(pipe, adapter_names)
         release_pipeline(pipe, logger=logger)
         pipe = None
 
