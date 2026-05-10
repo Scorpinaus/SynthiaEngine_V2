@@ -218,6 +218,11 @@ class ModelAnalysisResponse(BaseModel):
     loader: str
     total: int
     returned: int
+    architecture: str | None = None
+    architecture_confidence: str = "unknown"
+    metadata_available: bool = False
+    metadata_keys: list[str] = Field(default_factory=list)
+    architecture_evidence: list[str] = Field(default_factory=list)
     rows: list[ModelLayerRow]
 
 
@@ -935,7 +940,7 @@ async def analyze_model_layers(
             shutil.copyfileobj(file.file, temp_file)
             temp_path = Path(temp_file.name)
 
-        rows, loader, total = analyze_model_file(temp_path, limit=limit)
+        rows, loader, total, architecture = analyze_model_file(temp_path, limit=limit)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     finally:
@@ -948,6 +953,11 @@ async def analyze_model_layers(
         loader=loader,
         total=total,
         returned=len(rows),
+        architecture=architecture.architecture,
+        architecture_confidence=architecture.confidence,
+        metadata_available=architecture.metadata_available,
+        metadata_keys=architecture.metadata_keys,
+        architecture_evidence=architecture.evidence,
         rows=[ModelLayerRow(key=k, shape=s, dtype=d) for k, s, d in rows],
     )
 

@@ -1326,6 +1326,38 @@ button {
     font-weight: 600;
 }
 
+.tools-architecture {
+    display: grid;
+    gap: 8px;
+    background: #ffffff;
+    border: 1px solid #e3ddd4;
+    border-radius: 8px;
+    padding: 12px 16px;
+}
+
+.tools-architecture-label {
+    color: #6b645c;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.tools-architecture-value {
+    font-weight: 600;
+}
+
+.tools-architecture-detail {
+    color: #6b645c;
+    font-size: 13px;
+}
+
+.tools-architecture-evidence {
+    margin: 0;
+    padding-left: 18px;
+    color: #4d463f;
+    font-size: 13px;
+}
+
 .tools-table-wrapper {
     background: #ffffff;
     border-radius: 16px;
