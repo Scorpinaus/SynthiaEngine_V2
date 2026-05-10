@@ -228,6 +228,54 @@ def _build_adapter_name(
         suffix += 1
 
 
+def _load_lora_into_text_encoder(pipe, file_path: str, adapter_name: str) -> None:
+    text_encoder = getattr(pipe, "text_encoder", None)
+    if (
+        text_encoder is None
+        or not hasattr(pipe, "lora_state_dict")
+        or not hasattr(pipe, "load_lora_into_text_encoder")
+    ):
+        raise ValueError(
+            "LoRA adapter target 'text_encoder' requires pipeline.lora_state_dict "
+            "and pipeline.load_lora_into_text_encoder support."
+        )
+
+    low_cpu_mem_usage = getattr(pipe, "_lora_low_cpu_mem_usage", False)
+    state_dict, network_alphas, metadata = pipe.lora_state_dict(
+        file_path,
+        return_lora_metadata=True,
+    )
+    pipe.load_lora_into_text_encoder(
+        state_dict,
+        network_alphas=network_alphas,
+        text_encoder=text_encoder,
+        lora_scale=getattr(pipe, "lora_scale", 1.0),
+        adapter_name=adapter_name,
+        _pipeline=pipe,
+        metadata=metadata,
+        low_cpu_mem_usage=low_cpu_mem_usage,
+    )
+
+
+def _set_text_encoder_adapters(
+    text_encoder,
+    adapter_names: list[str],
+    adapter_weights: list[float | dict[str, Any]],
+) -> None:
+    try:
+        from diffusers.loaders.lora_base import set_adapters_for_text_encoder
+    except Exception as exc:
+        raise ValueError(
+            "LoRA adapter target 'text_encoder' requires Diffusers text encoder adapter support."
+        ) from exc
+
+    set_adapters_for_text_encoder(
+        adapter_names,
+        text_encoder=text_encoder,
+        text_encoder_weights=adapter_weights,
+    )
+
+
 def _matches_target(module_name: str, target: str) -> bool:
     if not target:
         return False
@@ -363,13 +411,8 @@ def apply_lora_adapters_with_validation(
             logger.info("Loading LoRA '%s' via unet.load_lora_adapter", adapter_name)
             pipe.unet.load_lora_adapter(entry.file_path, adapter_name=adapter_name, prefix="unet")
         else:
-            text_encoder = getattr(pipe, "text_encoder", None)
-            if text_encoder is None or not hasattr(text_encoder, "load_lora_adapter"):
-                raise ValueError(
-                    "LoRA adapter target 'text_encoder' requires pipeline.text_encoder.load_lora_adapter support."
-                )
-            logger.info("Loading LoRA '%s' via text_encoder.load_lora_adapter", adapter_name)
-            text_encoder.load_lora_adapter(entry.file_path, adapter_name=adapter_name, prefix="text_encoder")
+            logger.info("Loading LoRA '%s' via pipeline.load_lora_into_text_encoder", adapter_name)
+            _load_lora_into_text_encoder(pipe, entry.file_path, adapter_name)
 
         adapter_names.append(adapter_name)
         adapter_weight = _build_adapter_weight(
@@ -437,9 +480,9 @@ def apply_lora_adapters_with_validation(
 
     if text_only_names:
         text_encoder = getattr(pipe, "text_encoder", None)
-        if text_encoder is None or not hasattr(text_encoder, "set_adapters"):
+        if text_encoder is None:
             raise ValueError(
-                "LoRA adapter target 'text_encoder' requires pipeline.text_encoder.set_adapters support."
+                "LoRA adapter target 'text_encoder' requires pipeline.text_encoder support."
             )
         active_text_names = both_names + text_only_names
         active_text_weights = [
@@ -453,7 +496,7 @@ def apply_lora_adapters_with_validation(
             len(active_text_names),
             active_text_names,
         )
-        text_encoder.set_adapters(active_text_names, weights=active_text_weights)
+        _set_text_encoder_adapters(text_encoder, active_text_names, active_text_weights)
 
     if validate:
         for adapter_name, report in coverage.items():

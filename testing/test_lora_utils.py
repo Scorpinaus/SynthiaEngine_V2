@@ -17,15 +17,57 @@ class _DummyPipe:
 
     def __init__(self):
         self.loaded: list[tuple[str, str]] = []
+        self.text_encoder_loaded: list[dict[str, object]] = []
         self.adapter_calls: list[tuple[list[str], list[float | dict[str, object]]]] = []
         self.unet = self._DummyComponent()
         self.text_encoder = self._DummyComponent()
+        self.lora_scale = 1.0
 
     def load_lora_weights(self, file_path: str, adapter_name: str):
         self.loaded.append((file_path, adapter_name))
 
+    def lora_state_dict(self, file_path: str, return_lora_metadata: bool = False):
+        assert return_lora_metadata is True
+        return (
+            {f"text_encoder.{file_path}.lora.down.weight": "state"},
+            {f"text_encoder.{file_path}.alpha": 1.0},
+            {f"text_encoder.{file_path}.metadata": "metadata"},
+        )
+
+    def load_lora_into_text_encoder(
+        self,
+        state_dict,
+        *,
+        network_alphas,
+        text_encoder,
+        lora_scale,
+        adapter_name,
+        _pipeline,
+        metadata,
+        low_cpu_mem_usage,
+    ):
+        self.text_encoder_loaded.append(
+            {
+                "state_dict": state_dict,
+                "network_alphas": network_alphas,
+                "text_encoder": text_encoder,
+                "lora_scale": lora_scale,
+                "adapter_name": adapter_name,
+                "_pipeline": _pipeline,
+                "metadata": metadata,
+                "low_cpu_mem_usage": low_cpu_mem_usage,
+            }
+        )
+
     def set_adapters(self, adapter_names: list[str], adapter_weights: list[float | dict[str, object]]):
         self.adapter_calls.append((adapter_names, adapter_weights))
+
+
+def _record_text_encoder_activation(monkeypatch):
+    def _mock_set_text_encoder_adapters(text_encoder, adapter_names, adapter_weights):
+        text_encoder.adapter_calls.append((adapter_names, adapter_weights))
+
+    monkeypatch.setattr(lora_utils, "_set_text_encoder_adapters", _mock_set_text_encoder_adapters)
 
 
 def test_apply_lora_adapters_sanitizes_dot_names(monkeypatch):
@@ -188,6 +230,7 @@ def test_apply_lora_adapters_supports_text_encoder_target(monkeypatch):
         ),
     )
 
+    _record_text_encoder_activation(monkeypatch)
     pipe = _DummyPipe()
     adapter_names, _ = lora_utils.apply_lora_adapters_with_validation(
         pipe,
@@ -200,7 +243,19 @@ def test_apply_lora_adapters_supports_text_encoder_target(monkeypatch):
     assert pipe.loaded == []
     assert pipe.unet.loaded == []
     assert pipe.unet.adapter_calls == []
-    assert pipe.text_encoder.loaded == [("C:/loras/text_only.safetensors", "lora_TextOnly", "text_encoder")]
+    assert pipe.text_encoder.loaded == []
+    assert pipe.text_encoder_loaded == [
+        {
+            "state_dict": {"text_encoder.C:/loras/text_only.safetensors.lora.down.weight": "state"},
+            "network_alphas": {"text_encoder.C:/loras/text_only.safetensors.alpha": 1.0},
+            "text_encoder": pipe.text_encoder,
+            "lora_scale": 1.0,
+            "adapter_name": "lora_TextOnly",
+            "_pipeline": pipe,
+            "metadata": {"text_encoder.C:/loras/text_only.safetensors.metadata": "metadata"},
+            "low_cpu_mem_usage": False,
+        }
+    ]
     assert pipe.text_encoder.adapter_calls == [(["lora_TextOnly"], [0.7])]
 
 
@@ -226,6 +281,7 @@ def test_apply_lora_adapters_supports_mixed_targets(monkeypatch):
         ),
     }
     monkeypatch.setattr(lora_utils, "get_lora_entry", lambda lora_id: entries[lora_id])
+    _record_text_encoder_activation(monkeypatch)
 
     pipe = _DummyPipe()
     adapter_names, _ = lora_utils.apply_lora_adapters_with_validation(
@@ -243,9 +299,10 @@ def test_apply_lora_adapters_supports_mixed_targets(monkeypatch):
     assert pipe.loaded == [("C:/loras/both.safetensors", "lora_Both")]
     assert pipe.adapter_calls == [(["lora_Both"], [0.9])]
     assert pipe.unet.loaded == [("C:/loras/unet.safetensors", "lora_Unet", "unet")]
-    assert pipe.unet.adapter_calls == [(["lora_Unet"], [0.6])]
-    assert pipe.text_encoder.loaded == [("C:/loras/text.safetensors", "lora_Text", "text_encoder")]
-    assert pipe.text_encoder.adapter_calls == [(["lora_Text"], [0.3])]
+    assert pipe.unet.adapter_calls == [(["lora_Both", "lora_Unet"], [0.9, 0.6])]
+    assert pipe.text_encoder.loaded == []
+    assert [call["adapter_name"] for call in pipe.text_encoder_loaded] == ["lora_Text"]
+    assert pipe.text_encoder.adapter_calls == [(["lora_Both", "lora_Text"], [0.9, 0.3])]
 
 
 def test_apply_lora_adapters_rejects_invalid_target(monkeypatch):
