@@ -80,8 +80,6 @@ const NAV_GROUPS = [
         items: [
             { href: "models/base/registry.html", label: "Base Models" },
             { href: "models/lora/model_page.html", label: "LoRA Models" },
-            { href: "models/base/add.html", label: "Add Base Model" },
-            { href: "models/lora/add.html", label: "Add LoRA" },
             { href: "others/tools_analysis.html", label: "Tools & Analysis" },
         ],
     },
