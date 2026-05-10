@@ -325,12 +325,7 @@ def _run_sd15_subprocess(operation: str, params: dict[str, object]) -> list[str]
             str(output_path),
         ]
         with _SD15_SUBPROCESS_SEMAPHORE:
-            completed = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                cwd=str(_REPO_ROOT),
-            )
+            completed = subprocess.run(cmd, cwd=str(_REPO_ROOT))
 
         if not output_path.exists():
             raise RuntimeError("SD1.5 subprocess failed: No subprocess result was written.")

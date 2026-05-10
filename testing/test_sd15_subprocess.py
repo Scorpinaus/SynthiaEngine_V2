@@ -24,7 +24,7 @@ class Sd15SubprocessTests(unittest.TestCase):
             def __exit__(self, exc_type, exc, traceback):
                 events.append("exit")
 
-        def fake_run(cmd, capture_output, text, cwd):
+        def fake_run(cmd, cwd):
             events.append("run")
             output_path = Path(cmd[-1])
             output_path.write_text(
@@ -45,7 +45,7 @@ class Sd15SubprocessTests(unittest.TestCase):
     def test_sd15_text2img_bridge_invokes_child_and_reads_result(self):
         params = {"prompt": "test prompt", "seed": 123}
 
-        def fake_run(cmd, capture_output, text, cwd):
+        def fake_run(cmd, cwd):
             input_path = Path(cmd[-2])
             output_path = Path(cmd[-1])
             payload = json.loads(input_path.read_text(encoding="utf-8"))
@@ -68,7 +68,7 @@ class Sd15SubprocessTests(unittest.TestCase):
     def test_sd15_bridge_serializes_pil_images_for_child_process(self):
         image = Image.new("RGB", (4, 3), "red")
 
-        def fake_run(cmd, capture_output, text, cwd):
+        def fake_run(cmd, cwd):
             input_path = Path(cmd[-2])
             output_path = Path(cmd[-1])
             payload = json.loads(input_path.read_text(encoding="utf-8"))
