@@ -33,10 +33,7 @@
                     <textarea id="negative_prompt" class="textarea-small" placeholder="Optional negative prompt..."></textarea>
                 </label>
 
-                <div id="controlnet-panel-root"></div>
-                <div id="lora-panel-root"></div>
-
-                <div id="sdxl-ip-adapter-panel-root" data-ip-adapter-toggle-label="Use image prompt reference"></div>
+                <div id="adapter-panel-root" data-ip-adapter-toggle-label="Use image prompt reference" data-ip-adapter-mask-enabled="false"></div>
 
                 <div id="preset-panel-root"></div>
 
@@ -187,7 +184,7 @@
     <script src="../components/preset_panel.js?v=1"></script>
     <script src="../workflow_client.js?v=1"></script>
     <script src="../workflow_catalog.js?v=1"></script>
-    <script src="../components/sdxl_ip_adapter_panel.js?v=1"></script>
+    <script src="../components/adapter_panel.js?v=1"></script>
     <script src="../components/ip_adapter_panel.js?v=1"></script>
     <script src="inpaint.js?v=4"></script>
 </body>

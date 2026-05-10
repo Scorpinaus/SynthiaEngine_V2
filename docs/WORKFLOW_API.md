@@ -449,6 +449,7 @@ Frontend note (SD1.5 page):
 - `frontend/sd15/animatediff.html` serves SD1.5 AnimateDiff text-to-video generation and renders `videos` outputs in `frontend/components/video_gallery.js`.
 - `frontend/wan/text2video.html` serves WAN text-to-video and VACE 1.3B generation and renders `videos` outputs in `frontend/components/video_gallery.js`.
 - `frontend/wan/image2video.html` serves experimental WAN I2V 14B 480P generation and renders `videos` outputs in `frontend/components/video_gallery.js`.
+- `frontend/sdxl/text2img.html`, `frontend/sdxl/img2img.html`, and `frontend/sdxl/inpaint.html` also group ControlNet preprocessors, LoRA adapters, and IP-Adapter controls behind the shared adapter modal. The SDXL modal uses the same overview/count behavior while keeping the SDXL IP-Adapter payload shape unchanged.
 - `frontend/sdxl/text2img.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()` for `sdxl.controlnet.text2img`.
 - `frontend/sdxl/text2img.js` uploads the optional SDXL IP-Adapter reference image through `/api/artifacts` and sends it as `sdxl.text2img.inputs.ip_adapter.image`.
 - `frontend/sdxl/img2img.js` also consumes shared ControlNet state via `window.ControlNetPanel.getState()` for `sdxl.img2img` optional ControlNet usage.

@@ -91,21 +91,21 @@
                             <img id="ip_adapter_preview" class="ip-adapter-preview is-hidden" alt="IP-Adapter reference preview" />
                         </div>
 
-                        <label class="field">
+                        <label class="field" data-ip-adapter-mask-section>
                             <span>IP-Adapter Mask</span>
                             <input id="ip_adapter_mask_image" type="file" accept="image/*" />
                         </label>
 
-                        <div id="ip_adapter_mask_preview_panel" class="ip-adapter-preview-panel">
+                        <div id="ip_adapter_mask_preview_panel" class="ip-adapter-preview-panel" data-ip-adapter-mask-section>
                             <div id="ip_adapter_mask_preview_empty" class="field-hint">No IP-Adapter mask selected.</div>
                             <img id="ip_adapter_mask_preview" class="ip-adapter-preview is-hidden" alt="IP-Adapter mask preview" />
                         </div>
 
-                        <div class="field-row">
+                        <div class="field-row" data-ip-adapter-mask-section>
                             <button id="ip_adapter_mask_editor_open" class="secondary" type="button">Create mask</button>
                             <button id="ip_adapter_mask_clear" class="secondary" type="button">Clear mask</button>
                         </div>
-                        <div class="field-hint">White applies the image prompt. Black suppresses it.</div>
+                        <div class="field-hint" data-ip-adapter-mask-section>White applies the image prompt. Black suppresses it.</div>
 
                         <label class="field">
                             <span>IP-Adapter Scale</span>
@@ -132,8 +132,35 @@
         }
 
         container.innerHTML = getConfiguredMarkup(container);
+        if (container.dataset.ipAdapterMaskEnabled === "false") {
+            container
+                .querySelectorAll("[data-ip-adapter-mask-section]")
+                .forEach((element) => element.remove());
+        }
         container.dataset.adapterPanelLoaded = "true";
+        initAdapterModalOpenState();
         document.dispatchEvent(new CustomEvent("adapter-panel:loaded"));
+    }
+
+    function initAdapterModalOpenState() {
+        const modal = document.getElementById("adapter-modal");
+        if (!modal || modal.dataset.openStateObserverLoaded === "true") {
+            return;
+        }
+
+        const syncOpenState = () => {
+            document.body.classList.toggle(
+                "adapter-modal-open",
+                !modal.classList.contains("hidden")
+            );
+        };
+
+        syncOpenState();
+        new MutationObserver(syncOpenState).observe(modal, {
+            attributes: true,
+            attributeFilter: ["class"],
+        });
+        modal.dataset.openStateObserverLoaded = "true";
     }
 
     renderAdapterPanel();

@@ -1626,6 +1626,10 @@ body {
     gap: 12px;
 }
 
+body.adapter-modal-open .viewer-controls {
+    visibility: hidden;
+}
+
 .field-hint {
     font-size: 13px;
     color: #6b645c;
