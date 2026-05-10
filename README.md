@@ -110,6 +110,7 @@ Note: `requirements.txt` currently references a local editable dependency `-e ./
 
 ## API docs
 
+- Architecture overview: `docs/ARCHITECTURE.md`
 - Full contract: `docs/WORKFLOW_API.md`
 - Pipeline lifecycle and memory cleanup policy: `docs/PIPELINE_LIFECYCLE.md`
 - Helpful discovery endpoints:
