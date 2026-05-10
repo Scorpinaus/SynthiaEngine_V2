@@ -793,7 +793,9 @@ button {
 }
 
 .lora-strength input[type="range"] {
-    width: 100%;
+    --lora-range-thumb-size: 18px;
+    width: calc(100% + var(--lora-range-thumb-size));
+    margin-inline: calc(var(--lora-range-thumb-size) / -2);
 }
 
 .lora-strength-grid {
