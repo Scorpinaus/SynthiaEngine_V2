@@ -15,6 +15,7 @@ class ModelArchitectureAnalysis:
     architecture: str | None
     confidence: str
     metadata_available: bool
+    metadata: dict[str, str] = field(default_factory=dict)
     metadata_keys: list[str] = field(default_factory=list)
     evidence: list[str] = field(default_factory=list)
 
@@ -123,6 +124,7 @@ def infer_model_architecture(
             architecture=metadata_architecture,
             confidence="high",
             metadata_available=bool(metadata),
+            metadata=dict(sorted(metadata.items())) if metadata else {},
             metadata_keys=sorted(metadata.keys()) if metadata else [],
             evidence=metadata_evidence[:5],
         )
@@ -136,6 +138,7 @@ def infer_model_architecture(
             architecture="sdxl",
             confidence="medium",
             metadata_available=bool(metadata),
+            metadata=dict(sorted(metadata.items())) if metadata else {},
             metadata_keys=sorted(metadata.keys()) if metadata else [],
             evidence=evidence,
         )
@@ -146,6 +149,7 @@ def infer_model_architecture(
             architecture="sdxl",
             confidence="medium",
             metadata_available=bool(metadata),
+            metadata=dict(sorted(metadata.items())) if metadata else {},
             metadata_keys=sorted(metadata.keys()) if metadata else [],
             evidence=evidence,
         )
@@ -156,6 +160,7 @@ def infer_model_architecture(
             architecture="flux",
             confidence="low",
             metadata_available=bool(metadata),
+            metadata=dict(sorted(metadata.items())) if metadata else {},
             metadata_keys=sorted(metadata.keys()) if metadata else [],
             evidence=evidence,
         )
@@ -168,6 +173,7 @@ def infer_model_architecture(
             architecture="sd15",
             confidence="low",
             metadata_available=bool(metadata),
+            metadata=dict(sorted(metadata.items())) if metadata else {},
             metadata_keys=sorted(metadata.keys()) if metadata else [],
             evidence=evidence,
         )
@@ -181,6 +187,7 @@ def infer_model_architecture(
         architecture=None,
         confidence="unknown",
         metadata_available=bool(metadata),
+        metadata=dict(sorted(metadata.items())) if metadata else {},
         metadata_keys=sorted(metadata.keys()) if metadata else [],
         evidence=evidence,
     )

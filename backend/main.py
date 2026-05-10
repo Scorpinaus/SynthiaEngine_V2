@@ -221,6 +221,7 @@ class ModelAnalysisResponse(BaseModel):
     architecture: str | None = None
     architecture_confidence: str = "unknown"
     metadata_available: bool = False
+    safetensors_metadata: dict[str, str] = Field(default_factory=dict)
     metadata_keys: list[str] = Field(default_factory=list)
     architecture_evidence: list[str] = Field(default_factory=list)
     rows: list[ModelLayerRow]
@@ -956,6 +957,7 @@ async def analyze_model_layers(
         architecture=architecture.architecture,
         architecture_confidence=architecture.confidence,
         metadata_available=architecture.metadata_available,
+        safetensors_metadata=architecture.metadata,
         metadata_keys=architecture.metadata_keys,
         architecture_evidence=architecture.evidence,
         rows=[ModelLayerRow(key=k, shape=s, dtype=d) for k, s, d in rows],

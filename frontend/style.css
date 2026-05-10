@@ -72,6 +72,51 @@ body {
     width: 100%;
 }
 
+.nav-group-menu.has-subgroups {
+    min-width: 180px;
+}
+
+.nav-subgroup {
+    position: relative;
+}
+
+.nav-subgroup-toggle {
+    justify-content: space-between;
+    width: 100%;
+}
+
+.nav-subgroup-toggle::after {
+    content: ">";
+    margin-left: 18px;
+}
+
+.nav-subgroup-menu {
+    position: absolute;
+    top: 0;
+    left: calc(100% + 8px);
+    min-width: 220px;
+    display: none;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    background: #ffffff;
+    border: 1px solid #e1dbd2;
+    border-radius: 14px;
+    box-shadow: 0 14px 28px rgba(40, 36, 32, 0.15);
+    z-index: 60;
+}
+
+.nav-subgroup:hover .nav-subgroup-menu,
+.nav-subgroup:focus-within .nav-subgroup-menu,
+.nav-subgroup.is-open .nav-subgroup-menu {
+    display: flex;
+}
+
+.nav-subgroup-menu .nav-link {
+    justify-content: flex-start;
+    width: 100%;
+}
+
 .layout {
     display: grid;
     grid-template-columns: minmax(280px, 360px) 1fr;
@@ -1358,6 +1403,75 @@ button {
     font-size: 13px;
 }
 
+.tools-metadata {
+    display: grid;
+    gap: 12px;
+    background: #ffffff;
+    border: 1px solid #e3ddd4;
+    border-radius: 8px;
+    padding: 12px 16px;
+}
+
+.tools-metadata-title {
+    display: grid;
+    gap: 2px;
+}
+
+.tools-metadata-count {
+    color: #6b645c;
+    font-size: 13px;
+}
+
+.tools-metadata-key {
+    color: #6b645c;
+    overflow-wrap: anywhere;
+}
+
+.tools-metadata-value {
+    color: #2f2a25;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+
+.tools-metadata-table-wrapper {
+    box-shadow: none;
+}
+
+.tools-metadata-table {
+    table-layout: fixed;
+}
+
+.tools-metadata-table th:first-child,
+.tools-metadata-table td:first-child {
+    width: 34%;
+    min-width: 220px;
+}
+
+.tools-metadata-table th:last-child,
+.tools-metadata-table td:last-child {
+    width: 66%;
+}
+
+.tools-collapsible-head {
+    cursor: pointer;
+    user-select: none;
+}
+
+.tools-collapsible-head th:first-child::before {
+    content: "▾";
+    display: inline-block;
+    margin-right: 6px;
+}
+
+.tools-collapsible-head.is-collapsed th:first-child::before {
+    content: "▸";
+}
+
+.tools-collapsible-head:focus-visible {
+    outline: 2px solid #6b4b1f;
+    outline-offset: -2px;
+}
+
 .tools-table-wrapper {
     background: #ffffff;
     border-radius: 16px;
@@ -1394,6 +1508,13 @@ button {
 
 .tools-table tbody tr:last-child td {
     border-bottom: none;
+}
+
+@media (max-width: 720px) {
+    .tools-metadata-table th:first-child,
+    .tools-metadata-table td:first-child {
+        min-width: 160px;
+    }
 }
 
 .model-card {

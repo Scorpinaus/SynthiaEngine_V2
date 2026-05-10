@@ -25,6 +25,7 @@ def test_analyze_model_file_detects_sdxl_from_safetensors_metadata(tmp_path: Pat
     assert architecture.architecture == "sdxl"
     assert architecture.confidence == "high"
     assert architecture.metadata_available is True
+    assert architecture.metadata == {"ss_base_model_version": "sdxl_base_v1-0"}
     assert architecture.metadata_keys == ["ss_base_model_version"]
     assert architecture.evidence == ["ss_base_model_version: sdxl_base_v1-0"]
 

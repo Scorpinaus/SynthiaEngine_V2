@@ -58,9 +58,26 @@
                     <div class="tools-architecture-detail" id="tools-architecture-detail"></div>
                     <ul class="tools-architecture-evidence" id="tools-architecture-evidence"></ul>
                 </div>
-                <div class="tools-table-wrapper">
+                <div class="tools-metadata" id="tools-metadata" hidden>
+                    <div class="tools-metadata-title">
+                        <div class="tools-architecture-label">Safetensors metadata</div>
+                        <div class="tools-metadata-count" id="tools-metadata-count"></div>
+                    </div>
+                    <div class="tools-table-wrapper tools-metadata-table-wrapper">
+                        <table class="tools-table tools-metadata-table">
+                            <thead id="tools-metadata-head" class="tools-collapsible-head" role="button" tabindex="0" aria-expanded="true" aria-controls="tools-metadata-body">
+                                <tr>
+                                    <th>Key</th>
+                                    <th>Value</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tools-metadata-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="tools-table-wrapper" id="tools-table-wrapper">
                     <table class="tools-table">
-                        <thead>
+                        <thead id="tools-table-head" class="tools-collapsible-head" role="button" tabindex="0" aria-expanded="true" aria-controls="tools-table-body">
                             <tr>
                                 <th>Key</th>
                                 <th>Shape</th>
