@@ -10,14 +10,10 @@ const localFilePanel = document.getElementById("local-file-panel");
 const webFilePanel = document.getElementById("web-file-panel");
 const webFileInput = document.getElementById("web-file-input");
 const selectLocalFileButton = document.getElementById("select-local-file");
-const promptPresetName = document.getElementById("prompt-preset-name");
-const promptPresetWords = document.getElementById("prompt-preset-words");
-const addPromptPresetButton = document.getElementById("add-prompt-preset");
-const promptPresetList = document.getElementById("prompt-preset-list");
+const managePromptPresetsLink = document.getElementById("manage-prompt-presets");
 
 let currentLoraId = null;
 let loading = false;
-let promptPresets = [];
 
 function setState(message, variant = "info") {
     state.textContent = message;
@@ -58,79 +54,6 @@ function syncFilePathMode({ resetLocal = false } = {}) {
     }
 }
 
-function parsePresetWords(value) {
-    return String(value || "")
-        .split(/[\n,]+/)
-        .map((word) => word.trim())
-        .filter(Boolean);
-}
-
-function normalizePromptPresets(value) {
-    if (!Array.isArray(value)) {
-        return [];
-    }
-    return value
-        .map((preset) => ({
-            name: String(preset?.name || "").trim(),
-            words: Array.isArray(preset?.words)
-                ? preset.words.map((word) => String(word || "").trim()).filter(Boolean)
-                : [],
-        }))
-        .filter((preset) => preset.name && preset.words.length > 0);
-}
-
-function renderPromptPresets() {
-    if (!promptPresetList) {
-        return;
-    }
-    promptPresetList.innerHTML = "";
-    if (promptPresets.length === 0) {
-        const empty = document.createElement("div");
-        empty.className = "field-hint";
-        empty.textContent = "No prompt presets added.";
-        promptPresetList.appendChild(empty);
-        return;
-    }
-    promptPresets.forEach((preset, index) => {
-        const row = document.createElement("div");
-        row.className = "lora-preset-row";
-
-        const summary = document.createElement("div");
-        summary.className = "lora-preset-summary";
-        const name = document.createElement("strong");
-        name.textContent = preset.name;
-        const words = document.createElement("span");
-        words.textContent = preset.words.join(", ");
-        summary.append(name, words);
-
-        const remove = document.createElement("button");
-        remove.type = "button";
-        remove.className = "secondary";
-        remove.textContent = "Remove";
-        remove.addEventListener("click", () => {
-            promptPresets.splice(index, 1);
-            renderPromptPresets();
-        });
-
-        row.append(summary, remove);
-        promptPresetList.appendChild(row);
-    });
-}
-
-function addPromptPreset() {
-    const name = promptPresetName?.value.trim() || "";
-    const words = parsePresetWords(promptPresetWords?.value);
-    if (!name || words.length === 0) {
-        setState("Prompt presets need a name and at least one word.", "error");
-        return;
-    }
-    promptPresets.push({ name, words });
-    promptPresetName.value = "";
-    promptPresetWords.value = "";
-    renderPromptPresets();
-    setState("Prompt preset added.", "success");
-}
-
 async function selectLocalFile() {
     setState("Selecting local file...");
 
@@ -169,8 +92,9 @@ function fillForm(entry) {
     locationField.value = entry.lora_location || "local";
     filePathField.value = entry.file_path || "";
     webFileInput.value = locationField.value === "hub" ? entry.file_path || "" : "";
-    promptPresets = normalizePromptPresets(entry.prompt_presets);
-    renderPromptPresets();
+    if (managePromptPresetsLink) {
+        managePromptPresetsLink.href = `prompt_presets.html?lora_id=${encodeURIComponent(String(entry.lora_id))}`;
+    }
     syncFilePathMode();
 }
 
@@ -209,7 +133,6 @@ function buildPayload() {
         lora_location: locationField.value.trim(),
         file_path: filePathField.value.trim(),
         name: nameValue || null,
-        prompt_presets: promptPresets,
     };
 }
 
@@ -268,8 +191,6 @@ webFileInput?.addEventListener("input", () => {
     }
 });
 selectLocalFileButton?.addEventListener("click", selectLocalFile);
-addPromptPresetButton?.addEventListener("click", addPromptPreset);
 
 syncFilePathMode();
-renderPromptPresets();
 loadLora();

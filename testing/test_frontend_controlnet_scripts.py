@@ -266,9 +266,26 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("prompt_presets", lora_js)
         self.assertIn("updateLoraPromptPreset", lora_js)
         self.assertIn("getSelectedPresetWords", lora_js)
-        self.assertIn("resolveLoraEditUrl", lora_js)
-        self.assertIn("Edit prompt presets", lora_js)
-        self.assertIn("Add prompt presets", lora_js)
+        self.assertIn("openPromptPresetModal", lora_js)
+        self.assertIn("lora_prompt_preset_editor.js", lora_js)
+        self.assertIn("Edit Prompt Presets", lora_js)
+        self.assertIn("Add Prompt Presets", lora_js)
+
+    def test_lora_prompt_preset_editor_page_uses_shared_editor(self):
+        prompt_preset_html = (ROOT / "frontend" / "models" / "lora" / "prompt_presets.html").read_text(
+            encoding="utf-8"
+        )
+        prompt_preset_js = (ROOT / "frontend" / "models" / "lora" / "prompt_presets.js").read_text(
+            encoding="utf-8"
+        )
+        editor_js = (ROOT / "frontend" / "components" / "lora_prompt_preset_editor.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("lora-prompt-preset-editor-root", prompt_preset_html)
+        self.assertIn("lora_prompt_preset_editor.js", prompt_preset_html)
+        self.assertIn("window.LoraPromptPresetEditor?.mount", prompt_preset_js)
+        self.assertIn("PATCH", editor_js)
+        self.assertIn("prompt_presets", editor_js)
 
     def test_preset_panel_html_has_mode_specific_controls(self):
         preset_html = (ROOT / "frontend" / "components" / "preset_panel.html").read_text(encoding="utf-8")

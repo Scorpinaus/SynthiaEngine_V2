@@ -134,6 +134,7 @@ function buildCard(entry) {
     const actions = document.createElement("div");
     actions.className = "models-actions";
     actions.appendChild(buildActionLink(`edit.html?lora_id=${encodeURIComponent(String(entry.lora_id))}`, "Edit"));
+    actions.appendChild(buildActionLink(`prompt_presets.html?lora_id=${encodeURIComponent(String(entry.lora_id))}`, "Prompt Presets"));
     actions.appendChild(buildDeleteButton(entry));
 
     card.append(header, pills, details, actions);

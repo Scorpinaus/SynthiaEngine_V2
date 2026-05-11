@@ -828,11 +828,50 @@ button {
     width: 100%;
 }
 
-.lora-preset-manage-link {
+.lora-preset-manage {
     justify-self: start;
-    font-size: 12px;
-    color: #5f4b32;
-    text-decoration: underline;
+}
+
+.lora-preset-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: grid;
+    place-items: center;
+    padding: 18px;
+    background: rgba(34, 30, 25, 0.46);
+}
+
+.lora-preset-modal {
+    width: min(720px, 100%);
+    max-height: min(760px, 92vh);
+    overflow: auto;
+    border-radius: 12px;
+    border: 1px solid #e3ddd4;
+    background: #fffaf2;
+    box-shadow: 0 18px 48px rgba(34, 30, 25, 0.22);
+}
+
+.lora-preset-modal-header {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 16px;
+    border-bottom: 1px solid #e8dfd1;
+    background: #fffaf2;
+}
+
+.lora-preset-modal-header h3 {
+    margin: 0;
+    font-size: 16px;
+}
+
+.lora-preset-modal-body {
+    padding: 16px;
 }
 
 .lora-remove {
@@ -1740,7 +1779,8 @@ button {
     justify-self: start;
 }
 
-.lora-preset-editor {
+.lora-preset-editor,
+.lora-preset-editor-shell {
     display: grid;
     gap: 10px;
     padding: 12px;
@@ -1749,10 +1789,29 @@ button {
     background: #fdfbf7;
 }
 
-.lora-preset-editor-header {
+.lora-preset-editor-shell.compact {
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
+
+.lora-preset-editor-header,
+.lora-preset-editor-title {
     display: grid;
     gap: 4px;
     font-weight: 600;
+}
+
+.lora-preset-editor-title h3 {
+    margin: 0;
+    font-size: 18px;
+}
+
+.lora-preset-editor-title p {
+    margin: 0;
+    color: #6b645c;
+    font-size: 13px;
+    font-weight: 400;
 }
 
 .lora-preset-list {
@@ -1760,7 +1819,8 @@ button {
     gap: 8px;
 }
 
-.lora-preset-row {
+.lora-preset-row,
+.lora-preset-edit-row {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
@@ -1769,6 +1829,21 @@ button {
     border: 1px solid #ece4d6;
     border-radius: 8px;
     background: #fff;
+}
+
+.lora-preset-edit-row {
+    display: grid;
+    grid-template-columns: minmax(140px, 1fr) minmax(220px, 2fr) auto;
+}
+
+.lora-preset-edit-list,
+.lora-preset-editor-actions {
+    display: grid;
+    gap: 10px;
+}
+
+.lora-preset-editor-actions {
+    grid-template-columns: repeat(auto-fit, minmax(140px, max-content));
 }
 
 .lora-preset-summary {
@@ -1780,6 +1855,12 @@ button {
 .lora-preset-summary span {
     color: #6b645c;
     overflow-wrap: anywhere;
+}
+
+@media (max-width: 720px) {
+    .lora-preset-edit-row {
+        grid-template-columns: 1fr;
+    }
 }
 
 .model-form-state {

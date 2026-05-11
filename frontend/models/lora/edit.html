@@ -69,24 +69,7 @@
                     <span>File Path</span>
                     <input name="file_path" type="text" placeholder="Select a local file or enter a web link" readonly required />
                 </label>
-                <div class="lora-preset-editor">
-                    <div class="lora-preset-editor-header">
-                        <span>Prompt Presets</span>
-                        <span class="field-hint">Words are appended to prompts when selected with this LoRA.</span>
-                    </div>
-                    <div class="field-row">
-                        <label class="field">
-                            <span>Preset Name</span>
-                            <input id="prompt-preset-name" type="text" placeholder="Soft watercolor" />
-                        </label>
-                        <label class="field">
-                            <span>Words</span>
-                            <textarea id="prompt-preset-words" rows="3" placeholder="soft watercolor, paper texture, pastel colors"></textarea>
-                        </label>
-                    </div>
-                    <button id="add-prompt-preset" class="secondary" type="button">Add Prompt Preset</button>
-                    <div id="prompt-preset-list" class="lora-preset-list"></div>
-                </div>
+                <a id="manage-prompt-presets" class="secondary nav-link" href="#">Manage Prompt Presets</a>
                 <button class="primary" type="submit">Save LoRA</button>
             </form>
             <div id="lora-edit-state" class="model-form-state" aria-live="polite"></div>

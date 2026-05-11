@@ -1,10 +1,9 @@
 (() => {
     const scriptUrl = document.currentScript?.src ? new URL(document.currentScript.src) : null;
     const resolveAssetUrl = (path) => (scriptUrl ? new URL(path, scriptUrl).toString() : path);
-    const resolveLoraEditUrl = (loraId) =>
-        resolveAssetUrl(`../models/lora/edit.html?lora_id=${encodeURIComponent(String(loraId))}`);
     const LOG_LORA_PANEL = true;
     const DEFAULT_STRENGTH = 0.8;
+    let promptPresetEditorScriptPromise = null;
 
     function logDebug(message, data) {
         if (!LOG_LORA_PANEL) {
@@ -22,6 +21,7 @@
         selected: [],
         family: "",
         weightMode: "basic",
+        apiBase: "",
     };
 
     function emitAdapterSummaryChanged() {
@@ -288,11 +288,12 @@
             if (promptPresetWrap) {
                 item.appendChild(promptPresetWrap);
             }
-            const managePresetLink = document.createElement("a");
-            managePresetLink.className = "lora-preset-manage-link";
-            managePresetLink.href = resolveLoraEditUrl(lora.lora_id);
-            managePresetLink.textContent = presets.length > 0 ? "Edit prompt presets" : "Add prompt presets";
-            item.appendChild(managePresetLink);
+            const managePresetButton = document.createElement("button");
+            managePresetButton.type = "button";
+            managePresetButton.className = "secondary lora-preset-manage";
+            managePresetButton.textContent = presets.length > 0 ? "Edit Prompt Presets" : "Add Prompt Presets";
+            managePresetButton.addEventListener("click", () => openPromptPresetModal(lora.lora_id));
+            item.appendChild(managePresetButton);
             list.appendChild(item);
         });
         emitAdapterSummaryChanged();
@@ -377,6 +378,107 @@
         });
         emitAdapterSummaryChanged();
         renderLoraList();
+    }
+
+    function updateStoredLoraEntry(updatedEntry) {
+        const normalizedPresets = normalizePromptPresets(updatedEntry?.prompt_presets);
+        loraState.available = loraState.available.map((entry) =>
+            Number(entry.lora_id) === Number(updatedEntry.lora_id)
+                ? { ...entry, ...updatedEntry, prompt_presets: normalizedPresets }
+                : entry,
+        );
+        loraState.selected = loraState.selected.map((selected) => {
+            if (Number(selected.lora_id) !== Number(updatedEntry.lora_id)) {
+                return selected;
+            }
+            const matchedPreset = normalizedPresets.find((preset) => preset.name === selected.prompt_preset_name);
+            return {
+                ...selected,
+                lora_name: updatedEntry.name ?? updatedEntry.file_path ?? selected.lora_name,
+                prompt_presets: normalizedPresets,
+                prompt_preset_name: matchedPreset?.name || "",
+                prompt_preset_words: matchedPreset?.words || [],
+            };
+        });
+        renderLoraList();
+        emitAdapterSummaryChanged();
+    }
+
+    function ensurePromptPresetEditorScript() {
+        if (window.LoraPromptPresetEditor) {
+            return Promise.resolve(window.LoraPromptPresetEditor);
+        }
+        if (!promptPresetEditorScriptPromise) {
+            promptPresetEditorScriptPromise = new Promise((resolve, reject) => {
+                const script = document.createElement("script");
+                script.src = resolveAssetUrl("lora_prompt_preset_editor.js?v=1");
+                script.onload = () => resolve(window.LoraPromptPresetEditor);
+                script.onerror = () => reject(new Error("Unable to load LoRA prompt preset editor."));
+                document.head.appendChild(script);
+            });
+        }
+        return promptPresetEditorScriptPromise;
+    }
+
+    async function openPromptPresetModal(loraId) {
+        const selected = loraState.selected.find((lora) => Number(lora.lora_id) === Number(loraId));
+        if (!selected) {
+            return;
+        }
+
+        const overlay = document.createElement("div");
+        overlay.className = "lora-preset-modal-backdrop";
+
+        const modal = document.createElement("div");
+        modal.className = "lora-preset-modal";
+        modal.setAttribute("role", "dialog");
+        modal.setAttribute("aria-modal", "true");
+
+        const header = document.createElement("div");
+        header.className = "lora-preset-modal-header";
+        const title = document.createElement("h3");
+        title.textContent = selected.lora_name || `LoRA ${loraId}`;
+        const close = document.createElement("button");
+        close.type = "button";
+        close.className = "secondary";
+        close.textContent = "Close";
+        close.addEventListener("click", () => overlay.remove());
+        header.append(title, close);
+
+        const body = document.createElement("div");
+        body.className = "lora-preset-modal-body";
+        const loading = document.createElement("div");
+        loading.className = "field-hint";
+        loading.textContent = "Loading prompt preset editor...";
+        body.appendChild(loading);
+
+        modal.append(header, body);
+        overlay.appendChild(modal);
+        overlay.addEventListener("click", (event) => {
+            if (event.target === overlay) {
+                overlay.remove();
+            }
+        });
+        document.body.appendChild(overlay);
+
+        try {
+            const editor = await ensurePromptPresetEditorScript();
+            body.innerHTML = "";
+            editor.mount({
+                container: body,
+                apiBase: loraState.apiBase,
+                loraId,
+                compact: true,
+                onSaved: updateStoredLoraEntry,
+            });
+        } catch (error) {
+            console.error(error);
+            body.innerHTML = "";
+            const message = document.createElement("div");
+            message.className = "model-form-state error";
+            message.textContent = error.message || "Unable to open prompt preset editor.";
+            body.appendChild(message);
+        }
     }
 
     function addLora() {
@@ -555,6 +657,7 @@
         const addButton = document.getElementById("add-lora");
         loraState.family = normalizeFamily(family);
         loraState.weightMode = "basic";
+        loraState.apiBase = apiBase;
         toggleButton?.addEventListener("click", toggleLoraPanel);
         addButton?.addEventListener("click", addLora);
         bindWeightModeControls();
