@@ -28,6 +28,20 @@ class FrontendModelRegistryScriptTests(unittest.TestCase):
         self.assertIn('<option value="qwen-image">qwen-image</option>', html)
         self.assertIn('<option value="z-image">z-image</option>', html)
 
+    def test_model_add_page_uses_location_type_specific_link_controls(self):
+        html = (ROOT / "frontend" / "models" / "base" / "add.html").read_text(encoding="utf-8")
+        js = (ROOT / "frontend" / "models" / "base" / "add.js").read_text(encoding="utf-8")
+        self.assertIn('<select name="location_type" required>', html)
+        self.assertIn('<option value="local">Local</option>', html)
+        self.assertIn('<option value="hub">Hub</option>', html)
+        self.assertIn('id="select-local-link"', html)
+        self.assertIn('id="web-link-input"', html)
+        self.assertIn('input name="link" type="text"', html)
+        self.assertIn("readonly required", html)
+        self.assertIn("/api/local-path/select", js)
+        self.assertIn('locationTypeField?.value === "hub"', js)
+        self.assertIn("linkField.value = webLinkInput.value.trim()", js)
+
     def test_models_page_keeps_base_add_and_lora_registry_buttons(self):
         html = (ROOT / "frontend" / "models" / "base" / "registry.html").read_text(encoding="utf-8")
         self.assertIn('href="add.html"', html)

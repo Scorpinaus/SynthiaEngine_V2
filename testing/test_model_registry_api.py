@@ -101,3 +101,26 @@ def test_model_patch_validation_and_duplicate_create(tmp_path):
 
     invalid_field_patch = client.patch("/models/Base%20B", json={"name": "Changed"})
     assert invalid_field_patch.status_code == 422
+
+
+def test_local_path_select_returns_picker_path(monkeypatch):
+    client = TestClient(app)
+
+    def fake_picker(selection_type):
+        assert selection_type == "folder"
+        return r"D:\diffusion\models\base"
+
+    monkeypatch.setattr("backend.main._open_local_path_dialog", fake_picker)
+
+    selected = client.post("/api/local-path/select", json={"selection_type": "folder"})
+
+    assert selected.status_code == 200
+    assert selected.json() == {"path": r"D:\diffusion\models\base"}
+
+
+def test_local_path_select_rejects_unknown_selection_type():
+    client = TestClient(app)
+
+    selected = client.post("/api/local-path/select", json={"selection_type": "drive"})
+
+    assert selected.status_code == 422

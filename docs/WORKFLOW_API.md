@@ -361,6 +361,13 @@ Frontend note (registry pages):
 - Returns `204` on success.
 - Error `404`: missing name in `{"detail": "Model '<model_name>' not found."}`
 
+`POST /api/local-path/select`
+- Opens a native local path picker on the machine running the API server.
+- Request: `{"selection_type": "file"}` or `{"selection_type": "folder"}`.
+- Response `200`: `{"path": "D:\\diffusion\\models\\base"}`. Cancelled selection returns an empty `path`.
+- Error `503`: local picker is unavailable on the API host.
+- Used by `frontend/models/base/add.html` when `Location Type` is `local`; hub entries still persist the typed web/Hugging Face-style value in the existing `link` field.
+
 ### List ControlNet preprocessors (for SD1.5 ControlNet setup)
 
 `GET /api/controlnet/preprocessors`

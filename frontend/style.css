@@ -1697,6 +1697,15 @@ button {
     gap: 14px;
 }
 
+.model-link-panel {
+    display: grid;
+    gap: 8px;
+}
+
+.model-link-panel button {
+    justify-self: start;
+}
+
 .model-form-state {
     font-size: 14px;
     color: #6b645c;

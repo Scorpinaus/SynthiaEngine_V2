@@ -135,6 +135,18 @@ class ModelUpdateRequest(BaseModel):
     link: str | None = None
 
 
+class LocalPathSelectRequest(BaseModel):
+    """Request payload used to open a local path picker on the API host."""
+
+    selection_type: Literal["file", "folder"]
+
+
+class LocalPathSelectResponse(BaseModel):
+    """Selected local path returned by the API host picker."""
+
+    path: str
+
+
 class LoraCreateRequest(BaseModel):
     """Request payload used to register a new LoRA entry in the local registry."""
 
@@ -201,6 +213,28 @@ class ControlNetPreprocessorInfo(BaseModel):
     install_hint: str | None = None
     recommended_sd15_control_models: list[str] = Field(default_factory=list)
     legacy_aliases: list[str] = Field(default_factory=list)
+
+
+def _open_local_path_dialog(selection_type: Literal["file", "folder"]) -> str:
+    """Open a native local picker on the backend host and return the path."""
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+    except Exception as exc:
+        raise RuntimeError("Local path picker is unavailable on this host.") from exc
+
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes("-topmost", True)
+    try:
+        if selection_type == "file":
+            selected_path = filedialog.askopenfilename(parent=root, title="Select local model file")
+        else:
+            selected_path = filedialog.askdirectory(parent=root, title="Select local model folder")
+    finally:
+        root.destroy()
+
+    return os.path.normpath(selected_path) if selected_path else ""
 
 
 class ModelLayerRow(BaseModel):
@@ -692,6 +726,15 @@ async def list_models(family: str | None = None):
         pattern = re.compile(re.escape(family_value), re.IGNORECASE)
 
     return [entry for entry in entries if pattern.search(entry.family)]
+
+
+@app.post("/api/local-path/select", response_model=LocalPathSelectResponse)
+def select_local_path(req: LocalPathSelectRequest):
+    """Open a native local path picker on the API host."""
+    try:
+        return LocalPathSelectResponse(path=_open_local_path_dialog(req.selection_type))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.get("/lora-models", response_model=list[LoraRegistryEntry])

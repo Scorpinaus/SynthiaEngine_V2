@@ -14,6 +14,7 @@ class DocsModelContractTests(unittest.TestCase):
         self.assertIn("`GET /models/{model_name}`", docs)
         self.assertIn("`PATCH /models/{model_name}`", docs)
         self.assertIn("`DELETE /models/{model_name}`", docs)
+        self.assertIn("`POST /api/local-path/select`", docs)
         self.assertIn("`frontend/models/base/edit.html`", docs)
 
 

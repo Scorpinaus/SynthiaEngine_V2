@@ -1,6 +1,13 @@
 const form = document.getElementById("model-form");
 const state = document.getElementById("model-form-state");
 const modelIdField = form.querySelector('input[name="model_id"]');
+const modelTypeField = form.querySelector('select[name="model_type"]');
+const locationTypeField = form.querySelector('select[name="location_type"]');
+const linkField = form.querySelector('input[name="link"]');
+const localLinkPanel = document.getElementById("local-link-panel");
+const webLinkPanel = document.getElementById("web-link-panel");
+const webLinkInput = document.getElementById("web-link-input");
+const selectLocalLinkButton = document.getElementById("select-local-link");
 let nextModelId = 1;
 
 function setState(message, variant = "info") {
@@ -25,6 +32,62 @@ function updateModelId(value) {
     nextModelId = value;
     if (modelIdField) {
         modelIdField.value = String(value);
+    }
+}
+
+function getLocalSelectionType() {
+    return modelTypeField?.value === "single_file" ? "file" : "folder";
+}
+
+function updateLocalButtonLabel() {
+    if (!selectLocalLinkButton) {
+        return;
+    }
+    const label = getLocalSelectionType() === "file" ? "Select local file" : "Select local folder";
+    selectLocalLinkButton.textContent = label;
+}
+
+function syncLinkMode() {
+    const isHub = locationTypeField?.value === "hub";
+    if (localLinkPanel) {
+        localLinkPanel.hidden = isHub;
+    }
+    if (webLinkPanel) {
+        webLinkPanel.hidden = !isHub;
+    }
+    if (linkField) {
+        linkField.value = isHub ? webLinkInput.value.trim() : "";
+    }
+    updateLocalButtonLabel();
+}
+
+async function selectLocalLink() {
+    const selectionType = getLocalSelectionType();
+    setState(`Selecting local ${selectionType}...`);
+
+    try {
+        const response = await fetch(`${API_BASE}/api/local-path/select`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ selection_type: selectionType }),
+        });
+        if (!response.ok) {
+            const errorBody = await response.json().catch(() => ({}));
+            const detail = errorBody.detail || "Unable to select local path.";
+            throw new Error(detail);
+        }
+
+        const data = await response.json();
+        const selectedPath = data.path || "";
+        if (!selectedPath) {
+            setState("No local path selected.", "error");
+            return;
+        }
+        linkField.value = selectedPath;
+        setState("Local path selected.", "success");
+    } catch (error) {
+        console.error(error);
+        setState(error.message || "Unable to select local path.", "error");
     }
 }
 
@@ -72,6 +135,7 @@ form.addEventListener("submit", async (event) => {
 
         setState("Model saved successfully.", "success");
         form.reset();
+        syncLinkMode();
         fetchNextModelId();
     } catch (error) {
         console.error(error);
@@ -79,4 +143,14 @@ form.addEventListener("submit", async (event) => {
     }
 });
 
+locationTypeField?.addEventListener("change", syncLinkMode);
+modelTypeField?.addEventListener("change", updateLocalButtonLabel);
+webLinkInput?.addEventListener("input", () => {
+    if (locationTypeField?.value === "hub") {
+        linkField.value = webLinkInput.value.trim();
+    }
+});
+selectLocalLinkButton?.addEventListener("click", selectLocalLink);
+
+syncLinkMode();
 fetchNextModelId();
