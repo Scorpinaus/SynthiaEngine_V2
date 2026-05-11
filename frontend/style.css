@@ -1628,6 +1628,11 @@ button {
     font-size: 14px;
 }
 
+.model-detail-row-stacked {
+    grid-template-columns: 1fr;
+    gap: 6px;
+}
+
 .model-detail-row dt {
     font-weight: 600;
     color: #6b645c;
@@ -1648,6 +1653,15 @@ button {
     display: inline-flex;
     align-items: center;
     gap: 4px;
+}
+
+.model-detail-row-stacked .model-code {
+    display: block;
+    width: fit-content;
+    max-width: 100%;
+    border-radius: 8px;
+    overflow-wrap: anywhere;
+    white-space: normal;
 }
 
 .model-muted {

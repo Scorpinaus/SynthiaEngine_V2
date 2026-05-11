@@ -37,9 +37,12 @@ function getValue(value, fallback = EMPTY_VALUE) {
     return value;
 }
 
-function buildDetailRow(label, value) {
+function buildDetailRow(label, value, options = {}) {
     const row = document.createElement("div");
     row.className = "model-detail-row";
+    if (options.stacked) {
+        row.classList.add("model-detail-row-stacked");
+    }
 
     const dt = document.createElement("dt");
     dt.textContent = label;
@@ -112,7 +115,7 @@ function buildCard(entry) {
     const details = document.createElement("dl");
     details.className = "model-details";
     details.appendChild(buildDetailRow("LoRA ID", buildCode(String(getValue(entry.lora_id)))));
-    details.appendChild(buildDetailRow("File Path", buildCode(getValue(entry.file_path))));
+    details.appendChild(buildDetailRow("File Path", buildCode(getValue(entry.file_path)), { stacked: true }));
 
     const actions = document.createElement("div");
     actions.className = "models-actions";

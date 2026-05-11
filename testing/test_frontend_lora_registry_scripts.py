@@ -44,6 +44,7 @@ class FrontendLoraRegistryScriptTests(unittest.TestCase):
         self.assertIn("window.confirm(", js)
         self.assertIn("method: \"DELETE\"", js)
         self.assertIn("edit.html?lora_id=", js)
+        self.assertIn('buildDetailRow("File Path", buildCode(getValue(entry.file_path)), { stacked: true })', js)
 
     def test_lora_add_script_uses_create_endpoint(self):
         js = (ROOT / "frontend" / "models" / "lora" / "add.js").read_text(encoding="utf-8")

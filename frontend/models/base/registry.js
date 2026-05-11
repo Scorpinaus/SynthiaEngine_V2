@@ -33,9 +33,12 @@ function getValue(value, fallback = EMPTY_VALUE) {
     return value;
 }
 
-function buildDetailRow(label, value) {
+function buildDetailRow(label, value, options = {}) {
     const row = document.createElement("div");
     row.className = "model-detail-row";
+    if (options.stacked) {
+        row.classList.add("model-detail-row-stacked");
+    }
     const dt = document.createElement("dt");
     dt.textContent = label;
     const dd = document.createElement("dd");
@@ -74,6 +77,10 @@ function buildLink(model) {
     anchor.rel = "noreferrer";
     anchor.textContent = link;
     return anchor;
+}
+
+function getLinkLabel(model) {
+    return model.location_type === "hub" ? "Link" : "File Path";
 }
 
 function buildCode(text) {
@@ -137,7 +144,7 @@ function buildCard(model) {
         ? getValue(model.model_id)
         : buildCode(model.model_id);
     details.appendChild(buildDetailRow("Model ID", modelIdValue));
-    details.appendChild(buildDetailRow("Link", buildLink(model)));
+    details.appendChild(buildDetailRow(getLinkLabel(model), buildLink(model), { stacked: true }));
 
     const actions = document.createElement("div");
     actions.className = "models-actions";

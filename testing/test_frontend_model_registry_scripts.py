@@ -60,7 +60,8 @@ class FrontendModelRegistryScriptTests(unittest.TestCase):
         self.assertIn('if (model.location_type !== "hub")', js)
         self.assertIn("return buildCode(link);", js)
         self.assertIn("https://huggingface.co/${link}", js)
-        self.assertIn("buildDetailRow(\"Link\", buildLink(model))", js)
+        self.assertIn('return model.location_type === "hub" ? "Link" : "File Path";', js)
+        self.assertIn("buildDetailRow(getLinkLabel(model), buildLink(model), { stacked: true })", js)
 
     def test_model_edit_script_uses_get_and_patch_endpoints(self):
         js = (ROOT / "frontend" / "models" / "base" / "edit.js").read_text(encoding="utf-8")
