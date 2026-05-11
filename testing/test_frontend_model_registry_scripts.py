@@ -41,6 +41,13 @@ class FrontendModelRegistryScriptTests(unittest.TestCase):
         self.assertIn("method: \"DELETE\"", js)
         self.assertIn("${API_BASE}/models/${encodeURIComponent(model.name)}", js)
 
+    def test_models_script_only_builds_huggingface_links_for_hub_models(self):
+        js = (ROOT / "frontend" / "models" / "base" / "registry.js").read_text(encoding="utf-8")
+        self.assertIn('if (model.location_type !== "hub")', js)
+        self.assertIn("return buildCode(link);", js)
+        self.assertIn("https://huggingface.co/${link}", js)
+        self.assertIn("buildDetailRow(\"Link\", buildLink(model))", js)
+
     def test_model_edit_script_uses_get_and_patch_endpoints(self):
         js = (ROOT / "frontend" / "models" / "base" / "edit.js").read_text(encoding="utf-8")
         self.assertIn("new URLSearchParams(window.location.search)", js)

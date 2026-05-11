@@ -56,12 +56,16 @@ function buildPill(text, variant = "default") {
     return pill;
 }
 
-function buildLink(link) {
+function buildLink(model) {
+    const link = model?.link;
     if (!link) {
         const span = document.createElement("span");
         span.className = "model-muted";
         span.textContent = "Not available";
         return span;
+    }
+    if (model.location_type !== "hub") {
+        return buildCode(link);
     }
     const anchor = document.createElement("a");
     anchor.className = "model-link";
@@ -133,7 +137,7 @@ function buildCard(model) {
         ? getValue(model.model_id)
         : buildCode(model.model_id);
     details.appendChild(buildDetailRow("Model ID", modelIdValue));
-    details.appendChild(buildDetailRow("Link", buildLink(model.link)));
+    details.appendChild(buildDetailRow("Link", buildLink(model)));
 
     const actions = document.createElement("div");
     actions.className = "models-actions";
