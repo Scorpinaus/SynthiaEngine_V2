@@ -31,6 +31,11 @@ class FrontendLoraPageTests(unittest.TestCase):
         self.assertIn('<option value="lora">lora</option>', html)
         self.assertIn('<option value="lycoris">lycoris</option>', html)
         self.assertIn('<option value="lokr">lokr</option>', html)
+        self.assertIn('id="local-file-panel"', html)
+        self.assertIn('id="select-local-file"', html)
+        self.assertIn('id="web-file-panel"', html)
+        self.assertIn('id="web-file-input"', html)
+        self.assertIn('name="file_path" type="text" placeholder="Select a local file or enter a web link" readonly required', html)
 
     def test_lora_edit_page_includes_expected_scripts(self):
         html = (ROOT / "frontend" / "models" / "lora" / "edit.html").read_text(encoding="utf-8")
@@ -49,6 +54,11 @@ class FrontendLoraPageTests(unittest.TestCase):
         self.assertIn('<option value="lora">lora</option>', html)
         self.assertIn('<option value="lycoris">lycoris</option>', html)
         self.assertIn('<option value="lokr">lokr</option>', html)
+        self.assertIn('id="local-file-panel"', html)
+        self.assertIn('id="select-local-file"', html)
+        self.assertIn('id="web-file-panel"', html)
+        self.assertIn('id="web-file-input"', html)
+        self.assertIn('name="file_path" type="text" placeholder="Select a local file or enter a web link" readonly required', html)
 
     def test_lora_models_script_calls_list_and_delete_endpoints(self):
         js = (ROOT / "frontend" / "models" / "lora" / "model_page.js").read_text(encoding="utf-8")
@@ -63,6 +73,9 @@ class FrontendLoraPageTests(unittest.TestCase):
         self.assertIn("method: \"POST\"", js)
         self.assertIn("${API_BASE}/lora-models", js)
         self.assertIn("LoRA saved successfully.", js)
+        self.assertIn("/api/local-path/select", js)
+        self.assertIn('selection_type: "file"', js)
+        self.assertIn("syncFilePathMode", js)
 
     def test_lora_edit_script_calls_detail_and_patch_endpoints(self):
         js = (ROOT / "frontend" / "models" / "lora" / "edit.js").read_text(encoding="utf-8")
@@ -70,6 +83,11 @@ class FrontendLoraPageTests(unittest.TestCase):
         self.assertIn("${API_BASE}/lora-models/${encodeURIComponent(String(loraId))}", js)
         self.assertIn("method: \"PATCH\"", js)
         self.assertIn("LoRA entry saved successfully.", js)
+        self.assertIn("/api/local-path/select", js)
+        self.assertIn('selection_type: "file"', js)
+        self.assertIn("syncFilePathMode", js)
+        self.assertIn('select[name="lora_model_family"]', js)
+        self.assertIn('select[name="lora_type"]', js)
 
     def test_nav_includes_separate_base_and_lora_links(self):
         nav_js = (ROOT / "frontend" / "components" / "nav_bar.js").read_text(encoding="utf-8")

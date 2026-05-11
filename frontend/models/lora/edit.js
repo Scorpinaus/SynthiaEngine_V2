@@ -2,10 +2,14 @@ const form = document.getElementById("lora-edit-form");
 const state = document.getElementById("lora-edit-state");
 const loraIdField = form.querySelector('input[name="lora_id"]');
 const nameField = form.querySelector('input[name="name"]');
-const familyField = form.querySelector('input[name="lora_model_family"]');
-const typeField = form.querySelector('input[name="lora_type"]');
+const familyField = form.querySelector('select[name="lora_model_family"]');
+const typeField = form.querySelector('select[name="lora_type"]');
 const locationField = form.querySelector('select[name="lora_location"]');
 const filePathField = form.querySelector('input[name="file_path"]');
+const localFilePanel = document.getElementById("local-file-panel");
+const webFilePanel = document.getElementById("web-file-panel");
+const webFileInput = document.getElementById("web-file-input");
+const selectLocalFileButton = document.getElementById("select-local-file");
 
 let currentLoraId = null;
 let loading = false;
@@ -34,6 +38,50 @@ function getLoraIdFromQuery() {
     return parsed;
 }
 
+function syncFilePathMode({ resetLocal = false } = {}) {
+    const isHub = locationField?.value === "hub";
+    if (localFilePanel) {
+        localFilePanel.hidden = isHub;
+    }
+    if (webFilePanel) {
+        webFilePanel.hidden = !isHub;
+    }
+    if (filePathField && isHub) {
+        filePathField.value = webFileInput.value.trim();
+    } else if (filePathField && resetLocal) {
+        filePathField.value = "";
+    }
+}
+
+async function selectLocalFile() {
+    setState("Selecting local file...");
+
+    try {
+        const response = await fetch(`${API_BASE}/api/local-path/select`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ selection_type: "file" }),
+        });
+        if (!response.ok) {
+            const errorBody = await response.json().catch(() => ({}));
+            const detail = errorBody.detail || "Unable to select local file.";
+            throw new Error(detail);
+        }
+
+        const data = await response.json();
+        const selectedPath = data.path || "";
+        if (!selectedPath) {
+            setState("No local file selected.", "error");
+            return;
+        }
+        filePathField.value = selectedPath;
+        setState("Local file selected.", "success");
+    } catch (error) {
+        console.error(error);
+        setState(error.message || "Unable to select local file.", "error");
+    }
+}
+
 function fillForm(entry) {
     currentLoraId = entry.lora_id;
     loraIdField.value = String(entry.lora_id);
@@ -42,6 +90,8 @@ function fillForm(entry) {
     typeField.value = entry.lora_type || "";
     locationField.value = entry.lora_location || "local";
     filePathField.value = entry.file_path || "";
+    webFileInput.value = locationField.value === "hub" ? entry.file_path || "" : "";
+    syncFilePathMode();
 }
 
 async function loadLora() {
@@ -130,4 +180,13 @@ form.addEventListener("submit", async (event) => {
     }
 });
 
+locationField?.addEventListener("change", () => syncFilePathMode({ resetLocal: true }));
+webFileInput?.addEventListener("input", () => {
+    if (locationField?.value === "hub") {
+        filePathField.value = webFileInput.value.trim();
+    }
+});
+selectLocalFileButton?.addEventListener("click", selectLocalFile);
+
+syncFilePathMode();
 loadLora();

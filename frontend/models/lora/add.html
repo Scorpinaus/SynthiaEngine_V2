@@ -35,12 +35,12 @@
                     <span>Family</span>
                     <select name="lora_model_family" required>
                         <option value="" disabled selected>Select a family</option>
-                        <option value="sd15">Sd15</option>
-                        <option value="sdxl">Sdxl</option>
-                        <option value="flux">Flux</option>
-                        <option value="qwen-image">Qwen-Image</option>
-                        <option value="z-image">Z-image</option>
-                        <option value="ernie-image">ERNIE-Image</option>
+                        <option value="sd15">sd15</option>
+                        <option value="sdxl">sdxl</option>
+                        <option value="flux">flux</option>
+                        <option value="qwen-image">qwen-image</option>
+                        <option value="z-image">z-image</option>
+                        <option value="ernie-image">ernie-image</option>
                     </select>
                 </label>
                 <label class="field">
@@ -55,14 +55,20 @@
                 <label class="field">
                     <span>Location Type</span>
                     <select name="lora_location" required>
-                        <option value="" disabled selected>Select a location</option>
                         <option value="local">Local</option>
                         <option value="hub">Hub</option>
                     </select>
                 </label>
+                <div id="local-file-panel" class="model-link-panel">
+                    <button id="select-local-file" class="secondary" type="button">Select local file</button>
+                </div>
+                <label id="web-file-panel" class="field model-link-panel" hidden>
+                    <span>Website/Hugging Face Link</span>
+                    <input id="web-file-input" type="text" placeholder="owner/repo or https://huggingface.co/owner/repo" />
+                </label>
                 <label class="field">
                     <span>File Path</span>
-                    <input name="file_path" type="text" placeholder="C:\\loras\\style.safetensors" required />
+                    <input name="file_path" type="text" placeholder="Select a local file or enter a web link" readonly required />
                 </label>
                 <button class="primary" type="submit">Add LoRA</button>
             </form>
