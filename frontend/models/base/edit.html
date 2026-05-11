@@ -61,9 +61,16 @@
                     <span>Version</span>
                     <input name="version" type="text" placeholder="hub" required />
                 </label>
+                <div id="local-link-panel" class="model-link-panel">
+                    <button id="select-local-link" class="secondary" type="button">Select local folder</button>
+                </div>
+                <label id="web-link-panel" class="field model-link-panel" hidden>
+                    <span>Website/Hugging Face Link</span>
+                    <input id="web-link-input" type="text" placeholder="runwayml/stable-diffusion-v1-5" />
+                </label>
                 <label class="field">
-                    <span>Local Link or Website Link</span>
-                    <input name="link" type="text" placeholder="C:\\models\\sd15 or runwayml/stable-diffusion-v1-5" required />
+                    <span>Selected Path or Link</span>
+                    <input name="link" type="text" placeholder="Select a local path or enter a web link" readonly required />
                 </label>
                 <button class="primary" type="submit">Save model</button>
             </form>

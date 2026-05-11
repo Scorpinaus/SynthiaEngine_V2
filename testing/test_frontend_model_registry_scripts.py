@@ -70,6 +70,19 @@ class FrontendModelRegistryScriptTests(unittest.TestCase):
         self.assertIn("method: \"PATCH\"", js)
         self.assertIn("Model entry saved successfully.", js)
 
+    def test_model_edit_page_uses_location_type_specific_link_controls(self):
+        html = (ROOT / "frontend" / "models" / "base" / "edit.html").read_text(encoding="utf-8")
+        js = (ROOT / "frontend" / "models" / "base" / "edit.js").read_text(encoding="utf-8")
+        self.assertIn('<select name="location_type" required>', html)
+        self.assertIn('id="select-local-link"', html)
+        self.assertIn('id="web-link-input"', html)
+        self.assertIn('input name="link" type="text"', html)
+        self.assertIn("readonly required", html)
+        self.assertIn('select[name="family"]', js)
+        self.assertIn("/api/local-path/select", js)
+        self.assertIn("syncLinkMode({ preserveLink: true })", js)
+        self.assertIn("webLinkInput.value = locationTypeField.value === \"hub\"", js)
+
 
 if __name__ == "__main__":
     unittest.main()
