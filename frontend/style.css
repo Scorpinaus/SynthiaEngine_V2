@@ -67,7 +67,8 @@ body {
     display: flex;
 }
 
-.nav-group-menu .nav-link {
+.nav-group-menu .nav-link,
+.nav-group-menu .nav-subgroup-toggle {
     justify-content: flex-start;
     width: 100%;
 }
@@ -81,13 +82,13 @@ body {
 }
 
 .nav-subgroup-toggle {
-    justify-content: space-between;
+    display: inline-flex;
+    align-items: center;
+    text-decoration: none;
+    font-weight: 600;
+    justify-content: center;
+    text-align: center;
     width: 100%;
-}
-
-.nav-subgroup-toggle::after {
-    content: ">";
-    margin-left: 18px;
 }
 
 .nav-subgroup-menu {
@@ -249,7 +250,8 @@ button {
     font-weight: 600;
 }
 
-.nav-link.is-active {
+.nav-link.is-active,
+.nav-subgroup-toggle.is-active {
     background: #3a5a40;
     color: #f7f4ee;
     border-color: #3a5a40;
