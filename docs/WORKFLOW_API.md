@@ -5,7 +5,7 @@ This project uses a **single workflow job API** for all generation (SD1.5, SDXL,
 Registry persistence note:
 - `/lora-models` entries are persisted in `database/lora_registry.sqlite3`.
 - If that SQLite registry is empty and `backend/lora/lora_registry.json` exists, the backend performs a one-time import on startup and skips invalid rows with warning logs.
-- API payload shape for LoRA entries is unchanged.
+- LoRA entries support additive `prompt_presets` metadata for prompt words; existing fields remain compatible.
 - `/api/presets` entries are persisted in `database/preset_registry.sqlite3`.
 
 ## Endpoints
@@ -194,13 +194,22 @@ Notes:
   "lora_type": "lora",
   "lora_location": "local",
   "file_path": "C:/loras/example.safetensors",
-  "name": "Example"
+  "name": "Example",
+  "prompt_presets": [
+    {
+      "name": "Soft watercolor",
+      "words": ["soft watercolor", "paper texture", "pastel colors"]
+    }
+  ]
 }
 ```
+- `prompt_presets` is optional on create/update and defaults to `[]`.
+- Each prompt preset has a non-empty `name` and a non-empty `words` list.
+- Preset words are prompt fragments intended for frontend prompt composition; LoRA adapter loading still uses the existing `lora_adapters` workflow payload.
 
 `POST /lora-models`
 - Creates a LoRA entry.
-- Request/response shape is unchanged:
+- Request/response shape:
 ```json
 {
   "lora_id": 101,
@@ -208,7 +217,13 @@ Notes:
   "lora_type": "lora",
   "lora_location": "local",
   "file_path": "C:/loras/example.safetensors",
-  "name": "Example"
+  "name": "Example",
+  "prompt_presets": [
+    {
+      "name": "Soft watercolor",
+      "words": ["soft watercolor", "paper texture", "pastel colors"]
+    }
+  ]
 }
 ```
 - Response `200`: created `LoraRegistryEntry`
@@ -221,7 +236,7 @@ Notes:
 - Error `404`: missing id in `{"detail": "LoRA with id <lora_id> not found."}`
 
 `PATCH /lora-models/{lora_id}`
-- Updates editable fields only: `lora_model_family`, `lora_type`, `lora_location`, `file_path`, `name`.
+- Updates editable fields only: `lora_model_family`, `lora_type`, `lora_location`, `file_path`, `name`, `prompt_presets`.
 - `lora_id` is not editable.
 - Request shape:
 ```json
@@ -230,7 +245,13 @@ Notes:
   "lora_type": "lycoris",
   "lora_location": "local",
   "file_path": "C:/loras/example_v2.safetensors",
-  "name": "Example v2"
+  "name": "Example v2",
+  "prompt_presets": [
+    {
+      "name": "Ink detail",
+      "words": ["fine ink lines", "delicate outlines"]
+    }
+  ]
 }
 ```
 - Response `200`: updated `LoraRegistryEntry`
@@ -246,7 +267,7 @@ Notes:
 
 Compatibility guarantees:
 - Existing `GET /lora-models` and `POST /lora-models` consumers are backward-compatible.
-- Existing list/create payload fields and response field names are unchanged.
+- Existing list/create payload fields are unchanged; `prompt_presets` is an additive response/request field with an empty-list default.
 - Existing list/create status codes remain unchanged (`200` success, `400` domain/validation error for create).
 
 ### Preset registry endpoints

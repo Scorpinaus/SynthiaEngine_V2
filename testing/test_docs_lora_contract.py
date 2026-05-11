@@ -26,6 +26,9 @@ class DocsLoraContractTests(unittest.TestCase):
         self.assertIn("Error `422`", docs)
         self.assertIn("LoRA with id <lora_id> already exists.", docs)
         self.assertIn("LoRA with id <lora_id> not found.", docs)
+        self.assertIn("prompt_presets", docs)
+        self.assertIn("Each prompt preset has a non-empty `name` and a non-empty `words` list.", docs)
+        self.assertIn("Preset words are prompt fragments intended for frontend prompt composition", docs)
 
         self.assertIn("Compatibility guarantees:", docs)
         self.assertIn("Existing `GET /lora-models` and `POST /lora-models` consumers are backward-compatible.", docs)

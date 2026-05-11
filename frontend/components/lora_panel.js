@@ -1,6 +1,8 @@
 (() => {
     const scriptUrl = document.currentScript?.src ? new URL(document.currentScript.src) : null;
     const resolveAssetUrl = (path) => (scriptUrl ? new URL(path, scriptUrl).toString() : path);
+    const resolveLoraEditUrl = (loraId) =>
+        resolveAssetUrl(`../models/lora/edit.html?lora_id=${encodeURIComponent(String(loraId))}`);
     const LOG_LORA_PANEL = true;
     const DEFAULT_STRENGTH = 0.8;
 
@@ -61,6 +63,20 @@
 
     function recomputeCombinedStrength(adapter) {
         adapter.strength = clampStrength((adapter.unet_strength + adapter.text_encoder_strength) / 2);
+    }
+
+    function normalizePromptPresets(value) {
+        if (!Array.isArray(value)) {
+            return [];
+        }
+        return value
+            .map((preset) => ({
+                name: String(preset?.name || "").trim(),
+                words: Array.isArray(preset?.words)
+                    ? preset.words.map((word) => String(word || "").trim()).filter(Boolean)
+                    : [],
+            }))
+            .filter((preset) => preset.name && preset.words.length > 0);
     }
 
     function syncWeightModeUI() {
@@ -185,6 +201,33 @@
             });
             targetWrap.appendChild(targetSelect);
 
+            const presets = normalizePromptPresets(lora.prompt_presets);
+            let promptPresetWrap = null;
+            if (presets.length > 0) {
+                promptPresetWrap = document.createElement("label");
+                promptPresetWrap.className = "lora-prompt-preset";
+                promptPresetWrap.innerHTML = "<span>Prompt Preset</span>";
+
+                const promptPresetSelect = document.createElement("select");
+                const emptyOption = document.createElement("option");
+                emptyOption.value = "";
+                emptyOption.textContent = "No prompt preset";
+                promptPresetSelect.appendChild(emptyOption);
+                presets.forEach((preset) => {
+                    const option = document.createElement("option");
+                    option.value = preset.name;
+                    option.textContent = preset.name;
+                    if (lora.prompt_preset_name === preset.name) {
+                        option.selected = true;
+                    }
+                    promptPresetSelect.appendChild(option);
+                });
+                promptPresetSelect.addEventListener("change", (event) => {
+                    updateLoraPromptPreset(lora.lora_id, String(event.target.value || ""));
+                });
+                promptPresetWrap.appendChild(promptPresetSelect);
+            }
+
             if (isAdvancedWeightMode()) {
                 const advancedStrengthWrap = document.createElement("div");
                 advancedStrengthWrap.className = "lora-strength-grid";
@@ -242,6 +285,14 @@
                 strengthWrap.appendChild(slider);
                 item.append(header, strengthWrap, targetWrap);
             }
+            if (promptPresetWrap) {
+                item.appendChild(promptPresetWrap);
+            }
+            const managePresetLink = document.createElement("a");
+            managePresetLink.className = "lora-preset-manage-link";
+            managePresetLink.href = resolveLoraEditUrl(lora.lora_id);
+            managePresetLink.textContent = presets.length > 0 ? "Edit prompt presets" : "Add prompt presets";
+            item.appendChild(managePresetLink);
             list.appendChild(item);
         });
         emitAdapterSummaryChanged();
@@ -310,6 +361,24 @@
         renderLoraList();
     }
 
+    function updateLoraPromptPreset(loraId, presetName) {
+        const target = loraState.selected.find((lora) => lora.lora_id === loraId);
+        if (!target) {
+            return;
+        }
+        const presets = normalizePromptPresets(target.prompt_presets);
+        const matched = presets.find((preset) => preset.name === presetName);
+        target.prompt_preset_name = matched?.name || "";
+        target.prompt_preset_words = matched?.words || [];
+        logDebug("Updated adapter prompt preset.", {
+            lora_id: loraId,
+            prompt_preset_name: target.prompt_preset_name,
+            word_count: target.prompt_preset_words.length,
+        });
+        emitAdapterSummaryChanged();
+        renderLoraList();
+    }
+
     function addLora() {
         const select = document.getElementById("lora-select");
         if (!select) {
@@ -330,6 +399,9 @@
         loraState.selected.push({
             lora_id: entry.lora_id,
             lora_name: entry.name ?? entry.file_path ?? `LoRA ${entry.lora_id}`,
+            prompt_presets: normalizePromptPresets(entry.prompt_presets),
+            prompt_preset_name: "",
+            prompt_preset_words: [],
             strength: DEFAULT_STRENGTH,
             unet_strength: DEFAULT_STRENGTH,
             text_encoder_strength: DEFAULT_STRENGTH,
@@ -395,6 +467,14 @@
         return payload;
     }
 
+    function buildPromptPresetWords() {
+        const words = loraState.selected.flatMap((lora) =>
+            Array.isArray(lora.prompt_preset_words) ? lora.prompt_preset_words : [],
+        );
+        logDebug("Built LoRA prompt preset words.", { count: words.length, words });
+        return words;
+    }
+
     function setSelectedAdapters(adapters) {
         if (!Array.isArray(adapters)) {
             loraState.selected = [];
@@ -440,6 +520,9 @@
                     matched?.file_path ??
                     adapter?.lora_name ??
                     `LoRA ${loraId}`,
+                prompt_presets: normalizePromptPresets(matched?.prompt_presets),
+                prompt_preset_name: "",
+                prompt_preset_words: [],
                 strength,
                 unet_strength: unetStrength,
                 text_encoder_strength: textEncoderStrength,
@@ -483,6 +566,7 @@
     window.LoraPanel = {
         init: initLoraUI,
         getSelectedAdapters: buildLoraPayload,
+        getSelectedPresetWords: buildPromptPresetWords,
         setSelectedAdapters,
         getSummary,
     };

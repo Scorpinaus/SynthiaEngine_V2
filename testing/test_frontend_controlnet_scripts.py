@@ -261,6 +261,15 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("text_encoder_strength", lora_js)
         self.assertIn("getSummary", lora_js)
 
+    def test_lora_panel_script_exposes_prompt_preset_words(self):
+        lora_js = (ROOT / "frontend" / "components" / "lora_panel.js").read_text(encoding="utf-8")
+        self.assertIn("prompt_presets", lora_js)
+        self.assertIn("updateLoraPromptPreset", lora_js)
+        self.assertIn("getSelectedPresetWords", lora_js)
+        self.assertIn("resolveLoraEditUrl", lora_js)
+        self.assertIn("Edit prompt presets", lora_js)
+        self.assertIn("Add prompt presets", lora_js)
+
     def test_preset_panel_html_has_mode_specific_controls(self):
         preset_html = (ROOT / "frontend" / "components" / "preset_panel.html").read_text(encoding="utf-8")
         self.assertIn('id="preset-load"', preset_html)

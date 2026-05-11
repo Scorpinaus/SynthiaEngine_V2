@@ -44,6 +44,7 @@ from backend.registries.model import (
     update_model_entry,
 )
 from backend.lora.registry import (
+    LoraPromptPreset,
     LoraRegistryEntry,
     add_lora,
     delete_lora_entry,
@@ -156,6 +157,7 @@ class LoraCreateRequest(BaseModel):
     lora_location: str
     file_path: str
     name: str | None = None
+    prompt_presets: list[LoraPromptPreset] = Field(default_factory=list)
 
     @field_validator("name")
     @classmethod
@@ -173,6 +175,7 @@ class LoraUpdateRequest(BaseModel):
     lora_location: str | None = None
     file_path: str | None = None
     name: str | None = None
+    prompt_presets: list[LoraPromptPreset] | None = None
 
     @field_validator("name")
     @classmethod

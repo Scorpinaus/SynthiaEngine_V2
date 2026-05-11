@@ -7,7 +7,12 @@ const localFilePanel = document.getElementById("local-file-panel");
 const webFilePanel = document.getElementById("web-file-panel");
 const webFileInput = document.getElementById("web-file-input");
 const selectLocalFileButton = document.getElementById("select-local-file");
+const promptPresetName = document.getElementById("prompt-preset-name");
+const promptPresetWords = document.getElementById("prompt-preset-words");
+const addPromptPresetButton = document.getElementById("add-prompt-preset");
+const promptPresetList = document.getElementById("prompt-preset-list");
 let nextLoraId = 1;
+let promptPresets = [];
 
 function setState(message, variant = "info") {
     state.textContent = message;
@@ -32,6 +37,65 @@ function syncFilePathMode() {
     if (filePathField) {
         filePathField.value = isHub ? webFileInput.value.trim() : "";
     }
+}
+
+function parsePresetWords(value) {
+    return String(value || "")
+        .split(/[\n,]+/)
+        .map((word) => word.trim())
+        .filter(Boolean);
+}
+
+function renderPromptPresets() {
+    if (!promptPresetList) {
+        return;
+    }
+    promptPresetList.innerHTML = "";
+    if (promptPresets.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "field-hint";
+        empty.textContent = "No prompt presets added.";
+        promptPresetList.appendChild(empty);
+        return;
+    }
+    promptPresets.forEach((preset, index) => {
+        const row = document.createElement("div");
+        row.className = "lora-preset-row";
+
+        const summary = document.createElement("div");
+        summary.className = "lora-preset-summary";
+        const name = document.createElement("strong");
+        name.textContent = preset.name;
+        const words = document.createElement("span");
+        words.textContent = preset.words.join(", ");
+        summary.append(name, words);
+
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "secondary";
+        remove.textContent = "Remove";
+        remove.addEventListener("click", () => {
+            promptPresets.splice(index, 1);
+            renderPromptPresets();
+        });
+
+        row.append(summary, remove);
+        promptPresetList.appendChild(row);
+    });
+}
+
+function addPromptPreset() {
+    const name = promptPresetName?.value.trim() || "";
+    const words = parsePresetWords(promptPresetWords?.value);
+    if (!name || words.length === 0) {
+        setState("Prompt presets need a name and at least one word.", "error");
+        return;
+    }
+    promptPresets.push({ name, words });
+    promptPresetName.value = "";
+    promptPresetWords.value = "";
+    renderPromptPresets();
+    setState("Prompt preset added.", "success");
 }
 
 async function selectLocalFile() {
@@ -73,6 +137,7 @@ function serializeForm(formElement) {
         lora_location: formData.get("lora_location")?.toString().trim() ?? "",
         file_path: formData.get("file_path")?.toString().trim() ?? "",
         name: nameValue || null,
+        prompt_presets: promptPresets,
     };
 }
 
@@ -124,6 +189,8 @@ form.addEventListener("submit", async (event) => {
 
         setState("LoRA saved successfully.", "success");
         form.reset();
+        promptPresets = [];
+        renderPromptPresets();
         syncFilePathMode();
         fetchNextLoraId();
     } catch (error) {
@@ -139,6 +206,8 @@ webFileInput?.addEventListener("input", () => {
     }
 });
 selectLocalFileButton?.addEventListener("click", selectLocalFile);
+addPromptPresetButton?.addEventListener("click", addPromptPreset);
 
 syncFilePathMode();
+renderPromptPresets();
 fetchNextLoraId();

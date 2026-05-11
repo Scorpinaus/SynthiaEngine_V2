@@ -64,7 +64,58 @@ def test_create_and_list_and_filter_loras(tmp_path):
 
     filtered = client.get("/lora-models?family=sd15")
     assert filtered.status_code == 200
-    assert filtered.json() == [payload_a]
+    assert filtered.json() == [{**payload_a, "prompt_presets": []}]
+
+
+def test_lora_prompt_presets_round_trip_and_update(tmp_path):
+    _reset_lora_registry_paths(tmp_path)
+    client = TestClient(app)
+    payload = {
+        "lora_id": 205,
+        "lora_model_family": "sd15",
+        "lora_type": "lora",
+        "lora_location": "local",
+        "file_path": "C:/loras/preset.safetensors",
+        "name": "Preset LoRA",
+        "prompt_presets": [
+            {"name": "Soft watercolor", "words": ["soft watercolor", "paper texture"]},
+            {"name": "Ink detail", "words": ["fine ink lines"]},
+        ],
+    }
+
+    created = client.post("/lora-models", json=payload)
+    assert created.status_code == 200
+    assert created.json()["prompt_presets"] == payload["prompt_presets"]
+
+    updated = client.patch(
+        "/lora-models/205",
+        json={"prompt_presets": [{"name": "Portrait", "words": ["portrait lighting", "sharp eyes"]}]},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["prompt_presets"] == [
+        {"name": "Portrait", "words": ["portrait lighting", "sharp eyes"]}
+    ]
+
+    found = client.get("/lora-models/205")
+    assert found.status_code == 200
+    assert found.json()["prompt_presets"] == updated.json()["prompt_presets"]
+
+
+def test_lora_prompt_preset_requires_words(tmp_path):
+    _reset_lora_registry_paths(tmp_path)
+    client = TestClient(app)
+    payload = {
+        "lora_id": 206,
+        "lora_model_family": "sd15",
+        "lora_type": "lora",
+        "lora_location": "local",
+        "file_path": "C:/loras/invalid.safetensors",
+        "name": "Invalid Preset LoRA",
+        "prompt_presets": [{"name": "Empty", "words": []}],
+    }
+
+    created = client.post("/lora-models", json=payload)
+    assert created.status_code == 422
 
 
 def test_duplicate_create_returns_domain_error(tmp_path):

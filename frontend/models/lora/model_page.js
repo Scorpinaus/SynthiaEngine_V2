@@ -72,6 +72,19 @@ function buildCode(text) {
     return code;
 }
 
+function getPromptPresets(entry) {
+    return Array.isArray(entry.prompt_presets) ? entry.prompt_presets : [];
+}
+
+function formatPromptPresetSummary(entry) {
+    const presets = getPromptPresets(entry);
+    if (presets.length === 0) {
+        return "None";
+    }
+    const names = presets.map((preset) => preset.name).filter(Boolean);
+    return `${presets.length} preset${presets.length === 1 ? "" : "s"}${names.length ? `: ${names.join(", ")}` : ""}`;
+}
+
 function buildActionLink(href, text) {
     const link = document.createElement("a");
     link.className = "secondary nav-link";
@@ -115,6 +128,7 @@ function buildCard(entry) {
     const details = document.createElement("dl");
     details.className = "model-details";
     details.appendChild(buildDetailRow("LoRA ID", buildCode(String(getValue(entry.lora_id)))));
+    details.appendChild(buildDetailRow("Prompt Presets", formatPromptPresetSummary(entry)));
     details.appendChild(buildDetailRow("File Path", buildCode(getValue(entry.file_path)), { stacked: true }));
 
     const actions = document.createElement("div");
@@ -143,6 +157,7 @@ function getFilteredLoras() {
             entry.lora_type,
             entry.lora_location,
             entry.file_path,
+            ...getPromptPresets(entry).flatMap((preset) => [preset.name, ...(preset.words || [])]),
         ].map(normalize).some((value) => value.includes(query));
     });
 }

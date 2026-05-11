@@ -817,6 +817,24 @@ button {
     width: 100%;
 }
 
+.lora-prompt-preset {
+    display: grid;
+    gap: 6px;
+    font-size: 12px;
+    color: #6b645c;
+}
+
+.lora-prompt-preset select {
+    width: 100%;
+}
+
+.lora-preset-manage-link {
+    justify-self: start;
+    font-size: 12px;
+    color: #5f4b32;
+    text-decoration: underline;
+}
+
 .lora-remove {
     align-self: flex-start;
 }
@@ -1720,6 +1738,48 @@ button {
 
 .model-link-panel button {
     justify-self: start;
+}
+
+.lora-preset-editor {
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid #e3ddd4;
+    border-radius: 8px;
+    background: #fdfbf7;
+}
+
+.lora-preset-editor-header {
+    display: grid;
+    gap: 4px;
+    font-weight: 600;
+}
+
+.lora-preset-list {
+    display: grid;
+    gap: 8px;
+}
+
+.lora-preset-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px;
+    border: 1px solid #ece4d6;
+    border-radius: 8px;
+    background: #fff;
+}
+
+.lora-preset-summary {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+}
+
+.lora-preset-summary span {
+    color: #6b645c;
+    overflow-wrap: anywhere;
 }
 
 .model-form-state {
