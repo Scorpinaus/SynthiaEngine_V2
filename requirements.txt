@@ -11,12 +11,12 @@ numpy>=1.26.0
 psutil>=6.1.0
 
 diffusers>=0.38.0
-transformers>=4.47.0
+transformers>=5.8.0
 sentencepiece>=0.2.0
 protobuf >=6.33.2
 accelerate>=1.2.1
 safetensors>=0.4.5
-peft>=0.13.2
+peft>=0.19.1
 controlnet-aux>=0.0.10
 
 imageio-ffmpeg == 0.6.0
