@@ -723,6 +723,8 @@ async def list_models(family: str | None = None):
         pattern = re.compile(r"qwen[-_\s]?image", re.IGNORECASE)
     elif family_value == "ernie-image":
         pattern = re.compile(r"ernie[-_\s]?image", re.IGNORECASE)
+    elif family_value == "anima":
+        pattern = re.compile(r"anima", re.IGNORECASE)
     elif family_value == "flux":
         pattern = re.compile(r"flux", re.IGNORECASE)
     else:

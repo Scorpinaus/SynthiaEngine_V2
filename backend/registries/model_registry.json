@@ -115,5 +115,14 @@
     "model_id": 13,
     "version": "turbo",
     "link": "D:\\diffusion\\diffusers\\Ernie-Image-Turbo"
+  },
+  {
+    "name": "Anima-Preview-3",
+    "family": "anima",
+    "model_type": "diffusers",
+    "location_type": "hub",
+    "model_id": 14,
+    "version": "main",
+    "link": "CalamitousFelicitousness/Anima-Preview-3-sdnext-diffusers"
   }
 ]

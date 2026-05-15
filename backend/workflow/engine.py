@@ -14,6 +14,7 @@ from backend.adapters.controlnet_preprocessor_registry import CONTROLNET_PREPROC
 from backend.adapters.controlnet_preprocessors import get_preprocessor
 from backend.utilities.pipeline import get_batch_output_dir, make_batch_id
 from backend.workflow.schema_input import (
+    AnimaText2ImgInputs,
     ArtifactRef,
     ControlNetPreprocessInputs,
     ErnieImageText2ImgInputs,
@@ -121,6 +122,9 @@ from backend.workflow.qwen_image import (
 from backend.workflow.ernie_image import (
     run_ernie_image_text2img_task as _run_ernie_image_text2img,
 )
+from backend.workflow.anima import (
+    run_anima_text2img_task as _run_anima_text2img,
+)
 from backend.sd15.pipeline import (
     generate_images,
     generate_images_controlnet,
@@ -176,6 +180,7 @@ TASK_INPUT_MODELS: dict[str, type[BaseModel]] = {
     "z-image.img2img": ZImageImg2ImgInputs,
     "z-image.inpaint": ZImageInpaintInputs,
     "ernie-image.text2img": ErnieImageText2ImgInputs,
+    "anima.text2img": AnimaText2ImgInputs,
 }
 
 
@@ -212,6 +217,7 @@ TASK_OUTPUT_MODELS: dict[str, type[BaseModel]] = {
     "z-image.img2img": ImagesOutput,
     "z-image.inpaint": ImagesOutput,
     "ernie-image.text2img": ImagesOutput,
+    "anima.text2img": ImagesOutput,
 }
 
 
@@ -520,6 +526,17 @@ def _ernie_image_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict
     return _run_ernie_image_text2img(inputs, _ernie_image_runtime_deps())
 
 
+def _anima_runtime_deps() -> dict[str, Any]:
+    anima_pipeline_module = importlib.import_module("backend.anima.pipeline")
+    return {
+        "generate_text2img": anima_pipeline_module.generate_text2img,
+    }
+
+
+def _anima_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
+    return _run_anima_text2img(inputs, _anima_runtime_deps())
+
+
 TASK_REGISTRY: dict[str, Callable[[dict[str, Any], WorkflowContext], dict[str, Any]]] = {
     # SD15 tasks
     "sd15.text2img": _sd15_text2img,
@@ -553,6 +570,7 @@ TASK_REGISTRY: dict[str, Callable[[dict[str, Any], WorkflowContext], dict[str, A
     "z-image.img2img": _z_image_img2img,
     "z-image.inpaint": _z_image_inpaint,
     "ernie-image.text2img": _ernie_image_text2img,
+    "anima.text2img": _anima_text2img,
 }
 
 

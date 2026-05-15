@@ -1,6 +1,6 @@
 # Workflow-Only API Contract (v2)
 
-This project uses a **single workflow job API** for all generation (SD1.5, SDXL, WAN, Flux, Qwen-Image, Z-Image, ERNIE-Image). Image and video inputs are uploaded as **artifacts** first, then referenced by `artifact_id` in workflow task inputs.
+This project uses a **single workflow job API** for all generation (SD1.5, SDXL, WAN, Flux, Qwen-Image, Z-Image, ERNIE-Image, Anima). Image and video inputs are uploaded as **artifacts** first, then referenced by `artifact_id` in workflow task inputs.
 
 Registry persistence note:
 - `/lora-models` entries are persisted in `database/lora_registry.sqlite3`.
@@ -175,7 +175,7 @@ Response:
 ```
 
 Notes:
-- `capabilities` is a model-family matrix for builder UIs. Current families include `sd15`, `sdxl`, `wan`, `flux`, `qwen-image`, `z-image`, and `ernie-image`.
+- `capabilities` is a model-family matrix for builder UIs. Current families include `sd15`, `sdxl`, `wan`, `flux`, `qwen-image`, `z-image`, `ernie-image`, and `anima`.
 - `ui_hints` is best-effort metadata for workflow builders (labels, widgets, suggested min/max, option lists, etc.).
 - `output_schema` describes the per-task result object stored under `result.tasks[taskId]`.
 
@@ -486,6 +486,7 @@ Frontend note (SD1.5 page):
 - `frontend/sdxl/inpaint.js` also consumes shared LoRA state via `window.LoraPanel.getSelectedAdapters()` for `sdxl.inpaint`.
 - `frontend/sdxl/inpaint.js` uploads the optional SDXL IP-Adapter reference image through `/api/artifacts` and sends it as `sdxl.inpaint.inputs.ip_adapter.image`.
 - `frontend/ernie_image/text2img.html` uses the shared Adapters modal with the LoRA tab enabled, and `frontend/ernie_image/text2img.js` sends selected adapters as `ernie-image.text2img.inputs.lora_adapters`.
+- `frontend/anima/text2img.html` serves Anima text-to-image generation and submits `anima.text2img` workflow jobs.
 
 ## Job object
 
@@ -578,6 +579,7 @@ Resolution behavior:
 - Qwen-Image: `qwen-image.text2img`, `qwen-image.img2img`, `qwen-image.inpaint`
 - Z-Image: `z-image.text2img`, `z-image.img2img`, `z-image.inpaint`
 - ERNIE-Image: `ernie-image.text2img`
+- Anima: `anima.text2img`
 - ControlNet utility: `controlnet.preprocess`
 
 ## Model capabilities matrix
@@ -593,6 +595,7 @@ This same matrix is available in machine-readable form at `GET /api/workflow/cat
 | `qwen-image` | yes | no | yes | yes | no | no | yes | no | yes |
 | `z-image` (`zimage`) | yes | no | yes | yes | no | no | yes | no | no |
 | `ernie-image` (`ernie`) | yes | no | no | no | no | no | yes | no | no |
+| `anima` (`anima-preview`) | yes | no | no | no | no | no | no | no | no |
 
 Task inputs/outputs are task-specific. As a convention, image-generating tasks return:
 - `images`: list of `"/outputs/..."` URLs
@@ -1110,6 +1113,43 @@ Example ERNIE-Image workflow:
           "memory_preset": "sequential_offload",
           "use_pe": false,
           "load_pe": false
+        }
+      }
+    ],
+    "return": "@t1.images"
+  }
+}
+```
+
+`anima.text2img` input notes:
+- Initial support is text-to-image only through the Diffusers conversion `CalamitousFelicitousness/Anima-Preview-3-sdnext-diffusers`.
+- Defaults are `steps: 35`, `guidance_scale: 4.5`, `width: 1024`, `height: 1024`, `num_images: 1`, `scheduler: "flowmatch_euler"`, `negative_prompt: ""`, and `memory_preset: "sequential_offload"`.
+- `model`: optional base model registry name. If omitted, backend uses the first registered `anima` model, falling back to Hub model `CalamitousFelicitousness/Anima-Preview-3-sdnext-diffusers`.
+- Runtime loading uses `DiffusionPipeline.from_pretrained(..., trust_remote_code=True)` because the conversion declares a custom `AnimaTextToImagePipeline`.
+- For Hub entries, the model registry `version` field is passed as Diffusers `revision` when it is not a generic value such as `"hub"` or `"local"`. Prefer a pinned commit SHA in production.
+- `memory_preset`: `"sequential_offload"` is safest on limited VRAM and slower; `"model_offload"` may be faster but can OOM at larger resolutions.
+- Anima renders run in a short-lived subprocess so Windows can reclaim system RAM after generation.
+- LoRA, img2img, inpaint, ControlNet, IP-Adapter, and quantization are outside the initial Anima contract.
+
+Example Anima workflow:
+
+```json
+{
+  "kind": "workflow",
+  "payload": {
+    "tasks": [
+      {
+        "id": "t1",
+        "type": "anima.text2img",
+        "inputs": {
+          "prompt": "masterpiece, best quality, 1girl, detailed eyes, soft lighting",
+          "negative_prompt": "worst quality, low quality, blurry, watermark",
+          "steps": 35,
+          "guidance_scale": 4.5,
+          "width": 1024,
+          "height": 1024,
+          "scheduler": "flowmatch_euler",
+          "memory_preset": "sequential_offload"
         }
       }
     ],

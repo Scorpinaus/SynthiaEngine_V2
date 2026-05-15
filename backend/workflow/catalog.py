@@ -44,6 +44,7 @@ _MODEL_FAMILY_METADATA: dict[str, dict[str, Any]] = {
     "qwen-image": {"label": "Qwen-Image", "aliases": ["qwen"]},
     "z-image": {"label": "Z-Image", "aliases": ["zimage"]},
     "ernie-image": {"label": "ERNIE-Image", "aliases": ["ernie"]},
+    "anima": {"label": "Anima", "aliases": ["anima-preview"]},
 }
 
 
@@ -57,6 +58,8 @@ def _infer_model_family(task_type: str) -> str | None:
         return "z-image"
     if prefix == "ernie-image":
         return "ernie-image"
+    if prefix == "anima":
+        return "anima"
     return None
 
 

@@ -12,6 +12,7 @@ def test_workflow_catalog_exposes_model_capabilities_matrix():
     assert "qwen-image" in capabilities
     assert "z-image" in capabilities
     assert "ernie-image" in capabilities
+    assert "anima" in capabilities
 
 
 def test_workflow_capability_features_for_core_families():
@@ -69,6 +70,13 @@ def test_workflow_capability_features_for_core_families():
     assert ernie["img2img"] is False
     assert ernie["inpaint"] is False
     assert ernie["lora_adapters"] is True
+
+    anima = capabilities["anima"]["features"]
+    assert anima["text2img"] is True
+    assert anima["text2video"] is False
+    assert anima["img2img"] is False
+    assert anima["inpaint"] is False
+    assert anima["lora_adapters"] is False
 
 
 def test_sd15_inpaint_catalog_exposes_ip_adapter_input():

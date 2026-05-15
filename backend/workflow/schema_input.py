@@ -672,3 +672,17 @@ class ErnieImageText2ImgInputs(BaseModel):
         if self.use_pe and not self.load_pe:
             raise ValueError("use_pe=true requires load_pe=true")
         return self
+
+
+class AnimaText2ImgInputs(BaseModel):
+    prompt: str = ""
+    negative_prompt: str = ""
+    steps: int = Field(default=35, ge=1, le=100)
+    guidance_scale: float = Field(default=4.5, ge=0.0, le=30.0)
+    width: int = Field(default=1024, ge=64, le=2048)
+    height: int = Field(default=1024, ge=64, le=2048)
+    seed: int | None = None
+    model: str | None = None
+    num_images: int = Field(default=1, ge=1, le=4)
+    scheduler: str = "flowmatch_euler"
+    memory_preset: Literal["model_offload", "sequential_offload"] = "sequential_offload"

@@ -73,6 +73,12 @@ const NAV_GROUPS = [
                     { href: "ernie_image/text2img.html", label: "ERNIE-Image Text2Img", displayLabel: "Text2Img" },
                 ],
             },
+            {
+                label: "Anima",
+                items: [
+                    { href: "anima/text2img.html", label: "Anima Text2Img", displayLabel: "Text2Img" },
+                ],
+            },
         ],
     },
     {
