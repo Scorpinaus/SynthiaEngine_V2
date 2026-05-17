@@ -137,7 +137,7 @@ class AnimaSubprocessTests(unittest.TestCase):
         self.assertEqual(code, 0)
         cleanup.assert_called_once()
 
-    def test_anima_loader_uses_custom_pipeline_trust_remote_code(self):
+    def test_anima_loader_uses_local_custom_pipeline(self):
         anima_pipeline = _import_anima_pipeline()
         captured = {}
 
@@ -155,7 +155,7 @@ class AnimaSubprocessTests(unittest.TestCase):
                 captured["offload"] = "sequential"
 
         with (
-            patch.object(anima_pipeline, "DiffusionPipeline", FakePipeline),
+            patch.object(anima_pipeline, "_get_anima_pipeline_class", return_value=FakePipeline),
             patch.object(anima_pipeline, "list_model_entries", return_value=[]),
             patch.object(anima_pipeline, "cleanup_memory"),
         ):

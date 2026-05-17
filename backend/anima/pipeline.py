@@ -34,6 +34,12 @@ _DEFAULT_MODEL_NAME = "Anima-Preview-3"
 _DEFAULT_MODEL_LINK = "CalamitousFelicitousness/Anima-Preview-3-sdnext-diffusers"
 
 
+def _get_anima_pipeline_class() -> type[DiffusionPipeline]:
+    from custom_pipelines.Anima.anima_pipeline import AnimaTextToImagePipeline
+
+    return AnimaTextToImagePipeline
+
+
 def _default_model_entry() -> ModelRegistryEntry:
     return ModelRegistryEntry(
         name=_DEFAULT_MODEL_NAME,
@@ -84,7 +90,8 @@ def load_text2img_pipeline(
     if entry.location_type == "hub" and entry.version not in {"", "hub", "local"}:
         load_kwargs["revision"] = entry.version
 
-    pipe = DiffusionPipeline.from_pretrained(source, **load_kwargs)
+    pipeline_cls = _get_anima_pipeline_class()
+    pipe = pipeline_cls.from_pretrained(source, **load_kwargs)
 
     if memory_preset == "model_offload":
         pipe.enable_model_cpu_offload()

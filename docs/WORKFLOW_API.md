@@ -1125,7 +1125,7 @@ Example ERNIE-Image workflow:
 - Initial support is text-to-image only through the Diffusers conversion `CalamitousFelicitousness/Anima-Preview-3-sdnext-diffusers`.
 - Defaults are `steps: 35`, `guidance_scale: 4.5`, `width: 1024`, `height: 1024`, `num_images: 1`, `scheduler: "flowmatch_euler"`, `negative_prompt: ""`, and `memory_preset: "sequential_offload"`.
 - `model`: optional base model registry name. If omitted, backend uses the first registered `anima` model, falling back to Hub model `CalamitousFelicitousness/Anima-Preview-3-sdnext-diffusers`.
-- Runtime loading uses `DiffusionPipeline.from_pretrained(..., trust_remote_code=True)` because the conversion declares a custom `AnimaTextToImagePipeline`.
+- Runtime loading uses SynthaEngine's local community `AnimaTextToImagePipeline` implementation with the selected Diffusers model repo/folder. `trust_remote_code=True` is still passed so custom model components declared by the conversion can load.
 - For Hub entries, the model registry `version` field is passed as Diffusers `revision` when it is not a generic value such as `"hub"` or `"local"`. Prefer a pinned commit SHA in production.
 - `memory_preset`: `"sequential_offload"` is safest on limited VRAM and slower; `"model_offload"` may be faster but can OOM at larger resolutions.
 - Anima renders run in a short-lived subprocess so Windows can reclaim system RAM after generation.
