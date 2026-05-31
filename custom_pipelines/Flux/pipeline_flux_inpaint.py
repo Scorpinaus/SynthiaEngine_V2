@@ -44,6 +44,8 @@ from diffusers.utils.torch_utils import randn_tensor
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline
 from diffusers.pipelines.flux.pipeline_output import FluxPipelineOutput
 
+from custom_pipelines.Flux.memory import enable_low_memory_flux as _enable_low_memory_flux
+
 
 if is_torch_xla_available():
     import torch_xla.core.xla_model as xm
@@ -237,6 +239,20 @@ class FluxInpaintPipeline(DiffusionPipeline, FluxLoraLoaderMixin, FluxIPAdapterM
             self.tokenizer.model_max_length if hasattr(self, "tokenizer") and self.tokenizer is not None else 77
         )
         self.default_sample_size = 128
+
+    def enable_low_memory_flux(
+        self,
+        *,
+        mode: str = "auto",
+        use_stream: bool = True,
+        exclude_vae_from_group_offload: bool = True,
+    ) -> str:
+        return _enable_low_memory_flux(
+            self,
+            mode=mode,
+            use_stream=use_stream,
+            exclude_vae_from_group_offload=exclude_vae_from_group_offload,
+        )
 
     # Copied from diffusers.pipelines.flux.pipeline_flux.FluxPipeline._get_t5_prompt_embeds
     def _get_t5_prompt_embeds(
@@ -1047,6 +1063,7 @@ class FluxInpaintPipeline(DiffusionPipeline, FluxLoraLoaderMixin, FluxIPAdapterM
             generator,
             latents,
         )
+        del init_image, latent_timestep
 
         mask_condition = self.mask_processor.preprocess(
             mask_image, height=height, width=width, resize_mode=resize_mode, crops_coords=crops_coords
@@ -1069,6 +1086,7 @@ class FluxInpaintPipeline(DiffusionPipeline, FluxLoraLoaderMixin, FluxIPAdapterM
             device,
             generator,
         )
+        del mask_condition, masked_image, masked_image_latents
 
         num_warmup_steps = max(len(timesteps) - num_inference_steps * self.scheduler.order, 0)
         self._num_timesteps = len(timesteps)
@@ -1183,6 +1201,20 @@ class FluxInpaintPipeline(DiffusionPipeline, FluxLoraLoaderMixin, FluxIPAdapterM
 
                 if XLA_AVAILABLE:
                     xm.mark_step()
+
+        if "noise_pred" in locals():
+            del noise_pred
+        if "timestep" in locals():
+            del timestep
+        del timesteps, latent_image_ids, guidance
+        del noise, image_latents, mask
+        if do_true_cfg:
+            del negative_prompt_embeds, negative_pooled_prompt_embeds
+        del prompt_embeds, pooled_prompt_embeds, text_ids
+        if image_embeds is not None:
+            del image_embeds
+        if negative_image_embeds is not None:
+            del negative_image_embeds
 
         if output_type == "latent":
             image = latents

@@ -3,6 +3,7 @@ Docstring for backend.flux.pipeline
 """
 import logging
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -11,8 +12,11 @@ from pathlib import Path
 from typing import Any
 
 import torch
-from diffusers import FluxImg2ImgPipeline, FluxInpaintPipeline, FluxPipeline, FluxFillPipeline
-from custom_pipelines.Flux.pipeline_flux import FluxPipeline as CustomFluxPipeline
+
+try:
+    from diffusers import FluxFillPipeline
+except ImportError:  # pragma: no cover - depends on installed diffusers version
+    FluxFillPipeline = None  # type: ignore[assignment]
 
 from backend.config import OUTPUT_DIR
 from backend.utilities.logging import configure_logging
@@ -27,7 +31,6 @@ from backend.utilities.pipeline import (
     release_pipeline,
     resolve_model_source,
 )
-from backend.utilities.schedulers import create_scheduler
 from backend.flux.subprocess_io import serialize_params_for_subprocess
 
 """
@@ -43,6 +46,22 @@ configure_logging()
 def _should_use_flux_fill_pipeline(model_name: str | None, source: str, version: str) -> bool:
     joined = " ".join([model_name or "", source or "", version or ""]).lower()
     return "flux" in joined and "fill" in joined
+
+
+def _flux_low_memory_mode() -> str:
+    return os.getenv("SYNTHA_FLUX_OFFLOAD", "auto")
+
+
+def _configure_flux_pipeline(pipe: Any) -> Any:
+    from custom_pipelines.Flux.memory import enable_low_memory_flux
+
+    mode = _flux_low_memory_mode()
+    if hasattr(pipe, "enable_low_memory_flux"):
+        applied_mode = pipe.enable_low_memory_flux(mode=mode)
+    else:
+        applied_mode = enable_low_memory_flux(pipe, mode=mode)
+    logger.info("Flux low-memory mode requested=%s applied=%s", mode, applied_mode)
+    return pipe
 
 
 def _run_flux_subprocess(operation: str, params: dict[str, object]) -> dict[str, list[str]]:
@@ -104,6 +123,8 @@ def generate_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
 """
 
 def load_text2img_pipeline(model_name: str | None) -> Any:
+    from custom_pipelines.Flux.pipeline_flux import FluxPipeline as CustomFluxPipeline
+
     # 1. Check input model_name is valid and load valid path
     entry = get_model_entry(model_name)
     source = resolve_model_source(entry)
@@ -114,6 +135,7 @@ def load_text2img_pipeline(model_name: str | None) -> Any:
         pipe = CustomFluxPipeline.from_pretrained(
             source,
             torch_dtype=torch.bfloat16,
+            low_cpu_mem_usage=True,
         )
     elif entry.model_type == "single-file":
         pipe = CustomFluxPipeline.from_single_file(
@@ -122,29 +144,11 @@ def load_text2img_pipeline(model_name: str | None) -> Any:
         )
     else:
         raise ValueError(f"Unsupported model type: {entry.model_type}")
-    
-    # if entry.model_type == "diffusers":
-    #     pipe = FluxPipeline.from_pretrained(
-    #         source,
-    #         torch_dtype=torch.bfloat16,
-    #     )
-    # elif entry.model_type == "single-file":
-    #     pipe = FluxPipeline.from_single_file(
-    #         source,
-    #         torch_dtype=torch.bfloat16,
-    #     )
-    # else:
-    #     raise ValueError(f"Unsupported model type: {entry.model_type}")
+    return _configure_flux_pipeline(pipe)
 
-    #3. Set pipeline settings to prevent OOM
-    # pipe.enable_attention_slicing("max")
-    pipe.vae.enable_slicing()
-    pipe.vae.enable_tiling()
-    pipe.enable_sequential_cpu_offload()
+def load_img2img_pipeline(model_name: str | None) -> Any:
+    from custom_pipelines.Flux.pipeline_flux_img2img import FluxImg2ImgPipeline as CustomFluxImg2ImgPipeline
 
-    return pipe
-
-def load_img2img_pipeline(model_name: str | None) -> FluxImg2ImgPipeline:
     
     #1. Check input model_name is valid and load valid path
     entry = get_model_entry(model_name)
@@ -153,27 +157,24 @@ def load_img2img_pipeline(model_name: str | None) -> FluxImg2ImgPipeline:
 
     #2. Check if diffusers multi-folder or single-file checkpoint
     if entry.model_type == "diffusers":
-        pipe = FluxImg2ImgPipeline.from_pretrained(
+        pipe = CustomFluxImg2ImgPipeline.from_pretrained(
             source,
             torch_dtype=torch.bfloat16,
+            low_cpu_mem_usage=True,
         )
     elif entry.model_type == "single-file":
-        pipe = FluxImg2ImgPipeline.from_single_file(
+        pipe = CustomFluxImg2ImgPipeline.from_single_file(
             source,
             torch_dtype=torch.bfloat16,
         )
     else:
         raise ValueError(f"Unsupported model type: {entry.model_type}")
 
-    #3. Set pipeline settings: enable vae slicing and tiling to reduce vram and sequential cpu offload
-    pipe.enable_attention_slicing("max")
-    pipe.vae.enable_slicing()
-    pipe.vae.enable_tiling()
-    pipe.enable_sequential_cpu_offload()
-
-    return pipe
+    return _configure_flux_pipeline(pipe)
 
 def load_inpaint_pipeline(model_name: str | None) -> Any:
+    from custom_pipelines.Flux.pipeline_flux_inpaint import FluxInpaintPipeline as CustomFluxInpaintPipeline
+
     #1. Check input model_name is valid and load valid path
     entry = get_model_entry(model_name)
     source = resolve_model_source(entry)
@@ -188,7 +189,7 @@ def load_inpaint_pipeline(model_name: str | None) -> Any:
         pipeline_cls = FluxFillPipeline
         pipeline_name = "FluxFillPipeline"
     else:
-        pipeline_cls: Any = FluxInpaintPipeline
+        pipeline_cls: Any = CustomFluxInpaintPipeline
         pipeline_name = "FluxInpaintPipeline"        
     logger.info("Flux inpaint pipeline class: %s", pipeline_name)
 
@@ -197,6 +198,7 @@ def load_inpaint_pipeline(model_name: str | None) -> Any:
         pipe = pipeline_cls.from_pretrained(
             source,
             torch_dtype=torch.bfloat16,
+            low_cpu_mem_usage=True,
         )
     elif entry.model_type == "single-file":
         pipe = pipeline_cls.from_single_file(
@@ -206,13 +208,11 @@ def load_inpaint_pipeline(model_name: str | None) -> Any:
     else:
         raise ValueError(f"Unsupported model type: {entry.model_type}")
 
-    #3. Set pipeline settings:
-    pipe.enable_attention_slicing("max")
-    pipe.vae.enable_slicing()
-    pipe.vae.enable_tiling()
-    pipe.enable_sequential_cpu_offload()
+    if pipeline_cls is FluxFillPipeline:
+        from custom_pipelines.Flux.memory import enable_flux_vae_memory_savers
 
-    return pipe
+        enable_flux_vae_memory_savers(pipe)
+    return _configure_flux_pipeline(pipe)
 
 """
     Methods which generates and renders image using Flux-related Pipelines
@@ -220,6 +220,8 @@ def load_inpaint_pipeline(model_name: str | None) -> Any:
 
 @torch.inference_mode()
 def generate_text2img_in_process(params: dict[str, object]) -> dict[str, list[str]]:
+    from backend.utilities.schedulers import create_scheduler
+
     # 1. Load and create local method variables + ensure correct formatting from input dict
     prompt = str(params["prompt"])
     negative_prompt = str(params["negative_prompt"])
@@ -321,6 +323,8 @@ def generate_text2img_in_process(params: dict[str, object]) -> dict[str, list[st
 
 @torch.inference_mode()
 def generate_img2img_in_process(params: dict[str, object]) -> dict[str, list[str]]:
+    from backend.utilities.schedulers import create_scheduler
+
     #1. Load and create local method variables + ensure correct formatting from input dict
     initial_image = params["initial_image"]
     strength = float(params["strength"])
@@ -429,6 +433,8 @@ def generate_img2img_in_process(params: dict[str, object]) -> dict[str, list[str
 
 @torch.inference_mode()
 def generate_inpaint_in_process(params: dict[str, object]) -> dict[str, list[str]]:
+    from backend.utilities.schedulers import create_scheduler
+
     #1. Load and create local method variables + ensure correct formatting from input dict
     initial_image = params["initial_image"]
     mask_image = params["mask_image"]

@@ -43,6 +43,8 @@ from diffusers.utils.torch_utils import randn_tensor
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline
 from diffusers.pipelines.flux.pipeline_output import FluxPipelineOutput
 
+from custom_pipelines.Flux.memory import enable_low_memory_flux as _enable_low_memory_flux
+
 
 if is_torch_xla_available():
     import torch_xla.core.xla_model as xm
@@ -216,6 +218,20 @@ class FluxPipeline(
         self.default_sample_size = 128
         self.auto_max_sequence_length = 256
         self.max_sequence_length_limit = 512
+
+    def enable_low_memory_flux(
+        self,
+        *,
+        mode: str = "auto",
+        use_stream: bool = True,
+        exclude_vae_from_group_offload: bool = True,
+    ) -> str:
+        return _enable_low_memory_flux(
+            self,
+            mode=mode,
+            use_stream=use_stream,
+            exclude_vae_from_group_offload=exclude_vae_from_group_offload,
+        )
 
     def _resolve_max_sequence_length(
         self,
@@ -1132,6 +1148,18 @@ class FluxPipeline(
                     xm.mark_step()
 
         self._current_timestep = None
+        if "noise_pred" in locals():
+            del noise_pred
+        if "timestep" in locals():
+            del timestep
+        del timesteps, latent_image_ids, guidance
+        if do_true_cfg:
+            del negative_prompt_embeds, negative_pooled_prompt_embeds, negative_text_ids
+        del prompt_embeds, pooled_prompt_embeds, text_ids
+        if image_embeds is not None:
+            del image_embeds
+        if negative_image_embeds is not None:
+            del negative_image_embeds
 
         if output_type == "latent":
             image = latents
