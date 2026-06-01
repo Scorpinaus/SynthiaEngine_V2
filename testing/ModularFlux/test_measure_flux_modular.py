@@ -4,6 +4,7 @@ import json
 import sys
 import types
 from pathlib import Path
+from types import SimpleNamespace
 
 from PIL import Image
 
@@ -28,9 +29,55 @@ def test_parse_args_defaults_are_low_memory_safe():
     assert args.steps == 8
     assert args.num_images == 1
     assert args.offload == "auto"
+    assert args.load_strategy == "phased"
+    assert args.prompt_cache is True
+    assert args.prompt_cache_device == "cpu"
     assert args.low_memory_sequential_images is True
     assert args.low_memory_transformer_buffers is True
     assert args.decode_chunk_size == 1
+    assert args.low_cpu_mem_usage is None
+    assert args.offload_state_dict is None
+    assert args.disable_mmap is False
+    assert args.device_map is None
+
+
+def test_parse_max_memory_entries():
+    parsed = harness.parse_max_memory(["0=10GB", "cpu=48GB"])
+
+    assert parsed == {0: "10GB", "cpu": "48GB"}
+
+
+def test_prompt_cache_key_changes_with_prompt():
+    first = harness.parse_args(["--prompt", "first"])
+    second = harness.parse_args(["--prompt", "second"])
+
+    assert harness.prompt_cache_key("flux", "model", first, "dtype") != harness.prompt_cache_key(
+        "flux",
+        "model",
+        second,
+        "dtype",
+    )
+
+
+def test_prompt_cache_entry_moves_values_to_cpu():
+    class FakeTensor:
+        def __init__(self, device):
+            self.device = device
+
+        def detach(self):
+            return self
+
+        def to(self, *args, **kwargs):
+            return FakeTensor(kwargs.get("device", args[0] if args else None))
+
+    entry = harness.make_prompt_cache_entry(
+        (FakeTensor("cuda"), FakeTensor("cuda")),
+        cache_key=("flux", "model"),
+        cache_device="cpu",
+    )
+
+    assert entry["prompt_embeds"].device == "cpu"
+    assert entry["pooled_prompt_embeds"].device == "cpu"
 
 
 def test_resolve_cases_supports_pipeline_all():
@@ -79,13 +126,28 @@ def test_default_pipeline_loader_uses_direct_local_constructor(monkeypatch):
     class FakeFluxModularPipeline:
         def __init__(self, **kwargs):
             calls["constructor_kwargs"] = kwargs
+            self.tokenizer = None
+            self.transformer = None
+            self._component_specs = {
+                "tokenizer": SimpleNamespace(
+                    default_creation_method="from_pretrained",
+                    pretrained_model_name_or_path="fake",
+                    type_hint=object,
+                ),
+                "transformer": SimpleNamespace(
+                    default_creation_method="from_pretrained",
+                    pretrained_model_name_or_path="fake",
+                    type_hint=object,
+                ),
+            }
 
         @classmethod
         def from_pretrained(cls, *_args, **_kwargs):
             raise AssertionError("from_pretrained should not be used for the local modular harness")
 
-        def load_components(self, **kwargs):
-            calls["load_kwargs"] = kwargs
+        def load_components(self, name=None, **kwargs):
+            calls.setdefault("component_loads", []).append((name, kwargs))
+            setattr(self, name, object())
 
     fake_module = types.ModuleType("custom_pipelines.FluxModular")
     fake_module.FluxModularPipeline = FakeFluxModularPipeline
@@ -108,8 +170,180 @@ def test_default_pipeline_loader_uses_direct_local_constructor(monkeypatch):
             "--variant",
             "fp16",
             "--local-files-only",
+            "--disable-mmap",
+            "--low-cpu-mem-usage",
+            "--offload-state-dict",
+            "--offload-folder",
+            str(Path("C:/tmp/flux-load-offload")),
+            "--device-map",
+            "cpu",
+            "--max-memory",
+            "cpu=48GB",
         ]
     )
+    monkeypatch.setitem(sys.modules, "custom_pipelines.FluxModular", fake_module)
+    monkeypatch.setattr(harness, "reset_cuda_memory_stats", lambda: None)
+    monkeypatch.setattr(harness, "synchronize_cuda", lambda: None)
+    monkeypatch.setattr(harness, "get_process_rss_mb", lambda: 512.0)
+    monkeypatch.setattr(
+        harness,
+        "get_cuda_memory_stats",
+        lambda: {
+            "cuda_available": False,
+            "cuda_max_allocated_mb": None,
+            "cuda_max_reserved_mb": None,
+            "cuda_allocated_after_mb": None,
+            "cuda_reserved_after_mb": None,
+        },
+    )
+    monkeypatch.setattr(harness, "precompute_prompt_embeds", lambda _pipe, _args: ("prompt", "pooled"))
+
+    pipe, load_stats = harness.default_pipeline_loader("flux", args)
+
+    assert isinstance(pipe, FakeFluxModularPipeline)
+    assert calls["constructor_kwargs"]["pretrained_model_name_or_path"] == r"D:\diffusion\diffusers\FLUX.1-dev"
+    assert calls["constructor_kwargs"]["local_files_only"] is True
+    assert "variant" not in calls["constructor_kwargs"]
+    assert "device_map" not in calls["constructor_kwargs"]
+    assert len(calls["component_loads"]) == 2
+    tokenizer_kwargs = calls["component_loads"][0][1]
+    transformer_kwargs = calls["component_loads"][1][1]
+    assert tokenizer_kwargs["local_files_only"] is True
+    assert "device_map" not in tokenizer_kwargs
+    assert transformer_kwargs["variant"] == "fp16"
+    assert transformer_kwargs["local_files_only"] is True
+    assert transformer_kwargs["low_cpu_mem_usage"] is True
+    assert transformer_kwargs["offload_state_dict"] is True
+    assert transformer_kwargs["offload_folder"] == str(Path("C:/tmp/flux-load-offload"))
+    assert transformer_kwargs["device_map"] == "cpu"
+    assert transformer_kwargs["max_memory"] == {"cpu": "48GB"}
+    assert transformer_kwargs["disable_mmap"] is True
+    assert load_stats["offload_mode"] == "auto"
+    assert load_stats["load_strategy"] == "phased"
+    assert load_stats["component_load_count"] == 2
+    assert load_stats["component_loads"][0]["component"] == "tokenizer"
+    assert load_stats["component_loads"][0]["phase"] == "prompt_load"
+    assert load_stats["component_loads"][1]["component"] == "transformer"
+    assert load_stats["component_loads"][1]["phase"] == "generation_load"
+    assert load_stats["component_loads"][1]["status"] == "loaded"
+    assert [phase["phase"] for phase in load_stats["phase_loads"]] == [
+        "prompt_cache",
+        "prompt_load",
+        "prompt_encode",
+        "prompt_release",
+        "generation_load",
+    ]
+    assert load_stats["phase_loads"][0]["status"] == "miss"
+    assert load_stats["phase_loads"][3]["released_components"] == ["tokenizer"]
+    assert load_stats["cached_prompt_embeds"] is True
+    assert load_stats["prompt_cache_hits"] == 0
+    assert load_stats["prompt_cache_misses"] == 1
+    assert load_stats["prompt_cache_stores"] == 1
+    assert load_stats["prompt_cache_entries"] == 1
+
+
+def test_default_pipeline_loader_reuses_prompt_cache(monkeypatch):
+    calls = {"precompute": 0}
+
+    class FakeFluxModularPipeline:
+        def __init__(self, **_kwargs):
+            self.tokenizer = None
+            self.transformer = None
+            self._component_specs = {
+                "tokenizer": SimpleNamespace(
+                    default_creation_method="from_pretrained",
+                    pretrained_model_name_or_path="fake",
+                    type_hint=object,
+                ),
+                "transformer": SimpleNamespace(
+                    default_creation_method="from_pretrained",
+                    pretrained_model_name_or_path="fake",
+                    type_hint=object,
+                ),
+            }
+
+        def load_components(self, name=None, **kwargs):
+            calls.setdefault("component_loads", []).append((name, kwargs))
+            setattr(self, name, object())
+
+    fake_module = types.ModuleType("custom_pipelines.FluxModular")
+    fake_module.FluxModularPipeline = FakeFluxModularPipeline
+    fake_module.FluxKontextModularPipeline = FakeFluxModularPipeline
+    fake_module.enable_low_memory_flux_modular = lambda _pipe, **_kwargs: "auto"
+
+    def fake_precompute(_pipe, _args):
+        calls["precompute"] += 1
+        return "prompt", "pooled"
+
+    args = harness.parse_args(["--device", "cpu", "--torch-dtype", "float32"])
+    monkeypatch.setitem(sys.modules, "custom_pipelines.FluxModular", fake_module)
+    monkeypatch.setattr(harness, "reset_cuda_memory_stats", lambda: None)
+    monkeypatch.setattr(harness, "synchronize_cuda", lambda: None)
+    monkeypatch.setattr(harness, "get_process_rss_mb", lambda: 512.0)
+    monkeypatch.setattr(harness, "precompute_prompt_embeds", fake_precompute)
+    monkeypatch.setattr(
+        harness,
+        "get_cuda_memory_stats",
+        lambda: {
+            "cuda_available": False,
+            "cuda_max_allocated_mb": None,
+            "cuda_max_reserved_mb": None,
+            "cuda_allocated_after_mb": None,
+            "cuda_reserved_after_mb": None,
+        },
+    )
+
+    _first_pipe, first_stats = harness.default_pipeline_loader("flux", args)
+    _second_pipe, second_stats = harness.default_pipeline_loader("flux", args)
+
+    assert calls["precompute"] == 1
+    assert [name for name, _kwargs in calls["component_loads"]] == ["tokenizer", "transformer", "transformer"]
+    assert first_stats["phase_loads"][0]["status"] == "miss"
+    assert second_stats["phase_loads"][0]["status"] == "hit"
+    assert second_stats["phase_loads"][1]["status"] == "skipped"
+    assert second_stats["phase_loads"][2]["reason"] == "prompt_cache_hit"
+    assert second_stats["component_load_count"] == 1
+    assert second_stats["component_loads"][0]["component"] == "transformer"
+    assert second_stats["prompt_cache_hits"] == 1
+    assert second_stats["prompt_cache_misses"] == 1
+    assert second_stats["prompt_cache_stores"] == 1
+    assert second_stats["prompt_cache_entries"] == 1
+
+
+def test_default_pipeline_loader_eager_loads_all_components(monkeypatch):
+    calls = {}
+
+    class FakeFluxModularPipeline:
+        def __init__(self, **kwargs):
+            calls["constructor_kwargs"] = kwargs
+            self.tokenizer = None
+            self.transformer = None
+            self._component_specs = {
+                "tokenizer": SimpleNamespace(
+                    default_creation_method="from_pretrained",
+                    pretrained_model_name_or_path="fake",
+                    type_hint=object,
+                ),
+                "transformer": SimpleNamespace(
+                    default_creation_method="from_pretrained",
+                    pretrained_model_name_or_path="fake",
+                    type_hint=object,
+                ),
+            }
+
+        def load_components(self, name=None, **kwargs):
+            calls.setdefault("component_loads", []).append((name, kwargs))
+            setattr(self, name, object())
+
+        def to(self, **kwargs):
+            calls["to_kwargs"] = kwargs
+
+    fake_module = types.ModuleType("custom_pipelines.FluxModular")
+    fake_module.FluxModularPipeline = FakeFluxModularPipeline
+    fake_module.FluxKontextModularPipeline = FakeFluxModularPipeline
+    fake_module.enable_low_memory_flux_modular = lambda _pipe, **_kwargs: "auto"
+
+    args = harness.parse_args(["--load-strategy", "eager", "--offload", "none", "--device", "cpu"])
     monkeypatch.setitem(sys.modules, "custom_pipelines.FluxModular", fake_module)
     monkeypatch.setattr(harness, "reset_cuda_memory_stats", lambda: None)
     monkeypatch.setattr(harness, "synchronize_cuda", lambda: None)
@@ -129,12 +363,29 @@ def test_default_pipeline_loader_uses_direct_local_constructor(monkeypatch):
     pipe, load_stats = harness.default_pipeline_loader("flux", args)
 
     assert isinstance(pipe, FakeFluxModularPipeline)
-    assert calls["constructor_kwargs"]["pretrained_model_name_or_path"] == r"D:\diffusion\diffusers\FLUX.1-dev"
-    assert calls["constructor_kwargs"]["local_files_only"] is True
-    assert "variant" not in calls["constructor_kwargs"]
-    assert calls["load_kwargs"]["variant"] == "fp16"
-    assert calls["load_kwargs"]["local_files_only"] is True
-    assert load_stats["offload_mode"] == "auto"
+    assert calls["component_loads"][0][0] == "tokenizer"
+    assert calls["component_loads"][1][0] == "transformer"
+    assert [component["phase"] for component in load_stats["component_loads"]] == ["eager_load", "eager_load"]
+    assert [phase["phase"] for phase in load_stats["phase_loads"]] == ["eager_load"]
+    assert load_stats["cached_prompt_embeds"] is False
+    assert calls["to_kwargs"]["device"].type == "cpu"
+
+
+def test_build_case_kwargs_uses_cached_embeds_in_phased_mode():
+    args = harness.parse_args([])
+    pipe = FakePipe()
+    pipe._modular_flux_cached_prompt_embeds = {
+        "prompt_embeds": "prompt",
+        "pooled_prompt_embeds": "pooled",
+    }
+
+    kwargs, stats = harness.build_case_kwargs(args, harness.CASES["flux-text2img"], pipe, run_seed=1)
+
+    assert "prompt" not in kwargs
+    assert "prompt_2" not in kwargs
+    assert kwargs["prompt_embeds"] == "prompt"
+    assert kwargs["pooled_prompt_embeds"] == "pooled"
+    assert stats["embed_seconds"] == 0.0
 
 
 def test_run_measurement_records_success_and_writes_json(tmp_path, monkeypatch):

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import sys
 import threading
@@ -20,6 +21,11 @@ if str(REPO_ROOT) not in sys.path:
 
 DEFAULT_PROMPT = "a small workshop robot repairing a memory gauge, detailed but compact"
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "outputs" / "modular_flux_tests"
+MODEL_COMPONENTS = ("text_encoder", "text_encoder_2", "transformer", "vae")
+DIFFUSERS_MODEL_COMPONENTS = ("transformer", "vae")
+PROMPT_COMPONENTS = ("tokenizer", "tokenizer_2", "text_encoder", "text_encoder_2")
+PROMPT_CACHE_ATTR = "_modular_flux_prompt_cache"
+PROMPT_CACHE_STATS_ATTR = "_modular_flux_prompt_cache_stats"
 
 
 @dataclass(frozen=True)
@@ -137,6 +143,65 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--variant", default=None, help="Optional model variant.")
     parser.add_argument("--token", default=None, help="Optional Hugging Face token.")
     parser.add_argument("--local-files-only", action="store_true", help="Do not download model files.")
+    parser.add_argument(
+        "--load-strategy",
+        choices=("eager", "phased"),
+        default="phased",
+        help="Load all components upfront or pre-encode prompts before loading generation components.",
+    )
+    parser.add_argument(
+        "--prompt-cache",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Reuse precomputed prompt embeddings across compatible phased pipeline loads.",
+    )
+    parser.add_argument(
+        "--prompt-cache-device",
+        choices=("cpu", "device"),
+        default="cpu",
+        help="Store staged prompt embeddings on CPU or keep them on the encoding device.",
+    )
+    parser.add_argument(
+        "--low-cpu-mem-usage",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Forward low_cpu_mem_usage to model component loaders. Omit to use Diffusers defaults.",
+    )
+    parser.add_argument(
+        "--offload-state-dict",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Forward offload_state_dict to model component loaders.",
+    )
+    parser.add_argument(
+        "--offload-folder",
+        type=Path,
+        default=None,
+        help="Folder for load-time disk offload when device maps use disk or offload_state_dict is enabled.",
+    )
+    parser.add_argument(
+        "--disable-mmap",
+        action="store_true",
+        help="Disable safetensors mmap for Diffusers model components. May help HDD/network mounts.",
+    )
+    parser.add_argument(
+        "--device-map",
+        default=None,
+        help="Optional model component device_map, such as cpu, cuda, auto, balanced, or sequential.",
+    )
+    parser.add_argument(
+        "--max-memory",
+        action="append",
+        default=None,
+        metavar="DEVICE=LIMIT",
+        help="Repeatable max_memory entry, for example --max-memory 0=10GB --max-memory cpu=48GB.",
+    )
+    parser.add_argument(
+        "--use-safetensors",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Forward use_safetensors to model component loaders. Omit to use Diffusers defaults.",
+    )
     parser.add_argument("--reload-per-case", action="store_true", help="Reload the pipeline for every case.")
     parser.add_argument("--rss-sample-interval", type=float, default=0.05, help="Peak RSS sampling interval.")
     parser.add_argument(
@@ -224,7 +289,7 @@ def resolve_dtype(args: argparse.Namespace):
 
 def model_load_kwargs(args: argparse.Namespace) -> dict[str, Any]:
     kwargs: dict[str, Any] = {}
-    for name in ("revision", "variant", "token"):
+    for name in ("revision", "token"):
         value = getattr(args, name)
         if value is not None:
             kwargs[name] = value
@@ -232,13 +297,64 @@ def model_load_kwargs(args: argparse.Namespace) -> dict[str, Any]:
         kwargs["cache_dir"] = str(args.cache_dir)
     if args.local_files_only:
         kwargs["local_files_only"] = True
+    if args.variant is not None:
+        kwargs["variant"] = _component_kwarg(args.variant, MODEL_COMPONENTS)
+    if args.low_cpu_mem_usage is not None:
+        kwargs["low_cpu_mem_usage"] = _component_kwarg(bool(args.low_cpu_mem_usage), MODEL_COMPONENTS)
+    if args.offload_state_dict is not None:
+        kwargs["offload_state_dict"] = _component_kwarg(bool(args.offload_state_dict), MODEL_COMPONENTS)
+    if args.offload_folder is not None:
+        kwargs["offload_folder"] = _component_kwarg(str(args.offload_folder), MODEL_COMPONENTS)
+    if args.device_map is not None and args.device_map.lower() != "none":
+        kwargs["device_map"] = _component_kwarg(args.device_map, MODEL_COMPONENTS)
+    max_memory = parse_max_memory(args.max_memory)
+    if max_memory is not None:
+        kwargs["max_memory"] = _component_kwarg(max_memory, MODEL_COMPONENTS)
+    if args.use_safetensors is not None:
+        kwargs["use_safetensors"] = _component_kwarg(bool(args.use_safetensors), MODEL_COMPONENTS)
+    if args.disable_mmap:
+        kwargs["disable_mmap"] = _component_kwarg(True, DIFFUSERS_MODEL_COMPONENTS)
     return kwargs
+
+
+def model_for_kind(kind: str, args: argparse.Namespace) -> str:
+    return args.kontext_model if kind == "kontext" and args.kontext_model else args.model
 
 
 def model_config_kwargs(args: argparse.Namespace) -> dict[str, Any]:
     kwargs = model_load_kwargs(args)
-    kwargs.pop("variant", None)
+    for key in (
+        "variant",
+        "low_cpu_mem_usage",
+        "offload_state_dict",
+        "offload_folder",
+        "device_map",
+        "max_memory",
+        "use_safetensors",
+        "disable_mmap",
+    ):
+        kwargs.pop(key, None)
     return kwargs
+
+
+def _component_kwarg(value: Any, components: tuple[str, ...]) -> dict[str, Any]:
+    return {component: value for component in components}
+
+
+def parse_max_memory(entries: list[str] | None) -> dict[int | str, str] | None:
+    if not entries:
+        return None
+    parsed: dict[int | str, str] = {}
+    for entry in entries:
+        if "=" not in entry:
+            raise ValueError(f"Invalid --max-memory entry '{entry}'. Expected DEVICE=LIMIT, for example 0=10GB.")
+        raw_device, limit = entry.split("=", 1)
+        device = raw_device.strip()
+        limit = limit.strip()
+        if not device or not limit:
+            raise ValueError(f"Invalid --max-memory entry '{entry}'. Device and limit are required.")
+        parsed[int(device) if device.isdigit() else device] = limit
+    return parsed
 
 
 def create_synthetic_image(width: int, height: int) -> Image.Image:
@@ -356,6 +472,330 @@ def get_cuda_memory_stats() -> dict[str, float | bool | None]:
     }
 
 
+def clear_memory() -> None:
+    gc.collect()
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        if hasattr(torch, "xpu") and torch.xpu.is_available():
+            torch.xpu.empty_cache()
+    except Exception:
+        return
+
+
+def component_names_to_load(
+    pipe: Any,
+    *,
+    include: tuple[str, ...] | None = None,
+    exclude: tuple[str, ...] = (),
+) -> list[str]:
+    names: list[str] = []
+    specs = getattr(pipe, "_component_specs", {})
+    candidates = include if include is not None else tuple(specs.keys())
+    for name in candidates:
+        if name in exclude:
+            continue
+        spec = specs.get(name)
+        if spec is None:
+            continue
+        if (
+            getattr(spec, "default_creation_method", None) == "from_pretrained"
+            and getattr(spec, "pretrained_model_name_or_path", None) is not None
+            and getattr(pipe, name, None) is None
+        ):
+            names.append(name)
+    return names
+
+
+def component_type_name(pipe: Any, name: str) -> str | None:
+    spec = getattr(pipe, "_component_specs", {}).get(name)
+    type_hint = getattr(spec, "type_hint", None)
+    if type_hint is None:
+        return None
+    return getattr(type_hint, "__name__", str(type_hint))
+
+
+def load_kwargs_for_component(load_kwargs: dict[str, Any], name: str) -> dict[str, Any]:
+    component_kwargs: dict[str, Any] = {}
+    for key, value in load_kwargs.items():
+        if not isinstance(value, dict):
+            component_kwargs[key] = value
+        elif name in value:
+            component_kwargs[key] = value[name]
+        elif "default" in value:
+            component_kwargs[key] = value["default"]
+    return component_kwargs
+
+
+def load_component_with_profile(
+    pipe: Any,
+    name: str,
+    args: argparse.Namespace,
+    load_kwargs: dict[str, Any],
+    *,
+    phase: str,
+) -> dict[str, Any]:
+    reset_cuda_memory_stats()
+    rss_before_mb = get_process_rss_mb()
+    start = time.perf_counter()
+    with PeakRSSSampler(args.rss_sample_interval) as rss_sampler:
+        try:
+            pipe.load_components(name, **load_kwargs_for_component(load_kwargs, name))
+            synchronize_cuda()
+            elapsed_seconds = time.perf_counter() - start
+            loaded = getattr(pipe, name, None) is not None
+            status = "loaded" if loaded else "missing_after_load"
+            return {
+                "component": name,
+                "component_type": component_type_name(pipe, name),
+                "phase": phase,
+                "status": status,
+                "elapsed_seconds": elapsed_seconds,
+                "rss_before_mb": rss_before_mb,
+                "rss_after_mb": get_process_rss_mb(),
+                "rss_peak_sampled_mb": rss_sampler.peak_mb,
+                **get_cuda_memory_stats(),
+            }
+        except Exception as exc:
+            synchronize_cuda()
+            return {
+                "component": name,
+                "component_type": component_type_name(pipe, name),
+                "phase": phase,
+                "status": "error",
+                "elapsed_seconds": time.perf_counter() - start,
+                "rss_before_mb": rss_before_mb,
+                "rss_after_mb": get_process_rss_mb(),
+                "rss_peak_sampled_mb": rss_sampler.peak_mb,
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+                **get_cuda_memory_stats(),
+            }
+
+
+def load_components_with_profile(
+    pipe: Any,
+    args: argparse.Namespace,
+    load_kwargs: dict[str, Any],
+    *,
+    names: list[str] | None = None,
+    phase: str,
+) -> list[dict[str, Any]]:
+    profiles = []
+    for name in names if names is not None else component_names_to_load(pipe):
+        profiles.append(load_component_with_profile(pipe, name, args, load_kwargs, phase=phase))
+    return profiles
+
+
+def _max_profile_value(profiles: list[dict[str, Any]], name: str) -> float | None:
+    values = [float(profile[name]) for profile in profiles if profile.get(name) is not None]
+    return max(values) if values else None
+
+
+def phase_profile_from_components(phase: str, profiles: list[dict[str, Any]]) -> dict[str, Any]:
+    statuses = [profile.get("status") for profile in profiles]
+    if not profiles:
+        status = "skipped"
+    elif any(status == "error" for status in statuses):
+        status = "error"
+    elif all(status == "loaded" for status in statuses):
+        status = "success"
+    else:
+        status = "partial"
+    return {
+        "phase": phase,
+        "status": status,
+        "component_count": len(profiles),
+        "components": [profile["component"] for profile in profiles],
+        "elapsed_seconds": sum(float(profile["elapsed_seconds"]) for profile in profiles),
+        "max_cuda_allocated_mb": _max_profile_value(profiles, "cuda_max_allocated_mb"),
+        "max_cuda_reserved_mb": _max_profile_value(profiles, "cuda_max_reserved_mb"),
+        "max_rss_peak_sampled_mb": _max_profile_value(profiles, "rss_peak_sampled_mb"),
+    }
+
+
+def profile_callable(phase: str, args: argparse.Namespace, fn: Callable[[], Any]) -> tuple[Any, dict[str, Any]]:
+    reset_cuda_memory_stats()
+    rss_before_mb = get_process_rss_mb()
+    start = time.perf_counter()
+    with PeakRSSSampler(args.rss_sample_interval) as rss_sampler:
+        try:
+            result = fn()
+            synchronize_cuda()
+            return result, {
+                "phase": phase,
+                "status": "success",
+                "elapsed_seconds": time.perf_counter() - start,
+                "rss_before_mb": rss_before_mb,
+                "rss_after_mb": get_process_rss_mb(),
+                "rss_peak_sampled_mb": rss_sampler.peak_mb,
+                **get_cuda_memory_stats(),
+            }
+        except Exception as exc:
+            synchronize_cuda()
+            return None, {
+                "phase": phase,
+                "status": "error",
+                "elapsed_seconds": time.perf_counter() - start,
+                "rss_before_mb": rss_before_mb,
+                "rss_after_mb": get_process_rss_mb(),
+                "rss_peak_sampled_mb": rss_sampler.peak_mb,
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+                **get_cuda_memory_stats(),
+            }
+
+
+def prompt_cache_key(kind: str, model: str, args: argparse.Namespace, dtype: Any) -> tuple[Any, ...]:
+    return (
+        kind,
+        str(model),
+        args.revision,
+        args.variant,
+        args.prompt,
+        args.prompt_2,
+        args.max_sequence_length,
+        str(dtype or "component_default"),
+    )
+
+
+def prompt_cache_store(args: argparse.Namespace) -> dict[tuple[Any, ...], dict[str, Any]]:
+    store = getattr(args, PROMPT_CACHE_ATTR, None)
+    if store is None:
+        store = {}
+        setattr(args, PROMPT_CACHE_ATTR, store)
+    return store
+
+
+def prompt_cache_stats(args: argparse.Namespace) -> dict[str, int]:
+    stats = getattr(args, PROMPT_CACHE_STATS_ATTR, None)
+    if stats is None:
+        stats = {"hits": 0, "misses": 0, "stores": 0}
+        setattr(args, PROMPT_CACHE_STATS_ATTR, stats)
+    return stats
+
+
+def prompt_cache_summary(args: argparse.Namespace) -> dict[str, Any]:
+    stats = prompt_cache_stats(args)
+    return {
+        "prompt_cache_enabled": bool(args.prompt_cache),
+        "prompt_cache_device": args.prompt_cache_device,
+        "prompt_cache_hits": stats["hits"],
+        "prompt_cache_misses": stats["misses"],
+        "prompt_cache_stores": stats["stores"],
+        "prompt_cache_entries": len(prompt_cache_store(args)),
+    }
+
+
+def prompt_cache_lookup(args: argparse.Namespace, cache_key: tuple[Any, ...]) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    start = time.perf_counter()
+    if not args.prompt_cache:
+        return None, {
+            "phase": "prompt_cache",
+            "status": "disabled",
+            "elapsed_seconds": time.perf_counter() - start,
+            **prompt_cache_summary(args),
+        }
+
+    store = prompt_cache_store(args)
+    stats = prompt_cache_stats(args)
+    if cache_key in store:
+        stats["hits"] += 1
+        return store[cache_key], {
+            "phase": "prompt_cache",
+            "status": "hit",
+            "elapsed_seconds": time.perf_counter() - start,
+            **prompt_cache_summary(args),
+        }
+
+    stats["misses"] += 1
+    return None, {
+        "phase": "prompt_cache",
+        "status": "miss",
+        "elapsed_seconds": time.perf_counter() - start,
+        **prompt_cache_summary(args),
+    }
+
+
+def _move_prompt_cache_value(value: Any, cache_device: str) -> Any:
+    if cache_device != "cpu":
+        return value
+    detach = getattr(value, "detach", None)
+    if callable(detach):
+        value = detach()
+    to = getattr(value, "to", None)
+    if not callable(to):
+        return value
+    try:
+        return value.to("cpu")
+    except TypeError:
+        return value.to(device="cpu")
+
+
+def make_prompt_cache_entry(
+    embeds: tuple[Any, Any],
+    *,
+    cache_key: tuple[Any, ...],
+    cache_device: str,
+) -> dict[str, Any]:
+    return {
+        "prompt_embeds": _move_prompt_cache_value(embeds[0], cache_device),
+        "pooled_prompt_embeds": _move_prompt_cache_value(embeds[1], cache_device),
+        "cache_key": cache_key,
+        "cache_device": cache_device,
+    }
+
+
+def store_prompt_cache_entry(
+    args: argparse.Namespace,
+    cache_key: tuple[Any, ...],
+    entry: dict[str, Any],
+) -> None:
+    if not args.prompt_cache:
+        return
+    prompt_cache_store(args)[cache_key] = entry
+    prompt_cache_stats(args)["stores"] += 1
+
+
+def skipped_phase_profile(phase: str, reason: str) -> dict[str, Any]:
+    return {
+        "phase": phase,
+        "status": "skipped",
+        "reason": reason,
+        "elapsed_seconds": 0.0,
+    }
+
+
+def cache_prompt_embeds(pipe: Any, embeds_or_entry: tuple[Any, Any] | dict[str, Any]) -> None:
+    if isinstance(embeds_or_entry, dict):
+        entry = embeds_or_entry
+    else:
+        entry = {
+            "prompt_embeds": embeds_or_entry[0],
+            "pooled_prompt_embeds": embeds_or_entry[1],
+        }
+    setattr(pipe, "_modular_flux_cached_prompt_embeds", entry)
+
+
+def cached_prompt_embeds(pipe: Any) -> dict[str, Any] | None:
+    cached = getattr(pipe, "_modular_flux_cached_prompt_embeds", None)
+    if isinstance(cached, dict) and "prompt_embeds" in cached and "pooled_prompt_embeds" in cached:
+        return cached
+    return None
+
+
+def release_prompt_components(pipe: Any) -> list[str]:
+    released = []
+    for name in PROMPT_COMPONENTS:
+        if getattr(pipe, name, None) is not None:
+            setattr(pipe, name, None)
+            released.append(name)
+    clear_memory()
+    return released
+
+
 def default_pipeline_loader(kind: str, args: argparse.Namespace) -> tuple[Any, dict[str, Any]]:
     import torch
 
@@ -366,7 +806,7 @@ def default_pipeline_loader(kind: str, args: argparse.Namespace) -> tuple[Any, d
     )
 
     pipeline_cls = FluxKontextModularPipeline if kind == "kontext" else FluxModularPipeline
-    model = args.kontext_model if kind == "kontext" and args.kontext_model else args.model
+    model = model_for_kind(kind, args)
     dtype = resolve_dtype(args)
     device = resolve_device(args)
     config_kwargs = model_config_kwargs(args)
@@ -377,8 +817,70 @@ def default_pipeline_loader(kind: str, args: argparse.Namespace) -> tuple[Any, d
     reset_cuda_memory_stats()
     rss_before_mb = get_process_rss_mb()
     start = time.perf_counter()
+    constructor_start = time.perf_counter()
     pipe = pipeline_cls(pretrained_model_name_or_path=model, **config_kwargs)
-    pipe.load_components(**load_kwargs)
+    constructor_seconds = time.perf_counter() - constructor_start
+
+    prompt_components_released: list[str] = []
+    if args.load_strategy == "eager":
+        component_loads = load_components_with_profile(pipe, args, load_kwargs, phase="eager_load")
+        phase_loads = [phase_profile_from_components("eager_load", component_loads)]
+    else:
+        key = prompt_cache_key(kind, model, args, dtype)
+        cache_entry, cache_profile = prompt_cache_lookup(args, key)
+        if cache_entry is not None:
+            cache_prompt_embeds(pipe, cache_entry)
+            prompt_component_loads = []
+            encode_profile = skipped_phase_profile("prompt_encode", "prompt_cache_hit")
+            release_profile = skipped_phase_profile("prompt_release", "prompt_cache_hit")
+        else:
+            prompt_names = component_names_to_load(pipe, include=PROMPT_COMPONENTS)
+            prompt_component_loads = load_components_with_profile(
+                pipe,
+                args,
+                load_kwargs,
+                names=prompt_names,
+                phase="prompt_load",
+            )
+            embeds, encode_profile = profile_callable("prompt_encode", args, lambda: precompute_prompt_embeds(pipe, args))
+            if encode_profile["status"] == "success" and embeds is not None:
+                entry = make_prompt_cache_entry(embeds, cache_key=key, cache_device=args.prompt_cache_device)
+                cache_prompt_embeds(pipe, entry)
+                store_prompt_cache_entry(args, key, entry)
+                del embeds
+                clear_memory()
+                released, release_profile = profile_callable(
+                    "prompt_release",
+                    args,
+                    lambda: release_prompt_components(pipe),
+                )
+                prompt_components_released = released if isinstance(released, list) else []
+            else:
+                setattr(pipe, "_modular_flux_prompt_embed_error", encode_profile)
+                release_profile = {
+                    "phase": "prompt_release",
+                    "status": "skipped",
+                    "elapsed_seconds": 0.0,
+                    "released_components": [],
+                }
+
+        generation_names = component_names_to_load(pipe, exclude=PROMPT_COMPONENTS)
+        generation_component_loads = load_components_with_profile(
+            pipe,
+            args,
+            load_kwargs,
+            names=generation_names,
+            phase="generation_load",
+        )
+        component_loads = prompt_component_loads + generation_component_loads
+        phase_loads = [
+            cache_profile,
+            phase_profile_from_components("prompt_load", prompt_component_loads),
+            encode_profile,
+            {**release_profile, "released_components": prompt_components_released},
+            phase_profile_from_components("generation_load", generation_component_loads),
+        ]
+
     if args.offload == "auto":
         offload_mode = enable_low_memory_flux_modular(
             pipe,
@@ -397,10 +899,22 @@ def default_pipeline_loader(kind: str, args: argparse.Namespace) -> tuple[Any, d
     return pipe, {
         "pipeline": kind,
         "model": model,
+        "load_strategy": args.load_strategy,
         "torch_dtype": str(dtype or "component_default"),
         "device": str(device),
         "offload_mode": offload_mode,
         "load_seconds": load_seconds,
+        "constructor_seconds": constructor_seconds,
+        "component_load_seconds": sum(float(load["elapsed_seconds"]) for load in component_loads),
+        "component_load_count": len(component_loads),
+        "component_loads": component_loads,
+        "phase_loads": phase_loads,
+        "prompt_components_released": prompt_components_released,
+        "cached_prompt_embeds": cached_prompt_embeds(pipe) is not None,
+        **prompt_cache_summary(args),
+        "load_max_cuda_allocated_mb": _max_profile_value(component_loads, "cuda_max_allocated_mb"),
+        "load_max_cuda_reserved_mb": _max_profile_value(component_loads, "cuda_max_reserved_mb"),
+        "load_max_rss_peak_sampled_mb": _max_profile_value(component_loads, "rss_peak_sampled_mb"),
         "load_rss_before_mb": rss_before_mb,
         "load_rss_after_mb": get_process_rss_mb(),
         **get_cuda_memory_stats(),
@@ -447,8 +961,6 @@ def build_case_kwargs(
         "low_memory_eager_offload": args.low_memory_eager_offload,
         "low_memory_prune_intermediates": args.low_memory_prune_intermediates,
     }
-    if args.prompt_2 is not None and case.prompt:
-        kwargs["prompt_2"] = args.prompt_2
     if args.max_sequence_length is not None:
         kwargs["max_sequence_length"] = args.max_sequence_length
     if args.vae_decode_device != "auto":
@@ -461,9 +973,25 @@ def build_case_kwargs(
         kwargs["strength"] = args.strength
     if case.image:
         kwargs["image"] = load_input_image(args)
-    if case.prompt:
+
+    prompt_error = getattr(pipe, "_modular_flux_prompt_embed_error", None)
+    if args.load_strategy == "phased" and prompt_error is not None:
+        error_type = prompt_error.get("error_type", "Error")
+        error = prompt_error.get("error", "prompt pre-encoding failed")
+        raise RuntimeError(f"Phased prompt encode failed: {error_type}: {error}")
+
+    cached = cached_prompt_embeds(pipe)
+    use_cached_embeds = cached is not None and (case.prompt or case.embeds)
+    if use_cached_embeds:
+        kwargs["prompt_embeds"] = cached["prompt_embeds"]
+        kwargs["pooled_prompt_embeds"] = cached["pooled_prompt_embeds"]
+        embed_seconds = 0.0
+    elif case.prompt:
         kwargs["prompt"] = args.prompt
-    if case.embeds:
+        if args.prompt_2 is not None:
+            kwargs["prompt_2"] = args.prompt_2
+        embed_seconds = None
+    elif case.embeds:
         embed_start = time.perf_counter()
         prompt_embeds, pooled_prompt_embeds = precompute_prompt_embeds(pipe, args)
         kwargs["prompt_embeds"] = prompt_embeds
@@ -637,11 +1165,22 @@ def run_measurement(
             "torch_dtype": args.torch_dtype,
             "device": args.device,
             "offload": args.offload,
+            "load_strategy": args.load_strategy,
+            "prompt_cache": args.prompt_cache,
+            "prompt_cache_device": args.prompt_cache_device,
             "low_memory_sequential_images": args.low_memory_sequential_images,
             "low_memory_transformer_buffers": args.low_memory_transformer_buffers,
             "decode_chunk_size": args.decode_chunk_size,
             "vae_decode_device": args.vae_decode_device,
+            "low_cpu_mem_usage": args.low_cpu_mem_usage,
+            "offload_state_dict": args.offload_state_dict,
+            "offload_folder": str(args.offload_folder) if args.offload_folder is not None else None,
+            "disable_mmap": args.disable_mmap,
+            "device_map": args.device_map,
+            "max_memory": parse_max_memory(args.max_memory),
+            "use_safetensors": args.use_safetensors,
         },
+        "prompt_cache": prompt_cache_summary(args),
         "loads": loads,
         "summary": summarize_runs(runs),
         "runs": runs,
@@ -659,8 +1198,44 @@ def print_result(result: dict[str, Any]) -> None:
     for load in result["loads"]:
         print(
             f"load {load['pipeline']}: {load['load_seconds']:.2f}s, "
-            f"rss_after={load.get('load_rss_after_mb')}, offload={load.get('offload_mode')}"
+            f"strategy={load.get('load_strategy')}, "
+            f"rss_after={load.get('load_rss_after_mb')}, "
+            f"peak_rss={load.get('load_max_rss_peak_sampled_mb')}, "
+            f"peak_cuda_allocated={load.get('load_max_cuda_allocated_mb')}, "
+            f"offload={load.get('offload_mode')}, "
+            f"prompt_cache={load.get('prompt_cache_enabled')}"
         )
+        print(
+            "  prompt cache: "
+            f"hits={load.get('prompt_cache_hits')}, "
+            f"misses={load.get('prompt_cache_misses')}, "
+            f"stores={load.get('prompt_cache_stores')}, "
+            f"entries={load.get('prompt_cache_entries')}, "
+            f"device={load.get('prompt_cache_device')}"
+        )
+        for phase in load.get("phase_loads", []):
+            print(
+                f"  phase {phase['phase']}: {phase['status']}, "
+                f"{phase.get('elapsed_seconds', 0.0):.2f}s, "
+                f"components={phase.get('components', phase.get('released_components'))}, "
+                f"rss_peak={phase.get('max_rss_peak_sampled_mb', phase.get('rss_peak_sampled_mb'))}, "
+                f"cuda_peak_allocated={phase.get('max_cuda_allocated_mb', phase.get('cuda_max_allocated_mb'))}, "
+                f"cuda_peak_reserved={phase.get('max_cuda_reserved_mb', phase.get('cuda_max_reserved_mb'))}"
+            )
+            if phase["status"] == "error":
+                print(f"    {phase.get('error_type')}: {phase.get('error')}")
+        for component in load.get("component_loads", []):
+            print(
+                f"  component {component['component']} ({component.get('phase')}): {component['status']}, "
+                f"{component['elapsed_seconds']:.2f}s, "
+                f"rss_before={component.get('rss_before_mb')}, "
+                f"rss_after={component.get('rss_after_mb')}, "
+                f"rss_peak={component.get('rss_peak_sampled_mb')}, "
+                f"cuda_peak_allocated={component.get('cuda_max_allocated_mb')}, "
+                f"cuda_peak_reserved={component.get('cuda_max_reserved_mb')}"
+            )
+            if component["status"] == "error":
+                print(f"    {component.get('error_type')}: {component.get('error')}")
     for run in result["runs"]:
         label = f"{run['case']} {run['kind']} #{run['run_index']}"
         status = run["status"]
