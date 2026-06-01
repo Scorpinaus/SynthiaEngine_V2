@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import sys
+import types
 from pathlib import Path
 
 from PIL import Image
@@ -69,6 +71,70 @@ def test_build_case_kwargs_for_flux_img2img_uses_synthetic_image():
     assert isinstance(kwargs["image"], Image.Image)
     assert stats["prepare_seconds"] >= 0
     assert stats["embed_seconds"] is None
+
+
+def test_default_pipeline_loader_uses_direct_local_constructor(monkeypatch):
+    calls = {}
+
+    class FakeFluxModularPipeline:
+        def __init__(self, **kwargs):
+            calls["constructor_kwargs"] = kwargs
+
+        @classmethod
+        def from_pretrained(cls, *_args, **_kwargs):
+            raise AssertionError("from_pretrained should not be used for the local modular harness")
+
+        def load_components(self, **kwargs):
+            calls["load_kwargs"] = kwargs
+
+    fake_module = types.ModuleType("custom_pipelines.FluxModular")
+    fake_module.FluxModularPipeline = FakeFluxModularPipeline
+    fake_module.FluxKontextModularPipeline = FakeFluxModularPipeline
+
+    def fake_enable_low_memory_flux_modular(_pipe, **kwargs):
+        calls["offload_kwargs"] = kwargs
+        return "auto"
+
+    fake_module.enable_low_memory_flux_modular = fake_enable_low_memory_flux_modular
+
+    args = harness.parse_args(
+        [
+            "--model",
+            r"D:\diffusion\diffusers\FLUX.1-dev",
+            "--device",
+            "cpu",
+            "--torch-dtype",
+            "float32",
+            "--variant",
+            "fp16",
+            "--local-files-only",
+        ]
+    )
+    monkeypatch.setitem(sys.modules, "custom_pipelines.FluxModular", fake_module)
+    monkeypatch.setattr(harness, "reset_cuda_memory_stats", lambda: None)
+    monkeypatch.setattr(harness, "synchronize_cuda", lambda: None)
+    monkeypatch.setattr(harness, "get_process_rss_mb", lambda: 512.0)
+    monkeypatch.setattr(
+        harness,
+        "get_cuda_memory_stats",
+        lambda: {
+            "cuda_available": False,
+            "cuda_max_allocated_mb": None,
+            "cuda_max_reserved_mb": None,
+            "cuda_allocated_after_mb": None,
+            "cuda_reserved_after_mb": None,
+        },
+    )
+
+    pipe, load_stats = harness.default_pipeline_loader("flux", args)
+
+    assert isinstance(pipe, FakeFluxModularPipeline)
+    assert calls["constructor_kwargs"]["pretrained_model_name_or_path"] == r"D:\diffusion\diffusers\FLUX.1-dev"
+    assert calls["constructor_kwargs"]["local_files_only"] is True
+    assert "variant" not in calls["constructor_kwargs"]
+    assert calls["load_kwargs"]["variant"] == "fp16"
+    assert calls["load_kwargs"]["local_files_only"] is True
+    assert load_stats["offload_mode"] == "auto"
 
 
 def test_run_measurement_records_success_and_writes_json(tmp_path, monkeypatch):

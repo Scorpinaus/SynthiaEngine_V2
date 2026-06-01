@@ -235,6 +235,12 @@ def model_load_kwargs(args: argparse.Namespace) -> dict[str, Any]:
     return kwargs
 
 
+def model_config_kwargs(args: argparse.Namespace) -> dict[str, Any]:
+    kwargs = model_load_kwargs(args)
+    kwargs.pop("variant", None)
+    return kwargs
+
+
 def create_synthetic_image(width: int, height: int) -> Image.Image:
     image = Image.new("RGB", (width, height), "#20242c")
     draw = ImageDraw.Draw(image)
@@ -363,6 +369,7 @@ def default_pipeline_loader(kind: str, args: argparse.Namespace) -> tuple[Any, d
     model = args.kontext_model if kind == "kontext" and args.kontext_model else args.model
     dtype = resolve_dtype(args)
     device = resolve_device(args)
+    config_kwargs = model_config_kwargs(args)
     load_kwargs = model_load_kwargs(args)
     if dtype is not None:
         load_kwargs["torch_dtype"] = dtype
@@ -370,7 +377,7 @@ def default_pipeline_loader(kind: str, args: argparse.Namespace) -> tuple[Any, d
     reset_cuda_memory_stats()
     rss_before_mb = get_process_rss_mb()
     start = time.perf_counter()
-    pipe = pipeline_cls.from_pretrained(model, **load_kwargs)
+    pipe = pipeline_cls(pretrained_model_name_or_path=model, **config_kwargs)
     pipe.load_components(**load_kwargs)
     if args.offload == "auto":
         offload_mode = enable_low_memory_flux_modular(
