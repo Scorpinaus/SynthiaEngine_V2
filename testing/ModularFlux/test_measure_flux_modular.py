@@ -6,9 +6,11 @@ import types
 from pathlib import Path
 from types import SimpleNamespace
 
+import torch
 from PIL import Image
 
 import measure_flux_modular as harness
+from custom_pipelines.FluxModular import device_placement
 
 
 class FakePipe:
@@ -32,6 +34,9 @@ def test_parse_args_defaults_are_low_memory_safe():
     assert args.load_strategy == "phased"
     assert args.prompt_cache is True
     assert args.prompt_cache_device == "cpu"
+    assert args.cuda_placement == "auto"
+    assert args.vram_reserve_margin == "3GB"
+    assert args.transformer_stream_blocks == "auto"
     assert args.low_memory_sequential_images is True
     assert args.low_memory_transformer_buffers is True
     assert args.decode_chunk_size == 1
@@ -80,6 +85,25 @@ def test_prompt_cache_entry_moves_values_to_cpu():
     assert entry["pooled_prompt_embeds"].device == "cpu"
 
 
+def test_device_placement_parse_memory_bytes():
+    assert device_placement.parse_memory_bytes("3GB") == 3_000_000_000
+    assert device_placement.parse_memory_bytes("1GiB") == 1024**3
+
+
+def test_transformer_streaming_patch_can_be_restored():
+    module = torch.nn.Module()
+    module.forward = lambda value: value
+
+    device_placement.enable_transformer_block_streaming(module, device="cpu", blocks_per_group=2)
+
+    assert device_placement.transformer_streaming_enabled(module) is True
+    assert module._fluxmodular_block_stream_config.blocks_per_group == 2
+
+    device_placement.disable_transformer_block_streaming(module)
+
+    assert device_placement.transformer_streaming_enabled(module) is False
+
+
 def test_resolve_cases_supports_pipeline_all():
     args = harness.parse_args(["--case", "all", "--pipeline", "all"])
 
@@ -114,6 +138,9 @@ def test_build_case_kwargs_for_flux_img2img_uses_synthetic_image():
     assert kwargs["prompt"] == args.prompt
     assert kwargs["strength"] == args.strength
     assert kwargs["low_memory_transformer_buffers"] is True
+    assert kwargs["low_memory_cuda_placement"] == "auto"
+    assert kwargs["low_memory_vram_reserve_margin"] == "3GB"
+    assert kwargs["low_memory_transformer_stream_blocks"] == "auto"
     assert kwargs["decode_chunk_size"] == 1
     assert isinstance(kwargs["image"], Image.Image)
     assert stats["prepare_seconds"] >= 0

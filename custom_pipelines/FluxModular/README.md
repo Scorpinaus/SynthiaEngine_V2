@@ -44,6 +44,10 @@ from custom_pipelines.FluxModular import (
 - `low_memory_sequential_images=True` is handled at the pipeline level. When
   `num_images_per_prompt > 1`, each requested image is generated as an effective
   batch of one and aggregated in the same prompt-major order as Diffusers.
+- `low_memory_cuda_placement="auto"` stages active components on CUDA when they
+  fit the available VRAM budget. If the full Flux transformer does not fit, the
+  transformer forward streams blocks to CUDA in small groups while keeping the
+  rest of the transformer on CPU.
 
 ## Example
 
@@ -66,6 +70,9 @@ image = pipe(
     num_images_per_prompt=2,
     low_memory_sequential_images=True,
     low_memory_transformer_buffers=True,
+    low_memory_cuda_placement="auto",
+    low_memory_vram_reserve_margin="3GB",
+    low_memory_transformer_stream_blocks="auto",
     decode_chunk_size=1,
 ).images[0]
 ```

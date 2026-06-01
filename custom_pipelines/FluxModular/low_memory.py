@@ -39,6 +39,7 @@ from .before_denoise import (
     FluxRoPEInputsStep,
     FluxSetTimestepsStep,
     FluxKontextRoPEInputsStep,
+    _get_initial_timesteps_and_optionals,
 )
 from .decoders import FluxDecodeStep, _unpack_latents
 from .denoise import (
@@ -59,6 +60,11 @@ from .inputs import (
     FluxKontextAdditionalInputsStep,
     FluxKontextSetResolutionStep,
     FluxTextInputStep,
+)
+from .device_placement import (
+    denoise_execution_device,
+    prepare_component_for_cuda,
+    prepare_transformer_for_denoise,
 )
 
 
@@ -108,6 +114,13 @@ def offload_components_to_cpu(components: Any, *names: str, clear_cache: bool = 
             moved = True
     if moved and clear_cache:
         _clear_device_cache()
+
+
+def _move_block_state_tensors(block_state: Any, device: torch.device, *names: str) -> None:
+    for name in names:
+        value = getattr(block_state, name, None)
+        if torch.is_tensor(value) and value.device != device:
+            setattr(block_state, name, value.to(device))
 
 
 def enable_flux_vae_memory_savers(components: Any) -> None:
@@ -201,6 +214,8 @@ class LowMemoryFluxTextEncoderStep(FluxTextEncoderStep):
             ),
             InputParam("joint_attention_kwargs"),
             InputParam("low_memory_eager_offload", type_hint=bool, default=True),
+            InputParam("low_memory_cuda_placement", type_hint=str, default="auto"),
+            InputParam("low_memory_vram_reserve_margin", type_hint=str, default="3GB"),
         ]
 
     @staticmethod
@@ -260,6 +275,9 @@ class LowMemoryFluxTextEncoderStep(FluxTextEncoderStep):
         pooled_prompt_embeds: torch.FloatTensor | None = None,
         max_sequence_length: int | None = None,
         lora_scale: float | None = None,
+        low_memory_cuda_placement: str = "auto",
+        low_memory_vram_reserve_margin: str = "3GB",
+        low_memory_eager_offload: bool = True,
     ):
         device = device or components._execution_device
 
@@ -280,17 +298,38 @@ class LowMemoryFluxTextEncoderStep(FluxTextEncoderStep):
         prompt_2 = prompt_2 or prompt
         prompt_2 = [prompt_2] if isinstance(prompt_2, str) else prompt_2
 
+        clip_device = prepare_component_for_cuda(
+            components,
+            "text_encoder",
+            placement=low_memory_cuda_placement,
+            reserve_margin=low_memory_vram_reserve_margin,
+        )
+        if clip_device.type == "cpu":
+            clip_device = torch.device("cpu")
         pooled_prompt_embeds = FluxTextEncoderStep._get_clip_prompt_embeds(
             components,
             prompt=prompt,
-            device=device,
+            device=clip_device,
         )
+        if low_memory_eager_offload:
+            offload_components_to_cpu(components, "text_encoder")
+
+        t5_device = prepare_component_for_cuda(
+            components,
+            "text_encoder_2",
+            placement=low_memory_cuda_placement,
+            reserve_margin=low_memory_vram_reserve_margin,
+        )
+        if t5_device.type == "cpu":
+            t5_device = torch.device("cpu")
         prompt_embeds = LowMemoryFluxTextEncoderStep._get_t5_prompt_embeds(
             components,
             prompt=prompt_2,
             max_sequence_length=max_sequence_length,
-            device=device,
+            device=t5_device,
         )
+        if low_memory_eager_offload:
+            offload_components_to_cpu(components, "text_encoder_2")
 
         if lora_scale is not None:
             if components.text_encoder is not None and USE_PEFT_BACKEND:
@@ -332,6 +371,9 @@ class LowMemoryFluxTextEncoderStep(FluxTextEncoderStep):
             device=block_state.device,
             max_sequence_length=block_state.max_sequence_length,
             lora_scale=block_state.text_encoder_lora_scale,
+            low_memory_cuda_placement=block_state.low_memory_cuda_placement,
+            low_memory_vram_reserve_margin=block_state.low_memory_vram_reserve_margin,
+            low_memory_eager_offload=block_state.low_memory_eager_offload,
         )
 
         self.set_block_state(state, block_state)
@@ -421,6 +463,31 @@ class LowMemoryFluxPrepareLatentsStep(FluxPrepareLatentsStep):
         latents = latents.permute(0, 2, 4, 1, 3, 5)
         return latents.reshape(batch_size, (height // 2) * (width // 2), num_channels_latents * 4)
 
+    @torch.no_grad()
+    def __call__(self, components, state: PipelineState) -> PipelineState:
+        block_state = self.get_block_state(state)
+        block_state.height = block_state.height or components.default_height
+        block_state.width = block_state.width or components.default_width
+        block_state.device = denoise_execution_device(components)
+        block_state.num_channels_latents = components.num_channels_latents
+
+        self.check_inputs(components, block_state)
+        batch_size = block_state.batch_size * block_state.num_images_per_prompt
+        block_state.latents = self.prepare_latents(
+            components,
+            batch_size,
+            block_state.num_channels_latents,
+            block_state.height,
+            block_state.width,
+            block_state.dtype,
+            block_state.device,
+            block_state.generator,
+            block_state.latents,
+        )
+
+        self.set_block_state(state, block_state)
+        return components, state
+
 
 class LowMemoryFluxImg2ImgPrepareLatentsStep(FluxImg2ImgPrepareLatentsStep):
     @property
@@ -446,12 +513,31 @@ class LowMemoryFluxTransformerBufferSetupStep(ModularPipelineBlocks):
             InputParam("low_memory_transformer_buffers", type_hint=bool, default=True),
             InputParam("low_memory_transformer_attention_buffers", type_hint=bool, default=True),
             InputParam("low_memory_transformer_single_block_buffers", type_hint=bool, default=True),
+            InputParam("low_memory_cuda_placement", type_hint=str, default="auto"),
+            InputParam("low_memory_vram_reserve_margin", type_hint=str, default="3GB"),
+            InputParam("low_memory_transformer_stream_blocks", type_hint=str, default="auto"),
         ]
 
     @torch.no_grad()
     def __call__(self, components, state: PipelineState) -> PipelineState:
         block_state = self.get_block_state(state)
         transformer = getattr(components, "transformer", None)
+        denoise_device = prepare_transformer_for_denoise(
+            components,
+            placement=block_state.low_memory_cuda_placement,
+            reserve_margin=block_state.low_memory_vram_reserve_margin,
+            stream_blocks=block_state.low_memory_transformer_stream_blocks,
+        )
+        _move_block_state_tensors(
+            block_state,
+            denoise_device,
+            "prompt_embeds",
+            "pooled_prompt_embeds",
+            "image_latents",
+            "latents",
+        )
+        self.set_block_state(state, block_state)
+
         enabled = (
             True
             if block_state.low_memory_transformer_buffers is None
@@ -641,6 +727,8 @@ class LowMemoryFluxDecodeStep(FluxDecodeStep):
             ),
             InputParam("low_memory_eager_offload", type_hint=bool, default=True),
             InputParam("low_memory_prune_intermediates", type_hint=bool, default=True),
+            InputParam("low_memory_cuda_placement", type_hint=str, default="auto"),
+            InputParam("low_memory_vram_reserve_margin", type_hint=str, default="3GB"),
         ]
 
     @property
@@ -665,8 +753,16 @@ class LowMemoryFluxDecodeStep(FluxDecodeStep):
             block_state.images = block_state.latents
         else:
             vae = components.vae
-            decode_device = block_state.vae_decode_device or components._execution_device
-            decode_device = torch.device(decode_device)
+            if block_state.vae_decode_device and block_state.vae_decode_device != "auto":
+                decode_device = torch.device(block_state.vae_decode_device)
+                _ensure_module_device(vae, decode_device)
+            else:
+                decode_device = prepare_component_for_cuda(
+                    components,
+                    "vae",
+                    placement=block_state.low_memory_cuda_placement,
+                    reserve_margin=block_state.low_memory_vram_reserve_margin,
+                )
             _ensure_module_device(vae, decode_device)
             chunk_size = max(1, int(block_state.decode_chunk_size or 1))
             image_chunks = []
@@ -722,9 +818,75 @@ class LowMemoryFluxAutoVaeEncoderStep(AutoPipelineBlocks):
     block_trigger_inputs = ["image"]
 
 
+class LowMemoryFluxSetTimestepsStep(FluxSetTimestepsStep):
+    @torch.no_grad()
+    def __call__(self, components, state: PipelineState) -> PipelineState:
+        block_state = self.get_block_state(state)
+        block_state.device = denoise_execution_device(components)
+
+        scheduler = components.scheduler
+        transformer = components.transformer
+        batch_size = block_state.batch_size * block_state.num_images_per_prompt
+        timesteps, num_inference_steps, sigmas, guidance = _get_initial_timesteps_and_optionals(
+            transformer,
+            scheduler,
+            batch_size,
+            block_state.height,
+            block_state.width,
+            components.vae_scale_factor,
+            block_state.num_inference_steps,
+            block_state.guidance_scale,
+            block_state.sigmas,
+            block_state.device,
+        )
+        block_state.timesteps = timesteps
+        block_state.num_inference_steps = num_inference_steps
+        block_state.sigmas = sigmas
+        block_state.guidance = guidance
+        components.scheduler.set_begin_index(0)
+
+        self.set_block_state(state, block_state)
+        return components, state
+
+
+class LowMemoryFluxImg2ImgSetTimestepsStep(FluxImg2ImgSetTimestepsStep):
+    @torch.no_grad()
+    def __call__(self, components, state: PipelineState) -> PipelineState:
+        block_state = self.get_block_state(state)
+        block_state.device = denoise_execution_device(components)
+        block_state.height = block_state.height or components.default_height
+        block_state.width = block_state.width or components.default_width
+
+        scheduler = components.scheduler
+        transformer = components.transformer
+        batch_size = block_state.batch_size * block_state.num_images_per_prompt
+        timesteps, num_inference_steps, sigmas, guidance = _get_initial_timesteps_and_optionals(
+            transformer,
+            scheduler,
+            batch_size,
+            block_state.height,
+            block_state.width,
+            components.vae_scale_factor,
+            block_state.num_inference_steps,
+            block_state.guidance_scale,
+            block_state.sigmas,
+            block_state.device,
+        )
+        timesteps, num_inference_steps = self.get_timesteps(
+            scheduler, num_inference_steps, block_state.strength, block_state.device
+        )
+        block_state.timesteps = timesteps
+        block_state.num_inference_steps = num_inference_steps
+        block_state.sigmas = sigmas
+        block_state.guidance = guidance
+
+        self.set_block_state(state, block_state)
+        return components, state
+
+
 class LowMemoryFluxBeforeDenoiseStep(SequentialPipelineBlocks):
     model_name = "flux"
-    block_classes = [LowMemoryFluxPrepareLatentsStep(), FluxSetTimestepsStep(), FluxRoPEInputsStep()]
+    block_classes = [LowMemoryFluxPrepareLatentsStep(), LowMemoryFluxSetTimestepsStep(), FluxRoPEInputsStep()]
     block_names = ["prepare_latents", "set_timesteps", "prepare_rope_inputs"]
 
 
@@ -732,7 +894,7 @@ class LowMemoryFluxImg2ImgBeforeDenoiseStep(SequentialPipelineBlocks):
     model_name = "flux"
     block_classes = [
         LowMemoryFluxPrepareLatentsStep(),
-        FluxImg2ImgSetTimestepsStep(),
+        LowMemoryFluxImg2ImgSetTimestepsStep(),
         LowMemoryFluxImg2ImgPrepareLatentsStep(),
         FluxRoPEInputsStep(),
     ]
@@ -820,13 +982,13 @@ class LowMemoryFluxKontextAutoVaeEncoderStep(AutoPipelineBlocks):
 
 class LowMemoryFluxKontextBeforeDenoiseStep(SequentialPipelineBlocks):
     model_name = "flux-kontext"
-    block_classes = [LowMemoryFluxPrepareLatentsStep(), FluxSetTimestepsStep(), FluxRoPEInputsStep()]
+    block_classes = [LowMemoryFluxPrepareLatentsStep(), LowMemoryFluxSetTimestepsStep(), FluxRoPEInputsStep()]
     block_names = ["prepare_latents", "set_timesteps", "prepare_rope_inputs"]
 
 
 class LowMemoryFluxKontextImageConditionedBeforeDenoiseStep(SequentialPipelineBlocks):
     model_name = "flux-kontext"
-    block_classes = [LowMemoryFluxPrepareLatentsStep(), FluxSetTimestepsStep(), FluxKontextRoPEInputsStep()]
+    block_classes = [LowMemoryFluxPrepareLatentsStep(), LowMemoryFluxSetTimestepsStep(), FluxKontextRoPEInputsStep()]
     block_names = ["prepare_latents", "set_timesteps", "prepare_rope_inputs"]
 
 

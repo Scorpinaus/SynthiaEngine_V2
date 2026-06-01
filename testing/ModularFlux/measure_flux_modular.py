@@ -26,6 +26,7 @@ DIFFUSERS_MODEL_COMPONENTS = ("transformer", "vae")
 PROMPT_COMPONENTS = ("tokenizer", "tokenizer_2", "text_encoder", "text_encoder_2")
 PROMPT_CACHE_ATTR = "_modular_flux_prompt_cache"
 PROMPT_CACHE_STATS_ATTR = "_modular_flux_prompt_cache_stats"
+PLACEMENT_EVENTS_ATTR = "_fluxmodular_device_placement_events"
 
 
 @dataclass(frozen=True)
@@ -160,6 +161,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         choices=("cpu", "device"),
         default="cpu",
         help="Store staged prompt embeddings on CPU or keep them on the encoding device.",
+    )
+    parser.add_argument(
+        "--cuda-placement",
+        choices=("auto", "cuda", "cpu"),
+        default="auto",
+        help="Stage active Flux components on CUDA, keep them on CPU, or choose automatically.",
+    )
+    parser.add_argument(
+        "--vram-reserve-margin",
+        default="3GB",
+        help="CUDA memory margin reserved when auto-selecting staged component placement.",
+    )
+    parser.add_argument(
+        "--transformer-stream-blocks",
+        default="auto",
+        help="Transformer blocks per streamed CUDA group when full transformer placement does not fit.",
     )
     parser.add_argument(
         "--low-cpu-mem-usage",
@@ -538,6 +555,7 @@ def load_component_with_profile(
     phase: str,
 ) -> dict[str, Any]:
     reset_cuda_memory_stats()
+    clear_placement_events(pipe)
     rss_before_mb = get_process_rss_mb()
     start = time.perf_counter()
     with PeakRSSSampler(args.rss_sample_interval) as rss_sampler:
@@ -796,6 +814,15 @@ def release_prompt_components(pipe: Any) -> list[str]:
     return released
 
 
+def placement_events(pipe: Any) -> list[dict[str, Any]]:
+    events = getattr(pipe, PLACEMENT_EVENTS_ATTR, [])
+    return list(events) if isinstance(events, list) else []
+
+
+def clear_placement_events(pipe: Any) -> None:
+    setattr(pipe, PLACEMENT_EVENTS_ATTR, [])
+
+
 def default_pipeline_loader(kind: str, args: argparse.Namespace) -> tuple[Any, dict[str, Any]]:
     import torch
 
@@ -911,6 +938,7 @@ def default_pipeline_loader(kind: str, args: argparse.Namespace) -> tuple[Any, d
         "phase_loads": phase_loads,
         "prompt_components_released": prompt_components_released,
         "cached_prompt_embeds": cached_prompt_embeds(pipe) is not None,
+        "device_placement_events": placement_events(pipe),
         **prompt_cache_summary(args),
         "load_max_cuda_allocated_mb": _max_profile_value(component_loads, "cuda_max_allocated_mb"),
         "load_max_cuda_reserved_mb": _max_profile_value(component_loads, "cuda_max_reserved_mb"),
@@ -934,6 +962,9 @@ def precompute_prompt_embeds(pipe: Any, args: argparse.Namespace) -> tuple[Any, 
             prompt_2=args.prompt_2,
             device=device,
             max_sequence_length=args.max_sequence_length,
+            low_memory_cuda_placement=args.cuda_placement,
+            low_memory_vram_reserve_margin=args.vram_reserve_margin,
+            low_memory_eager_offload=True,
         )
 
 
@@ -960,6 +991,9 @@ def build_case_kwargs(
         "low_memory_transformer_single_block_buffers": args.low_memory_transformer_single_block_buffers,
         "low_memory_eager_offload": args.low_memory_eager_offload,
         "low_memory_prune_intermediates": args.low_memory_prune_intermediates,
+        "low_memory_cuda_placement": args.cuda_placement,
+        "low_memory_vram_reserve_margin": args.vram_reserve_margin,
+        "low_memory_transformer_stream_blocks": args.transformer_stream_blocks,
     }
     if args.max_sequence_length is not None:
         kwargs["max_sequence_length"] = args.max_sequence_length
@@ -1076,6 +1110,7 @@ def run_single_case(
                 "rss_after_mb": get_process_rss_mb(),
                 "rss_peak_sampled_mb": rss_sampler.peak_mb,
                 "image_paths": image_paths,
+                "device_placement_events": placement_events(pipe),
                 **prepare_stats,
                 **get_cuda_memory_stats(),
             }
@@ -1093,6 +1128,7 @@ def run_single_case(
                 "rss_before_mb": rss_before_mb,
                 "rss_after_mb": get_process_rss_mb(),
                 "rss_peak_sampled_mb": rss_sampler.peak_mb,
+                "device_placement_events": placement_events(pipe),
                 "error_type": type(exc).__name__,
                 "error": str(exc),
                 **prepare_stats,
@@ -1168,6 +1204,9 @@ def run_measurement(
             "load_strategy": args.load_strategy,
             "prompt_cache": args.prompt_cache,
             "prompt_cache_device": args.prompt_cache_device,
+            "cuda_placement": args.cuda_placement,
+            "vram_reserve_margin": args.vram_reserve_margin,
+            "transformer_stream_blocks": args.transformer_stream_blocks,
             "low_memory_sequential_images": args.low_memory_sequential_images,
             "low_memory_transformer_buffers": args.low_memory_transformer_buffers,
             "decode_chunk_size": args.decode_chunk_size,
@@ -1213,6 +1252,12 @@ def print_result(result: dict[str, Any]) -> None:
             f"entries={load.get('prompt_cache_entries')}, "
             f"device={load.get('prompt_cache_device')}"
         )
+        for event in load.get("device_placement_events", []):
+            print(
+                f"  placement {event.get('component')}: "
+                f"mode={event.get('mode')}, device={event.get('device')}, "
+                f"blocks_per_group={event.get('blocks_per_group')}"
+            )
         for phase in load.get("phase_loads", []):
             print(
                 f"  phase {phase['phase']}: {phase['status']}, "
@@ -1251,6 +1296,12 @@ def print_result(result: dict[str, Any]) -> None:
             print(f"  {run.get('phase')}: {run.get('error_type')}: {run.get('error')}")
         elif run.get("image_paths"):
             print(f"  images: {run['image_paths']}")
+        for event in run.get("device_placement_events", []):
+            print(
+                f"  placement {event.get('component')}: "
+                f"mode={event.get('mode')}, device={event.get('device')}, "
+                f"blocks_per_group={event.get('blocks_per_group')}"
+            )
 
 
 def main(argv: list[str] | None = None) -> int:
