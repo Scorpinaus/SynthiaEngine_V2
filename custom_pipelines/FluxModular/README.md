@@ -81,3 +81,7 @@ For maximum RAM savings, precompute prompt embeddings once, persist them, and
 construct the pipeline without loading text encoders for repeated runs.
 For 12 GB VRAM or smaller GPUs, keep `num_images_per_prompt=1` or leave
 `low_memory_sequential_images=True` so extra images are generated one at a time.
+
+See [Flux 12 GB VRAM Runbook](../../docs/FLUX_12GB_VRAM.md) for the full
+runbook of actions taken to make the local FluxModular path complete inference
+under a 12 GB VRAM constraint.

@@ -10,6 +10,7 @@ import torch
 from PIL import Image
 
 import measure_flux_modular as harness
+from custom_pipelines.FluxModular import low_memory
 from custom_pipelines.FluxModular import device_placement
 
 
@@ -102,6 +103,54 @@ def test_transformer_streaming_patch_can_be_restored():
     device_placement.disable_transformer_block_streaming(module)
 
     assert device_placement.transformer_streaming_enabled(module) is False
+
+
+def test_img2img_prepare_latents_moves_inputs_to_denoise_device(monkeypatch):
+    step = low_memory.LowMemoryFluxImg2ImgPrepareLatentsStep()
+    block_state = SimpleNamespace(
+        image_latents=torch.zeros((1, 4, 4)),
+        latents=torch.zeros((1, 4, 4)),
+        timesteps=torch.zeros((1,)),
+        guidance=torch.zeros((1,)),
+    )
+    captured_devices = {}
+
+    class FakeState:
+        def __init__(self):
+            self.values = {"image_latents": block_state.image_latents}
+
+        def get(self, _name, default=None):
+            return default
+
+    class FakeScheduler:
+        def scale_noise(self, image_latents, latent_timestep, latents):
+            captured_devices["image_latents"] = image_latents.device
+            captured_devices["latent_timestep"] = latent_timestep.device
+            captured_devices["latents"] = latents.device
+            return latents
+
+    def fake_set_block_state(_state, updated_block_state):
+        captured_devices["image_latents"] = block_state.image_latents.device
+        captured_devices["latents"] = block_state.latents.device
+        captured_devices["timesteps"] = block_state.timesteps.device
+        captured_devices["guidance"] = block_state.guidance.device
+        captured_devices["initial_noise"] = updated_block_state.initial_noise.device
+
+    monkeypatch.setattr(step, "get_block_state", lambda _state: block_state)
+    monkeypatch.setattr(step, "set_block_state", fake_set_block_state)
+    monkeypatch.setattr(low_memory, "denoise_execution_device", lambda _components: torch.device("meta"))
+
+    _components, state = step(SimpleNamespace(scheduler=FakeScheduler()), FakeState())
+
+    assert captured_devices == {
+        "image_latents": torch.device("meta"),
+        "latent_timestep": torch.device("meta"),
+        "latents": torch.device("meta"),
+        "timesteps": torch.device("meta"),
+        "guidance": torch.device("meta"),
+        "initial_noise": torch.device("meta"),
+    }
+    assert "image_latents" not in state.values
 
 
 def test_resolve_cases_supports_pipeline_all():

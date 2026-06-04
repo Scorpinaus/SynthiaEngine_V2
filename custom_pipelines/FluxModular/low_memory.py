@@ -498,7 +498,27 @@ class LowMemoryFluxImg2ImgPrepareLatentsStep(FluxImg2ImgPrepareLatentsStep):
 
     @torch.no_grad()
     def __call__(self, components, state: PipelineState) -> PipelineState:
-        components, state = super().__call__(components, state)
+        block_state = self.get_block_state(state)
+        denoise_device = denoise_execution_device(components)
+        block_state.device = denoise_device
+        _move_block_state_tensors(
+            block_state,
+            denoise_device,
+            "image_latents",
+            "latents",
+            "timesteps",
+            "guidance",
+        )
+
+        self.check_inputs(image_latents=block_state.image_latents, latents=block_state.latents)
+
+        latent_timestep = block_state.timesteps[:1].repeat(block_state.latents.shape[0])
+        block_state.initial_noise = block_state.latents
+        block_state.latents = components.scheduler.scale_noise(
+            block_state.image_latents, latent_timestep, block_state.latents
+        )
+
+        self.set_block_state(state, block_state)
         if state.get("low_memory_prune_intermediates", True):
             state.values.pop("image_latents", None)
         return components, state
