@@ -1,0 +1,18 @@
+{
+  "_class_name": "ModularPipeline",
+  "_blocks_class_name": "PixelDiTText2ImgBlocks",
+  "transformer": [
+    "backend.modular_diffusers.pixeldit.pixeldit_transformer",
+    "PixelDiTTransformer2DModel",
+    {
+      "type_hint": [
+        "backend.modular_diffusers.pixeldit.pixeldit_transformer",
+        "PixelDiTTransformer2DModel"
+      ],
+      "pretrained_model_name_or_path": null,
+      "subfolder": "transformer",
+      "variant": null,
+      "revision": null
+    }
+  ]
+}

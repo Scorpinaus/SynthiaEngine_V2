@@ -1,0 +1,6 @@
+{
+  "_class_name": "PixelDiTText2ImgBlocks",
+  "auto_map": {
+    "ModularPipelineBlocks": "block.PixelDiTText2ImgBlocks"
+  }
+}
