@@ -103,8 +103,62 @@ Useful load-time switches:
 --max-memory 0=10GB --max-memory cpu=48GB
 --use-safetensors / --no-use-safetensors
 --disable-mmap
+--quantization none
+--quantization bnb_8bit
+--quantization bnb_4bit
+--system-ram-limit 16GB
 ```
 
 `--disable-mmap` only applies to Diffusers model components such as the Flux
 transformer and VAE. It is opt-in because it can help some HDD or network-drive
 loads, but may increase peak RAM on other systems.
+
+`--quantization` is experimental and applies only to the heavy Flux
+`text_encoder_2` and `transformer` components. The default is `none`, preserving
+the existing bf16 path. `--system-ram-limit` does not prevent allocation; it
+marks profiles or measured runs as `rss_limit_exceeded` when sampled process RSS
+passes the cap.
+
+## 16 GB System RAM Result
+
+On 2026-06-06, the local model folder at `D:\diffusion\diffusers\FLUX.1-dev`
+completed a 768 x 768, 8-step `flux-text2img` run under the 16 GB process RSS
+cap with bnb 4-bit transformer/T5 loading:
+
+```powershell
+.venv\Scripts\python.exe testing\ModularFlux\measure_flux_modular.py `
+  --case flux-text2img `
+  --model "D:\diffusion\diffusers\FLUX.1-dev" `
+  --local-files-only `
+  --width 768 `
+  --height 768 `
+  --steps 8 `
+  --runs 1 `
+  --load-strategy phased `
+  --prompt-cache `
+  --prompt-cache-device cpu `
+  --cuda-placement auto `
+  --vram-reserve-margin 3GB `
+  --transformer-stream-blocks auto `
+  --vae-decode-device cuda `
+  --decode-chunk-size 1 `
+  --quantization bnb_4bit `
+  --system-ram-limit 16GB `
+  --low-cpu-mem-usage `
+  --output-json outputs\modular_flux_tests\flux_text2img_768_8step_bnb4bit_16gb_cuda_decode.json
+```
+
+Measured result:
+
+- load status: success
+- run status: success
+- load peak sampled RSS: about 11.0 GB
+- inference peak sampled RSS: about 7.9 GB
+- peak CUDA allocated: about 5.9 GB
+- elapsed inference time: about 31 seconds
+- placement: `block-stream`, `blocks_per_group=5`
+
+Do not add `--offload-state-dict` to this bnb 4-bit phased prompt path yet. The
+load stayed under the RSS cap, but the run failed with a meta-tensor prompt
+embedding error. CPU VAE decode also timed out in the 768 x 768 experiment;
+CUDA VAE decode is the validated 16 GB system-RAM route.

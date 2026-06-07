@@ -45,12 +45,21 @@ def test_parse_args_defaults_are_low_memory_safe():
     assert args.offload_state_dict is None
     assert args.disable_mmap is False
     assert args.device_map is None
+    assert args.quantization == "none"
+    assert args.bnb_4bit_use_double_quant is True
+    assert args.system_ram_limit is None
 
 
 def test_parse_max_memory_entries():
     parsed = harness.parse_max_memory(["0=10GB", "cpu=48GB"])
 
     assert parsed == {0: "10GB", "cpu": "48GB"}
+
+
+def test_parse_memory_bytes():
+    assert harness.parse_memory_bytes("16GB") == 16_000_000_000
+    assert harness.parse_memory_bytes("1GiB") == 1024**3
+    assert harness.parse_memory_bytes(None) is None
 
 
 def test_prompt_cache_key_changes_with_prompt():
@@ -255,9 +264,13 @@ def test_default_pipeline_loader_uses_direct_local_constructor(monkeypatch):
             "cpu",
             "--max-memory",
             "cpu=48GB",
+            "--quantization",
+            "bnb_8bit",
         ]
     )
+    quantization_config = {"text_encoder_2": object(), "transformer": object()}
     monkeypatch.setitem(sys.modules, "custom_pipelines.FluxModular", fake_module)
+    monkeypatch.setattr(harness, "build_quantization_config_map", lambda _args: quantization_config)
     monkeypatch.setattr(harness, "reset_cuda_memory_stats", lambda: None)
     monkeypatch.setattr(harness, "synchronize_cuda", lambda: None)
     monkeypatch.setattr(harness, "get_process_rss_mb", lambda: 512.0)
@@ -286,6 +299,7 @@ def test_default_pipeline_loader_uses_direct_local_constructor(monkeypatch):
     transformer_kwargs = calls["component_loads"][1][1]
     assert tokenizer_kwargs["local_files_only"] is True
     assert "device_map" not in tokenizer_kwargs
+    assert "quantization_config" not in tokenizer_kwargs
     assert transformer_kwargs["variant"] == "fp16"
     assert transformer_kwargs["local_files_only"] is True
     assert transformer_kwargs["low_cpu_mem_usage"] is True
@@ -294,8 +308,10 @@ def test_default_pipeline_loader_uses_direct_local_constructor(monkeypatch):
     assert transformer_kwargs["device_map"] == "cpu"
     assert transformer_kwargs["max_memory"] == {"cpu": "48GB"}
     assert transformer_kwargs["disable_mmap"] is True
+    assert transformer_kwargs["quantization_config"] is quantization_config["transformer"]
     assert load_stats["offload_mode"] == "auto"
     assert load_stats["load_strategy"] == "phased"
+    assert load_stats["quantization"] == "bnb_8bit"
     assert load_stats["component_load_count"] == 2
     assert load_stats["component_loads"][0]["component"] == "tokenizer"
     assert load_stats["component_loads"][0]["phase"] == "prompt_load"
@@ -512,6 +528,69 @@ def test_run_measurement_records_success_and_writes_json(tmp_path, monkeypatch):
     saved = json.loads(output_json.read_text(encoding="utf-8"))
     assert saved["summary"] == result["summary"]
     assert Path(result["runs"][0]["image_paths"][0]).exists()
+
+
+def test_run_single_case_marks_rss_limit_exceeded(monkeypatch, tmp_path):
+    args = harness.parse_args(
+        [
+            "--case",
+            "flux-text2img",
+            "--output-dir",
+            str(tmp_path),
+            "--system-ram-limit",
+            "64MB",
+        ]
+    )
+
+    class FakePeakRSSSampler:
+        def __init__(self, _interval_seconds):
+            self.peak_mb = 128.0
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return None
+
+    monkeypatch.setattr(harness, "PeakRSSSampler", FakePeakRSSSampler)
+    monkeypatch.setattr(harness, "get_process_rss_mb", lambda: 128.0)
+    monkeypatch.setattr(harness, "reset_cuda_memory_stats", lambda: None)
+    monkeypatch.setattr(harness, "synchronize_cuda", lambda: None)
+    monkeypatch.setattr(
+        harness,
+        "get_cuda_memory_stats",
+        lambda: {
+            "cuda_available": False,
+            "cuda_max_allocated_mb": None,
+            "cuda_max_reserved_mb": None,
+            "cuda_allocated_after_mb": None,
+            "cuda_reserved_after_mb": None,
+        },
+    )
+
+    result = harness.run_single_case(
+        args,
+        pipe=FakePipe(),
+        case=harness.CASES["flux-text2img"],
+        run_index=1,
+        kind="measured",
+    )
+
+    assert result["status"] == "rss_limit_exceeded"
+    assert result["rss_limit_exceeded"] is True
+    assert result["error_type"] == "RSSLimitExceeded"
+    assert "Peak process RSS" in result["error"]
+    assert harness.summarize_runs([result])["failures"] == 1
+
+
+def test_result_has_failures_includes_load_status():
+    assert harness.result_has_failures({"summary": {"failures": 0}, "loads": [{"status": "success"}]}) is False
+    assert (
+        harness.result_has_failures(
+            {"summary": {"failures": 0}, "loads": [{"status": "rss_limit_exceeded"}]}
+        )
+        is True
+    )
 
 
 def test_run_measurement_records_inference_failure(monkeypatch, tmp_path):

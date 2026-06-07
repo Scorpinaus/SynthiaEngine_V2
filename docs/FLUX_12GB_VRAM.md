@@ -207,10 +207,80 @@ transformer stream groups:
 --transformer-stream-blocks 8
 ```
 
+## 16 GB System RAM Experiment
+
+The remaining system-RAM pressure comes mostly from keeping full Flux weights
+CPU-resident for block streaming. The benchmark harness now has two opt-in
+system-RAM controls:
+
+```powershell
+--system-ram-limit 16GB
+--quantization bnb_4bit
+```
+
+`--system-ram-limit` records the configured RSS cap in JSON and marks load or
+run profiles as `rss_limit_exceeded` if sampled process RSS goes above it.
+`--quantization bnb_4bit` applies bitsandbytes 4-bit loading to
+`text_encoder_2` and `transformer` only; CLIP, tokenizers, scheduler, and VAE
+stay unquantized.
+
+Successful local 16 GB system-RAM command on 2026-06-06:
+
+```powershell
+.venv\Scripts\python.exe testing\ModularFlux\measure_flux_modular.py `
+  --case flux-text2img `
+  --model "D:\diffusion\diffusers\FLUX.1-dev" `
+  --local-files-only `
+  --width 768 `
+  --height 768 `
+  --steps 8 `
+  --runs 1 `
+  --load-strategy phased `
+  --prompt-cache `
+  --prompt-cache-device cpu `
+  --cuda-placement auto `
+  --vram-reserve-margin 3GB `
+  --transformer-stream-blocks auto `
+  --vae-decode-device cuda `
+  --decode-chunk-size 1 `
+  --quantization bnb_4bit `
+  --system-ram-limit 16GB `
+  --low-cpu-mem-usage `
+  --output-json outputs\modular_flux_tests\flux_text2img_768_8step_bnb4bit_16gb_cuda_decode.json
+```
+
+Result:
+
+- status: success
+- elapsed inference time: about 31 seconds
+- peak sampled process RSS during load: about 11.0 GB
+- peak sampled process RSS during inference: about 7.9 GB
+- peak CUDA allocated: about 5.9 GB
+- transformer placement: `block-stream`, CUDA, `blocks_per_group=5`
+
+This confirms the local Flux text-to-image path can complete the same 768 x
+768, 8-step workflow under a 16 GB system-RAM cap when bnb 4-bit transformer and
+T5 loading are enabled. This is not numerically identical to the bf16 runbook
+path because quantization changes weight representation.
+
+Counterexamples from the same experiment:
+
+- Adding `--offload-state-dict --offload-folder C:\tmp\flux-load-offload` kept
+  load RSS under 16 GB but failed at inference with
+  `NotImplementedError: Cannot copy out of meta tensor; no data!`. Do not combine
+  bnb 4-bit phased prompt encoding with load-time state-dict offload until that
+  incompatibility is fixed.
+- The same 768 x 768 run with `--vae-decode-device cpu` completed denoise but
+  did not return before a 15-minute command timeout, so CUDA VAE decode is the
+  recommended 16 GB system-RAM path when VRAM allows it.
+
 ## Known Tradeoffs
 
 - VRAM use is greatly reduced, but system RAM can remain high because transformer
   weights are CPU-resident during block streaming.
+- A 16 GB system-RAM cap currently requires quantized transformer/T5 loading or
+  another non-default weight storage strategy. Full bf16 CPU-resident block
+  streaming remains around the 38 GB RSS range in the recorded baseline.
 - HDD-backed model folders can make initial load and prompt encoding feel slow.
   Moving the model folder to SSD is a load-time optimization, not a quality
   change.
@@ -234,4 +304,3 @@ reported:
 This confirms the current implementation is meeting the primary 12 GB VRAM goal.
 The remaining optimization work is mostly about speed and system RAM pressure,
 not avoiding CUDA OOM.
-

@@ -48,6 +48,9 @@ from custom_pipelines.FluxModular import (
   fit the available VRAM budget. If the full Flux transformer does not fit, the
   transformer forward streams blocks to CUDA in small groups while keeping the
   rest of the transformer on CPU.
+- For 16 GB system-RAM experiments, use the benchmark harness with opt-in
+  bitsandbytes quantization for `text_encoder_2` and `transformer`; the default
+  package path remains unquantized.
 
 ## Example
 
@@ -81,7 +84,10 @@ For maximum RAM savings, precompute prompt embeddings once, persist them, and
 construct the pipeline without loading text encoders for repeated runs.
 For 12 GB VRAM or smaller GPUs, keep `num_images_per_prompt=1` or leave
 `low_memory_sequential_images=True` so extra images are generated one at a time.
+For a validated 16 GB system-RAM command, use `--quantization bnb_4bit`,
+`--system-ram-limit 16GB`, and CUDA VAE decode in
+`testing\ModularFlux\measure_flux_modular.py`.
 
 See [Flux 12 GB VRAM Runbook](../../docs/FLUX_12GB_VRAM.md) for the full
 runbook of actions taken to make the local FluxModular path complete inference
-under a 12 GB VRAM constraint.
+under 12 GB VRAM and the documented 16 GB system-RAM experiment.

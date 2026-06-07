@@ -219,8 +219,25 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Forward use_safetensors to model component loaders. Omit to use Diffusers defaults.",
     )
+    parser.add_argument(
+        "--quantization",
+        choices=("none", "bnb_8bit", "bnb_4bit"),
+        default="none",
+        help="Experimental low-system-RAM quantization for text_encoder_2 and transformer.",
+    )
+    parser.add_argument(
+        "--bnb-4bit-use-double-quant",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Use nested/double quantization for --quantization bnb_4bit.",
+    )
     parser.add_argument("--reload-per-case", action="store_true", help="Reload the pipeline for every case.")
     parser.add_argument("--rss-sample-interval", type=float, default=0.05, help="Peak RSS sampling interval.")
+    parser.add_argument(
+        "--system-ram-limit",
+        default=None,
+        help="Optional process RSS limit such as 16GB. Exceeding it marks the load/run as failed.",
+    )
     parser.add_argument(
         "--low-memory-sequential-images",
         action=argparse.BooleanOptionalAction,
@@ -304,6 +321,43 @@ def resolve_dtype(args: argparse.Namespace):
     }[args.torch_dtype]
 
 
+def build_quantization_config_map(args: argparse.Namespace) -> dict[str, Any] | None:
+    quantization = str(args.quantization or "none")
+    if quantization == "none":
+        return None
+
+    try:
+        import torch
+        from diffusers import BitsAndBytesConfig as DiffusersBitsAndBytesConfig
+        from transformers import BitsAndBytesConfig as TransformersBitsAndBytesConfig
+    except Exception as exc:  # pragma: no cover - depends on optional runtime packages
+        raise RuntimeError(
+            "--quantization requires diffusers, transformers, accelerate, and bitsandbytes support."
+        ) from exc
+
+    if quantization == "bnb_8bit":
+        return {
+            "text_encoder_2": TransformersBitsAndBytesConfig(load_in_8bit=True),
+            "transformer": DiffusersBitsAndBytesConfig(load_in_8bit=True),
+        }
+    if quantization == "bnb_4bit":
+        compute_dtype = resolve_dtype(args) or torch.bfloat16
+        return {
+            "text_encoder_2": TransformersBitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=compute_dtype,
+                bnb_4bit_use_double_quant=bool(args.bnb_4bit_use_double_quant),
+            ),
+            "transformer": DiffusersBitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=compute_dtype,
+                bnb_4bit_use_double_quant=bool(args.bnb_4bit_use_double_quant),
+            ),
+        }
+
+    raise ValueError("quantization must be one of: none, bnb_8bit, bnb_4bit.")
+
+
 def model_load_kwargs(args: argparse.Namespace) -> dict[str, Any]:
     kwargs: dict[str, Any] = {}
     for name in ("revision", "token"):
@@ -331,6 +385,9 @@ def model_load_kwargs(args: argparse.Namespace) -> dict[str, Any]:
         kwargs["use_safetensors"] = _component_kwarg(bool(args.use_safetensors), MODEL_COMPONENTS)
     if args.disable_mmap:
         kwargs["disable_mmap"] = _component_kwarg(True, DIFFUSERS_MODEL_COMPONENTS)
+    quantization_config = build_quantization_config_map(args)
+    if quantization_config is not None:
+        kwargs["quantization_config"] = quantization_config
     return kwargs
 
 
@@ -349,6 +406,7 @@ def model_config_kwargs(args: argparse.Namespace) -> dict[str, Any]:
         "max_memory",
         "use_safetensors",
         "disable_mmap",
+        "quantization_config",
     ):
         kwargs.pop(key, None)
     return kwargs
@@ -356,6 +414,66 @@ def model_config_kwargs(args: argparse.Namespace) -> dict[str, Any]:
 
 def _component_kwarg(value: Any, components: tuple[str, ...]) -> dict[str, Any]:
     return {component: value for component in components}
+
+
+def parse_memory_bytes(value: str | int | float | None) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return max(0, value)
+    if isinstance(value, float):
+        return max(0, int(value))
+    text = str(value).strip().upper().replace(" ", "")
+    if not text:
+        return None
+    units = (
+        ("GIB", 1024**3),
+        ("GB", 1000**3),
+        ("MIB", 1024**2),
+        ("MB", 1000**2),
+        ("KIB", 1024),
+        ("KB", 1000),
+    )
+    for suffix, scale in units:
+        if text.endswith(suffix):
+            return max(0, int(float(text[: -len(suffix)]) * scale))
+    return max(0, int(float(text)))
+
+
+def system_ram_limit_mb(args: argparse.Namespace) -> float | None:
+    limit_bytes = parse_memory_bytes(args.system_ram_limit)
+    if limit_bytes is None:
+        return None
+    return limit_bytes / 1024**2
+
+
+def _profile_rss_peak(profile: dict[str, Any]) -> float | None:
+    values = [
+        value
+        for value in (
+            profile.get("rss_peak_sampled_mb"),
+            profile.get("rss_after_mb"),
+            profile.get("rss_before_mb"),
+        )
+        if value is not None
+    ]
+    return max(float(value) for value in values) if values else None
+
+
+def apply_system_ram_limit(profile: dict[str, Any], args: argparse.Namespace, *, success_statuses: set[str]) -> dict[str, Any]:
+    limit_mb = system_ram_limit_mb(args)
+    if limit_mb is None:
+        return profile
+
+    peak_mb = _profile_rss_peak(profile)
+    exceeded = peak_mb is not None and peak_mb > limit_mb
+    profile["rss_limit_mb"] = limit_mb
+    profile["rss_limit_exceeded"] = bool(exceeded)
+    if exceeded and profile.get("status") in success_statuses:
+        profile["status"] = "rss_limit_exceeded"
+        profile["error_type"] = "RSSLimitExceeded"
+        profile["error"] = f"Peak process RSS {peak_mb:.1f} MB exceeded limit {limit_mb:.1f} MB."
+    return profile
 
 
 def parse_max_memory(entries: list[str] | None) -> dict[int | str, str] | None:
@@ -565,7 +683,7 @@ def load_component_with_profile(
             elapsed_seconds = time.perf_counter() - start
             loaded = getattr(pipe, name, None) is not None
             status = "loaded" if loaded else "missing_after_load"
-            return {
+            profile = {
                 "component": name,
                 "component_type": component_type_name(pipe, name),
                 "phase": phase,
@@ -576,9 +694,10 @@ def load_component_with_profile(
                 "rss_peak_sampled_mb": rss_sampler.peak_mb,
                 **get_cuda_memory_stats(),
             }
+            return apply_system_ram_limit(profile, args, success_statuses={"loaded"})
         except Exception as exc:
             synchronize_cuda()
-            return {
+            profile = {
                 "component": name,
                 "component_type": component_type_name(pipe, name),
                 "phase": phase,
@@ -591,6 +710,7 @@ def load_component_with_profile(
                 "error": str(exc),
                 **get_cuda_memory_stats(),
             }
+            return apply_system_ram_limit(profile, args, success_statuses=set())
 
 
 def load_components_with_profile(
@@ -614,15 +734,25 @@ def _max_profile_value(profiles: list[dict[str, Any]], name: str) -> float | Non
 
 def phase_profile_from_components(phase: str, profiles: list[dict[str, Any]]) -> dict[str, Any]:
     statuses = [profile.get("status") for profile in profiles]
+    failure = next(
+        (
+            profile
+            for profile in profiles
+            if profile.get("status") in {"error", "rss_limit_exceeded"}
+        ),
+        None,
+    )
     if not profiles:
         status = "skipped"
     elif any(status == "error" for status in statuses):
         status = "error"
+    elif any(status == "rss_limit_exceeded" for status in statuses):
+        status = "rss_limit_exceeded"
     elif all(status == "loaded" for status in statuses):
         status = "success"
     else:
         status = "partial"
-    return {
+    summary = {
         "phase": phase,
         "status": status,
         "component_count": len(profiles),
@@ -631,7 +761,13 @@ def phase_profile_from_components(phase: str, profiles: list[dict[str, Any]]) ->
         "max_cuda_allocated_mb": _max_profile_value(profiles, "cuda_max_allocated_mb"),
         "max_cuda_reserved_mb": _max_profile_value(profiles, "cuda_max_reserved_mb"),
         "max_rss_peak_sampled_mb": _max_profile_value(profiles, "rss_peak_sampled_mb"),
+        "rss_limit_exceeded": any(bool(profile.get("rss_limit_exceeded")) for profile in profiles),
+        "rss_limit_mb": _max_profile_value(profiles, "rss_limit_mb"),
     }
+    if failure is not None:
+        summary["error_type"] = failure.get("error_type")
+        summary["error"] = failure.get("error")
+    return summary
 
 
 def profile_callable(phase: str, args: argparse.Namespace, fn: Callable[[], Any]) -> tuple[Any, dict[str, Any]]:
@@ -642,7 +778,7 @@ def profile_callable(phase: str, args: argparse.Namespace, fn: Callable[[], Any]
         try:
             result = fn()
             synchronize_cuda()
-            return result, {
+            profile = {
                 "phase": phase,
                 "status": "success",
                 "elapsed_seconds": time.perf_counter() - start,
@@ -651,9 +787,10 @@ def profile_callable(phase: str, args: argparse.Namespace, fn: Callable[[], Any]
                 "rss_peak_sampled_mb": rss_sampler.peak_mb,
                 **get_cuda_memory_stats(),
             }
+            return result, apply_system_ram_limit(profile, args, success_statuses={"success"})
         except Exception as exc:
             synchronize_cuda()
-            return None, {
+            profile = {
                 "phase": phase,
                 "status": "error",
                 "elapsed_seconds": time.perf_counter() - start,
@@ -664,6 +801,7 @@ def profile_callable(phase: str, args: argparse.Namespace, fn: Callable[[], Any]
                 "error": str(exc),
                 **get_cuda_memory_stats(),
             }
+            return None, apply_system_ram_limit(profile, args, success_statuses=set())
 
 
 def prompt_cache_key(kind: str, model: str, args: argparse.Namespace, dtype: Any) -> tuple[Any, ...]:
@@ -922,10 +1060,18 @@ def default_pipeline_loader(kind: str, args: argparse.Namespace) -> tuple[Any, d
         offload_mode = "none"
     synchronize_cuda()
     load_seconds = time.perf_counter() - start
+    load_statuses = [phase.get("status") for phase in phase_loads]
+    if any(status == "error" for status in load_statuses):
+        load_status = "error"
+    elif any(status == "rss_limit_exceeded" for status in load_statuses):
+        load_status = "rss_limit_exceeded"
+    else:
+        load_status = "success"
 
     return pipe, {
         "pipeline": kind,
         "model": model,
+        "status": load_status,
         "load_strategy": args.load_strategy,
         "torch_dtype": str(dtype or "component_default"),
         "device": str(device),
@@ -940,6 +1086,8 @@ def default_pipeline_loader(kind: str, args: argparse.Namespace) -> tuple[Any, d
         "cached_prompt_embeds": cached_prompt_embeds(pipe) is not None,
         "device_placement_events": placement_events(pipe),
         **prompt_cache_summary(args),
+        "quantization": args.quantization,
+        "system_ram_limit_mb": system_ram_limit_mb(args),
         "load_max_cuda_allocated_mb": _max_profile_value(component_loads, "cuda_max_allocated_mb"),
         "load_max_cuda_reserved_mb": _max_profile_value(component_loads, "cuda_max_reserved_mb"),
         "load_max_rss_peak_sampled_mb": _max_profile_value(component_loads, "rss_peak_sampled_mb"),
@@ -1098,7 +1246,7 @@ def run_single_case(
             images = extract_images(result)
             run_label = f"{kind}_{run_index:02d}"
             image_paths = save_images(images, args.output_dir, case.name, run_label)
-            return {
+            profile = {
                 "case": case.name,
                 "pipeline": case.pipeline,
                 "kind": kind,
@@ -1114,9 +1262,10 @@ def run_single_case(
                 **prepare_stats,
                 **get_cuda_memory_stats(),
             }
+            return apply_system_ram_limit(profile, args, success_statuses={"success"})
         except Exception as exc:
             synchronize_cuda()
-            return {
+            profile = {
                 "case": case.name,
                 "pipeline": case.pipeline,
                 "kind": kind,
@@ -1134,6 +1283,7 @@ def run_single_case(
                 **prepare_stats,
                 **get_cuda_memory_stats(),
             }
+            return apply_system_ram_limit(profile, args, success_statuses=set())
 
 
 def summarize_runs(runs: list[dict[str, Any]]) -> dict[str, Any]:
@@ -1162,6 +1312,15 @@ def summarize_runs(runs: list[dict[str, Any]]) -> dict[str, Any]:
         "max_rss_peak_sampled_mb": max(rss_peak) if rss_peak else None,
         "max_rss_after_mb": max(rss_after) if rss_after else None,
     }
+
+
+def result_has_failures(result: dict[str, Any]) -> bool:
+    if int(result.get("summary", {}).get("failures") or 0) > 0:
+        return True
+    for load in result.get("loads", []):
+        if load.get("status") not in {None, "success"}:
+            return True
+    return False
 
 
 def run_measurement(
@@ -1218,6 +1377,9 @@ def run_measurement(
             "device_map": args.device_map,
             "max_memory": parse_max_memory(args.max_memory),
             "use_safetensors": args.use_safetensors,
+            "quantization": args.quantization,
+            "bnb_4bit_use_double_quant": args.bnb_4bit_use_double_quant,
+            "system_ram_limit_mb": system_ram_limit_mb(args),
         },
         "prompt_cache": prompt_cache_summary(args),
         "loads": loads,
@@ -1237,6 +1399,7 @@ def print_result(result: dict[str, Any]) -> None:
     for load in result["loads"]:
         print(
             f"load {load['pipeline']}: {load['load_seconds']:.2f}s, "
+            f"status={load.get('status')}, "
             f"strategy={load.get('load_strategy')}, "
             f"rss_after={load.get('load_rss_after_mb')}, "
             f"peak_rss={load.get('load_max_rss_peak_sampled_mb')}, "
@@ -1267,7 +1430,7 @@ def print_result(result: dict[str, Any]) -> None:
                 f"cuda_peak_allocated={phase.get('max_cuda_allocated_mb', phase.get('cuda_max_allocated_mb'))}, "
                 f"cuda_peak_reserved={phase.get('max_cuda_reserved_mb', phase.get('cuda_max_reserved_mb'))}"
             )
-            if phase["status"] == "error":
+            if phase["status"] in {"error", "rss_limit_exceeded"}:
                 print(f"    {phase.get('error_type')}: {phase.get('error')}")
         for component in load.get("component_loads", []):
             print(
@@ -1279,7 +1442,7 @@ def print_result(result: dict[str, Any]) -> None:
                 f"cuda_peak_allocated={component.get('cuda_max_allocated_mb')}, "
                 f"cuda_peak_reserved={component.get('cuda_max_reserved_mb')}"
             )
-            if component["status"] == "error":
+            if component["status"] in {"error", "rss_limit_exceeded"}:
                 print(f"    {component.get('error_type')}: {component.get('error')}")
     for run in result["runs"]:
         label = f"{run['case']} {run['kind']} #{run['run_index']}"
@@ -1308,7 +1471,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     result = run_measurement(args)
     print_result(result)
-    return 0 if result["summary"]["failures"] == 0 else 1
+    return 1 if result_has_failures(result) else 0
 
 
 if __name__ == "__main__":
