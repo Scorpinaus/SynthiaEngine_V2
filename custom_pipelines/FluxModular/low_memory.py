@@ -35,6 +35,7 @@ from diffusers.utils.torch_utils import randn_tensor
 from .before_denoise import (
     FluxImg2ImgPrepareLatentsStep,
     FluxImg2ImgSetTimestepsStep,
+    FluxInpaintPrepareMaskStep,
     FluxPrepareLatentsStep,
     FluxRoPEInputsStep,
     FluxSetTimestepsStep,
@@ -45,11 +46,13 @@ from .decoders import FluxDecodeStep, _unpack_latents
 from .denoise import (
     FluxDenoiseLoopWrapper,
     FluxDenoiseStep,
+    FluxInpaintDenoiseStep,
     FluxLoopAfterDenoiser,
     FluxLoopDenoiser,
     FluxKontextLoopDenoiser,
 )
 from .encoders import (
+    FluxInpaintProcessInputStep,
     FluxProcessImagesInputStep,
     FluxTextEncoderStep,
     FluxVaeEncoderStep,
@@ -524,6 +527,35 @@ class LowMemoryFluxImg2ImgPrepareLatentsStep(FluxImg2ImgPrepareLatentsStep):
         return components, state
 
 
+class LowMemoryFluxInpaintPrepareLatentsStep(LowMemoryFluxImg2ImgPrepareLatentsStep):
+    """Img2img latent noising variant that preserves source latents for inpaint blending."""
+
+    @torch.no_grad()
+    def __call__(self, components, state: PipelineState) -> PipelineState:
+        block_state = self.get_block_state(state)
+        denoise_device = denoise_execution_device(components)
+        block_state.device = denoise_device
+        _move_block_state_tensors(
+            block_state,
+            denoise_device,
+            "image_latents",
+            "latents",
+            "timesteps",
+            "guidance",
+        )
+
+        self.check_inputs(image_latents=block_state.image_latents, latents=block_state.latents)
+
+        latent_timestep = block_state.timesteps[:1].repeat(block_state.latents.shape[0])
+        block_state.initial_noise = block_state.latents
+        block_state.latents = components.scheduler.scale_noise(
+            block_state.image_latents, latent_timestep, block_state.latents
+        )
+
+        self.set_block_state(state, block_state)
+        return components, state
+
+
 class LowMemoryFluxTransformerBufferSetupStep(ModularPipelineBlocks):
     """Install inference-only Flux transformer allocation reducers."""
 
@@ -595,6 +627,17 @@ class LowMemoryFluxTransformerBufferSetupStep(ModularPipelineBlocks):
 
 
 class LowMemoryFluxDenoiseStep(FluxDenoiseStep):
+    @torch.no_grad()
+    def __call__(self, components, state: PipelineState) -> PipelineState:
+        components, state = super().__call__(components, state)
+        if state.get("low_memory_transformer_buffers", True):
+            _clear_transformer_workspace(components)
+        if state.get("low_memory_eager_offload", True):
+            offload_components_to_cpu(components, "transformer")
+        return components, state
+
+
+class LowMemoryFluxInpaintDenoiseStep(FluxInpaintDenoiseStep):
     @torch.no_grad()
     def __call__(self, components, state: PipelineState) -> PipelineState:
         components, state = super().__call__(components, state)
@@ -711,6 +754,8 @@ class LowMemoryBeforeDecodeCleanupStep(ModularPipelineBlocks):
                 "initial_noise",
                 "noise_pred",
                 "image_latents",
+                "mask",
+                "mask_condition",
                 "processed_image",
                 "image_height",
                 "image_width",
@@ -734,6 +779,9 @@ class LowMemoryFluxDecodeStep(FluxDecodeStep):
             InputParam("output_type", default="pil"),
             InputParam("height", default=1024),
             InputParam("width", default=1024),
+            InputParam("original_image", type_hint=PIL.Image.Image | None),
+            InputParam("original_mask_image", type_hint=PIL.Image.Image | None),
+            InputParam("crops_coords", type_hint=tuple[int, int, int, int] | None),
             InputParam(
                 "latents",
                 required=True,
@@ -794,6 +842,16 @@ class LowMemoryFluxDecodeStep(FluxDecodeStep):
                 latents = (latents / vae.config.scaling_factor) + vae.config.shift_factor
                 decoded = vae.decode(latents, return_dict=False)[0]
                 processed = components.image_processor.postprocess(decoded, output_type=block_state.output_type)
+                if block_state.crops_coords is not None:
+                    processed = [
+                        components.image_processor.apply_overlay(
+                            block_state.original_mask_image,
+                            block_state.original_image,
+                            image,
+                            block_state.crops_coords,
+                        )
+                        for image in processed
+                    ]
                 if block_state.output_type == "pil":
                     image_chunks.extend(processed)
                 else:
@@ -820,6 +878,11 @@ class LowMemoryFluxDecodeStep(FluxDecodeStep):
                 "img_ids",
                 "initial_noise",
                 "image_latents",
+                "mask",
+                "mask_condition",
+                "original_image",
+                "original_mask_image",
+                "crops_coords",
             ):
                 state.values.pop(name, None)
         return components, state
@@ -831,11 +894,17 @@ class LowMemoryFluxImg2ImgVaeEncoderStep(SequentialPipelineBlocks):
     block_names = ["preprocess", "encode"]
 
 
+class LowMemoryFluxInpaintVaeEncoderStep(SequentialPipelineBlocks):
+    model_name = "flux"
+    block_classes = [FluxInpaintProcessInputStep(), LowMemoryFluxVaeEncoderStep()]
+    block_names = ["preprocess", "encode"]
+
+
 class LowMemoryFluxAutoVaeEncoderStep(AutoPipelineBlocks):
     model_name = "flux"
-    block_classes = [LowMemoryFluxImg2ImgVaeEncoderStep]
-    block_names = ["img2img"]
-    block_trigger_inputs = ["image"]
+    block_classes = [LowMemoryFluxInpaintVaeEncoderStep, LowMemoryFluxImg2ImgVaeEncoderStep]
+    block_names = ["inpaint", "img2img"]
+    block_trigger_inputs = ["mask_image", "image"]
 
 
 class LowMemoryFluxSetTimestepsStep(FluxSetTimestepsStep):
@@ -921,11 +990,33 @@ class LowMemoryFluxImg2ImgBeforeDenoiseStep(SequentialPipelineBlocks):
     block_names = ["prepare_latents", "set_timesteps", "prepare_img2img_latents", "prepare_rope_inputs"]
 
 
+class LowMemoryFluxInpaintBeforeDenoiseStep(SequentialPipelineBlocks):
+    model_name = "flux"
+    block_classes = [
+        LowMemoryFluxPrepareLatentsStep(),
+        LowMemoryFluxImg2ImgSetTimestepsStep(),
+        LowMemoryFluxInpaintPrepareLatentsStep(),
+        FluxInpaintPrepareMaskStep(),
+        FluxRoPEInputsStep(),
+    ]
+    block_names = [
+        "prepare_latents",
+        "set_timesteps",
+        "prepare_img2img_latents",
+        "prepare_mask_latents",
+        "prepare_rope_inputs",
+    ]
+
+
 class LowMemoryFluxAutoBeforeDenoiseStep(AutoPipelineBlocks):
     model_name = "flux"
-    block_classes = [LowMemoryFluxImg2ImgBeforeDenoiseStep, LowMemoryFluxBeforeDenoiseStep]
-    block_names = ["img2img", "text2image"]
-    block_trigger_inputs = ["image_latents", None]
+    block_classes = [
+        LowMemoryFluxInpaintBeforeDenoiseStep,
+        LowMemoryFluxImg2ImgBeforeDenoiseStep,
+        LowMemoryFluxBeforeDenoiseStep,
+    ]
+    block_names = ["inpaint", "img2img", "text2image"]
+    block_trigger_inputs = ["mask_condition", "image_latents", None]
 
 
 class LowMemoryFluxImg2ImgInputStep(SequentialPipelineBlocks):
@@ -941,13 +1032,20 @@ class LowMemoryFluxAutoInputStep(AutoPipelineBlocks):
     block_trigger_inputs = ["image_latents", None]
 
 
+class LowMemoryFluxAutoDenoiseStep(AutoPipelineBlocks):
+    model_name = "flux"
+    block_classes = [LowMemoryFluxInpaintDenoiseStep, LowMemoryFluxDenoiseStep]
+    block_names = ["inpaint", "base"]
+    block_trigger_inputs = ["mask", None]
+
+
 class LowMemoryFluxCoreDenoiseStep(SequentialPipelineBlocks):
     model_name = "flux"
     block_classes = [
         LowMemoryFluxTransformerBufferSetupStep(),
         LowMemoryFluxAutoInputStep,
         LowMemoryFluxAutoBeforeDenoiseStep,
-        LowMemoryFluxDenoiseStep,
+        LowMemoryFluxAutoDenoiseStep,
     ]
     block_names = ["transformer_buffers", "input", "before_denoise", "denoise"]
 
@@ -976,11 +1074,13 @@ class LowMemoryFluxAutoBlocks(SequentialPipelineBlocks):
         "embeds2image": {"prompt_embeds": True, "pooled_prompt_embeds": True},
         "image2image": {"image": True, "prompt": True},
         "image2image_embeds": {"image": True, "prompt_embeds": True, "pooled_prompt_embeds": True},
+        "inpaint": {"image": True, "mask_image": True, "prompt": True},
+        "inpaint_embeds": {"image": True, "mask_image": True, "prompt_embeds": True, "pooled_prompt_embeds": True},
     }
 
     @property
     def description(self):
-        return "Low-memory local Modular pipeline for Flux text-to-image and image-to-image."
+        return "Low-memory local Modular pipeline for Flux text-to-image, image-to-image, and inpaint."
 
     @property
     def outputs(self):

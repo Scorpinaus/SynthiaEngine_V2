@@ -275,19 +275,23 @@ def execute_job(
 ) -> dict[str, Any]:
     if kind == "workflow":
         from backend.workflow import WorkflowCanceled, WorkflowContext, cleanup_artifacts, collect_artifact_ids, execute_workflow
+        from backend.utilities.resource_logging import SummaryProfiler
 
         def _progress(patch: dict[str, Any]) -> None:
             update_job_partial_result(SessionLocal, job_id, {"progress": patch})
 
         artifacts_to_cleanup = collect_artifact_ids(payload)
         try:
-            result = execute_workflow(
-                payload,
-                ctx=WorkflowContext(
-                    update_progress=_progress,
-                    should_cancel=lambda: is_cancel_requested(SessionLocal, job_id),
-                ),
-            )
+            with SummaryProfiler() as profiler:
+                result = execute_workflow(
+                    payload,
+                    ctx=WorkflowContext(
+                        update_progress=_progress,
+                        should_cancel=lambda: is_cancel_requested(SessionLocal, job_id),
+                    ),
+                )
+            if profiler.profile is not None:
+                result["profile"] = profiler.profile
             created = result.pop("created_artifacts", None)
             if isinstance(created, list):
                 artifacts_to_cleanup |= set(str(x) for x in created)

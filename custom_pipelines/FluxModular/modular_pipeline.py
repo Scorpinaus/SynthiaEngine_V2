@@ -109,7 +109,7 @@ class FluxModularPipeline(ModularPipeline, FluxLoraLoaderMixin, TextualInversion
 
     @classmethod
     def _infer_sequential_batch_size(cls, kwargs, num_images_per_prompt: int) -> int:
-        for name in ("prompt", "prompt_2", "image", "resized_image"):
+        for name in ("prompt", "prompt_2", "image", "resized_image", "mask_image"):
             length = cls._sequence_len(kwargs.get(name))
             if length:
                 return int(length)
@@ -119,7 +119,7 @@ class FluxModularPipeline(ModularPipeline, FluxLoraLoaderMixin, TextualInversion
             if torch.is_tensor(value):
                 return int(value.shape[0])
 
-        for name in ("latents", "image_latents"):
+        for name in ("latents", "image_latents", "mask", "mask_condition"):
             value = kwargs.get(name)
             if torch.is_tensor(value) and value.ndim > 0:
                 first_dim = int(value.shape[0])
@@ -160,13 +160,13 @@ class FluxModularPipeline(ModularPipeline, FluxLoraLoaderMixin, TextualInversion
     ):
         sample_kwargs = dict(kwargs)
 
-        for name in ("prompt", "prompt_2", "image", "resized_image"):
+        for name in ("prompt", "prompt_2", "image", "resized_image", "mask_image"):
             if name in sample_kwargs:
                 sample_kwargs[name] = cls._slice_sequence_value(
                     sample_kwargs[name], prompt_index, sample_index, batch_size, total_samples
                 )
 
-        for name in ("prompt_embeds", "pooled_prompt_embeds", "latents", "image_latents"):
+        for name in ("prompt_embeds", "pooled_prompt_embeds", "latents", "image_latents", "mask", "mask_condition"):
             if name in sample_kwargs:
                 sample_kwargs[name] = cls._slice_tensor_value(
                     sample_kwargs[name], prompt_index, sample_index, batch_size, total_samples

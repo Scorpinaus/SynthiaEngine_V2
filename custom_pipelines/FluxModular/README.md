@@ -19,6 +19,9 @@ from custom_pipelines.FluxModular import (
 
 `FluxModularPipeline()` defaults to `LowMemoryFluxAutoBlocks`.
 `FluxKontextModularPipeline()` defaults to `LowMemoryFluxKontextAutoBlocks`.
+Base `FluxModularPipeline` supports text-to-image, image-to-image, and
+inpainting. Flux Kontext remains text/image-conditioned only in this local
+package.
 
 ## Memory Changes
 
@@ -26,6 +29,8 @@ from custom_pipelines.FluxModular import (
   `max_sequence_length=512` to recover the stock behavior.
 - Passing both `prompt_embeds` and `pooled_prompt_embeds` skips CLIP and T5.
 - Text-to-image noise is generated directly in packed Flux latent layout.
+- Flux inpainting uses the stock packed-latent mask blend: white mask pixels
+  are repainted and black mask pixels preserve the source image.
 - Text encoders and the transformer are eagerly offloaded before later phases
   when `low_memory_eager_offload=True`.
 - A dedicated cleanup block runs between denoise and decode, offloading heavy
@@ -76,6 +81,23 @@ image = pipe(
     low_memory_cuda_placement="auto",
     low_memory_vram_reserve_margin="3GB",
     low_memory_transformer_stream_blocks="auto",
+    decode_chunk_size=1,
+).images[0]
+```
+
+Inpainting uses the same pipeline class. Provide an RGB source image and a
+grayscale mask:
+
+```python
+image = pipe(
+    prompt="replace the masked area with a tiny repair workshop",
+    image=source_image,
+    mask_image=mask_image,
+    strength=0.8,
+    height=1024,
+    width=1024,
+    num_inference_steps=28,
+    low_memory_transformer_buffers=True,
     decode_chunk_size=1,
 ).images[0]
 ```

@@ -18,13 +18,15 @@ from diffusers.modular_pipelines.modular_pipeline_utils import InsertableDict, O
 from .before_denoise import (
     FluxImg2ImgPrepareLatentsStep,
     FluxImg2ImgSetTimestepsStep,
+    FluxInpaintPrepareMaskStep,
     FluxPrepareLatentsStep,
     FluxRoPEInputsStep,
     FluxSetTimestepsStep,
 )
 from .decoders import FluxDecodeStep
-from .denoise import FluxDenoiseStep
+from .denoise import FluxDenoiseStep, FluxInpaintDenoiseStep
 from .encoders import (
+    FluxInpaintProcessInputStep,
     FluxProcessImagesInputStep,
     FluxTextEncoderStep,
     FluxVaeEncoderStep,
@@ -78,6 +80,17 @@ class FluxImg2ImgVaeEncoderStep(SequentialPipelineBlocks):
         return "Vae encoder step that preprocess andencode the image inputs into their latent representations."
 
 
+class FluxInpaintVaeEncoderStep(SequentialPipelineBlocks):
+    model_name = "flux"
+
+    block_classes = [FluxInpaintProcessInputStep(), FluxVaeEncoderStep()]
+    block_names = ["preprocess", "encode"]
+
+    @property
+    def description(self) -> str:
+        return "Vae encoder step that preprocesses Flux inpaint image and mask inputs."
+
+
 # auto_docstring
 class FluxAutoVaeEncoderStep(AutoPipelineBlocks):
     """
@@ -109,16 +122,17 @@ class FluxAutoVaeEncoderStep(AutoPipelineBlocks):
     """
 
     model_name = "flux"
-    block_classes = [FluxImg2ImgVaeEncoderStep]
-    block_names = ["img2img"]
-    block_trigger_inputs = ["image"]
+    block_classes = [FluxInpaintVaeEncoderStep, FluxImg2ImgVaeEncoderStep]
+    block_names = ["inpaint", "img2img"]
+    block_trigger_inputs = ["mask_image", "image"]
 
     @property
     def description(self):
         return (
             "Vae encoder step that encode the image inputs into their latent representations.\n"
-            + "This is an auto pipeline block that works for img2img tasks.\n"
-            + " - `FluxImg2ImgVaeEncoderStep` (img2img) is used when only `image` is provided."
+            + "This is an auto pipeline block that works for img2img and inpaint tasks.\n"
+            + " - `FluxInpaintVaeEncoderStep` (inpaint) is used when `mask_image` is provided.\n"
+            + " - `FluxImg2ImgVaeEncoderStep` (img2img) is used when only `image` is provided.\n"
             + " - if `image` is not provided, step will be skipped."
         )
 
@@ -255,6 +269,28 @@ class FluxImg2ImgBeforeDenoiseStep(SequentialPipelineBlocks):
         return "Before denoise step that prepare the inputs for the denoise step for img2img task."
 
 
+class FluxInpaintBeforeDenoiseStep(SequentialPipelineBlocks):
+    model_name = "flux"
+    block_classes = [
+        FluxPrepareLatentsStep(),
+        FluxImg2ImgSetTimestepsStep(),
+        FluxImg2ImgPrepareLatentsStep(),
+        FluxInpaintPrepareMaskStep(),
+        FluxRoPEInputsStep(),
+    ]
+    block_names = [
+        "prepare_latents",
+        "set_timesteps",
+        "prepare_img2img_latents",
+        "prepare_mask_latents",
+        "prepare_rope_inputs",
+    ]
+
+    @property
+    def description(self):
+        return "Before denoise step that prepares latents, timesteps, and packed mask inputs for Flux inpaint."
+
+
 # before_denoise: all task (text2img, img2img)
 # auto_docstring
 class FluxAutoBeforeDenoiseStep(AutoPipelineBlocks):
@@ -317,15 +353,16 @@ class FluxAutoBeforeDenoiseStep(AutoPipelineBlocks):
     """
 
     model_name = "flux"
-    block_classes = [FluxImg2ImgBeforeDenoiseStep, FluxBeforeDenoiseStep]
-    block_names = ["img2img", "text2image"]
-    block_trigger_inputs = ["image_latents", None]
+    block_classes = [FluxInpaintBeforeDenoiseStep, FluxImg2ImgBeforeDenoiseStep, FluxBeforeDenoiseStep]
+    block_names = ["inpaint", "img2img", "text2image"]
+    block_trigger_inputs = ["mask_condition", "image_latents", None]
 
     @property
     def description(self):
         return (
             "Before denoise step that prepare the inputs for the denoise step.\n"
             + "This is an auto pipeline block that works for text2image.\n"
+            + " - `FluxInpaintBeforeDenoiseStep` (inpaint) is used when `mask_condition` is provided.\n"
             + " - `FluxBeforeDenoiseStep` (text2image) is used.\n"
             + " - `FluxImg2ImgBeforeDenoiseStep` (img2img) is used when only `image_latents` is provided.\n"
         )
@@ -433,6 +470,17 @@ class FluxAutoInputStep(AutoPipelineBlocks):
         )
 
 
+class FluxAutoDenoiseStep(AutoPipelineBlocks):
+    model_name = "flux"
+    block_classes = [FluxInpaintDenoiseStep, FluxDenoiseStep]
+    block_names = ["inpaint", "base"]
+    block_trigger_inputs = ["mask", None]
+
+    @property
+    def description(self):
+        return "Auto denoise step that selects Flux inpaint denoising when a packed mask is present."
+
+
 # auto_docstring
 class FluxCoreDenoiseStep(SequentialPipelineBlocks):
     """
@@ -480,15 +528,16 @@ class FluxCoreDenoiseStep(SequentialPipelineBlocks):
     """
 
     model_name = "flux"
-    block_classes = [FluxAutoInputStep, FluxAutoBeforeDenoiseStep, FluxDenoiseStep]
+    block_classes = [FluxAutoInputStep, FluxAutoBeforeDenoiseStep, FluxAutoDenoiseStep]
     block_names = ["input", "before_denoise", "denoise"]
 
     @property
     def description(self):
         return (
             "Core step that performs the denoising process for Flux.\n"
-            + "This step supports text-to-image and image-to-image tasks for Flux:\n"
+            + "This step supports text-to-image, image-to-image, and inpaint tasks for Flux:\n"
             + " - for image-to-image generation, you need to provide `image_latents`\n"
+            + " - for inpainting, you need to provide `image_latents` and a packed `mask`\n"
             + " - for text-to-image generation, all you need to provide is prompt embeddings."
         )
 
@@ -575,6 +624,7 @@ class FluxAutoBlocks(SequentialPipelineBlocks):
     _workflow_map = {
         "text2image": {"prompt": True},
         "image2image": {"image": True, "prompt": True},
+        "inpaint": {"image": True, "mask_image": True, "prompt": True},
     }
 
     @property

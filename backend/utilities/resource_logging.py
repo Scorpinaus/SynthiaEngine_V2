@@ -13,6 +13,7 @@ import torch
 from backend import config
 
 logger = logging.getLogger(__name__)
+_BYTES_PER_MB = 1024**2
 
 
 @dataclass
@@ -187,3 +188,232 @@ def _sampling_loop(
 
 
 resource_logger = ResourceLogger()
+
+
+class SummaryProfiler:
+    """Capture a compact one-run resource summary for API results."""
+
+    def __init__(
+        self,
+        *,
+        enabled: bool = True,
+        interval_s: float | None = None,
+        nvml_device_index: int | None = None,
+    ) -> None:
+        self.enabled = enabled
+        self.interval_s = config.RESOURCE_LOGGING_INTERVAL_S if interval_s is None else interval_s
+        self.nvml_device_index = nvml_device_index
+        self.profile: dict[str, Any] | None = None
+        self._process = psutil.Process()
+        self._start_time: float | None = None
+        self._stop_event: threading.Event | None = None
+        self._thread: threading.Thread | None = None
+        self._stats: _SummaryStats | None = None
+
+    def __enter__(self) -> "SummaryProfiler":
+        if not self.enabled:
+            return self
+
+        cuda_available = _cuda_available()
+        _reset_cuda_peak_memory_stats(cuda_available)
+        nvml = _NvmlUsedMemorySampler(self.nvml_device_index)
+        self._stats = _SummaryStats(cuda_available=cuda_available, nvml=nvml)
+        self._stats.capture_start(self._process)
+        self._start_time = time.perf_counter()
+        self._stop_event = threading.Event()
+        self._thread = threading.Thread(
+            target=_summary_sampling_loop,
+            args=(self._stop_event, self._stats, max(0.01, float(self.interval_s))),
+            daemon=True,
+        )
+        self._thread.start()
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        if not self.enabled or self._stats is None or self._start_time is None:
+            return
+
+        if self._stop_event is not None:
+            self._stop_event.set()
+        if self._thread is not None:
+            self._thread.join(timeout=1.0)
+
+        _synchronize_cuda(self._stats.cuda_available)
+        elapsed_seconds = time.perf_counter() - self._start_time
+        try:
+            self._stats.capture_end(self._process)
+            self.profile = self._stats.summary(elapsed_seconds)
+        finally:
+            self._stats.close()
+
+
+class _SummaryStats:
+    def __init__(self, *, cuda_available: bool, nvml: "_NvmlUsedMemorySampler") -> None:
+        self.cuda_available = cuda_available
+        self.nvml = nvml
+        self.rss_start: int | None = None
+        self.rss_end: int | None = None
+        self.cuda_peak_allocated: int | None = None
+        self.cuda_peak_reserved: int | None = None
+
+    def capture_start(self, process: psutil.Process) -> None:
+        self.rss_start = process.memory_info().rss
+        self.nvml.capture_start()
+
+    def capture_end(self, process: psutil.Process) -> None:
+        self.rss_end = process.memory_info().rss
+        if self.cuda_available:
+            try:
+                self.cuda_peak_allocated = torch.cuda.max_memory_allocated()
+                self.cuda_peak_reserved = torch.cuda.max_memory_reserved()
+            except Exception:
+                self.cuda_peak_allocated = None
+                self.cuda_peak_reserved = None
+        self.nvml.capture_end()
+
+    def sample(self) -> None:
+        self.nvml.sample()
+
+    def summary(self, elapsed_seconds: float) -> dict[str, Any]:
+        return {
+            "schema_version": 1,
+            "elapsed_seconds": elapsed_seconds,
+            "rss_before_mb": _bytes_to_mb(self.rss_start),
+            "rss_after_mb": _bytes_to_mb(self.rss_end),
+            "cuda_available": self.cuda_available,
+            "cuda_peak_allocated_mb": _bytes_to_mb(self.cuda_peak_allocated),
+            "cuda_peak_reserved_mb": _bytes_to_mb(self.cuda_peak_reserved),
+            **self.nvml.summary(),
+        }
+
+    def close(self) -> None:
+        self.nvml.close()
+
+
+class _NvmlUsedMemorySampler:
+    def __init__(self, device_index: int | None) -> None:
+        self.available = False
+        self.device_index: int | None = None
+        self.used_start: int | None = None
+        self.used_end: int | None = None
+        self.used_peak: int | None = None
+        self._pynvml: Any | None = None
+        self._handle: Any | None = None
+        self._initialized = False
+
+        pynvml = None
+        try:
+            import pynvml  # type: ignore[import-not-found]
+
+            pynvml.nvmlInit()
+            count = int(pynvml.nvmlDeviceGetCount())
+            index = _default_nvml_device_index() if device_index is None else int(device_index)
+            if count <= 0 or index < 0 or index >= count:
+                pynvml.nvmlShutdown()
+                return
+
+            self._pynvml = pynvml
+            self._handle = pynvml.nvmlDeviceGetHandleByIndex(index)
+            self._initialized = True
+            self.available = True
+            self.device_index = index
+        except Exception:
+            if pynvml is not None:
+                try:
+                    pynvml.nvmlShutdown()
+                except Exception:
+                    pass
+            self._pynvml = None
+            self._handle = None
+            self._initialized = False
+
+    def capture_start(self) -> None:
+        used = self._current_used()
+        self.used_start = used
+        self.used_peak = used
+
+    def capture_end(self) -> None:
+        used = self._current_used()
+        self.used_end = used
+        if used is not None:
+            self.used_peak = max(self.used_peak or 0, used)
+
+    def sample(self) -> None:
+        used = self._current_used()
+        if used is not None:
+            self.used_peak = max(self.used_peak or 0, used)
+
+    def summary(self) -> dict[str, Any]:
+        return {
+            "nvml_available": self.available,
+            "nvml_device_index": self.device_index,
+            "nvml_used_start_mb": _bytes_to_mb(self.used_start),
+            "nvml_used_end_mb": _bytes_to_mb(self.used_end),
+            "nvml_used_peak_sampled_mb": _bytes_to_mb(self.used_peak),
+        }
+
+    def close(self) -> None:
+        if self._initialized and self._pynvml is not None:
+            try:
+                self._pynvml.nvmlShutdown()
+            except Exception:
+                pass
+        self._initialized = False
+
+    def _current_used(self) -> int | None:
+        if not self.available or self._pynvml is None or self._handle is None:
+            return None
+        try:
+            return int(self._pynvml.nvmlDeviceGetMemoryInfo(self._handle).used)
+        except Exception:
+            return None
+
+
+def _summary_sampling_loop(
+    stop_event: threading.Event,
+    stats: _SummaryStats,
+    interval_s: float,
+) -> None:
+    while not stop_event.is_set():
+        stats.sample()
+        stop_event.wait(interval_s)
+
+
+def _cuda_available() -> bool:
+    try:
+        return bool(torch.cuda.is_available())
+    except Exception:
+        return False
+
+
+def _reset_cuda_peak_memory_stats(cuda_available: bool) -> None:
+    if not cuda_available:
+        return
+    try:
+        torch.cuda.reset_peak_memory_stats()
+    except Exception:
+        pass
+
+
+def _synchronize_cuda(cuda_available: bool) -> None:
+    if not cuda_available:
+        return
+    try:
+        torch.cuda.synchronize()
+    except Exception:
+        pass
+
+
+def _default_nvml_device_index() -> int:
+    try:
+        if torch.cuda.is_available():
+            return int(torch.cuda.current_device())
+    except Exception:
+        pass
+    return 0
+
+
+def _bytes_to_mb(value: int | None) -> float | None:
+    if value is None:
+        return None
+    return value / _BYTES_PER_MB

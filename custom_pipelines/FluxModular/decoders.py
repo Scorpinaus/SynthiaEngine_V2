@@ -70,6 +70,9 @@ class FluxDecodeStep(ModularPipelineBlocks):
             InputParam("output_type", default="pil"),
             InputParam("height", default=1024),
             InputParam("width", default=1024),
+            InputParam("original_image", type_hint=PIL.Image.Image | None),
+            InputParam("original_mask_image", type_hint=PIL.Image.Image | None),
+            InputParam("crops_coords", type_hint=tuple[int, int, int, int] | None),
             InputParam(
                 "latents",
                 required=True,
@@ -101,6 +104,16 @@ class FluxDecodeStep(ModularPipelineBlocks):
             block_state.images = components.image_processor.postprocess(
                 block_state.images, output_type=block_state.output_type
             )
+            if block_state.crops_coords is not None:
+                block_state.images = [
+                    components.image_processor.apply_overlay(
+                        block_state.original_mask_image,
+                        block_state.original_image,
+                        image,
+                        block_state.crops_coords,
+                    )
+                    for image in block_state.images
+                ]
         else:
             block_state.images = block_state.latents
 

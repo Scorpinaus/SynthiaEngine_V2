@@ -35,6 +35,7 @@ class CaseSpec:
     pipeline: str
     prompt: bool = True
     image: bool = False
+    mask: bool = False
     embeds: bool = False
     strength: bool = False
 
@@ -42,12 +43,22 @@ class CaseSpec:
 CASES: dict[str, CaseSpec] = {
     "flux-text2img": CaseSpec("flux-text2img", "flux"),
     "flux-img2img": CaseSpec("flux-img2img", "flux", image=True, strength=True),
+    "flux-inpaint": CaseSpec("flux-inpaint", "flux", image=True, mask=True, strength=True),
     "flux-embeds2img": CaseSpec("flux-embeds2img", "flux", prompt=False, embeds=True),
     "flux-img2img-embeds": CaseSpec(
         "flux-img2img-embeds",
         "flux",
         prompt=False,
         image=True,
+        embeds=True,
+        strength=True,
+    ),
+    "flux-inpaint-embeds": CaseSpec(
+        "flux-inpaint-embeds",
+        "flux",
+        prompt=False,
+        image=True,
+        mask=True,
         embeds=True,
         strength=True,
     ),
@@ -67,9 +78,11 @@ CASES: dict[str, CaseSpec] = {
 CASE_ALIASES = {
     "text2img": {"flux": "flux-text2img", "kontext": "kontext-text2img"},
     "img2img": {"flux": "flux-img2img"},
+    "inpaint": {"flux": "flux-inpaint"},
     "image": {"kontext": "kontext-image"},
     "embeds2img": {"flux": "flux-embeds2img", "kontext": "kontext-embeds2img"},
     "img2img-embeds": {"flux": "flux-img2img-embeds"},
+    "inpaint-embeds": {"flux": "flux-inpaint-embeds"},
     "image-embeds": {"kontext": "kontext-image-embeds"},
 }
 
@@ -100,6 +113,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--prompt", default=DEFAULT_PROMPT, help="Prompt to generate.")
     parser.add_argument("--prompt-2", default=None, help="Optional secondary T5 prompt.")
     parser.add_argument("--image", type=Path, default=None, help="Optional input image for image-conditioned cases.")
+    parser.add_argument("--mask-image", type=Path, default=None, help="Optional mask image for inpaint cases.")
     parser.add_argument("--width", type=int, default=768, help="Output width.")
     parser.add_argument("--height", type=int, default=768, help="Output height.")
     parser.add_argument("--max-area", type=int, default=None, help="Kontext max area. Defaults to width * height.")
@@ -504,11 +518,26 @@ def create_synthetic_image(width: int, height: int) -> Image.Image:
     return image
 
 
+def create_synthetic_mask(width: int, height: int) -> Image.Image:
+    mask = Image.new("L", (width, height), 0)
+    draw = ImageDraw.Draw(mask)
+    margin = max(16, min(width, height) // 4)
+    draw.rectangle((margin, margin, width - margin, height - margin), fill=255)
+    return mask
+
+
 def load_input_image(args: argparse.Namespace) -> Image.Image:
     if args.image is None:
         return create_synthetic_image(args.width, args.height)
     with Image.open(args.image) as image:
         return image.convert("RGB")
+
+
+def load_mask_image(args: argparse.Namespace) -> Image.Image:
+    if args.mask_image is None:
+        return create_synthetic_mask(args.width, args.height)
+    with Image.open(args.mask_image) as image:
+        return image.convert("L")
 
 
 def make_generator(seed: int):
@@ -1155,6 +1184,8 @@ def build_case_kwargs(
         kwargs["strength"] = args.strength
     if case.image:
         kwargs["image"] = load_input_image(args)
+    if case.mask:
+        kwargs["mask_image"] = load_mask_image(args)
 
     prompt_error = getattr(pipe, "_modular_flux_prompt_embed_error", None)
     if args.load_strategy == "phased" and prompt_error is not None:

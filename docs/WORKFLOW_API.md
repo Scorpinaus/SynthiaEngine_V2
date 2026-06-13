@@ -510,7 +510,21 @@ Job response shape (subset):
       "phase": "running"
     },
     "outputs": { /* resolved return value */ },
-    "tasks": { /* task_id -> task result object */ }
+    "tasks": { /* task_id -> task result object */ },
+    "profile": {
+      "schema_version": 1,
+      "elapsed_seconds": 12.34,
+      "rss_before_mb": 1234.5,
+      "rss_after_mb": 1300.1,
+      "cuda_available": true,
+      "cuda_peak_allocated_mb": 6789.0,
+      "cuda_peak_reserved_mb": 7000.0,
+      "nvml_available": true,
+      "nvml_device_index": 0,
+      "nvml_used_start_mb": 4000.0,
+      "nvml_used_end_mb": 5000.0,
+      "nvml_used_peak_sampled_mb": 7200.0
+    }
   },
   "error": null,
   "created_at": "2026-01-25T12:34:56.789+00:00",
@@ -522,6 +536,7 @@ Notes:
 - `result.outputs` is the resolved final output.
 - `result.tasks` is the per-task result map (useful for debugging / UI).
 - `result.progress` is best-effort; it may be absent for completed jobs created before progress reporting existed.
+- `result.profile` is an optional single-run summary measured during workflow execution, excluding queue wait time. CUDA peak fields come from PyTorch allocator stats in the job worker process. For task families that render in subprocesses, use the NVML used VRAM fields for device-level usage. NVML fields are best-effort and are `null` when NVML/pynvml is unavailable.
 
 ## Workflow payload schema
 

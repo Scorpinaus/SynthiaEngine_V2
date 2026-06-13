@@ -14,6 +14,7 @@
 
 import html
 
+import PIL.Image
 import regex as re
 import torch
 from transformers import CLIPTextModel, CLIPTokenizer, T5EncoderModel, T5TokenizerFast
@@ -134,6 +135,130 @@ class FluxProcessImagesInputStep(ModularPipelineBlocks):
             image = block_state.resized_image
 
         block_state.processed_image = components.image_processor.preprocess(image=image, height=height, width=width)
+
+        self.set_block_state(state, block_state)
+        return components, state
+
+
+class FluxInpaintProcessInputStep(ModularPipelineBlocks):
+    model_name = "flux"
+
+    @property
+    def description(self) -> str:
+        return "Image and mask preprocess step for Flux inpainting."
+
+    @property
+    def expected_components(self) -> list[ComponentSpec]:
+        return [
+            ComponentSpec(
+                "image_processor",
+                VaeImageProcessor,
+                config=FrozenDict({"vae_scale_factor": 16, "vae_latent_channels": 16}),
+                default_creation_method="from_config",
+            ),
+            ComponentSpec(
+                "mask_processor",
+                VaeImageProcessor,
+                config=FrozenDict(
+                    {
+                        "vae_scale_factor": 16,
+                        "vae_latent_channels": 16,
+                        "do_normalize": False,
+                        "do_binarize": True,
+                        "do_convert_grayscale": True,
+                    }
+                ),
+                default_creation_method="from_config",
+            ),
+        ]
+
+    @property
+    def inputs(self) -> list[InputParam]:
+        return [
+            InputParam("resized_image"),
+            InputParam("image"),
+            InputParam("mask_image"),
+            InputParam("height"),
+            InputParam("width"),
+            InputParam("padding_mask_crop", type_hint=int | None),
+            InputParam("output_type", default="pil"),
+        ]
+
+    @property
+    def intermediate_outputs(self) -> list[OutputParam]:
+        return [
+            OutputParam(name="processed_image"),
+            OutputParam(name="mask_condition", type_hint=torch.Tensor),
+            OutputParam(name="original_image", type_hint=PIL.Image.Image | None),
+            OutputParam(name="original_mask_image", type_hint=PIL.Image.Image | None),
+            OutputParam(name="crops_coords", type_hint=tuple[int, int, int, int] | None),
+        ]
+
+    @staticmethod
+    def check_inputs(image, mask_image, height, width, vae_scale_factor, padding_mask_crop, output_type):
+        if image is None:
+            raise ValueError("`image` is required for Flux inpainting.")
+        if mask_image is None:
+            raise ValueError("`mask_image` is required for Flux inpainting.")
+        FluxProcessImagesInputStep.check_inputs(height, width, vae_scale_factor)
+        if padding_mask_crop is not None:
+            if not isinstance(image, PIL.Image.Image):
+                raise ValueError(f"`padding_mask_crop` requires `image` to be a PIL image, not {type(image)}.")
+            if not isinstance(mask_image, PIL.Image.Image):
+                raise ValueError(
+                    f"`padding_mask_crop` requires `mask_image` to be a PIL image, not {type(mask_image)}."
+                )
+            if output_type != "pil":
+                raise ValueError(f"`padding_mask_crop` requires `output_type='pil'`, not {output_type!r}.")
+
+    @torch.no_grad()
+    def __call__(self, components: FluxModularPipeline, state: PipelineState):
+        block_state = self.get_block_state(state)
+
+        if block_state.resized_image is None:
+            image = block_state.image
+            height = block_state.height or components.default_height
+            width = block_state.width or components.default_width
+        else:
+            image = block_state.resized_image
+            width, height = block_state.resized_image[0].size
+
+        self.check_inputs(
+            image=image,
+            mask_image=block_state.mask_image,
+            height=block_state.height,
+            width=block_state.width,
+            vae_scale_factor=components.vae_scale_factor,
+            padding_mask_crop=block_state.padding_mask_crop,
+            output_type=block_state.output_type,
+        )
+
+        if block_state.padding_mask_crop is not None:
+            crops_coords = components.mask_processor.get_crop_region(
+                block_state.mask_image, width, height, pad=block_state.padding_mask_crop
+            )
+            resize_mode = "fill"
+        else:
+            crops_coords = None
+            resize_mode = "default"
+
+        block_state.processed_image = components.image_processor.preprocess(
+            image=image,
+            height=height,
+            width=width,
+            crops_coords=crops_coords,
+            resize_mode=resize_mode,
+        ).to(dtype=torch.float32)
+        block_state.mask_condition = components.mask_processor.preprocess(
+            block_state.mask_image,
+            height=height,
+            width=width,
+            crops_coords=crops_coords,
+            resize_mode=resize_mode,
+        )
+        block_state.original_image = image if crops_coords is not None else None
+        block_state.original_mask_image = block_state.mask_image if crops_coords is not None else None
+        block_state.crops_coords = crops_coords
 
         self.set_block_state(state, block_state)
         return components, state

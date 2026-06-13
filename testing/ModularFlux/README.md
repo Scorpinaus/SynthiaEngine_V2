@@ -9,8 +9,10 @@ download weights if they are not already cached.
 
 - `flux-text2img`
 - `flux-img2img`
+- `flux-inpaint`
 - `flux-embeds2img`
 - `flux-img2img-embeds`
+- `flux-inpaint-embeds`
 - `kontext-text2img`
 - `kontext-image`
 - `kontext-embeds2img`

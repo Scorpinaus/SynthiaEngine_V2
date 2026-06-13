@@ -498,6 +498,95 @@ class FluxImg2ImgPrepareLatentsStep(ModularPipelineBlocks):
         return components, state
 
 
+class FluxInpaintPrepareMaskStep(ModularPipelineBlocks):
+    model_name = "flux"
+
+    @property
+    def description(self) -> str:
+        return "Step that prepares packed inpaint mask latents for Flux latent blending."
+
+    @property
+    def expected_components(self) -> list[ComponentSpec]:
+        return []
+
+    @property
+    def inputs(self) -> list[InputParam]:
+        return [
+            InputParam("mask_condition", required=True, type_hint=torch.Tensor),
+            InputParam("latents", required=True, type_hint=torch.Tensor),
+            InputParam("batch_size", required=True, type_hint=int),
+            InputParam("num_images_per_prompt", type_hint=int, default=1),
+            InputParam("height", required=True, type_hint=int),
+            InputParam("width", required=True, type_hint=int),
+            InputParam("dtype", type_hint=torch.dtype),
+            InputParam("num_channels_latents", type_hint=int),
+        ]
+
+    @property
+    def intermediate_outputs(self) -> list[OutputParam]:
+        return [
+            OutputParam(
+                "mask",
+                type_hint=torch.Tensor,
+                description="Packed inpaint mask latents. White regions are repainted; black regions are preserved.",
+            )
+        ]
+
+    @staticmethod
+    def _repeat_to_batch_size(tensor: torch.Tensor, batch_size: int, label: str) -> torch.Tensor:
+        if tensor.shape[0] == batch_size:
+            return tensor
+        if tensor.shape[0] < batch_size and batch_size % tensor.shape[0] == 0:
+            return tensor.repeat(batch_size // tensor.shape[0], 1, 1, 1)
+        raise ValueError(
+            f"Cannot duplicate `{label}` batch size {tensor.shape[0]} to the effective batch size {batch_size}."
+        )
+
+    @staticmethod
+    def prepare_mask_latents(
+        components,
+        mask_condition,
+        batch_size,
+        num_channels_latents,
+        num_images_per_prompt,
+        height,
+        width,
+        dtype,
+        device,
+    ):
+        height = 2 * (int(height) // (components.vae_scale_factor * 2))
+        width = 2 * (int(width) // (components.vae_scale_factor * 2))
+        effective_batch_size = batch_size * num_images_per_prompt
+
+        mask = torch.nn.functional.interpolate(mask_condition, size=(height, width), mode="nearest")
+        mask = mask.to(device=device, dtype=dtype)
+        mask = FluxInpaintPrepareMaskStep._repeat_to_batch_size(mask, effective_batch_size, "mask")
+        mask = mask.repeat(1, num_channels_latents, 1, 1)
+        return FluxPipeline._pack_latents(mask, effective_batch_size, num_channels_latents, height, width)
+
+    @torch.no_grad()
+    def __call__(self, components: FluxModularPipeline, state: PipelineState) -> PipelineState:
+        block_state = self.get_block_state(state)
+        dtype = block_state.dtype or block_state.latents.dtype
+        device = block_state.latents.device
+        num_channels_latents = block_state.num_channels_latents or components.num_channels_latents
+
+        block_state.mask = self.prepare_mask_latents(
+            components,
+            block_state.mask_condition,
+            block_state.batch_size,
+            num_channels_latents,
+            block_state.num_images_per_prompt,
+            block_state.height,
+            block_state.width,
+            dtype,
+            device,
+        )
+
+        self.set_block_state(state, block_state)
+        return components, state
+
+
 class FluxRoPEInputsStep(ModularPipelineBlocks):
     model_name = "flux"
 

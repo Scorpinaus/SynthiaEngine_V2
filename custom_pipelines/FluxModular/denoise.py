@@ -243,6 +243,50 @@ class FluxLoopAfterDenoiser(ModularPipelineBlocks):
         return components, block_state
 
 
+class FluxInpaintLoopAfterDenoiser(FluxLoopAfterDenoiser):
+    model_name = "flux"
+
+    @property
+    def description(self) -> str:
+        return "Step within the denoising loop that updates and mask-blends Flux inpaint latents."
+
+    @property
+    def inputs(self) -> list[tuple[str, Any]]:
+        return [
+            InputParam("image_latents", required=True, type_hint=torch.Tensor),
+            InputParam("initial_noise", required=True, type_hint=torch.Tensor),
+            InputParam("mask", required=True, type_hint=torch.Tensor),
+        ]
+
+    @torch.no_grad()
+    def __call__(self, components: FluxModularPipeline, block_state: BlockState, i: int, t: torch.Tensor):
+        latents_dtype = block_state.latents.dtype
+        block_state.latents = components.scheduler.step(
+            block_state.noise_pred,
+            t,
+            block_state.latents,
+            return_dict=False,
+        )[0]
+
+        init_latents = block_state.image_latents
+        if i < len(block_state.timesteps) - 1:
+            noise_timestep = block_state.timesteps[i + 1].reshape(1).to(block_state.latents.device)
+            init_latents = components.scheduler.scale_noise(
+                init_latents,
+                noise_timestep,
+                block_state.initial_noise,
+            )
+
+        mask = block_state.mask.to(device=block_state.latents.device, dtype=block_state.latents.dtype)
+        init_latents = init_latents.to(device=block_state.latents.device, dtype=block_state.latents.dtype)
+        block_state.latents = (1 - mask) * init_latents + mask * block_state.latents
+
+        if block_state.latents.dtype != latents_dtype:
+            block_state.latents = block_state.latents.to(latents_dtype)
+
+        return components, block_state
+
+
 class FluxDenoiseLoopWrapper(LoopSequentialPipelineBlocks):
     model_name = "flux"
 
@@ -310,6 +354,19 @@ class FluxDenoiseStep(FluxDenoiseLoopWrapper):
             " - `FluxLoopDenoiser`\n"
             " - `FluxLoopAfterDenoiser`\n"
             "This block supports both text2image and img2img tasks."
+        )
+
+
+class FluxInpaintDenoiseStep(FluxDenoiseLoopWrapper):
+    model_name = "flux"
+    block_classes = [FluxLoopDenoiser, FluxInpaintLoopAfterDenoiser]
+    block_names = ["denoiser", "after_denoiser"]
+
+    @property
+    def description(self) -> str:
+        return (
+            "Denoise step for Flux inpainting. It runs the standard Flux denoiser, then blends masked latents after "
+            "each scheduler step so black mask regions preserve the source image."
         )
 
 

@@ -10,6 +10,7 @@ import torch
 from PIL import Image
 
 import measure_flux_modular as harness
+from custom_pipelines.FluxModular.before_denoise import FluxInpaintPrepareMaskStep
 from custom_pipelines.FluxModular import low_memory
 from custom_pipelines.FluxModular import device_placement
 
@@ -162,6 +163,57 @@ def test_img2img_prepare_latents_moves_inputs_to_denoise_device(monkeypatch):
     assert "image_latents" not in state.values
 
 
+def test_inpaint_prepare_latents_keeps_image_latents_for_blending(monkeypatch):
+    step = low_memory.LowMemoryFluxInpaintPrepareLatentsStep()
+    block_state = SimpleNamespace(
+        image_latents=torch.zeros((1, 4, 4)),
+        latents=torch.ones((1, 4, 4)),
+        timesteps=torch.zeros((1,)),
+        guidance=torch.zeros((1,)),
+    )
+
+    class FakeState:
+        def __init__(self):
+            self.values = {"image_latents": block_state.image_latents}
+
+        def get(self, _name, default=None):
+            return default
+
+    class FakeScheduler:
+        def scale_noise(self, image_latents, _latent_timestep, latents):
+            return image_latents + latents
+
+    monkeypatch.setattr(step, "get_block_state", lambda _state: block_state)
+    monkeypatch.setattr(step, "set_block_state", lambda _state, _block_state: None)
+    monkeypatch.setattr(low_memory, "denoise_execution_device", lambda _components: torch.device("cpu"))
+
+    _components, state = step(SimpleNamespace(scheduler=FakeScheduler()), FakeState())
+
+    assert "image_latents" in state.values
+    assert torch.equal(block_state.initial_noise, torch.ones((1, 4, 4)))
+    assert torch.equal(block_state.latents, torch.ones((1, 4, 4)))
+
+
+def test_inpaint_prepare_mask_latents_packs_and_repeats_mask():
+    mask_condition = torch.zeros((1, 1, 32, 32))
+    mask_condition[:, :, 8:24, 8:24] = 1
+
+    mask = FluxInpaintPrepareMaskStep.prepare_mask_latents(
+        SimpleNamespace(vae_scale_factor=8),
+        mask_condition,
+        batch_size=1,
+        num_channels_latents=4,
+        num_images_per_prompt=2,
+        height=32,
+        width=32,
+        dtype=torch.float32,
+        device=torch.device("cpu"),
+    )
+
+    assert mask.shape == (2, 4, 16)
+    assert set(mask.unique().tolist()) <= {0.0, 1.0}
+
+
 def test_resolve_cases_supports_pipeline_all():
     args = harness.parse_args(["--case", "all", "--pipeline", "all"])
 
@@ -170,8 +222,10 @@ def test_resolve_cases_supports_pipeline_all():
     assert [case.name for case in cases] == [
         "flux-text2img",
         "flux-img2img",
+        "flux-inpaint",
         "flux-embeds2img",
         "flux-img2img-embeds",
+        "flux-inpaint-embeds",
         "kontext-text2img",
         "kontext-image",
         "kontext-embeds2img",
@@ -181,9 +235,11 @@ def test_resolve_cases_supports_pipeline_all():
 
 def test_resolve_cases_supports_short_aliases():
     flux_args = harness.parse_args(["--case", "img2img", "--pipeline", "flux"])
+    flux_inpaint_args = harness.parse_args(["--case", "inpaint", "--pipeline", "flux"])
     kontext_args = harness.parse_args(["--case", "image", "--pipeline", "kontext"])
 
     assert [case.name for case in harness.resolve_cases(flux_args)] == ["flux-img2img"]
+    assert [case.name for case in harness.resolve_cases(flux_inpaint_args)] == ["flux-inpaint"]
     assert [case.name for case in harness.resolve_cases(kontext_args)] == ["kontext-image"]
 
 
@@ -201,6 +257,21 @@ def test_build_case_kwargs_for_flux_img2img_uses_synthetic_image():
     assert kwargs["low_memory_transformer_stream_blocks"] == "auto"
     assert kwargs["decode_chunk_size"] == 1
     assert isinstance(kwargs["image"], Image.Image)
+    assert stats["prepare_seconds"] >= 0
+    assert stats["embed_seconds"] is None
+
+
+def test_build_case_kwargs_for_flux_inpaint_uses_synthetic_mask():
+    args = harness.parse_args(["--case", "flux-inpaint", "--pipeline", "flux", "--seed", "99"])
+    case = harness.CASES["flux-inpaint"]
+
+    kwargs, stats = harness.build_case_kwargs(args, case, FakePipe(), run_seed=99)
+
+    assert kwargs["prompt"] == args.prompt
+    assert kwargs["strength"] == args.strength
+    assert isinstance(kwargs["image"], Image.Image)
+    assert isinstance(kwargs["mask_image"], Image.Image)
+    assert kwargs["mask_image"].mode == "L"
     assert stats["prepare_seconds"] >= 0
     assert stats["embed_seconds"] is None
 
