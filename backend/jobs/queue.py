@@ -19,6 +19,7 @@ from backend.jobs.models import Base, Job, utcnow
 logger = logging.getLogger(__name__)
 
 EXECUTION_LOCK = threading.Lock()
+JOB_RESULT_UPDATE_LOCK = threading.Lock()
 
 
 class JobNotFoundError(Exception):
@@ -255,15 +256,16 @@ def _mark_job_succeeded(session: Session, job_id: str, result: dict[str, Any]) -
 
 def update_job_partial_result(SessionLocal: sessionmaker, job_id: str, patch: dict[str, Any]) -> None:
     now = utcnow()
-    with SessionLocal() as session:
-        job = session.get(Job, job_id)
-        if job is None:
-            return
-        current = dict(job.result or {})
-        current.update(patch)
-        job.result = current
-        job.updated_at = now
-        session.commit()
+    with JOB_RESULT_UPDATE_LOCK:
+        with SessionLocal() as session:
+            job = session.get(Job, job_id)
+            if job is None:
+                return
+            current = dict(job.result or {})
+            current.update(patch)
+            job.result = current
+            job.updated_at = now
+            session.commit()
 
 
 def execute_job(
@@ -280,9 +282,12 @@ def execute_job(
         def _progress(patch: dict[str, Any]) -> None:
             update_job_partial_result(SessionLocal, job_id, {"progress": patch})
 
+        def _profile_update(profile: dict[str, Any]) -> None:
+            update_job_partial_result(SessionLocal, job_id, {"profile": profile})
+
         artifacts_to_cleanup = collect_artifact_ids(payload)
         try:
-            with SummaryProfiler() as profiler:
+            with SummaryProfiler(on_update=_profile_update) as profiler:
                 result = execute_workflow(
                     payload,
                     ctx=WorkflowContext(

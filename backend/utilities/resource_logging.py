@@ -199,10 +199,12 @@ class SummaryProfiler:
         enabled: bool = True,
         interval_s: float | None = None,
         nvml_device_index: int | None = None,
+        on_update: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         self.enabled = enabled
-        self.interval_s = config.RESOURCE_LOGGING_INTERVAL_S if interval_s is None else interval_s
+        self.interval_s = config.SUMMARY_PROFILER_INTERVAL_S if interval_s is None else interval_s
         self.nvml_device_index = nvml_device_index
+        self.on_update = on_update
         self.profile: dict[str, Any] | None = None
         self._process = psutil.Process()
         self._start_time: float | None = None
@@ -223,7 +225,14 @@ class SummaryProfiler:
         self._stop_event = threading.Event()
         self._thread = threading.Thread(
             target=_summary_sampling_loop,
-            args=(self._stop_event, self._stats, max(0.01, float(self.interval_s))),
+            args=(
+                self._process,
+                self._stop_event,
+                self._stats,
+                max(0.01, float(self.interval_s)),
+                self._start_time,
+                self.on_update,
+            ),
             daemon=True,
         )
         self._thread.start()
@@ -243,6 +252,11 @@ class SummaryProfiler:
         try:
             self._stats.capture_end(self._process)
             self.profile = self._stats.summary(elapsed_seconds)
+            if self.on_update is not None:
+                try:
+                    self.on_update(self.profile)
+                except Exception:
+                    logger.exception("Failed to publish final summary profiler update.")
         finally:
             self._stats.close()
 
@@ -252,16 +266,27 @@ class _SummaryStats:
         self.cuda_available = cuda_available
         self.nvml = nvml
         self.rss_start: int | None = None
+        self.rss_current: int | None = None
         self.rss_end: int | None = None
+        self.rss_peak: int | None = None
+        self.cuda_current_allocated: int | None = None
+        self.cuda_current_reserved: int | None = None
         self.cuda_peak_allocated: int | None = None
         self.cuda_peak_reserved: int | None = None
 
     def capture_start(self, process: psutil.Process) -> None:
         self.rss_start = process.memory_info().rss
+        self.rss_current = self.rss_start
+        self.rss_peak = self.rss_start
+        self._capture_cuda_current()
         self.nvml.capture_start()
 
     def capture_end(self, process: psutil.Process) -> None:
         self.rss_end = process.memory_info().rss
+        self.rss_current = self.rss_end
+        if self.rss_end is not None:
+            self.rss_peak = max(self.rss_peak or 0, self.rss_end)
+        self._capture_cuda_current()
         if self.cuda_available:
             try:
                 self.cuda_peak_allocated = torch.cuda.max_memory_allocated()
@@ -271,7 +296,10 @@ class _SummaryStats:
                 self.cuda_peak_reserved = None
         self.nvml.capture_end()
 
-    def sample(self) -> None:
+    def sample(self, process: psutil.Process) -> None:
+        self.rss_current = process.memory_info().rss
+        self.rss_peak = max(self.rss_peak or 0, self.rss_current)
+        self._capture_cuda_current()
         self.nvml.sample()
 
     def summary(self, elapsed_seconds: float) -> dict[str, Any]:
@@ -279,8 +307,12 @@ class _SummaryStats:
             "schema_version": 1,
             "elapsed_seconds": elapsed_seconds,
             "rss_before_mb": _bytes_to_mb(self.rss_start),
+            "rss_current_mb": _bytes_to_mb(self.rss_current),
             "rss_after_mb": _bytes_to_mb(self.rss_end),
+            "rss_peak_sampled_mb": _bytes_to_mb(self.rss_peak),
             "cuda_available": self.cuda_available,
+            "cuda_allocated_current_mb": _bytes_to_mb(self.cuda_current_allocated),
+            "cuda_reserved_current_mb": _bytes_to_mb(self.cuda_current_reserved),
             "cuda_peak_allocated_mb": _bytes_to_mb(self.cuda_peak_allocated),
             "cuda_peak_reserved_mb": _bytes_to_mb(self.cuda_peak_reserved),
             **self.nvml.summary(),
@@ -289,12 +321,23 @@ class _SummaryStats:
     def close(self) -> None:
         self.nvml.close()
 
+    def _capture_cuda_current(self) -> None:
+        if not self.cuda_available:
+            return
+        try:
+            self.cuda_current_allocated = torch.cuda.memory_allocated()
+            self.cuda_current_reserved = torch.cuda.memory_reserved()
+        except Exception:
+            self.cuda_current_allocated = None
+            self.cuda_current_reserved = None
+
 
 class _NvmlUsedMemorySampler:
     def __init__(self, device_index: int | None) -> None:
         self.available = False
         self.device_index: int | None = None
         self.used_start: int | None = None
+        self.used_current: int | None = None
         self.used_end: int | None = None
         self.used_peak: int | None = None
         self._pynvml: Any | None = None
@@ -330,16 +373,19 @@ class _NvmlUsedMemorySampler:
     def capture_start(self) -> None:
         used = self._current_used()
         self.used_start = used
+        self.used_current = used
         self.used_peak = used
 
     def capture_end(self) -> None:
         used = self._current_used()
         self.used_end = used
+        self.used_current = used
         if used is not None:
             self.used_peak = max(self.used_peak or 0, used)
 
     def sample(self) -> None:
         used = self._current_used()
+        self.used_current = used
         if used is not None:
             self.used_peak = max(self.used_peak or 0, used)
 
@@ -348,6 +394,7 @@ class _NvmlUsedMemorySampler:
             "nvml_available": self.available,
             "nvml_device_index": self.device_index,
             "nvml_used_start_mb": _bytes_to_mb(self.used_start),
+            "nvml_used_current_mb": _bytes_to_mb(self.used_current),
             "nvml_used_end_mb": _bytes_to_mb(self.used_end),
             "nvml_used_peak_sampled_mb": _bytes_to_mb(self.used_peak),
         }
@@ -370,12 +417,20 @@ class _NvmlUsedMemorySampler:
 
 
 def _summary_sampling_loop(
+    process: psutil.Process,
     stop_event: threading.Event,
     stats: _SummaryStats,
     interval_s: float,
+    start_time: float,
+    on_update: Callable[[dict[str, Any]], None] | None,
 ) -> None:
     while not stop_event.is_set():
-        stats.sample()
+        stats.sample(process)
+        if on_update is not None:
+            try:
+                on_update(stats.summary(time.perf_counter() - start_time))
+            except Exception:
+                logger.exception("Failed to publish summary profiler update.")
         stop_event.wait(interval_s)
 
 

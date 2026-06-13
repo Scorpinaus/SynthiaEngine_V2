@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Synthia Engine Profiler</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../style.css?v=2" />
+</head>
+
+<body>
+    <div class="app profiler-app">
+        <div id="header-root"></div>
+
+        <section class="profiler-panel">
+            <div class="profiler-header">
+                <div>
+                    <h2>Usage Profiler</h2>
+                    <p id="profiler-subtitle">No job selected.</p>
+                </div>
+                <button id="profiler-refresh" class="secondary" type="button">Refresh</button>
+            </div>
+
+            <div class="profiler-layout">
+                <aside class="profiler-jobs">
+                    <div class="profiler-jobs-header">
+                        <h3>Jobs</h3>
+                        <span id="profiler-jobs-status">Idle</span>
+                    </div>
+                    <div class="profiler-job-groups">
+                        <section>
+                            <h4>Active</h4>
+                            <div id="profiler-active-jobs" class="profiler-job-list"></div>
+                        </section>
+                        <section>
+                            <h4>Recent</h4>
+                            <div id="profiler-recent-jobs" class="profiler-job-list"></div>
+                        </section>
+                    </div>
+                </aside>
+
+                <section class="profiler-main">
+                    <div class="profiler-selected">
+                        <div>
+                            <div id="profiler-job-title" class="profiler-job-title">No job selected</div>
+                            <div id="profiler-job-detail" class="profiler-job-detail">Waiting for jobs.</div>
+                        </div>
+                        <span id="profiler-job-status" class="profiler-status">Idle</span>
+                    </div>
+
+                    <div class="profiler-metrics">
+                        <div class="profiler-metric">
+                            <span>Elapsed</span>
+                            <strong id="metric-elapsed">-</strong>
+                            <small id="metric-elapsed-sub">-</small>
+                        </div>
+                        <div class="profiler-metric">
+                            <span>RAM</span>
+                            <strong id="metric-ram-current">-</strong>
+                            <small id="metric-ram-sub">-</small>
+                        </div>
+                        <div class="profiler-metric">
+                            <span>PyTorch VRAM</span>
+                            <strong id="metric-cuda-current">-</strong>
+                            <small id="metric-cuda-sub">-</small>
+                        </div>
+                        <div class="profiler-metric">
+                            <span>NVML VRAM</span>
+                            <strong id="metric-nvml-current">-</strong>
+                            <small id="metric-nvml-sub">-</small>
+                        </div>
+                    </div>
+
+                    <div class="profiler-charts">
+                        <section class="profiler-chart">
+                            <div class="profiler-chart-header">
+                                <h3>RAM</h3>
+                                <span id="chart-ram-range">-</span>
+                            </div>
+                            <canvas id="chart-ram" height="180"></canvas>
+                        </section>
+                        <section class="profiler-chart">
+                            <div class="profiler-chart-header">
+                                <h3>PyTorch VRAM</h3>
+                                <span id="chart-cuda-range">-</span>
+                            </div>
+                            <canvas id="chart-cuda" height="180"></canvas>
+                        </section>
+                        <section class="profiler-chart">
+                            <div class="profiler-chart-header">
+                                <h3>NVML VRAM</h3>
+                                <span id="chart-nvml-range">-</span>
+                            </div>
+                            <canvas id="chart-nvml" height="180"></canvas>
+                        </section>
+                    </div>
+                </section>
+            </div>
+        </section>
+    </div>
+
+    <script src="../api_config.js?v=1"></script>
+    <script src="../components/header.js?v=1"></script>
+    <script src="../components/nav_bar.js?v=4"></script>
+    <script src="../workflow_client.js?v=1"></script>
+    <script src="profiler.js?v=1"></script>
+</body>
+
+</html>

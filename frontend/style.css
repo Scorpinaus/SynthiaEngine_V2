@@ -1,6 +1,7 @@
 body {
     font-family: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
     background: linear-gradient(135deg, #f8f4ef 0%, #e6e2d9 100%);
+    box-sizing: border-box;
     color: #2b2a28;
     margin: 0;
     padding: 24px;
@@ -1571,10 +1572,252 @@ button {
     border-bottom: none;
 }
 
+.profiler-app {
+    max-width: 1360px;
+}
+
+.profiler-panel {
+    background: #fdfbf7;
+    border: 1px solid #e1dbd2;
+    border-radius: 8px;
+    padding: 20px;
+    display: grid;
+    gap: 18px;
+}
+
+.profiler-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+}
+
+.profiler-header h2 {
+    margin: 0 0 6px 0;
+    font-size: 22px;
+}
+
+.profiler-header p {
+    margin: 0;
+    color: #6b645c;
+    font-size: 14px;
+}
+
+.profiler-layout {
+    display: grid;
+    grid-template-columns: minmax(240px, 320px) 1fr;
+    gap: 18px;
+    align-items: start;
+}
+
+.profiler-jobs,
+.profiler-main,
+.profiler-chart {
+    background: #ffffff;
+    border: 1px solid #e3ddd4;
+    border-radius: 8px;
+}
+
+.profiler-jobs {
+    display: grid;
+    gap: 14px;
+    padding: 14px;
+    position: sticky;
+    top: 24px;
+}
+
+.profiler-jobs-header,
+.profiler-selected,
+.profiler-chart-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.profiler-jobs-header h3,
+.profiler-chart-header h3 {
+    margin: 0;
+    font-size: 16px;
+}
+
+#profiler-jobs-status,
+.profiler-job-detail,
+.profiler-chart-header span,
+.profiler-job-meta,
+.profiler-empty {
+    color: #6b645c;
+    font-size: 12px;
+}
+
+.profiler-job-groups {
+    display: grid;
+    gap: 16px;
+}
+
+.profiler-job-groups h4 {
+    margin: 0 0 8px 0;
+    color: #6b645c;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.profiler-job-list {
+    display: grid;
+    gap: 8px;
+}
+
+.profiler-job {
+    display: grid;
+    gap: 4px;
+    width: 100%;
+    text-align: left;
+    padding: 10px;
+    border: 1px solid #e3ddd4;
+    border-radius: 8px;
+    background: #fdfaf5;
+    color: #2b2a28;
+    cursor: pointer;
+}
+
+.profiler-job:hover,
+.profiler-job.is-active {
+    border-color: #2563eb;
+    background: #f4f8ff;
+}
+
+.profiler-job-name {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.profiler-main {
+    display: grid;
+    gap: 16px;
+    padding: 16px;
+}
+
+.profiler-job-title {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.profiler-status {
+    border: 1px solid #e3ddd4;
+    border-radius: 999px;
+    padding: 6px 10px;
+    color: #4d463f;
+    background: #f7f1e9;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: capitalize;
+}
+
+.profiler-status[data-status="running"] {
+    color: #075985;
+    background: #e0f2fe;
+    border-color: #7dd3fc;
+}
+
+.profiler-status[data-status="succeeded"] {
+    color: #166534;
+    background: #dcfce7;
+    border-color: #86efac;
+}
+
+.profiler-status[data-status="failed"],
+.profiler-status[data-status="canceled"] {
+    color: #991b1b;
+    background: #fee2e2;
+    border-color: #fca5a5;
+}
+
+.profiler-metrics {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.profiler-metric {
+    display: grid;
+    gap: 5px;
+    min-width: 0;
+    border: 1px solid #e3ddd4;
+    border-radius: 8px;
+    padding: 12px;
+    background: #fdfaf5;
+}
+
+.profiler-metric span {
+    color: #6b645c;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.profiler-metric strong {
+    font-size: 24px;
+    line-height: 1.1;
+    overflow-wrap: anywhere;
+}
+
+.profiler-metric small {
+    color: #6b645c;
+    font-size: 12px;
+    line-height: 1.35;
+}
+
+.profiler-charts {
+    display: grid;
+    gap: 12px;
+}
+
+.profiler-chart {
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+}
+
+.profiler-chart canvas {
+    width: 100%;
+    height: 180px;
+    display: block;
+    border: 1px solid #eee7de;
+    border-radius: 8px;
+    background: #fffdfa;
+}
+
 @media (max-width: 720px) {
+    .header {
+        display: grid;
+        justify-content: stretch;
+    }
+
+    .header-nav {
+        flex-wrap: wrap;
+    }
+
     .tools-metadata-table th:first-child,
     .tools-metadata-table td:first-child {
         min-width: 160px;
+    }
+
+    .profiler-header,
+    .profiler-selected {
+        display: grid;
+    }
+
+    .profiler-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .profiler-jobs {
+        position: static;
+    }
+
+    .profiler-metrics {
+        grid-template-columns: 1fr;
     }
 }
 

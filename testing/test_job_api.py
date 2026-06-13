@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import backend.workflow as workflow
 from backend.jobs import queue as job_queue
 from backend.main import _serialize_job
+from backend.utilities import resource_logging
 
 
 def test_serialize_job_timestamps_include_timezone_for_sqlite_naive_datetimes():
@@ -31,17 +32,59 @@ def test_serialize_job_timestamps_include_timezone_for_sqlite_naive_datetimes():
 
 
 def test_execute_workflow_job_attaches_summary_profile(monkeypatch):
-    progress_patches = []
+    partial_updates = []
     cleanup_calls = []
 
     monkeypatch.setattr(
         job_queue,
         "update_job_partial_result",
-        lambda SessionLocal, job_id, patch: progress_patches.append((job_id, patch)),
+        lambda SessionLocal, job_id, patch: partial_updates.append((job_id, patch)),
     )
     monkeypatch.setattr(job_queue, "is_cancel_requested", lambda SessionLocal, job_id: False)
     monkeypatch.setattr(workflow, "collect_artifact_ids", lambda payload: set())
     monkeypatch.setattr(workflow, "cleanup_artifacts", lambda artifact_ids: cleanup_calls.append(set(artifact_ids)))
+
+    class FakeSummaryProfiler:
+        def __init__(self, *, on_update=None):
+            self.on_update = on_update
+            self.profile = None
+
+        def __enter__(self):
+            if self.on_update is not None:
+                self.on_update(
+                    {
+                        "schema_version": 1,
+                        "elapsed_seconds": 0.1,
+                        "rss_current_mb": 10.0,
+                        "nvml_used_current_mb": 20.0,
+                    }
+                )
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            self.profile = {
+                "schema_version": 1,
+                "elapsed_seconds": 1.0,
+                "rss_before_mb": 10.0,
+                "rss_current_mb": 12.0,
+                "rss_after_mb": 12.0,
+                "rss_peak_sampled_mb": 12.0,
+                "cuda_available": False,
+                "cuda_allocated_current_mb": None,
+                "cuda_reserved_current_mb": None,
+                "cuda_peak_allocated_mb": None,
+                "cuda_peak_reserved_mb": None,
+                "nvml_available": False,
+                "nvml_device_index": None,
+                "nvml_used_start_mb": None,
+                "nvml_used_current_mb": None,
+                "nvml_used_end_mb": None,
+                "nvml_used_peak_sampled_mb": None,
+            }
+            if self.on_update is not None:
+                self.on_update(self.profile)
+
+    monkeypatch.setattr(resource_logging, "SummaryProfiler", FakeSummaryProfiler)
 
     def fake_execute_workflow(payload, *, ctx=None):
         assert payload == {"tasks": []}
@@ -66,18 +109,26 @@ def test_execute_workflow_job_attaches_summary_profile(monkeypatch):
     assert result["outputs"] == {"ok": True}
     assert result["tasks"] == {}
     assert "created_artifacts" not in result
-    assert progress_patches == [("job-1", {"progress": {"phase": "running"}})]
+    assert ("job-1", {"progress": {"phase": "running"}}) in partial_updates
+    profile_updates = [patch["profile"] for _, patch in partial_updates if "profile" in patch]
+    assert profile_updates[0]["rss_current_mb"] == 10.0
+    assert profile_updates[-1]["elapsed_seconds"] == 1.0
     assert cleanup_calls == [{"a123"}]
 
     profile = result["profile"]
     assert profile["schema_version"] == 1
-    assert profile["elapsed_seconds"] >= 0
-    assert profile["rss_before_mb"] is None or profile["rss_before_mb"] > 0
-    assert profile["rss_after_mb"] is None or profile["rss_after_mb"] > 0
+    assert profile["elapsed_seconds"] == 1.0
+    assert profile["rss_before_mb"] == 10.0
+    assert profile["rss_current_mb"] == 12.0
+    assert profile["rss_after_mb"] == 12.0
+    assert profile["rss_peak_sampled_mb"] == 12.0
     assert isinstance(profile["cuda_available"], bool)
+    assert "cuda_allocated_current_mb" in profile
+    assert "cuda_reserved_current_mb" in profile
     assert "cuda_peak_allocated_mb" in profile
     assert "cuda_peak_reserved_mb" in profile
     assert isinstance(profile["nvml_available"], bool)
     assert "nvml_used_start_mb" in profile
+    assert "nvml_used_current_mb" in profile
     assert "nvml_used_end_mb" in profile
     assert "nvml_used_peak_sampled_mb" in profile

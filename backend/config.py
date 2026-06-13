@@ -17,6 +17,7 @@ DEFAULTS = {
 
 RESOURCE_LOGGING_ENABLED = True
 RESOURCE_LOGGING_INTERVAL_S = 0.5
+SUMMARY_PROFILER_INTERVAL_S = 1.0
 
 # Writes `outputs/batch_{batch_id}/{batch_id}_layers.txt` during pipeline runs.
 PIPELINE_LAYER_LOGGING_ENABLED = True
