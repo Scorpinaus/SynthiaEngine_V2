@@ -17,12 +17,11 @@ import tempfile
 from datetime import datetime, timezone
 from io import BytesIO
 import json
-import asyncio
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
-from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageFilter
@@ -63,22 +62,21 @@ from backend.registries.preset import (
     update_preset_entry,
 )
 from backend.jobs.queue import (
-    JobNotFoundError,
     JobQueueConfig,
-    cancel_job,
-    request_cancel_job,
     create_job_queue,
-    IdempotencyConflictError,
-    enqueue_job,
-    get_job,
-    list_jobs,
 )
+from backend.api.jobs import (
+    JobCreateRequest,
+    JobResponse,
+    JobTaskResponse,
+    WorkflowJobCreateRequest,
+    router as jobs_router,
+    serialize_job as _serialize_job,
+    serialize_job_task as _serialize_job_task,
+)
+from backend.api.workflow import router as workflow_router
 
 from backend.workflow import (
-    TASK_REGISTRY,
-    WorkflowRequest,
-    WorkflowTask,
-    build_workflow_catalog,
     save_artifact_png,
 )
 from backend.workflow.utility import save_artifact_file
@@ -88,19 +86,30 @@ configure_logging(role=os.getenv("SYNTHA_LOG_ROLE", "api"))
 app = FastAPI(title="SynthiaEngine API")
 logger = logging.getLogger(__name__)
 
+
+def _configured_cors_origins() -> list[str]:
+    configured = os.getenv("SYNTHA_CORS_ORIGINS", "")
+    if configured.strip():
+        return [origin.strip() for origin in configured.split(",") if origin.strip()]
+    return ["http://127.0.0.1:4173", "http://localhost:4173"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_configured_cors_origins(),
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Idempotency-Key"],
 )
 
 app.mount("/outputs", StaticFiles(directory=OUTPUT_DIR), name="outputs")
+app.include_router(jobs_router)
+app.include_router(workflow_router)
 
 ALLOWED_JOB_KINDS = {"workflow"}
 HISTORY_IMAGE_EXTENSIONS = {".png"}
 HISTORY_VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov"}
 UPLOAD_VIDEO_EXTENSIONS = HISTORY_VIDEO_EXTENSIONS | {".gif"}
+MAX_ARTIFACT_UPLOAD_BYTES = int(os.getenv("SYNTHA_MAX_UPLOAD_BYTES", str(100 * 1024 * 1024)))
+MAX_ARTIFACT_IMAGE_PIXELS = int(os.getenv("SYNTHA_MAX_IMAGE_PIXELS", str(64 * 1024 * 1024)))
 
 
 def _validate_lora_name(name: str | None) -> str | None:
@@ -264,108 +273,6 @@ class ModelAnalysisResponse(BaseModel):
     rows: list[ModelLayerRow]
 
 
-class WorkflowJobCreateRequest(BaseModel):
-    """Job creation request for workflow execution."""
-
-    kind: Literal["workflow"]
-    payload: WorkflowRequest
-    idempotency_key: str | None = None
-
-
-JobCreateRequest = WorkflowJobCreateRequest
-
-
-class JobResponse(BaseModel):
-    """Normalized, API-friendly job representation."""
-
-    id: str
-    idempotency_key: str | None = None
-    cancel_requested: bool | None = None
-    kind: str
-    status: str
-    payload: dict[str, object]
-    result: dict[str, object] | None = None
-    error: str | None = None
-    created_at: str | None = None
-    updated_at: str | None = None
-    started_at: str | None = None
-    finished_at: str | None = None
-
-
-class WorkflowTaskTypesResponse(BaseModel):
-    """Response payload listing workflow task type identifiers."""
-
-    task_types: list[str]
-
-
-class WorkflowSchemaResponse(BaseModel):
-    """Response payload exposing the JSON schema for workflow requests/tasks."""
-
-    workflow_request_schema: dict[str, Any]
-    workflow_task_schema: dict[str, Any]
-
-
-class WorkflowCatalogTask(BaseModel):
-    """A single task type entry in the workflow catalog."""
-
-    input_schema: dict[str, Any]
-    input_defaults: dict[str, Any]
-    output_schema: dict[str, Any] | None = None
-    ui_hints: dict[str, Any] | None = None
-
-
-class WorkflowModelCapabilities(BaseModel):
-    """Capability summary for a single model family."""
-
-    label: str
-    aliases: list[str] = Field(default_factory=list)
-    task_types: list[str] = Field(default_factory=list)
-    features: dict[str, bool] = Field(default_factory=dict)
-
-
-class WorkflowCatalogResponse(BaseModel):
-    """Response payload exposing per-task input schemas/defaults for workflow builders."""
-
-    version: str
-    tasks: dict[str, WorkflowCatalogTask]
-    capabilities: dict[str, WorkflowModelCapabilities] = Field(default_factory=dict)
-
-
-def _serialize_job(job) -> JobResponse:
-    """Convert a queue job object into the public `JobResponse` format."""
-    def _serialize_timestamp(value: datetime | None) -> str | None:
-        if value is None:
-            return None
-        # SQLite drops tzinfo for `DateTime(timezone=True)` values on readback.
-        # Treat naive values from the jobs DB as UTC so clients can localize them.
-        if value.tzinfo is None:
-            value = value.replace(tzinfo=timezone.utc)
-        return value.isoformat()
-
-    return JobResponse(
-        id=job.id,
-        idempotency_key=getattr(job, "idempotency_key", None),
-        cancel_requested=getattr(job, "cancel_requested", None),
-        kind=job.kind,
-        status=job.status,
-        payload=dict(job.payload or {}),
-        result=dict(job.result) if job.result else None,
-        error=job.error,
-        created_at=_serialize_timestamp(job.created_at),
-        updated_at=_serialize_timestamp(job.updated_at),
-        started_at=_serialize_timestamp(job.started_at),
-        finished_at=_serialize_timestamp(job.finished_at),
-    )
-
-
-def _get_job_sessionmaker():
-    """Return the SQLAlchemy sessionmaker stored on app state (or 503)."""
-    sessionmaker = getattr(app.state, "job_sessionmaker", None)
-    if sessionmaker is None:
-        raise HTTPException(status_code=503, detail="Job queue not initialized.")
-    return sessionmaker
-
-
 def _env_flag_enabled(name: str, *, default: bool) -> bool:
     value = os.getenv(name)
     if value is None:
@@ -377,9 +284,8 @@ def _api_embedded_worker_enabled() -> bool:
     return _env_flag_enabled("SYNTHA_API_START_WORKER", default=True)
 
 
-@app.on_event("startup")
 def _startup_job_queue() -> None:
-    """Initialize the job queue and optionally start the embedded worker thread."""
+    """Initialize queue state; retained as a directly testable lifecycle unit."""
     engine, sessionmaker, worker = create_job_queue(JobQueueConfig())
     app.state.job_engine = engine
     app.state.job_sessionmaker = sessionmaker
@@ -394,15 +300,26 @@ def _startup_job_queue() -> None:
         logger.info("Embedded API job worker disabled; external render worker expected.")
 
 
-@app.on_event("shutdown")
 def _shutdown_job_queue() -> None:
-    """Stop the background job worker (best effort)."""
     worker = getattr(app.state, "job_worker", None)
     if worker is not None:
         worker.stop()
     engine = getattr(app.state, "job_engine", None)
     if engine is not None:
         engine.dispose()
+
+
+@asynccontextmanager
+async def _app_lifespan(_application: FastAPI):
+    """Own queue initialization and renderer cleanup for the API lifespan."""
+    _startup_job_queue()
+    try:
+        yield
+    finally:
+        _shutdown_job_queue()
+
+
+app.router.lifespan_context = _app_lifespan
 
 
 def _extract_png_metadata(path: Path) -> dict[str, object]:
@@ -508,153 +425,6 @@ async def health_check():
     return {"status": "ok"}
 
 
-@app.post("/api/jobs", response_model=JobResponse, status_code=201)
-async def submit_job(req: JobCreateRequest, response: Response, request: Request):
-    """
-    Enqueue a new job.
-
-    Supports idempotent submissions via:
-    - request body `idempotency_key`, or
-    - `Idempotency-Key` HTTP header.
-
-    If the idempotency key is present and the job already exists, this returns
-    HTTP 200 with the existing job instead of creating a new one.
-    """
-    if req.kind not in ALLOWED_JOB_KINDS:
-        raise HTTPException(status_code=400, detail=f"Unsupported job kind: {req.kind}")
-
-    sessionmaker = _get_job_sessionmaker()
-    header_key = request.headers.get("Idempotency-Key")
-    idempotency_key = req.idempotency_key or (header_key.strip() if header_key else None)
-    # Normalize payload into JSON-serializable primitives for storage/transport.
-    payload = req.payload.model_dump(by_alias=True)
-    try:
-        job, created = enqueue_job(
-            sessionmaker,
-            kind=req.kind,
-            payload=payload,
-            idempotency_key=idempotency_key,
-        )
-    except IdempotencyConflictError as exc:
-        raise HTTPException(
-            status_code=409,
-            detail="Idempotency key already used with a different request.",
-        ) from exc
-
-    if idempotency_key and not created:
-        response.status_code = 200
-    return _serialize_job(job)
-
-
-@app.get("/api/jobs/{job_id}", response_model=JobResponse)
-async def fetch_job(job_id: str):
-    """Fetch a single job by id."""
-    sessionmaker = _get_job_sessionmaker()
-    try:
-        job = get_job(sessionmaker, job_id)
-    except JobNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="Job not found.") from exc
-    return _serialize_job(job)
-
-
-@app.get("/api/jobs", response_model=list[JobResponse])
-async def fetch_jobs(limit: int = 50):
-    """List recent jobs, bounded by a small server-side maximum."""
-    sessionmaker = _get_job_sessionmaker()
-    jobs = list_jobs(sessionmaker, limit=max(1, min(500, int(limit))))
-    return [_serialize_job(job) for job in jobs]
-
-
-@app.post("/api/jobs/{job_id}/cancel", response_model=JobResponse)
-async def cancel_queued_job(job_id: str):
-    """Request cancellation of a queued/running job (best effort)."""
-    sessionmaker = _get_job_sessionmaker()
-    try:
-        job = request_cancel_job(sessionmaker, job_id)
-    except JobNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="Job not found.") from exc
-    return _serialize_job(job)
-
-
-@app.get("/api/jobs/{job_id}/events")
-async def stream_job_events(job_id: str):
-    """
-    Stream job status updates as Server-Sent Events (SSE).
-
-    This implementation polls the job record periodically and emits a new event
-    when the status/updated_at changes. It stops once the job reaches a terminal
-    state or disappears.
-    """
-    sessionmaker = _get_job_sessionmaker()
-    try:
-        get_job(sessionmaker, job_id)
-    except JobNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="Job not found.") from exc
-
-    async def event_generator():
-        """Yield SSE `data:` frames containing the serialized job payload."""
-        last_status = None
-        last_updated_at = None
-        while True:
-            try:
-                job = get_job(sessionmaker, job_id)
-            except JobNotFoundError:
-                # If the job disappears mid-stream, send a final error frame.
-                payload = {"error": "Job not found.", "status": "missing"}
-                yield f"data: {json.dumps(payload)}\n\n"
-                break
-
-            job_response = _serialize_job(job)
-            payload = job_response.model_dump()
-            status = payload.get("status")
-            updated_at = payload.get("updated_at")
-            if status != last_status or updated_at != last_updated_at:
-                # Only emit when something meaningful changes to reduce spam.
-                yield f"data: {json.dumps(payload)}\n\n"
-                last_status = status
-                last_updated_at = updated_at
-
-            if status in {"succeeded", "failed", "canceled"}:
-                # Terminal states: end the stream cleanly.
-                break
-
-            # Polling interval for SSE consumers. Kept simple by design.
-            await asyncio.sleep(1.0)
-
-    headers = {
-        # SSE best practices: prevent buffering and keep the connection open.
-        "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
-    }
-    return StreamingResponse(event_generator(), media_type="text/event-stream", headers=headers)
-
-
-@app.get("/api/workflow/task-types", response_model=WorkflowTaskTypesResponse)
-async def list_workflow_task_types():
-    """Return the set of registered workflow task type keys."""
-    return WorkflowTaskTypesResponse(task_types=sorted(TASK_REGISTRY.keys()))
-
-
-@app.get("/api/workflow/schema", response_model=WorkflowSchemaResponse)
-async def get_workflow_schema():
-    """Expose workflow request/task JSON schemas for UI validation."""
-    return WorkflowSchemaResponse(
-        workflow_request_schema=WorkflowRequest.model_json_schema(by_alias=True),
-        workflow_task_schema=WorkflowTask.model_json_schema(by_alias=True),
-    )
-
-
-@app.get("/api/workflow/catalog", response_model=WorkflowCatalogResponse)
-async def get_workflow_catalog():
-    """
-    Return the workflow task catalog.
-
-    Each task entry includes an input JSON Schema and a best-effort `input_defaults`
-    dict so UIs can build/validate workflows without hardcoding values.
-    """
-    return WorkflowCatalogResponse(**build_workflow_catalog())
-
-
 class ArtifactResponse(BaseModel):
     """Response payload describing a stored artifact in `OUTPUT_DIR`."""
 
@@ -666,7 +436,9 @@ class ArtifactResponse(BaseModel):
 @app.post("/api/artifacts", response_model=ArtifactResponse, status_code=201)
 async def upload_artifact(file: UploadFile = File(...)):
     """Upload an image or video artifact and persist it under `OUTPUT_DIR`."""
-    file_bytes = await file.read()
+    file_bytes = await file.read(MAX_ARTIFACT_UPLOAD_BYTES + 1)
+    if len(file_bytes) > MAX_ARTIFACT_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="Artifact exceeds the configured upload size limit.")
     filename = file.filename or ""
     extension = Path(filename).suffix.lower()
     content_type = (file.content_type or "").lower()
@@ -681,11 +453,15 @@ async def upload_artifact(file: UploadFile = File(...)):
         image = Image.open(BytesIO(file_bytes))
         # Force decode early to catch truncated/invalid image streams.
         image.load()
+        if image.width * image.height > MAX_ARTIFACT_IMAGE_PIXELS:
+            raise HTTPException(status_code=413, detail="Image exceeds the configured pixel limit.")
         if image.mode == "P":
             # Palette images don't carry alpha in a convenient way for later steps.
             image = image.convert("RGBA")
         artifact = save_artifact_png(image, prefix="a")
         return ArtifactResponse(**artifact)
+    except HTTPException:
+        raise
     except Exception as exc:
         if extension in UPLOAD_VIDEO_EXTENSIONS:
             try:
@@ -734,8 +510,12 @@ async def list_models(family: str | None = None):
 
 
 @app.post("/api/local-path/select", response_model=LocalPathSelectResponse)
-def select_local_path(req: LocalPathSelectRequest):
+def select_local_path(req: LocalPathSelectRequest, request: Request):
     """Open a native local path picker on the API host."""
+    client_host = request.client.host if request.client else ""
+    allow_remote = os.getenv("SYNTHA_ALLOW_REMOTE_PATH_PICKER", "").strip().lower() in {"1", "true", "yes", "on"}
+    if not allow_remote and client_host not in {"127.0.0.1", "::1", "localhost", "testclient"}:
+        raise HTTPException(status_code=403, detail="Local path selection is restricted to loopback clients.")
     try:
         return LocalPathSelectResponse(path=_open_local_path_dialog(req.selection_type))
     except RuntimeError as exc:

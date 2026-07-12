@@ -99,6 +99,15 @@ Idempotency:
 
 `GET /api/jobs?limit=50` (clamped 1..500)
 
+### Fetch persisted workflow task states
+
+`GET /api/jobs/{job_id}/tasks`
+
+Returns task rows in declared execution order. Each row includes `task_id`,
+`task_type`, `task_index`, `status`, declared `inputs`, optional `output` and
+`error`, and task timestamps. Task status is one of `queued`, `running`,
+`succeeded`, `failed`, `skipped`, or `canceled`.
+
 ### Cancel a job
 
 `POST /api/jobs/{job_id}/cancel`
@@ -542,6 +551,12 @@ Notes:
 - `result.tasks` is the per-task result map (useful for debugging / UI).
 - `result.progress` is best-effort; it may be absent for completed jobs created before progress reporting existed.
 - `result.profile` is an optional single-run summary measured during workflow execution, excluding queue wait time. While a job is running, the worker updates `result.profile` with current RAM/VRAM fields and SSE clients receive those snapshots through `/api/jobs/{job_id}/events`. CUDA peak/current fields come from PyTorch allocator stats in the job worker process. For task families that render in subprocesses, use the NVML used VRAM fields for device-level usage. NVML fields are best-effort and are `null` when NVML/pynvml is unavailable.
+- Job responses include `resource_requirements` with model families, estimated VRAM class, maximum declared pixels/frames, and video requirements. A renderer configured with `SYNTHA_WORKER_VRAM_MB` skips queued jobs above its capacity so another compatible worker can claim them.
+- Final profiles include `pipeline_caches` hit/miss/eviction and estimated-cost state for caches loaded in the renderer process.
+- Flux task outputs optionally include `runtime_profile` with pipeline acquisition,
+  device/adapter preparation, inference, denoising, VAE decode, and output-save
+  timings. Denoise/decode values are `null` when the installed pipeline does not
+  expose a step-end callback that permits a reliable split.
 
 ## Workflow payload schema
 
@@ -569,7 +584,9 @@ If `"return"` is omitted, `outputs` becomes the **last task's result object** (o
 Rules:
 - `id` must be unique within the workflow.
 - `id` must match `^[A-Za-z0-9_-]+$` (max 64 chars). Don't use `.` because `@taskId.key` uses `.` as a separator.
-- Tasks run strictly in order.
+- Tasks run sequentially in a stable topological order derived from references.
+  Independent tasks preserve their declared order. Forward references are valid;
+  unknown references and cycles fail preflight before model execution begins.
 
 ## Reference syntax in inputs / return
 
@@ -577,6 +594,8 @@ References are resolved at runtime:
 
 - Prior task field: `@<taskId>.<key>`
   - Example: `@t1.images` (use `t1` output images)
+  - Nested keys and list indexes are supported, for example `@t1.metadata.seed`
+    and `@t1.images[0]`.
 - Artifact reference (uploaded via `/api/artifacts`):
   - String form: `@artifact:<artifact_id>`
   - Object form: `{ "artifact_id": "<artifact_id>" }`
@@ -589,6 +608,7 @@ References are resolved at runtime:
 Resolution behavior:
 - References can appear anywhere inside `inputs` objects/arrays.
 - Unknown task ids -> error.
+- Missing fields, invalid indexes, invalid reference paths, and dependency cycles -> error.
 
 ## Supported task types (current)
 

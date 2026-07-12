@@ -7,6 +7,62 @@ body {
     padding: 24px;
 }
 
+.workflow-builder-layout {
+    align-items: start;
+}
+
+.workflow-builder-form {
+    display: grid;
+    gap: 14px;
+    margin: 8px 0 18px;
+}
+
+.workflow-builder-field details,
+.workflow-builder-field[open] {
+    width: 100%;
+}
+
+.workflow-builder-field summary {
+    cursor: pointer;
+    font-weight: 600;
+    margin-bottom: 10px;
+}
+
+.workflow-builder-field small {
+    color: #6f685f;
+    line-height: 1.4;
+}
+
+.workflow-builder-json {
+    min-height: 110px;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.workflow-builder-result {
+    min-height: 240px;
+    max-height: 520px;
+    overflow: auto;
+    white-space: pre-wrap;
+    background: #201f1d;
+    color: #f7f3eb;
+    border-radius: 14px;
+    padding: 16px;
+}
+
+.workflow-builder-media {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.workflow-builder-media img,
+.workflow-builder-media video {
+    width: 100%;
+    border-radius: 12px;
+    background: #171614;
+}
+
 .app {
     max-width: 1200px;
     margin: 0 auto;

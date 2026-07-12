@@ -1,39 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Literal
+from typing import Any, Callable
 
 from pydantic import BaseModel, Field
 
 # Canonical set of task identifiers accepted by workflow validation/dispatch.
 # Keeping this as a Literal enables static type checking and autocomplete.
-TaskType = Literal[
-    "sd15.text2img",
-    "sd15.animatediff.text2video",
-    "sd15.img2img",
-    "sd15.inpaint",
-    "sd15.controlnet.text2img",
-    "sd15.hires_fix",
-    "sd15.ip_adapter.encode",
-    "wan.text2video",
-    "wan.image2video",
-    "controlnet.preprocess",
-    "sdxl.ip_adapter.encode",
-    "sdxl.text2img",
-    "sdxl.controlnet.text2img",
-    "sdxl.img2img",
-    "sdxl.inpaint",
-    "flux.text2img",
-    "flux.img2img",
-    "flux.inpaint",
-    "qwen-image.text2img",
-    "qwen-image.img2img",
-    "qwen-image.inpaint",
-    "z-image.text2img",
-    "z-image.img2img",
-    "z-image.inpaint",
-    "ernie-image.text2img",
-]
+# Task identifiers are validated against the authoritative runtime registry by
+# the workflow engine. Keeping a second Literal list here caused registered
+# tasks to become unreachable when the two declarations drifted.
+TaskType = str
 
 
 class WorkflowTask(BaseModel):

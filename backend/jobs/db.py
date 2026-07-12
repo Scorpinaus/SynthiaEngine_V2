@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
@@ -38,12 +38,24 @@ def create_job_engine(config: JobDbConfig) -> Engine:
 
             sqlite_path.parent.mkdir(parents=True, exist_ok=True)
 
-    return create_engine(
+    engine = create_engine(
         config.url,
         future=True,
         pool_pre_ping=True,
         connect_args=connect_args,
     )
+    if config.url.startswith("sqlite:"):
+        @event.listens_for(engine, "connect")
+        def _configure_sqlite(dbapi_connection, _connection_record) -> None:
+            cursor = dbapi_connection.cursor()
+            try:
+                cursor.execute("PRAGMA busy_timeout=5000")
+                cursor.execute("PRAGMA foreign_keys=ON")
+                if not config.url.endswith(":memory:"):
+                    cursor.execute("PRAGMA journal_mode=WAL")
+            finally:
+                cursor.close()
+    return engine
 
 
 def create_sessionmaker(engine: Engine) -> sessionmaker:

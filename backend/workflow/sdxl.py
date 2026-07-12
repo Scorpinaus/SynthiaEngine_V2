@@ -2,6 +2,33 @@ from __future__ import annotations
 
 from typing import Any
 
+from backend.workflow.registry import TaskDefinition, TaskHandler, bind_task
+from backend.workflow.schema_input import (
+    SdxlControlNetText2ImgInputs,
+    SdxlImg2ImgInputs,
+    SdxlInpaintInputs,
+    SdxlIpAdapterEncodeInputs,
+    SdxlText2ImgInputs,
+)
+from backend.workflow.schema_output import (
+    ImagesOutput,
+    SdxlControlNetText2ImgOutput,
+    SdxlImg2ImgOutput,
+    SdxlInpaintOutput,
+    SdxlIpAdapterEncodeOutput,
+)
+
+
+def task_definitions(handlers: dict[str, TaskHandler]) -> dict[str, TaskDefinition]:
+    contracts = {
+        "sdxl.ip_adapter.encode": (SdxlIpAdapterEncodeInputs, SdxlIpAdapterEncodeOutput),
+        "sdxl.text2img": (SdxlText2ImgInputs, ImagesOutput),
+        "sdxl.controlnet.text2img": (SdxlControlNetText2ImgInputs, SdxlControlNetText2ImgOutput),
+        "sdxl.img2img": (SdxlImg2ImgInputs, SdxlImg2ImgOutput),
+        "sdxl.inpaint": (SdxlInpaintInputs, SdxlInpaintOutput),
+    }
+    return {name: bind_task(handlers, name, *models) for name, models in contracts.items()}
+
 from PIL import Image
 
 _DEFAULT_IP_ADAPTER_MODEL = "h94/IP-Adapter"

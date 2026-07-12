@@ -1,3 +1,5 @@
+-c constraints.txt
+
 fastapi>=0.115.6
 uvicorn[standard]>=0.30.6
 
@@ -20,4 +22,3 @@ peft>=0.19.1
 controlnet-aux>=0.0.10
 
 imageio-ffmpeg == 0.6.0
-pytest >=9.0.3

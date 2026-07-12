@@ -2,6 +2,19 @@ from __future__ import annotations
 
 from typing import Any
 
+from backend.workflow.registry import TaskDefinition, TaskHandler, bind_task
+from backend.workflow.schema_input import QwenImageImg2ImgInputs, QwenImageInpaintInputs, QwenImageText2ImgInputs
+from backend.workflow.schema_output import ImagesOutput
+
+
+def task_definitions(handlers: dict[str, TaskHandler]) -> dict[str, TaskDefinition]:
+    contracts = {
+        "qwen-image.text2img": QwenImageText2ImgInputs,
+        "qwen-image.img2img": QwenImageImg2ImgInputs,
+        "qwen-image.inpaint": QwenImageInpaintInputs,
+    }
+    return {name: bind_task(handlers, name, model, ImagesOutput) for name, model in contracts.items()}
+
 from PIL import Image
 
 

@@ -183,10 +183,27 @@ def _resolve_refs(value: Any, task_results: dict[str, dict[str, Any]]) -> Any:
         if token.startswith("artifact:"):
             return {"artifact_id": token.removeprefix("artifact:").strip()}
         if "." in token:
-            task_id, key = token.split(".", 1)
+            task_id, path = token.split(".", 1)
             if task_id not in task_results:
                 raise KeyError(f"Unknown task id: {task_id}")
-            return task_results[task_id].get(key)
+            current: Any = task_results[task_id]
+            path_tokens = re.findall(r"(?:^|\.)([A-Za-z_][A-Za-z0-9_-]*)|\[(\d+)\]", path)
+            if not path_tokens or "".join(
+                (f".{key}" if index == "" else f"[{index}]")
+                for key, index in path_tokens
+            ).lstrip(".") != path:
+                raise ValueError(f"Invalid reference path: {value}")
+            for key, index in path_tokens:
+                if key:
+                    if not isinstance(current, dict) or key not in current:
+                        raise KeyError(f"Reference field not found: {value}")
+                    current = current[key]
+                else:
+                    position = int(index)
+                    if not isinstance(current, (list, tuple)) or position >= len(current):
+                        raise IndexError(f"Reference index out of range: {value}")
+                    current = current[position]
+            return current
         raise ValueError(f"Invalid reference: {value}")
 
     if isinstance(value, list):
@@ -194,6 +211,22 @@ def _resolve_refs(value: Any, task_results: dict[str, dict[str, Any]]) -> Any:
     if isinstance(value, dict):
         return {k: _resolve_refs(v, task_results) for k, v in value.items()}
     return value
+
+
+def collect_task_refs(value: Any) -> set[str]:
+    """Return task ids referenced anywhere in a workflow value."""
+    refs: set[str] = set()
+    if isinstance(value, str) and value.startswith("@"):
+        token = value[1:]
+        if not token.startswith("artifact:") and "." in token:
+            refs.add(token.split(".", 1)[0])
+    elif isinstance(value, list):
+        for item in value:
+            refs |= collect_task_refs(item)
+    elif isinstance(value, dict):
+        for item in value.values():
+            refs |= collect_task_refs(item)
+    return refs
 
 
 def _normalized_lora_adapters(inputs: dict[str, Any]) -> Any:

@@ -3,10 +3,9 @@ from __future__ import annotations
 import importlib
 import json
 import logging
-from typing import Any, Callable
+from typing import Any
 
 from PIL import Image
-from pydantic import BaseModel
 
 from backend.config import OUTPUT_DIR
 from backend.workflow.catalog import build_workflow_catalog as _build_workflow_catalog
@@ -14,58 +13,13 @@ from backend.adapters.controlnet_preprocessor_registry import CONTROLNET_PREPROC
 from backend.adapters.controlnet_preprocessors import get_preprocessor
 from backend.utilities.pipeline import get_batch_output_dir, make_batch_id
 from backend.workflow.schema_input import (
-    AnimaText2ImgInputs,
-    ArtifactRef,
     ControlNetPreprocessInputs,
-    ErnieImageText2ImgInputs,
-    FluxImg2ImgInputs,
-    FluxInpaintInputs,
-    FluxText2ImgInputs,
-    ImageRef,
-    Sd15AnimateDiffText2VideoInputs,
-    QwenImageImg2ImgInputs,
-    QwenImageInpaintInputs,
-    QwenImageText2ImgInputs,
-    Sd15ControlNetText2ImgInputs,
-    Sd15EffectiveControlNetItem,
-    Sd15HiresFixInputs,
-    Sd15HiresContract,
-    Sd15IpAdapterContract,
-    Sd15IpAdapterEncodeInputs,
-    Sd15Img2ImgInputs,
-    Sd15InpaintInputs,
-    Sd15Text2ImgInputs,
-    Sd15UnifiedLoraContract,
-    SdxlControlNetText2ImgInputs,
-    SdxlImg2ImgInputs,
-    SdxlInpaintInputs,
-    SdxlIpAdapterEncodeInputs,
-    SdxlText2ImgInputs,
-    WanImage2VideoInputs,
-    WanText2VideoInputs,
-    ZImageImg2ImgInputs,
-    ZImageInpaintInputs,
-    ZImageText2ImgInputs,
     _DEFAULT_SD15_CONTROLNET_MODEL,
     _DEFAULT_SDXL_CONTROLNET_MODEL,
 )
-from backend.workflow.schema_output import (
-    ArtifactInfo,
-    ControlNetPreprocessOutput,
-    ImagesOutput,
-    ImagesWithBatchOutput,
-    Sd15ControlNetText2ImgOutput,
-    Sd15Img2ImgOutput,
-    Sd15InpaintOutput,
-    Sd15IpAdapterEncodeOutput,
-    SdxlControlNetText2ImgOutput,
-    SdxlImg2ImgOutput,
-    SdxlInpaintOutput,
-    SdxlIpAdapterEncodeOutput,
-    VideosWithBatchOutput,
-)
+from backend.workflow.schema_output import ControlNetPreprocessOutput
+from backend.workflow.registry import TaskDefinition
 from backend.workflow.types import (
-    TaskType,
     WorkflowCanceled,
     WorkflowContext,
     WorkflowRequest,
@@ -85,10 +39,12 @@ from backend.workflow.utility import (
     _resolve_refs,
     _validate_artifact_id,
     cleanup_artifacts,
+    collect_task_refs,
     collect_artifact_ids,
     save_artifact_png,
 )
 from backend.workflow.sd15 import (
+    task_definitions as _sd15_task_definitions,
     run_sd15_animatediff_text2video as _run_sd15_animatediff_text2video,
     run_sd15_controlnet_text2img as _run_sd15_controlnet_text2img,
     run_sd15_hires_fix as _run_sd15_hires_fix,
@@ -98,6 +54,7 @@ from backend.workflow.sd15 import (
     run_sd15_text2img as _run_sd15_text2img,
 )
 from backend.workflow.sdxl import (
+    task_definitions as _sdxl_task_definitions,
     run_sdxl_controlnet_text2img_task as _run_sdxl_controlnet_text2img,
     run_sdxl_img2img_task as _run_sdxl_img2img,
     run_sdxl_inpaint_task as _run_sdxl_inpaint,
@@ -105,26 +62,32 @@ from backend.workflow.sdxl import (
     run_sdxl_text2img_task as _run_sdxl_text2img,
 )
 from backend.workflow.flux import (
+    task_definitions as _flux_task_definitions,
     run_flux_text2img_task as _run_flux_text2img,
     run_flux_img2img_task as _run_flux_img2img,
     run_flux_inpaint_task as _run_flux_inpaint,
 )
 from backend.workflow.z_image import (
+    task_definitions as _z_image_task_definitions,
     run_z_image_text2img_task as _run_z_image_text2img,
     run_z_image_img2img_task as _run_z_image_img2img,
     run_z_image_inpaint_task as _run_z_image_inpaint,
 )
 from backend.workflow.qwen_image import (
+    task_definitions as _qwen_image_task_definitions,
     run_qwen_image_text2img_task as _run_qwen_image_text2img,
     run_qwen_image_img2img_task as _run_qwen_image_img2img,
     run_qwen_image_inpaint_task as _run_qwen_image_inpaint,
 )
 from backend.workflow.ernie_image import (
+    task_definitions as _ernie_image_task_definitions,
     run_ernie_image_text2img_task as _run_ernie_image_text2img,
 )
 from backend.workflow.anima import (
+    task_definitions as _anima_task_definitions,
     run_anima_text2img_task as _run_anima_text2img,
 )
+from backend.workflow.wan import task_definitions as _wan_task_definitions
 from backend.sd15.pipeline import (
     generate_images,
     generate_images_controlnet,
@@ -146,86 +109,6 @@ _CONTROLNET_PREPROCESSOR_REGISTRY_BY_ID = {
 }
 
 _MAX_CONTROLNET_MODELS = 2
-
-TASK_INPUT_MODELS: dict[str, type[BaseModel]] = {
-    # SD15 tasks
-    "sd15.text2img": Sd15Text2ImgInputs,
-    "sd15.animatediff.text2video": Sd15AnimateDiffText2VideoInputs,
-    "sd15.img2img": Sd15Img2ImgInputs,
-    "sd15.inpaint": Sd15InpaintInputs,
-    "sd15.controlnet.text2img": Sd15ControlNetText2ImgInputs,
-    "sd15.hires_fix": Sd15HiresFixInputs,
-    "sd15.ip_adapter.encode": Sd15IpAdapterEncodeInputs,
-    # WAN tasks
-    "wan.text2video": WanText2VideoInputs,
-    "wan.image2video": WanImage2VideoInputs,
-    # ControlNet utility tasks
-    "controlnet.preprocess": ControlNetPreprocessInputs,
-    # SDXL tasks
-    "sdxl.ip_adapter.encode": SdxlIpAdapterEncodeInputs,
-    "sdxl.text2img": SdxlText2ImgInputs,
-    "sdxl.controlnet.text2img": SdxlControlNetText2ImgInputs,
-    "sdxl.img2img": SdxlImg2ImgInputs,
-    "sdxl.inpaint": SdxlInpaintInputs,
-    # Flux tasks
-    "flux.text2img": FluxText2ImgInputs,
-    "flux.img2img": FluxImg2ImgInputs,
-    "flux.inpaint": FluxInpaintInputs,
-    # Qwen-Image tasks
-    "qwen-image.text2img": QwenImageText2ImgInputs,
-    "qwen-image.img2img": QwenImageImg2ImgInputs,
-    "qwen-image.inpaint": QwenImageInpaintInputs,
-    # Z-Image tasks
-    "z-image.text2img": ZImageText2ImgInputs,
-    "z-image.img2img": ZImageImg2ImgInputs,
-    "z-image.inpaint": ZImageInpaintInputs,
-    "ernie-image.text2img": ErnieImageText2ImgInputs,
-    "anima.text2img": AnimaText2ImgInputs,
-}
-
-
-TASK_OUTPUT_MODELS: dict[str, type[BaseModel]] = {
-    # SD15 tasks
-    "sd15.text2img": ImagesWithBatchOutput,
-    "sd15.animatediff.text2video": VideosWithBatchOutput,
-    "sd15.img2img": Sd15Img2ImgOutput,
-    "sd15.inpaint": Sd15InpaintOutput,
-    "sd15.controlnet.text2img": Sd15ControlNetText2ImgOutput,
-    "sd15.hires_fix": ImagesWithBatchOutput,
-    "sd15.ip_adapter.encode": Sd15IpAdapterEncodeOutput,
-    # WAN tasks
-    "wan.text2video": VideosWithBatchOutput,
-    "wan.image2video": VideosWithBatchOutput,
-    # ControlNet utility tasks
-    "controlnet.preprocess": ControlNetPreprocessOutput,
-    # SDXL tasks
-    "sdxl.ip_adapter.encode": SdxlIpAdapterEncodeOutput,
-    "sdxl.text2img": ImagesOutput,
-    "sdxl.controlnet.text2img": SdxlControlNetText2ImgOutput,
-    "sdxl.img2img": SdxlImg2ImgOutput,
-    "sdxl.inpaint": SdxlInpaintOutput,
-    # Flux tasks
-    "flux.text2img": ImagesOutput,
-    "flux.img2img": ImagesOutput,
-    "flux.inpaint": ImagesOutput,
-    # Qwen-Image tasks
-    "qwen-image.text2img": ImagesOutput,
-    "qwen-image.img2img": ImagesOutput,
-    "qwen-image.inpaint": ImagesOutput,
-    # Z-Image tasks
-    "z-image.text2img": ImagesOutput,
-    "z-image.img2img": ImagesOutput,
-    "z-image.inpaint": ImagesOutput,
-    "ernie-image.text2img": ImagesOutput,
-    "anima.text2img": ImagesOutput,
-}
-
-
-
-def build_workflow_catalog() -> dict[str, Any]:
-    return _build_workflow_catalog(TASK_INPUT_MODELS, TASK_OUTPUT_MODELS)
-
-
 
 # SD15 task handlers and dependencies
 def _sd15_runtime_deps() -> dict[str, Any]:
@@ -537,8 +420,7 @@ def _anima_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, 
     return _run_anima_text2img(inputs, _anima_runtime_deps())
 
 
-TASK_REGISTRY: dict[str, Callable[[dict[str, Any], WorkflowContext], dict[str, Any]]] = {
-    # SD15 tasks
+_TASK_HANDLERS = {
     "sd15.text2img": _sd15_text2img,
     "sd15.animatediff.text2video": _sd15_animatediff_text2video,
     "sd15.img2img": _sd15_img2img,
@@ -546,26 +428,19 @@ TASK_REGISTRY: dict[str, Callable[[dict[str, Any], WorkflowContext], dict[str, A
     "sd15.controlnet.text2img": _sd15_controlnet_text2img,
     "sd15.hires_fix": _sd15_hires_fix,
     "sd15.ip_adapter.encode": _sd15_ip_adapter_encode,
-    # WAN tasks
     "wan.text2video": _wan_text2video,
     "wan.image2video": _wan_image2video,
-    # ControlNet utility tasks
-    "controlnet.preprocess": _controlnet_preprocess,
-    # SDXL tasks
     "sdxl.ip_adapter.encode": _sdxl_ip_adapter_encode,
     "sdxl.text2img": _sdxl_text2img,
     "sdxl.controlnet.text2img": _sdxl_controlnet_text2img,
     "sdxl.img2img": _sdxl_img2img,
     "sdxl.inpaint": _sdxl_inpaint,
-    # Flux tasks
     "flux.text2img": _flux_text2img,
     "flux.img2img": _flux_img2img,
     "flux.inpaint": _flux_inpaint,
-    # Qwen-Image tasks
     "qwen-image.text2img": _qwen_image_text2img,
     "qwen-image.img2img": _qwen_image_img2img,
     "qwen-image.inpaint": _qwen_image_inpaint,
-    # Z-Image tasks
     "z-image.text2img": _z_image_text2img,
     "z-image.img2img": _z_image_img2img,
     "z-image.inpaint": _z_image_inpaint,
@@ -573,23 +448,99 @@ TASK_REGISTRY: dict[str, Callable[[dict[str, Any], WorkflowContext], dict[str, A
     "anima.text2img": _anima_text2img,
 }
 
+TASK_DEFINITIONS: dict[str, TaskDefinition] = {
+    "controlnet.preprocess": TaskDefinition(
+        ControlNetPreprocessInputs,
+        ControlNetPreprocessOutput,
+        _controlnet_preprocess,
+    )
+}
+for _family_definitions in (
+    _sd15_task_definitions,
+    _sdxl_task_definitions,
+    _wan_task_definitions,
+    _flux_task_definitions,
+    _qwen_image_task_definitions,
+    _z_image_task_definitions,
+    _ernie_image_task_definitions,
+    _anima_task_definitions,
+):
+    definitions = _family_definitions(_TASK_HANDLERS)
+    overlap = TASK_DEFINITIONS.keys() & definitions.keys()
+    if overlap:
+        raise RuntimeError(f"Duplicate workflow task registrations: {', '.join(sorted(overlap))}")
+    TASK_DEFINITIONS.update(definitions)
+
+# Compatibility views for existing callers. They are derived from the single
+# authoritative definition map and must never be edited independently.
+TASK_REGISTRY = {name: definition.handler for name, definition in TASK_DEFINITIONS.items()}
+TASK_INPUT_MODELS = {name: definition.input_model for name, definition in TASK_DEFINITIONS.items()}
+TASK_OUTPUT_MODELS = {name: definition.output_model for name, definition in TASK_DEFINITIONS.items()}
+
+
+def build_workflow_catalog() -> dict[str, Any]:
+    return _build_workflow_catalog(TASK_INPUT_MODELS, TASK_OUTPUT_MODELS)
+
+
+def _execution_order(tasks: list[WorkflowTask], return_value: Any | None) -> list[WorkflowTask]:
+    """Validate references and return a stable topological task order."""
+    by_id: dict[str, WorkflowTask] = {}
+    declared_index: dict[str, int] = {}
+    for index, task in enumerate(tasks):
+        if task.id in by_id:
+            raise ValueError(f"Duplicate task id: {task.id}")
+        by_id[task.id] = task
+        declared_index[task.id] = index
+
+    dependencies: dict[str, set[str]] = {}
+    for task in tasks:
+        refs = collect_task_refs(task.inputs)
+        unknown = refs - set(by_id)
+        if unknown:
+            raise ValueError(
+                f"Task {task.id} references unknown task id(s): {', '.join(sorted(unknown))}"
+            )
+        dependencies[task.id] = refs
+
+    return_unknown = collect_task_refs(return_value) - set(by_id)
+    if return_unknown:
+        raise ValueError(
+            f"Workflow return references unknown task id(s): {', '.join(sorted(return_unknown))}"
+        )
+
+    remaining = {task_id: set(refs) for task_id, refs in dependencies.items()}
+    ordered: list[WorkflowTask] = []
+    while remaining:
+        ready = sorted(
+            (task_id for task_id, refs in remaining.items() if not refs),
+            key=declared_index.__getitem__,
+        )
+        if not ready:
+            cycle_ids = sorted(remaining, key=declared_index.__getitem__)
+            raise ValueError(f"Workflow task reference cycle detected: {', '.join(cycle_ids)}")
+        for task_id in ready:
+            ordered.append(by_id[task_id])
+            remaining.pop(task_id)
+        completed = set(ready)
+        for refs in remaining.values():
+            refs.difference_update(completed)
+    return ordered
+
 
 def execute_workflow(payload: dict[str, Any], *, ctx: WorkflowContext | None = None) -> dict[str, Any]:
     wf = WorkflowRequest.model_validate(payload)
     context = ctx or WorkflowContext()
+    ordered_tasks = _execution_order(wf.tasks, wf.return_value)
 
     task_results: dict[str, dict[str, Any]] = {}
     created_artifacts: set[str] = set()
     try:
-        for idx, task in enumerate(wf.tasks):
+        for idx, task in enumerate(ordered_tasks):
             if context.should_cancel and context.should_cancel():
                 raise WorkflowCanceled("Cancel requested")
-            if task.id in task_results:
-                raise ValueError(f"Duplicate task id: {task.id}")
-
             resolved_inputs = _resolve_refs(task.inputs, task_results)
-            handler = TASK_REGISTRY.get(task.type)
-            if handler is None:
+            definition = TASK_DEFINITIONS.get(task.type)
+            if definition is None:
                 raise ValueError(f"Unsupported task type: {task.type}")
 
             if context.update_progress:
@@ -597,14 +548,21 @@ def execute_workflow(payload: dict[str, Any], *, ctx: WorkflowContext | None = N
                     {
                         "current_task": task.id,
                         "current_task_index": idx,
-                        "total_tasks": len(wf.tasks),
+                        "total_tasks": len(ordered_tasks),
                         "phase": "running",
                     }
                 )
 
-            result = handler(resolved_inputs, context)
+            # The registry is the executable contract: schemas are enforced at
+            # the dispatch boundary instead of being catalog-only metadata.
+            # Progress is published first so validation failures are persisted
+            # against the task that actually failed.
+            validated_inputs = definition.input_model.model_validate(resolved_inputs)
+
+            result = definition.handler(validated_inputs.model_dump(by_alias=True), context)
             if not isinstance(result, dict):
                 raise ValueError(f"Task {task.id} must return an object")
+            definition.output_model.model_validate(result)
             created_artifacts |= collect_artifact_ids(result)
             task_results[task.id] = result
 
@@ -613,7 +571,7 @@ def execute_workflow(payload: dict[str, Any], *, ctx: WorkflowContext | None = N
                     {
                         "current_task": task.id,
                         "current_task_index": idx,
-                        "total_tasks": len(wf.tasks),
+                        "total_tasks": len(ordered_tasks),
                         "phase": "completed_task",
                     }
                 )
@@ -622,7 +580,7 @@ def execute_workflow(payload: dict[str, Any], *, ctx: WorkflowContext | None = N
         raise
 
     if wf.return_value is None:
-        final_value: Any = task_results[wf.tasks[-1].id] if wf.tasks else {}
+        final_value: Any = task_results[ordered_tasks[-1].id] if ordered_tasks else {}
     else:
         final_value = _resolve_refs(wf.return_value, task_results)
 

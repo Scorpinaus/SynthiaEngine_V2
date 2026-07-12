@@ -162,22 +162,27 @@ Use `try`/`finally` around pipeline usage. Avoid cleanup only on the success pat
   process still runs task-scoped pipeline release, runs final memory cleanup in
   the subprocess runner, and then exits.
 
-## Future Cache Policy
+## Explicit Pipeline Cache
 
-Pipeline caching is allowed only as an explicit feature.
+Pipeline caching is opt-in. The default remains isolated, one-shot subprocess
+execution. Set both `SYNTHA_PIPELINE_CACHE_MAX_ENTRIES` and
+`SYNTHA_PIPELINE_CACHE_MAX_MB` to positive values to enable the worker-local
+cache. Flux is the first integrated family; cached Flux tasks execute inside the
+persistent render worker.
 
-A future cache must define:
+The cache defines:
 
-- cache key: model, task mode, dtype, ControlNet model, adapter mode, and device
-  strategy;
-- ownership: which process owns the cache;
-- eviction: when a cached pipeline is released;
-- adapter isolation: how LoRA/IP-Adapter state is reset between tasks;
-- memory pressure behavior: what happens on OOM or cancellation;
-- tests: at least one focused test for cache keying and cleanup.
+- key: family, operation, model, and device/offload strategy;
+- ownership: the renderer process owns cached pipelines;
+- eviction: LRU under both entry and estimated-memory budgets;
+- adapter isolation: task LoRAs are unloaded in `finally` before reuse;
+- failure isolation: generation or adapter-cleanup failures invalidate and release the cached instance;
+- cleanup: eviction and renderer shutdown call the standard pipeline release helper;
+- observability: cache hit/miss/eviction state is included in `result.profile.pipeline_caches`.
 
-Until that exists, generation functions should continue treating pipelines as
-job-scoped runtime objects.
+`SYNTHA_FLUX_PIPELINE_ESTIMATED_MB` controls the estimated cost assigned to
+each Flux entry (default 12000 MB). Values larger than the cache budget are
+loaded for the current task and released without caching.
 
 ## Maintenance Checklist
 

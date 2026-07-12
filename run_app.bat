@@ -12,7 +12,7 @@ set HF_HUB_DISABLE_SYMLINKS=1
 if /i "%~1"=="api" (
     set SYNTHA_LOG_ROLE=api
     set SYNTHA_API_START_WORKER=0
-    "%VENV_PY%" -m uvicorn backend.main:app --workers 1 --host 0.0.0.0 --port 8000
+    "%VENV_PY%" -m uvicorn backend.main:app --workers 1 --host 127.0.0.1 --port 8000
     exit /b
 )
 

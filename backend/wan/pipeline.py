@@ -107,6 +107,8 @@ def load_text2video_pipeline(
     quantization: str = "none",
 ):
     """Load a WAN text-to-video pipeline using the safe memory preset."""
+    from diffusers import AutoencoderKLWan, WanPipeline
+    from diffusers.schedulers.scheduling_unipc_multistep import UniPCMultistepScheduler
     if memory_preset != "safe":
         raise ValueError("memory_preset must be 'safe' for wan.text2video")
     if not torch.cuda.is_available():
@@ -176,6 +178,9 @@ def load_image2video_pipeline(
     quantization: str = "none",
 ):
     """Load a WAN 14B image-to-video pipeline with explicit experimental memory controls."""
+    from diffusers import AutoencoderKLWan, WanImageToVideoPipeline
+    from diffusers.schedulers.scheduling_unipc_multistep import UniPCMultistepScheduler
+    from transformers import CLIPVisionModel
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required for wan.image2video generation.")
 
@@ -222,6 +227,8 @@ def load_vace_pipeline(
     quantization: str = "none",
 ):
     """Load a WAN VACE pipeline using the safe memory preset."""
+    from diffusers import AutoencoderKLWan, WanVACEPipeline
+    from diffusers.schedulers.scheduling_unipc_multistep import UniPCMultistepScheduler
     if memory_preset != "safe":
         raise ValueError("memory_preset must be 'safe' for wan.text2video")
     if not torch.cuda.is_available():

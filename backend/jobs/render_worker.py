@@ -31,6 +31,9 @@ def run_render_worker(
     finally:
         logger.info("Stopping render worker.")
         worker.stop()
+        from backend.utilities.pipeline_cache import clear_all_pipeline_caches
+
+        clear_all_pipeline_caches()
         engine.dispose()
 
     return 0

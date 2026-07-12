@@ -51,9 +51,12 @@ Artifacts are **ephemeral** and are cleaned up when the workflow finishes.
 Current task types are documented in `docs/WORKFLOW_API.md` and implemented in `backend/workflow/`:
 - SD1.5: `sd15.ip_adapter.encode`, `sd15.text2img`, `sd15.animatediff.text2video`, `sd15.img2img`, `sd15.inpaint`, `sd15.controlnet.text2img`, `sd15.hires_fix`
 - SDXL: `sdxl.ip_adapter.encode`, `sdxl.text2img`, `sdxl.controlnet.text2img`, `sdxl.img2img`, `sdxl.inpaint`
+- WAN: `wan.text2video`, `wan.image2video`
 - Flux: `flux.text2img`, `flux.img2img`, `flux.inpaint`
 - Qwen-Image: `qwen-image.text2img`, `qwen-image.img2img`, `qwen-image.inpaint`
 - Z-Image: `z-image.text2img`, `z-image.img2img`, `z-image.inpaint`
+- ERNIE-Image: `ernie-image.text2img`
+- Anima: `anima.text2img`
 - Utility: `controlnet.preprocess`
 
 ### 4) Model family capabilities
@@ -64,9 +67,12 @@ The machine-readable source for this matrix is `GET /api/workflow/catalog`.
 |---|---|---|---|---|---|---|---|---|---|
 | `sd15` | yes | yes | yes | yes | yes | yes | yes | yes | no |
 | `sdxl` | yes | no | yes | yes | yes | no | yes | yes | no |
+| `wan` | no | yes | no | no | no | no | no | no | no |
 | `flux` | yes | no | yes | yes | no | no | yes | no | no |
 | `qwen-image` | yes | no | yes | yes | no | no | yes | no | yes |
 | `z-image` | yes | no | yes | yes | no | no | yes | no | no |
+| `ernie-image` | yes | no | no | no | no | no | yes | no | no |
+| `anima` | yes | no | no | no | no | no | no | no | no |
 
 ## Quickstart (Windows)
 
@@ -77,7 +83,10 @@ The machine-readable source for this matrix is `GET /api/workflow/catalog`.
 
 ### Run
 
-1) Create a virtualenv at `.venv` and install deps.
+1) Create a virtualenv at `.venv` and install runtime dependencies from
+   `requirements.txt`. Contributors can use `requirements-dev.txt`. Both use
+   the tested direct-dependency pins in `constraints.txt`; install the
+   platform-appropriate PyTorch/CUDA build separately.
 
 2) Start the app:
 ```bat
@@ -96,7 +105,7 @@ embedded worker disabled:
 ```bat
 set SYNTHA_LOG_ROLE=api
 set SYNTHA_API_START_WORKER=0
-.venv\Scripts\python.exe -m uvicorn backend.main:app --workers 1 --host 0.0.0.0 --port 8000
+.venv\Scripts\python.exe -m uvicorn backend.main:app --workers 1 --host 127.0.0.1 --port 8000
 ```
 
 Then start the renderer in another terminal:

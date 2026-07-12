@@ -2,6 +2,38 @@ from __future__ import annotations
 
 from typing import Any
 
+from backend.workflow.registry import TaskDefinition, TaskHandler, bind_task
+from backend.workflow.schema_input import (
+    Sd15AnimateDiffText2VideoInputs,
+    Sd15ControlNetText2ImgInputs,
+    Sd15HiresFixInputs,
+    Sd15IpAdapterEncodeInputs,
+    Sd15Img2ImgInputs,
+    Sd15InpaintInputs,
+    Sd15Text2ImgInputs,
+)
+from backend.workflow.schema_output import (
+    ImagesWithBatchOutput,
+    Sd15ControlNetText2ImgOutput,
+    Sd15Img2ImgOutput,
+    Sd15InpaintOutput,
+    Sd15IpAdapterEncodeOutput,
+    VideosWithBatchOutput,
+)
+
+
+def task_definitions(handlers: dict[str, TaskHandler]) -> dict[str, TaskDefinition]:
+    contracts = {
+        "sd15.text2img": (Sd15Text2ImgInputs, ImagesWithBatchOutput),
+        "sd15.animatediff.text2video": (Sd15AnimateDiffText2VideoInputs, VideosWithBatchOutput),
+        "sd15.img2img": (Sd15Img2ImgInputs, Sd15Img2ImgOutput),
+        "sd15.inpaint": (Sd15InpaintInputs, Sd15InpaintOutput),
+        "sd15.controlnet.text2img": (Sd15ControlNetText2ImgInputs, Sd15ControlNetText2ImgOutput),
+        "sd15.hires_fix": (Sd15HiresFixInputs, ImagesWithBatchOutput),
+        "sd15.ip_adapter.encode": (Sd15IpAdapterEncodeInputs, Sd15IpAdapterEncodeOutput),
+    }
+    return {name: bind_task(handlers, name, *models) for name, models in contracts.items()}
+
 from PIL import Image
 
 _LCM_LORA_MODEL_ID = "latent-consistency/lcm-lora-sdv1-5"

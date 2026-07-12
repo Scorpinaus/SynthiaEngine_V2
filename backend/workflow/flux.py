@@ -2,6 +2,22 @@ from __future__ import annotations
 
 from typing import Any
 
+from backend.workflow.registry import TaskDefinition, TaskHandler, bind_task
+from backend.workflow.schema_input import FluxImg2ImgInputs, FluxInpaintInputs, FluxText2ImgInputs
+from backend.workflow.schema_output import ImagesWithRuntimeProfileOutput
+
+
+def task_definitions(handlers: dict[str, TaskHandler]) -> dict[str, TaskDefinition]:
+    contracts = {
+        "flux.text2img": FluxText2ImgInputs,
+        "flux.img2img": FluxImg2ImgInputs,
+        "flux.inpaint": FluxInpaintInputs,
+    }
+    return {
+        name: bind_task(handlers, name, model, ImagesWithRuntimeProfileOutput)
+        for name, model in contracts.items()
+    }
+
 from PIL import Image
 
 

@@ -19,6 +19,7 @@ const NAV_GROUPS = [
     {
         label: "Render",
         items: [
+            { href: "workflow_builder.html", label: "Workflow Builder" },
             {
                 label: "SD 1.5",
                 items: [

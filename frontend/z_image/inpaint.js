@@ -471,8 +471,8 @@ async function generateZImageInpaint() {
 
     const catalog = window.WorkflowCatalog?.load ? await window.WorkflowCatalog.load(API_BASE) : null;
     const defaults = catalog?.tasks?.["z-image.inpaint"]?.input_defaults ?? {};
-    const inputs = {};
-    baseInput(inputs, defaults);
+    const taskInputs = {};
+    baseInput(taskInputs, defaults);
 
     try {
         const [uploadedBase, uploadedMask] = await Promise.all([
@@ -480,19 +480,19 @@ async function generateZImageInpaint() {
             WorkflowClient.uploadArtifact(API_BASE, activeMaskBlob, "mask.png"),
         ]);
 
-        Object.assign(inputs, {
+        Object.assign(taskInputs, {
             initial_image: `@artifact:${uploadedBase.artifact_id}`,
             mask_image: `@artifact:${uploadedMask.artifact_id}`,
         });
 
         const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
         const loraAdaptersEnabled = Array.isArray(loraAdapters) && loraAdapters.length > 0;
-        inputs.Lora = {
+        taskInputs.Lora = {
             enabled: loraAdaptersEnabled,
             adapters: loraAdaptersEnabled ? loraAdapters : [],
         };
         if (loraAdaptersEnabled) {
-            inputs.lora_adapters = loraAdapters;
+            taskInputs.lora_adapters = loraAdapters;
         }
 
         const workflowPayload = {
@@ -500,7 +500,7 @@ async function generateZImageInpaint() {
                 {
                     id: "t1",
                     type: "z-image.inpaint",
-                    inputs,
+                    inputs: taskInputs,
                 },
             ],
             return: "@t1.images",

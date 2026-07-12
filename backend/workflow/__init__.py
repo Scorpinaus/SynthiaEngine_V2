@@ -6,6 +6,7 @@ import types
 from typing import Any
 
 _ENGINE_MODULE = "backend.workflow.engine"
+_CONTRACT_MODULES = ("backend.workflow.schema_input", "backend.workflow.schema_output")
 
 
 def _load_engine() -> types.ModuleType:
@@ -13,6 +14,13 @@ def _load_engine() -> types.ModuleType:
     for name, value in vars(module).items():
         if not (name.startswith("__") and name.endswith("__")):
             globals().setdefault(name, value)
+    # Preserve the historical package-level contract exports now that schema
+    # classes are owned outside the orchestration engine.
+    for contract_module_name in _CONTRACT_MODULES:
+        contract_module = import_module(contract_module_name)
+        for name, value in vars(contract_module).items():
+            if not name.startswith("__"):
+                globals().setdefault(name, value)
     return module
 
 

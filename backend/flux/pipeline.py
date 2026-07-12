@@ -8,6 +8,8 @@ import subprocess
 import sys
 import tempfile
 import threading
+import inspect
+import time
 from pathlib import Path
 from typing import Any
 
@@ -32,12 +34,14 @@ from backend.utilities.pipeline import (
     resolve_model_source,
 )
 from backend.flux.subprocess_io import serialize_params_for_subprocess
+from backend.utilities.pipeline_cache import PipelineCache
 
 """
     Static Variables and Logging
 """
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _FLUX_SUBPROCESS_SEMAPHORE = threading.Semaphore(1)
+_FLUX_PIPELINE_CACHE = PipelineCache.from_env()
 
 logger = logging.getLogger(__name__)
 configure_logging()
@@ -103,19 +107,65 @@ def _run_flux_subprocess(operation: str, params: dict[str, object]) -> dict[str,
         result = result_payload.get("result")
         if not isinstance(result, dict) or not isinstance(result.get("images"), list):
             raise RuntimeError("Flux subprocess returned an invalid result.")
-        return {"images": [str(path) for path in result["images"]]}
+        normalized: dict[str, Any] = {"images": [str(path) for path in result["images"]]}
+        if isinstance(result.get("runtime_profile"), dict):
+            normalized["runtime_profile"] = result["runtime_profile"]
+        return normalized
 
 
 def generate_text2img(params: dict[str, object]) -> dict[str, list[str]]:
+    if _FLUX_PIPELINE_CACHE.enabled:
+        return generate_text2img_in_process(params)
     return _run_flux_subprocess("text2img", params)
 
 
 def generate_img2img(params: dict[str, object]) -> dict[str, list[str]]:
+    if _FLUX_PIPELINE_CACHE.enabled:
+        return generate_img2img_in_process(params)
     return _run_flux_subprocess("img2img", params)
 
 
 def generate_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
+    if _FLUX_PIPELINE_CACHE.enabled:
+        return generate_inpaint_in_process(params)
     return _run_flux_subprocess("inpaint", params)
+
+
+def _acquire_flux_pipeline(operation: str, model: object, loader):
+    estimated_mb = int(os.getenv("SYNTHA_FLUX_PIPELINE_ESTIMATED_MB", "12000"))
+    key = ("flux", operation, str(model or "default"), _flux_low_memory_mode())
+    hits_before = _FLUX_PIPELINE_CACHE.hits
+    pipe, cache_owned = _FLUX_PIPELINE_CACHE.acquire(
+        key,
+        loader,
+        cost_mb=estimated_mb,
+        release=lambda value: release_pipeline(value, logger=logger),
+    )
+    logger.info("Flux pipeline cache operation=%s owned=%s stats=%s", operation, cache_owned, _FLUX_PIPELINE_CACHE.stats())
+    return pipe, cache_owned, _FLUX_PIPELINE_CACHE.hits > hits_before
+
+
+def _timed_pipeline_call(pipe: Any, call_kwargs: dict[str, object]):
+    started = time.perf_counter()
+    last_denoise_step: list[float | None] = [None]
+    kwargs = dict(call_kwargs)
+    try:
+        supports_step_callback = "callback_on_step_end" in inspect.signature(pipe.__call__).parameters
+    except (TypeError, ValueError):
+        supports_step_callback = False
+    if supports_step_callback and "callback_on_step_end" not in kwargs:
+        def _on_step_end(_pipe, _step, _timestep, callback_kwargs):
+            last_denoise_step[0] = time.perf_counter()
+            return callback_kwargs
+        kwargs["callback_on_step_end"] = _on_step_end
+    output = pipe(**kwargs)
+    finished = time.perf_counter()
+    final_step = last_denoise_step[0]
+    return output, {
+        "inference_seconds": round(finished - started, 6),
+        "denoise_seconds": round(final_step - started, 6) if final_step else None,
+        "decode_seconds": round(finished - final_step, 6) if final_step else None,
+    }
 
 
 """
@@ -251,12 +301,21 @@ def generate_text2img_in_process(params: dict[str, object]) -> dict[str, list[st
 
     # 4. Load and create pipeline and scheduler
     pipe = None
+    pipe_cached = False
     filenames: list[str] = []
     adapter_names: list[str] = []
+    stage_profile: dict[str, object] = {"inference": [], "output_save_seconds": 0.0}
+    pipeline_healthy = False
     
     #7. Render image
     try:
-        pipe = load_text2img_pipeline(model)
+        load_started = time.perf_counter()
+        pipe, pipe_cached, cache_hit = _acquire_flux_pipeline(
+            "text2img", model, lambda: load_text2img_pipeline(model)
+        )
+        stage_profile["pipeline_acquire_seconds"] = round(time.perf_counter() - load_started, 6)
+        stage_profile["cache_hit"] = cache_hit
+        prepare_started = time.perf_counter()
         pipe.scheduler = create_scheduler(scheduler, pipe)
 
         adapter_names, lora_coverage = apply_lora_adapters_with_validation(
@@ -268,6 +327,7 @@ def generate_text2img_in_process(params: dict[str, object]) -> dict[str, list[st
         report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
         if report_path is not None:
             logger.info("LoRA coverage report saved to %s", report_path)
+        stage_profile["device_adapter_prepare_seconds"] = round(time.perf_counter() - prepare_started, 6)
 
         for i in range(num_images):
             # Define current seed
@@ -287,7 +347,9 @@ def generate_text2img_in_process(params: dict[str, object]) -> dict[str, list[st
                 if negative_prompt:
                     call_kwargs["negative_prompt"] = negative_prompt
 
-                image = pipe(**call_kwargs).images[0]
+                pipeline_output, inference_timing = _timed_pipeline_call(pipe, call_kwargs)
+                image = pipeline_output.images[0]
+                stage_profile["inference"].append(inference_timing)
 
             # Set filename and create image_params metadata dioct
             filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
@@ -299,13 +361,16 @@ def generate_text2img_in_process(params: dict[str, object]) -> dict[str, list[st
                 "batch_id": batch_id,
             })
             pnginfo = build_png_metadata(image_params)
+            save_started = time.perf_counter()
             image.save(filename, pnginfo=pnginfo)
+            stage_profile["output_save_seconds"] += time.perf_counter() - save_started
             logger.info("Image %s saved to %s", i, filename.name)
 
             # Save filename to rendered image
             filenames.append(build_batch_output_relpath(batch_id, filename.name))
             del image
             cleanup_memory()
+        pipeline_healthy = True
     finally:
         #8. Load pipeline + clean memory
         if pipe is not None and adapter_names and hasattr(pipe, "unload_lora_weights"):
@@ -313,12 +378,18 @@ def generate_text2img_in_process(params: dict[str, object]) -> dict[str, list[st
                 pipe.unload_lora_weights()
             except Exception as exc:  # pragma: no cover - defensive cleanup
                 logger.warning("Failed to unload LoRA weights: %s", exc)
+                pipeline_healthy = False
 
-        release_pipeline(pipe, logger=logger)
+        if pipe_cached and not pipeline_healthy:
+            _FLUX_PIPELINE_CACHE.discard(pipe)
+            pipe = None
+        elif not pipe_cached:
+            release_pipeline(pipe, logger=logger)
         pipe = None
 
     #9.  Return output
-    return {"images": [f"/outputs/{name}" for name in filenames]}
+    stage_profile["output_save_seconds"] = round(float(stage_profile["output_save_seconds"]), 6)
+    return {"images": [f"/outputs/{name}" for name in filenames], "runtime_profile": stage_profile}
 
 
 @torch.inference_mode()
@@ -356,12 +427,21 @@ def generate_img2img_in_process(params: dict[str, object]) -> dict[str, list[str
 
     #4. Load and create pipeline and scheduler
     pipe = None
+    pipe_cached = False
     filenames: list[str] = []
     adapter_names: list[str] = []
+    stage_profile: dict[str, object] = {"inference": [], "output_save_seconds": 0.0}
+    pipeline_healthy = False
     
     #7. Render images one by one
     try:
-        pipe = load_img2img_pipeline(model)
+        load_started = time.perf_counter()
+        pipe, pipe_cached, cache_hit = _acquire_flux_pipeline(
+            "img2img", model, lambda: load_img2img_pipeline(model)
+        )
+        stage_profile["pipeline_acquire_seconds"] = round(time.perf_counter() - load_started, 6)
+        stage_profile["cache_hit"] = cache_hit
+        prepare_started = time.perf_counter()
         pipe.scheduler = create_scheduler(scheduler, pipe)
 
         adapter_names, lora_coverage = apply_lora_adapters_with_validation(
@@ -373,6 +453,7 @@ def generate_img2img_in_process(params: dict[str, object]) -> dict[str, list[str
         report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
         if report_path is not None:
             logger.info("LoRA coverage report saved to %s", report_path)
+        stage_profile["device_adapter_prepare_seconds"] = round(time.perf_counter() - prepare_started, 6)
 
         for i in range(num_images):
             #Set current seed
@@ -394,7 +475,9 @@ def generate_img2img_in_process(params: dict[str, object]) -> dict[str, list[str
                 if negative_prompt:
                     call_kwargs["negative_prompt"] = negative_prompt
 
-                image = pipe(**call_kwargs).images[0]
+                pipeline_output, inference_timing = _timed_pipeline_call(pipe, call_kwargs)
+                image = pipeline_output.images[0]
+                stage_profile["inference"].append(inference_timing)
 
             # define filenames and create image_params dict to save as image metadata
             filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
@@ -410,12 +493,15 @@ def generate_img2img_in_process(params: dict[str, object]) -> dict[str, list[str
                 "batch_id": batch_id,
             })
             pnginfo = build_png_metadata(image_params)
+            save_started = time.perf_counter()
             image.save(filename, pnginfo=pnginfo)
+            stage_profile["output_save_seconds"] += time.perf_counter() - save_started
             logger.info("Image %s saved to %s", i, filename.name)
             filenames.append(build_batch_output_relpath(batch_id, filename.name))
 
             del image
             cleanup_memory()
+        pipeline_healthy = True
     finally:
         #8. Unload lora weights & clean memory
         if pipe is not None and adapter_names and hasattr(pipe, "unload_lora_weights"):
@@ -423,12 +509,18 @@ def generate_img2img_in_process(params: dict[str, object]) -> dict[str, list[str
                 pipe.unload_lora_weights()
             except Exception as exc:  # pragma: no cover - defensive cleanup
                 logger.warning("Failed to unload LoRA weights: %s", exc)
+                pipeline_healthy = False
 
-        release_pipeline(pipe, logger=logger)
+        if pipe_cached and not pipeline_healthy:
+            _FLUX_PIPELINE_CACHE.discard(pipe)
+            pipe = None
+        elif not pipe_cached:
+            release_pipeline(pipe, logger=logger)
         pipe = None
 
     #9. Return output
-    return {"images": [f"/outputs/{name}" for name in filenames]}
+    stage_profile["output_save_seconds"] = round(float(stage_profile["output_save_seconds"]), 6)
+    return {"images": [f"/outputs/{name}" for name in filenames], "runtime_profile": stage_profile}
 
 
 @torch.inference_mode()
@@ -465,12 +557,21 @@ def generate_inpaint_in_process(params: dict[str, object]) -> dict[str, list[str
 
     #4. Load and create pipeline and scheduler
     pipe = None
+    pipe_cached = False
     filenames: list[str] = []
     adapter_names: list[str] = []
+    stage_profile: dict[str, object] = {"inference": [], "output_save_seconds": 0.0}
+    pipeline_healthy = False
     
     #7. Render image one by one
     try:
-        pipe = load_inpaint_pipeline(model)
+        load_started = time.perf_counter()
+        pipe, pipe_cached, cache_hit = _acquire_flux_pipeline(
+            "inpaint", model, lambda: load_inpaint_pipeline(model)
+        )
+        stage_profile["pipeline_acquire_seconds"] = round(time.perf_counter() - load_started, 6)
+        stage_profile["cache_hit"] = cache_hit
+        prepare_started = time.perf_counter()
         pipe.scheduler = create_scheduler(scheduler, pipe)
 
         adapter_names, lora_coverage = apply_lora_adapters_with_validation(
@@ -482,6 +583,7 @@ def generate_inpaint_in_process(params: dict[str, object]) -> dict[str, list[str
         report_path = write_lora_coverage_report(batch_output_dir, batch_id, lora_coverage)
         if report_path is not None:
             logger.info("LoRA coverage report saved to %s", report_path)
+        stage_profile["device_adapter_prepare_seconds"] = round(time.perf_counter() - prepare_started, 6)
 
         for i in range(num_images):
             # Set current seed
@@ -502,7 +604,9 @@ def generate_inpaint_in_process(params: dict[str, object]) -> dict[str, list[str
                 if negative_prompt:
                     call_kwargs["negative_prompt"] = negative_prompt
 
-                image = pipe(**call_kwargs).images[0]
+                pipeline_output, inference_timing = _timed_pipeline_call(pipe, call_kwargs)
+                image = pipeline_output.images[0]
+                stage_profile["inference"].append(inference_timing)
 
             # Define filenames & Create image_params metadata dict
             filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
@@ -519,7 +623,9 @@ def generate_inpaint_in_process(params: dict[str, object]) -> dict[str, list[str
                 "batch_id": batch_id,
             })
             pnginfo = build_png_metadata(image_params)
+            save_started = time.perf_counter()
             image.save(filename, pnginfo=pnginfo)
+            stage_profile["output_save_seconds"] += time.perf_counter() - save_started
             logger.info("Image %s saved to %s", i, filename.name)
             
             # Save filename to rendered image
@@ -527,6 +633,7 @@ def generate_inpaint_in_process(params: dict[str, object]) -> dict[str, list[str
 
             del image
             cleanup_memory()
+        pipeline_healthy = True
     finally:
         #8. Unload lora weights & clean memory
         if pipe is not None and adapter_names and hasattr(pipe, "unload_lora_weights"):
@@ -534,9 +641,15 @@ def generate_inpaint_in_process(params: dict[str, object]) -> dict[str, list[str
                 pipe.unload_lora_weights()
             except Exception as exc:  # pragma: no cover - defensive cleanup
                 logger.warning("Failed to unload LoRA weights: %s", exc)
+                pipeline_healthy = False
 
-        release_pipeline(pipe, logger=logger)
+        if pipe_cached and not pipeline_healthy:
+            _FLUX_PIPELINE_CACHE.discard(pipe)
+            pipe = None
+        elif not pipe_cached:
+            release_pipeline(pipe, logger=logger)
         pipe = None
 
     # 9. Return output
-    return {"images": [f"/outputs/{name}" for name in filenames]}
+    stage_profile["output_save_seconds"] = round(float(stage_profile["output_save_seconds"]), 6)
+    return {"images": [f"/outputs/{name}" for name in filenames], "runtime_profile": stage_profile}

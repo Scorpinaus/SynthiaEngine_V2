@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Workflow Builder</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css?v=5" />
+</head>
+<body>
+    <div class="app">
+        <div id="header-root"></div>
+        <div class="layout workflow-builder-layout">
+            <section class="controls">
+                <div class="gallery-header">
+                    <h2>Catalog Workflow Builder</h2>
+                    <p>Forms are generated from the backend task catalog, including defaults and constraints.</p>
+                </div>
+                <label class="field">
+                    <span>Task type</span>
+                    <select id="builder-task-type" aria-label="Workflow task type">
+                        <option value="">Loading task catalog…</option>
+                    </select>
+                </label>
+                <form id="builder-form" class="workflow-builder-form"></form>
+                <button id="builder-submit" class="primary" type="button" disabled>Run task</button>
+            </section>
+            <section class="gallery-panel">
+                <div class="gallery-header">
+                    <h2>Run output</h2>
+                    <p id="builder-status" role="status">Select a task to begin.</p>
+                </div>
+                <div id="builder-media" class="workflow-builder-media"></div>
+                <pre id="builder-result" class="workflow-builder-result">No result yet.</pre>
+            </section>
+        </div>
+    </div>
+    <script src="api_config.js?v=1"></script>
+    <script src="components/header.js?v=1"></script>
+    <script src="components/nav_bar.js?v=4"></script>
+    <script src="workflow_client.js?v=1"></script>
+    <script src="workflow_catalog.js?v=2"></script>
+    <script src="workflow_builder.js?v=1"></script>
+</body>
+</html>

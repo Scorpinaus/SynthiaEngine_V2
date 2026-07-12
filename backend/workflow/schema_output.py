@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -15,6 +17,13 @@ class ImagesOutput(BaseModel):
     images: list[str] = Field(
         ...,
         description='List of output image URLs ("/outputs/...").',
+    )
+
+
+class ImagesWithRuntimeProfileOutput(ImagesOutput):
+    runtime_profile: dict[str, Any] | None = Field(
+        default=None,
+        description="Optional pipeline-stage timing profile for this render task.",
     )
 
 

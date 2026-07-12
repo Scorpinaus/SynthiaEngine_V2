@@ -49,6 +49,7 @@ _SessionLocal = sessionmaker(bind=_ENGINE, autoflush=False, autocommit=False, fu
 
 _EXTRA_FIELDS_BY_TASK: dict[str, set[str]] = {
     "sd15.text2img": {
+        "lora_adapters",
         "hires_enabled",
         "hires_scale",
         "controlnet_enabled",
@@ -57,6 +58,12 @@ _EXTRA_FIELDS_BY_TASK: dict[str, set[str]] = {
         "control_guidance_end",
         "controlnet_guess_mode",
         "controlnet_compat_mode",
+    },
+    "sd15.controlnet.text2img": {
+        "controlNetEnabled",
+        "effectiveItems",
+        "Lora",
+        "hires",
     },
     "sd15.img2img": {"controlnet_enabled"},
     "sd15.inpaint": {"controlnet_enabled"},
