@@ -15,6 +15,12 @@ from backend.config import DATABASE_DIR, OUTPUT_DIR
 logger = logging.getLogger(__name__)
 
 
+def _normalize_model_type(model_type: str) -> str:
+    """Return the canonical registry spelling used by pipeline loaders."""
+    normalized = model_type.strip()
+    return "single-file" if normalized.lower() == "single_file" else normalized
+
+
 class ModelRegistryEntry(BaseModel):
     name: str
     family: str
@@ -66,7 +72,9 @@ def _row_to_entry(row: ModelRegistryRow) -> ModelRegistryEntry:
     return ModelRegistryEntry(
         name=row.name,
         family=row.family,
-        model_type=row.model_type,
+        # Normalize legacy rows written by older versions of the model form,
+        # which used ``single_file`` while inference loaders use ``single-file``.
+        model_type=_normalize_model_type(row.model_type),
         location_type=row.location_type,
         model_id=row.model_id,
         version=row.version,
@@ -115,7 +123,7 @@ def _migrate_json_if_needed() -> None:
                 ModelRegistryRow(
                     name=model_entry.name,
                     family=model_entry.family,
-                    model_type=model_entry.model_type,
+                    model_type=_normalize_model_type(model_entry.model_type),
                     location_type=model_entry.location_type,
                     model_id=model_entry.model_id,
                     version=model_entry.version,
@@ -150,7 +158,7 @@ def create_model_entry(entry: ModelRegistryEntry) -> ModelRegistryEntry:
         row = ModelRegistryRow(
             name=entry.name,
             family=entry.family,
-            model_type=entry.model_type,
+            model_type=_normalize_model_type(entry.model_type),
             location_type=entry.location_type,
             model_id=entry.model_id,
             version=entry.version,
@@ -199,6 +207,8 @@ def update_model_entry(model_name: str, updates: dict[str, object]) -> ModelRegi
             updates["model_id"] = int(model_id)
         except (TypeError, ValueError) as exc:
             raise ValueError("Field 'model_id' must be an integer.") from exc
+    if "model_type" in updates:
+        updates["model_type"] = _normalize_model_type(str(updates["model_type"]))
 
     init_model_registry_db()
     with _SessionLocal() as session:

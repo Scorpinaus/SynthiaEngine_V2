@@ -36,7 +36,7 @@ function updateModelId(value) {
 }
 
 function getLocalSelectionType() {
-    return modelTypeField?.value === "single_file" ? "file" : "folder";
+    return modelTypeField?.value === "single-file" ? "file" : "folder";
 }
 
 function updateLocalButtonLabel() {

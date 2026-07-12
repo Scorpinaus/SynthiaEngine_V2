@@ -92,8 +92,13 @@ def test_model_patch_validation_and_duplicate_create(tmp_path):
     created = client.post("/models", json=payload)
     duplicate = client.post("/models", json=payload)
     assert created.status_code == 201
+    assert created.json()["model_type"] == "single-file"
     assert duplicate.status_code == 409
     assert duplicate.json()["detail"] == "Model name already exists."
+
+    updated = client.patch("/models/Base%20B", json={"model_type": "single_file"})
+    assert updated.status_code == 200
+    assert updated.json()["model_type"] == "single-file"
 
     empty_patch = client.patch("/models/Base%20B", json={})
     assert empty_patch.status_code == 400
