@@ -4,6 +4,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import torch
+
 from PIL import Image
 
 from backend.sd15.pipeline import generate_images_inpaint_in_process
@@ -51,18 +53,22 @@ class Sd15InpaintLcmPipelineTests(unittest.TestCase):
                 with patch("backend.sd15.pipeline.load_inpaint_pipeline", return_value=pipe):
                     with patch("backend.sd15.pipeline.create_scheduler", side_effect=_fake_create_scheduler):
                         with patch("backend.sd15.pipeline.torch.Generator", return_value=FakeGenerator()):
-                            filenames = generate_images_inpaint_in_process(
-                                {
-                                    "initial_image": Image.new("RGB", (16, 16), color="black"),
-                                    "mask_image": Image.new("L", (16, 16), color="white"),
-                                    "prompt": "test prompt",
-                                    "steps": 4,
-                                    "cfg": 0.0,
-                                    "scheduler": "lcm",
-                                    "seed": 123,
-                                    "batch_id": "batch_lcm",
-                                }
-                            )
+                            with patch(
+                                "backend.sd15.pipeline.build_prompt_embeddings",
+                                return_value=(torch.ones(1, 6, 1), torch.zeros(1, 6, 1), True),
+                            ):
+                                filenames = generate_images_inpaint_in_process(
+                                    {
+                                        "initial_image": Image.new("RGB", (16, 16), color="black"),
+                                        "mask_image": Image.new("L", (16, 16), color="white"),
+                                        "prompt": "test prompt",
+                                        "steps": 4,
+                                        "cfg": 0.0,
+                                        "scheduler": "lcm",
+                                        "seed": 123,
+                                        "batch_id": "batch_lcm",
+                                    }
+                                )
 
         self.assertEqual(scheduler_calls, [("lcm", pipe)])
         self.assertEqual(
@@ -73,6 +79,11 @@ class Sd15InpaintLcmPipelineTests(unittest.TestCase):
         self.assertTrue(pipe.unloaded)
         self.assertEqual(pipe.calls[0]["num_inference_steps"], 4)
         self.assertEqual(pipe.calls[0]["guidance_scale"], 0.0)
+        self.assertIsNone(pipe.calls[0]["prompt"])
+        self.assertIsNone(pipe.calls[0]["negative_prompt"])
+        self.assertIsNone(pipe.calls[0]["clip_skip"])
+        self.assertIsNotNone(pipe.calls[0]["prompt_embeds"])
+        self.assertIsNotNone(pipe.calls[0]["negative_prompt_embeds"])
         self.assertEqual(filenames, ["batch_batch_lcm/batch_lcm_123.png"])
 
 

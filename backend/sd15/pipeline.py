@@ -99,6 +99,41 @@ def create_blur_mask(mask_image, blur_factor: int):
     return mask_image.filter(ImageFilter.GaussianBlur(radius=blur_factor))
 
 
+def _build_sd15_prompt_call_kwargs(
+    pipe,
+    prompt: str,
+    negative_prompt: str,
+    *,
+    clip_skip: int | None,
+    weighting_policy: str = "diffusers-like",
+) -> dict[str, object]:
+    """Build mutually exclusive raw-prompt or precomputed-embedding kwargs."""
+    prompt_embeds, negative_prompt_embeds, use_prompt_embeds = build_prompt_embeddings(
+        pipe,
+        prompt,
+        negative_prompt,
+        clip_skip=clip_skip,
+        weighting_policy=weighting_policy,
+    )
+    if use_prompt_embeds:
+        return {
+            "prompt": None,
+            "negative_prompt": None,
+            "prompt_embeds": prompt_embeds,
+            "negative_prompt_embeds": negative_prompt_embeds,
+            # Embeddings already include clip-skip. Keeping this unset also
+            # avoids Diffusers 0.39's incompatible Transformers 5.x lookup.
+            "clip_skip": None,
+        }
+    return {
+        "prompt": prompt,
+        "negative_prompt": negative_prompt,
+        "prompt_embeds": None,
+        "negative_prompt_embeds": None,
+        "clip_skip": None,
+    }
+
+
 def _resource_metadata(bound_args):
     """
     Build resource-logging metadata from a function's bound arguments.
@@ -1083,6 +1118,7 @@ def generate_images_img2img_in_process(params: dict[str, object],) -> list[str]:
     model = params.get("model")
     num_images = int(params.get("num_images") or 1)
     clip_skip = int(params.get("clip_skip") or 1)
+    weighting_policy = str(params.get("weighting_policy") or "diffusers-like")
     lora_adapters = params.get("lora_adapters")
     ip_adapter_image = cast(Image.Image | None, params.get("ip_adapter_image"))
     ip_adapter_image_embeds_ref = params.get("ip_adapter_image_embeds_ref")
@@ -1231,19 +1267,24 @@ def generate_images_img2img_in_process(params: dict[str, object],) -> list[str]:
                     pipe,
                     leaf_only=config.PIPELINE_LAYER_LOGGING_LEAF_ONLY,
                 ) as (used_layer_names, name_to_type, name_to_inputs, name_to_calls):
+                    prompt_kwargs = _build_sd15_prompt_call_kwargs(
+                        pipe,
+                        prompt,
+                        negative_prompt,
+                        clip_skip=clip_skip,
+                        weighting_policy=weighting_policy,
+                    )
                     with _hide_image_encoder_while_using_ip_adapter_embeds(
                         pipe,
                         enabled=ip_adapter_image_embeds is not None,
                     ):
                         image = pipe(
-                            prompt=prompt,
-                            negative_prompt=negative_prompt,
+                            **prompt_kwargs,
                             image=initial_image,
                             strength=strength,
                             num_inference_steps=steps,
                             guidance_scale=cfg,
                             generator=generator,
-                            clip_skip=clip_skip,
                             **ip_adapter_kwargs,
                         ).images[0]
                 append_layers_report(
@@ -1258,19 +1299,24 @@ def generate_images_img2img_in_process(params: dict[str, object],) -> list[str]:
                     runtime_name_to_call_count=(name_to_calls if config.PIPELINE_LAYER_LOGGING_CAPTURE_INPUTS else None),
                 )
             else:
+                prompt_kwargs = _build_sd15_prompt_call_kwargs(
+                    pipe,
+                    prompt,
+                    negative_prompt,
+                    clip_skip=clip_skip,
+                    weighting_policy=weighting_policy,
+                )
                 with _hide_image_encoder_while_using_ip_adapter_embeds(
                     pipe,
                     enabled=ip_adapter_image_embeds is not None,
                 ):
                     image = pipe(
-                        prompt=prompt,
-                        negative_prompt=negative_prompt,
+                        **prompt_kwargs,
                         image=initial_image,
                         strength=strength,
                         num_inference_steps=steps,
                         guidance_scale=cfg,
                         generator=generator,
-                        clip_skip=clip_skip,
                         **ip_adapter_kwargs,
                     ).images[0]
 
@@ -1452,6 +1498,7 @@ def generate_images_inpaint_in_process(params: dict[str, object],) -> list[str]:
     strength = float(params.get("strength") or 0.5)
     padding_mask_crop = int(params.get("padding_mask_crop") or 32)
     clip_skip = int(params.get("clip_skip") or 1)
+    weighting_policy = str(params.get("weighting_policy") or "diffusers-like")
     lora_adapters = params.get("lora_adapters")
     ip_adapter_image = cast(Image.Image | None, params.get("ip_adapter_image"))
     ip_adapter_image_embeds_ref = params.get("ip_adapter_image_embeds_ref")
@@ -1594,13 +1641,19 @@ def generate_images_inpaint_in_process(params: dict[str, object],) -> list[str]:
                     pipe,
                     leaf_only=config.PIPELINE_LAYER_LOGGING_LEAF_ONLY,
                 ) as (used_layer_names, name_to_type, name_to_inputs, name_to_calls):
+                    prompt_kwargs = _build_sd15_prompt_call_kwargs(
+                        pipe,
+                        prompt,
+                        negative_prompt,
+                        clip_skip=clip_skip,
+                        weighting_policy=weighting_policy,
+                    )
                     with _hide_image_encoder_while_using_ip_adapter_embeds(
                         pipe,
                         enabled=ip_adapter_image_embeds is not None,
                     ):
                         image = pipe(
-                            prompt=prompt,
-                            negative_prompt=negative_prompt,
+                            **prompt_kwargs,
                             image=initial_image,
                             mask_image=mask_image,
                             num_inference_steps=steps,
@@ -1608,7 +1661,6 @@ def generate_images_inpaint_in_process(params: dict[str, object],) -> list[str]:
                             generator=generator,
                             strength=strength,
                             padding_mask_crop=padding_mask_crop,
-                            clip_skip=clip_skip,
                             **ip_adapter_kwargs,
                         ).images[0]
                 append_layers_report(
@@ -1623,13 +1675,19 @@ def generate_images_inpaint_in_process(params: dict[str, object],) -> list[str]:
                     runtime_name_to_call_count=(name_to_calls if config.PIPELINE_LAYER_LOGGING_CAPTURE_INPUTS else None),
                 )
             else:
+                prompt_kwargs = _build_sd15_prompt_call_kwargs(
+                    pipe,
+                    prompt,
+                    negative_prompt,
+                    clip_skip=clip_skip,
+                    weighting_policy=weighting_policy,
+                )
                 with _hide_image_encoder_while_using_ip_adapter_embeds(
                     pipe,
                     enabled=ip_adapter_image_embeds is not None,
                 ):
                     image = pipe(
-                        prompt=prompt,
-                        negative_prompt=negative_prompt,
+                        **prompt_kwargs,
                         image=initial_image,
                         mask_image=mask_image,
                         num_inference_steps=steps,
@@ -1637,7 +1695,6 @@ def generate_images_inpaint_in_process(params: dict[str, object],) -> list[str]:
                         generator=generator,
                         strength=strength,
                         padding_mask_crop=padding_mask_crop,
-                        clip_skip=clip_skip,
                         **ip_adapter_kwargs,
                     ).images[0]
 

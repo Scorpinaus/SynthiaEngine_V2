@@ -122,6 +122,15 @@ class _FakeTextEncoder:
         return (None, None, hidden_states)
 
 
+class _FakeFlatTextEncoder(_FakeTextEncoder):
+    """Match the flattened CLIPTextModel layout used by Transformers 5.x."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.final_layer_norm = self.text_model.final_layer_norm
+        del self.text_model
+
+
 class _FakePipe:
     def __init__(self, *, model_max_length: int = 6, hidden_dim: int = 4):
         self.tokenizer = _FakeTokenizer(model_max_length=model_max_length)
@@ -129,6 +138,29 @@ class _FakePipe:
 
 
 class PromptEmbeddingBuilderTests(unittest.TestCase):
+    def test_plain_short_prompt_uses_native_diffusers_encoding(self):
+        pipe = _FakePipe(model_max_length=6, hidden_dim=2)
+
+        pos, neg, used = build_prompt_embeddings_a1111(pipe, "ab", "")
+
+        self.assertFalse(used)
+        self.assertIsNone(pos)
+        self.assertIsNone(neg)
+
+    def test_clip_skip_forces_compatible_custom_embedding_path(self):
+        pipe = _FakePipe(model_max_length=6, hidden_dim=1)
+
+        pos, neg, used = build_prompt_embeddings_a1111(
+            pipe,
+            "ab",
+            "",
+            clip_skip=1,
+        )
+
+        self.assertTrue(used)
+        self.assertEqual(pos.shape, (1, 6, 1))
+        self.assertEqual(neg.shape, (1, 6, 1))
+
     def test_lora_scale_forces_embedding_path(self):
         pipe = _FakePipe(model_max_length=6, hidden_dim=2)
 
@@ -170,6 +202,20 @@ class PromptEmbeddingBuilderTests(unittest.TestCase):
         # First token is BOS (101) at position 0 in each chunk.
         expected_bos = (101.0 + 1.0) * 10.0
         self.assertAlmostEqual(float(pos[0, 0, 0]), expected_bos, places=5)
+
+    def test_clip_skip_supports_flat_transformers_final_layer_norm(self):
+        pipe = _FakePipe(model_max_length=6, hidden_dim=1)
+        pipe.text_encoder = _FakeFlatTextEncoder(hidden_dim=1)
+
+        pos, _, used = build_prompt_embeddings_a1111(
+            pipe,
+            "aaaaaaaaa",
+            "",
+            clip_skip=1,
+        )
+
+        self.assertTrue(used)
+        self.assertAlmostEqual(float(pos[0, 0, 0]), (101.0 + 1.0) * 10.0, places=5)
 
     def test_weighting_scales_token_vectors(self):
         pipe = _FakePipe(model_max_length=6, hidden_dim=1)

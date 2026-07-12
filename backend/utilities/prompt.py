@@ -120,8 +120,9 @@ def build_prompt_embeddings(
 
     max_chunk = max(1, tokenizer.model_max_length - 2)
     needs_embeddings = (
-        lora_scale is not None,
-        prompt_tokens.has_weights
+        lora_scale is not None
+        or clip_skip is not None
+        or prompt_tokens.has_weights
         or negative_tokens.has_weights
         or len(prompt_tokens.tokens) > max_chunk
         or len(negative_tokens.tokens) > max_chunk
@@ -313,7 +314,11 @@ def _encode_text_encoder(
     outputs = text_encoder(input_ids, attention_mask=attention_mask, output_hidden_states=True)
     hidden_states = outputs[-1]
     selected = hidden_states[-(clip_skip + 1)]
-    final_ln = getattr(getattr(text_encoder, "text_model", None), "final_layer_norm", None)
+    # Transformers has exposed CLIP's final LayerNorm both directly on
+    # CLIPTextModel and under ``text_model`` across supported releases.
+    final_ln = getattr(text_encoder, "final_layer_norm", None)
+    if final_ln is None:
+        final_ln = getattr(getattr(text_encoder, "text_model", None), "final_layer_norm", None)
     if final_ln is not None:
         selected = final_ln(selected)
     return selected
