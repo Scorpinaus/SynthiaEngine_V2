@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nucleus-MoE Diffusers Implementation Guide</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f7f8fb;
+      --ink: #16181d;
+      --muted: #586174;
+      --panel: #ffffff;
+      --panel-2: #eef2f7;
+      --line: #d9e0ea;
+      --accent: #0f766e;
+      --accent-2: #7c2d12;
+      --code: #101828;
+      --code-bg: #e8edf5;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #101318;
+        --ink: #edf1f7;
+        --muted: #a8b1c3;
+        --panel: #171b22;
+        --panel-2: #202631;
+        --line: #303846;
+        --accent: #5eead4;
+        --accent-2: #fdba74;
+        --code: #f8fafc;
+        --code-bg: #111827;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", Arial, sans-serif;
+      line-height: 1.55;
+    }
+
+    main {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 32px 20px 56px;
+    }
+
+    header {
+      padding: 28px 0 18px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: clamp(2rem, 4vw, 3.5rem);
+      line-height: 1.05;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin: 34px 0 12px;
+      font-size: 1.55rem;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 24px 0 10px;
+      font-size: 1.15rem;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 10px 0;
+    }
+
+    a {
+      color: var(--accent);
+    }
+
+    .lede {
+      max-width: 820px;
+      color: var(--muted);
+      font-size: 1.08rem;
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    .pill {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 6px 10px;
+      background: var(--panel);
+      color: var(--muted);
+      font-size: 0.92rem;
+      white-space: nowrap;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin: 18px 0;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .card strong {
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .warn {
+      border-left: 4px solid var(--accent-2);
+    }
+
+    .ok {
+      border-left: 4px solid var(--accent);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0 22px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+    }
+
+    th,
+    td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--panel-2);
+    }
+
+    code {
+      color: var(--code);
+      background: var(--code-bg);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.95em;
+    }
+
+    pre {
+      overflow: auto;
+      background: var(--code-bg);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+    }
+
+    pre code {
+      padding: 0;
+      background: transparent;
+      color: var(--code);
+    }
+
+    ol,
+    ul {
+      padding-left: 1.3rem;
+    }
+
+    li {
+      margin: 7px 0;
+    }
+
+    .toc {
+      columns: 2;
+      column-gap: 32px;
+      margin: 18px 0;
+    }
+
+    .toc a {
+      display: block;
+      break-inside: avoid;
+      margin: 5px 0;
+      text-decoration: none;
+    }
+
+    @media (max-width: 820px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .toc {
+        columns: 1;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Nucleus-MoE Diffusers Implementation Guide</h1>
+      <p class="lede">
+        A companion guide for adding Nucleus-MoE, published as
+        <code>NucleusAI/Nucleus-Image</code>, to SynthaEngine without hiding the
+        memory reality of a 17B sparse MoE image model on an RTX 3060 12 GB.
+      </p>
+      <div class="meta">
+        <span class="pill">Date: 2026-05-30</span>
+        <span class="pill">Target PC: 64 GB RAM, RTX 3060 12 GB</span>
+        <span class="pill">Diffusers: 0.38.0 verified locally</span>
+        <span class="pill">Task: text-to-image</span>
+      </div>
+    </header>
+
+    <section aria-labelledby="toc">
+      <h2 id="toc">Contents</h2>
+      <nav class="toc">
+        <a href="#summary">1. Executive Summary</a>
+        <a href="#what">2. What Nucleus-MoE Is</a>
+        <a href="#support">3. Diffusers Support</a>
+        <a href="#hardware">4. Hardware Fit</a>
+        <a href="#smoke">5. Smoke Test</a>
+        <a href="#method">6. New Pipeline Method</a>
+        <a href="#implementation">7. SynthaEngine Plan</a>
+        <a href="#hosted">8. Hosted Provider Path</a>
+        <a href="#risks">9. Risks</a>
+        <a href="#done">10. Definition of Done</a>
+        <a href="#sources">11. Sources</a>
+      </nav>
+    </section>
+
+    <section id="summary">
+      <h2>1. Executive Summary</h2>
+      <div class="grid">
+        <article class="card ok">
+          <strong>Pipeline exists locally</strong>
+          <p>
+            The repo venv imports <code>NucleusMoEImagePipeline</code>,
+            <code>NucleusMoEImageTransformer2DModel</code>, and
+            <code>TextKVCacheConfig</code> with Diffusers 0.38.0.
+          </p>
+        </article>
+        <article class="card warn">
+          <strong>12 GB VRAM is not enough for direct BF16</strong>
+          <p>
+            The Hub tree reports about 51.7 GB of model files. The transformer
+            alone is about 33.8 GB and the text encoder is about 17.5 GB.
+          </p>
+        </article>
+        <article class="card">
+          <strong>Recommended status</strong>
+          <p>
+            Treat local Nucleus-MoE as experimental. Use a standalone smoke
+            test, one-shot subprocesses, one image per job, low defaults, and
+            CPU offload.
+          </p>
+        </article>
+      </div>
+      <p>
+        Nucleus-MoE activates only about 2B of its 17B parameters per forward
+        pass, which improves compute efficiency. It does not remove the need to
+        store, load, offload, or stream the full model stack.
+      </p>
+    </section>
+
+    <section id="what">
+      <h2>2. What Nucleus-MoE Is</h2>
+      <p>
+        Nucleus-MoE, published as <code>NucleusAI/Nucleus-Image</code>, is a
+        text-to-image sparse Mixture-of-Experts diffusion transformer. The
+        older name <code>NucleusAI/NucleusMoE-Image</code> redirects to the
+        current repository.
+      </p>
+      <table>
+        <thead>
+          <tr><th>Item</th><th>Value</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Total parameters</td><td>17B</td></tr>
+          <tr><td>Active parameters</td><td>About 2B</td></tr>
+          <tr><td>Architecture</td><td>Sparse MoE diffusion transformer</td></tr>
+          <tr><td>Layers</td><td>32</td></tr>
+          <tr><td>Experts per MoE layer</td><td>64 routed experts plus 1 shared expert</td></tr>
+          <tr><td>Text encoder</td><td>Qwen3-VL-8B-Instruct</td></tr>
+          <tr><td>Image tokenizer</td><td>Qwen-Image VAE</td></tr>
+          <tr><td>Scheduler</td><td>FlowMatch Euler discrete scheduler</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="support">
+      <h2>3. Diffusers Support</h2>
+      <p>
+        Diffusers documents <code>NucleusMoEImagePipeline</code> as a pipeline
+        with a Nucleus MoE transformer, FlowMatch Euler scheduler,
+        Qwen3-VL processor and text encoder, and Qwen-Image VAE. The local
+        SynthaEngine venv already exposes the pipeline.
+      </p>
+      <pre><code>.venv\Scripts\python.exe -c "import diffusers; print(diffusers.__version__); print(hasattr(diffusers, 'NucleusMoEImagePipeline'))"</code></pre>
+      <pre><code>0.38.0
+True</code></pre>
+      <p>
+        The official quick start uses <code>DiffusionPipeline.from_pretrained</code>
+        and then <code>pipe.to("cuda")</code>. For this PC, the implementation
+        should not do that by default.
+      </p>
+    </section>
+
+    <section id="hardware">
+      <h2>4. Hardware Fit</h2>
+      <table>
+        <thead>
+          <tr><th>Mode</th><th>Expected Result</th><th>Recommendation</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Official BF16 with <code>pipe.to("cuda")</code></td>
+            <td>Not viable on 12 GB VRAM</td>
+            <td>Avoid</td>
+          </tr>
+          <tr>
+            <td>BF16 with model CPU offload</td>
+            <td>May load, likely slow, RAM tight</td>
+            <td>Smoke test only</td>
+          </tr>
+          <tr>
+            <td>BF16 with sequential CPU offload</td>
+            <td>Safer for VRAM, very slow</td>
+            <td>Best local experiment</td>
+          </tr>
+          <tr>
+            <td>Generic quantization</td>
+            <td>Uncertain for MoE expert tensors</td>
+            <td>Validate before exposing</td>
+          </tr>
+          <tr>
+            <td>Hosted fal provider</td>
+            <td>Practical now</td>
+            <td>Best reliable path</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="smoke">
+      <h2>5. Smoke Test</h2>
+      <p>
+        Before any application integration, run a standalone script with one
+        prompt, one image, 512x512 resolution, 8 steps, BF16, Text KV cache,
+        VAE slicing/tiling, and sequential CPU offload.
+      </p>
+      <pre><code>import torch
+from diffusers import DiffusionPipeline, TextKVCacheConfig
+
+pipe = DiffusionPipeline.from_pretrained(
+    "NucleusAI/Nucleus-Image",
+    torch_dtype=torch.bfloat16,
+)
+
+if hasattr(pipe.transformer, "enable_cache"):
+    pipe.transformer.enable_cache(TextKVCacheConfig())
+
+if getattr(pipe, "vae", None) is not None:
+    pipe.vae.enable_slicing()
+    pipe.vae.enable_tiling()
+
+pipe.enable_sequential_cpu_offload()
+
+image = pipe(
+    prompt="a clean product photo of a matte black ceramic mug on a walnut desk",
+    width=512,
+    height=512,
+    num_inference_steps=8,
+    guidance_scale=4.0,
+    generator=torch.Generator(device="cpu").manual_seed(42),
+).images[0]
+image.save("nucleus_moe_smoke.png")</code></pre>
+    </section>
+
+    <section id="method">
+      <h2>6. New Pipeline Method</h2>
+      <ol>
+        <li>Confirm the official model card, Diffusers docs, and <code>model_index.json</code>.</li>
+        <li>Verify local imports with the repo venv.</li>
+        <li>Classify the task and choose a stable public task identifier.</li>
+        <li>Estimate memory from Hub file sizes before writing code.</li>
+        <li>Create a standalone smoke test.</li>
+        <li>Design minimal workflow schema and output shape.</li>
+        <li>Implement runtime in a family package, preferably subprocess-backed.</li>
+        <li>Register schema, handler, and catalog capabilities.</li>
+        <li>Update docs and tests together.</li>
+        <li>Add a frontend page only after backend behavior is proven.</li>
+      </ol>
+    </section>
+
+    <section id="implementation">
+      <h2>7. SynthaEngine Plan</h2>
+      <h3>Family and Task</h3>
+      <pre><code>family: nucleus-moe
+aliases: nucleus-image, nucleusmoe, nucleus
+task: nucleus-moe.text2img</code></pre>
+
+      <h3>Future Files</h3>
+      <ul>
+        <li><code>backend/workflow/nucleus_moe.py</code></li>
+        <li><code>backend/nucleus_moe/__init__.py</code></li>
+        <li><code>backend/nucleus_moe/pipeline.py</code></li>
+        <li><code>backend/nucleus_moe/subprocess_runner.py</code></li>
+        <li><code>frontend/nucleus_moe/text2img.html</code> after backend proof</li>
+        <li><code>frontend/nucleus_moe/text2img.js</code> after backend proof</li>
+      </ul>
+
+      <h3>Initial Input Defaults</h3>
+      <pre><code>{
+  "steps": 8,
+  "guidance_scale": 4.0,
+  "width": 512,
+  "height": 512,
+  "num_images": 1,
+  "memory_preset": "sequential_offload",
+  "enable_text_kv_cache": true,
+  "experimental_ack": true
+}</code></pre>
+
+      <h3>Workflow Example</h3>
+      <pre><code>{
+  "kind": "workflow",
+  "payload": {
+    "tasks": [
+      {
+        "id": "t1",
+        "type": "nucleus-moe.text2img",
+        "inputs": {
+          "prompt": "a quiet alpine lake at sunrise, soft pink and gold sky",
+          "width": 512,
+          "height": 512,
+          "steps": 8,
+          "guidance_scale": 4.0,
+          "memory_preset": "sequential_offload",
+          "experimental_ack": true
+        }
+      }
+    ],
+    "return": "@t1.images"
+  }
+}</code></pre>
+    </section>
+
+    <section id="hosted">
+      <h2>8. Hosted Provider Path</h2>
+      <p>
+        If the goal is reliable Nucleus output on this PC, a hosted provider is
+        more practical than local BF16. A hosted path should be a separate
+        approved behavior change because it introduces credentials, remote
+        execution, and output download handling.
+      </p>
+    </section>
+
+    <section id="risks">
+      <h2>9. Risks</h2>
+      <table>
+        <thead>
+          <tr><th>Risk</th><th>Mitigation</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Huge model download and cache footprint</td><td>Document disk needs and require smoke test.</td></tr>
+          <tr><td>Out-of-memory on 12 GB VRAM</td><td>Never default to direct CUDA loading.</td></tr>
+          <tr><td>64 GB RAM still tight</td><td>Use one-shot subprocesses and one image per job.</td></tr>
+          <tr><td>Sequential offload is slow</td><td>Mark local mode experimental.</td></tr>
+          <tr><td>Generic quantization may miss MoE tensors</td><td>Validate real peak memory before exposing it.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="done">
+      <h2>10. Definition of Done</h2>
+      <ul>
+        <li>Standalone smoke test completes or feature is explicitly hosted-only.</li>
+        <li><code>nucleus-moe.text2img</code> appears in task type discovery.</li>
+        <li>Catalog includes <code>nucleus-moe</code> capabilities.</li>
+        <li>Workflow job returns <code>{ "images": ["/outputs/..."] }</code>.</li>
+        <li>Runtime is subprocess-backed and cleans up memory in <code>finally</code>.</li>
+        <li>Docs and mocked tests are updated without downloading the real model.</li>
+      </ul>
+    </section>
+
+    <section id="sources">
+      <h2>11. Sources</h2>
+      <ul>
+        <li><a href="https://huggingface.co/NucleusAI/Nucleus-Image">NucleusAI/Nucleus-Image model card</a></li>
+        <li><a href="https://huggingface.co/NucleusAI/Nucleus-Image/tree/main">NucleusAI/Nucleus-Image file tree</a></li>
+        <li><a href="https://huggingface.co/docs/diffusers/main/api/pipelines/nucleusmoe_image">Diffusers NucleusMoE pipeline docs</a></li>
+        <li><a href="https://huggingface.co/docs/diffusers/using-diffusers/loading">Diffusers pipeline loading docs</a></li>
+        <li><a href="https://huggingface.co/docs/diffusers/main/en/optimization/memory">Diffusers memory reduction docs</a></li>
+        <li><a href="https://huggingface.co/docs/diffusers/main/quantization/overview">Diffusers quantization overview</a></li>
+        <li><a href="https://arxiv.org/abs/2604.12163">Nucleus-Image arXiv paper</a></li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

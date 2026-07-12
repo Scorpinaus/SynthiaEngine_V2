@@ -1,0 +1,633 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ace-Step 1.5 Diffusers Implementation Guide</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f6f7fb;
+      --ink: #151923;
+      --muted: #586174;
+      --panel: #ffffff;
+      --panel-2: #eef1f6;
+      --line: #d7deea;
+      --accent: #0f766e;
+      --warn: #a15c07;
+      --code-bg: #111827;
+      --code-ink: #f8fafc;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #101318;
+        --ink: #eef2f8;
+        --muted: #a9b3c5;
+        --panel: #171c24;
+        --panel-2: #202735;
+        --line: #323b4d;
+        --accent: #5eead4;
+        --warn: #fbbf24;
+        --code-bg: #090d14;
+        --code-ink: #f8fafc;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", Arial, sans-serif;
+      line-height: 1.55;
+    }
+
+    main {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 32px 20px 56px;
+    }
+
+    header {
+      padding: 28px 0 20px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: clamp(2rem, 4vw, 3.4rem);
+      line-height: 1.05;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin: 34px 0 12px;
+      font-size: 1.55rem;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 24px 0 10px;
+      font-size: 1.15rem;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 10px 0;
+    }
+
+    a {
+      color: var(--accent);
+    }
+
+    code {
+      border-radius: 4px;
+      padding: 1px 5px;
+      background: var(--panel-2);
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.95em;
+    }
+
+    pre {
+      overflow: auto;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: var(--code-bg);
+      color: var(--code-ink);
+      padding: 14px;
+    }
+
+    pre code {
+      padding: 0;
+      background: transparent;
+      color: inherit;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0 22px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+    }
+
+    th,
+    td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--panel-2);
+    }
+
+    ul,
+    ol {
+      padding-left: 1.3rem;
+    }
+
+    li {
+      margin: 7px 0;
+    }
+
+    .lede {
+      max-width: 840px;
+      color: var(--muted);
+      font-size: 1.08rem;
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    .pill {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 6px 10px;
+      background: var(--panel);
+      color: var(--muted);
+      font-size: 0.92rem;
+      white-space: nowrap;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin: 18px 0;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .card strong {
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .ok {
+      border-left: 4px solid var(--accent);
+    }
+
+    .warn {
+      border-left: 4px solid var(--warn);
+    }
+
+    .toc {
+      columns: 2;
+      column-gap: 32px;
+      margin: 18px 0;
+    }
+
+    .toc a {
+      display: block;
+      break-inside: avoid;
+      margin: 5px 0;
+      text-decoration: none;
+    }
+
+    @media (max-width: 820px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .toc {
+        columns: 1;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Ace-Step 1.5 Diffusers Implementation Guide</h1>
+      <p class="lede">
+        A SynthaEngine research guide for adding Ace-Step 1.5 as an audio/music
+        workflow family through Diffusers <code>AceStepPipeline</code>, with
+        local hardware feasibility notes for 64 GB RAM and RTX 3060 12 GB VRAM.
+      </p>
+      <div class="meta">
+        <span class="pill">Date: 2026-05-30</span>
+        <span class="pill">Target PC: 64 GB RAM, RTX 3060 12 GB</span>
+        <span class="pill">Diffusers: 0.38.0 verified locally</span>
+        <span class="pill">Initial task: ace-step.text2music</span>
+      </div>
+    </header>
+
+    <section aria-labelledby="toc">
+      <h2 id="toc">Contents</h2>
+      <nav class="toc">
+        <a href="#summary">1. Executive Summary</a>
+        <a href="#what">2. What This Is</a>
+        <a href="#modalities">3. Modalities and Sub-Pipelines</a>
+        <a href="#variants">4. Model Variants</a>
+        <a href="#hardware">5. Hardware Feasibility</a>
+        <a href="#quantization">6. Quantization</a>
+        <a href="#hosting">7. Cloud and Hosting</a>
+        <a href="#smoke">8. Smoke Test</a>
+        <a href="#implementation">9. SynthaEngine Plan</a>
+        <a href="#options">10. Options and Flags</a>
+        <a href="#done">11. Definition of Done</a>
+        <a href="#sources">12. Sources</a>
+      </nav>
+    </section>
+
+    <section id="summary">
+      <h2>1. Executive Summary</h2>
+      <div class="grid">
+        <article class="card ok">
+          <strong>Pipeline exists locally</strong>
+          <p>
+            The repo venv imports <code>AceStepPipeline</code>,
+            <code>AceStepTransformer1DModel</code>, and
+            <code>AutoencoderOobleck</code> with Diffusers 0.38.0.
+          </p>
+        </article>
+        <article class="card ok">
+          <strong>RTX 3060 is viable for 2B</strong>
+          <p>
+            Start with the 2B turbo path, short durations, one job at a time,
+            BF16, and model CPU offload.
+          </p>
+        </article>
+        <article class="card warn">
+          <strong>Audio support is required</strong>
+          <p>
+            SynthaEngine needs audio artifacts, audio outputs, history playback,
+            and a subprocess-backed <code>backend/ace_step</code> runtime.
+          </p>
+        </article>
+      </div>
+      <p>
+        Ace-Step 1.5 is an audio/music model, not an image or video model. The
+        safest first integration is <code>ace-step.text2music</code> only.
+      </p>
+    </section>
+
+    <section id="what">
+      <h2>2. What This Is</h2>
+      <p>
+        Ace-Step 1.5 is an open-source music generation foundation model. It
+        generates variable-length stereo audio at 48 kHz from text prompts and
+        optional structured lyrics. The full upstream system combines a
+        language-model planner with a Diffusion Transformer synthesizer, while
+        Diffusers exposes the DiT/audio synthesis side through
+        <code>AceStepPipeline</code>.
+      </p>
+      <table>
+        <thead>
+          <tr><th>Component</th><th>Role</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>AceStepPipeline</code></td><td>Diffusers pipeline for music generation and audio editing tasks.</td></tr>
+          <tr><td><code>AutoencoderOobleck</code></td><td>Audio VAE for waveform to/from stereo latents.</td></tr>
+          <tr><td><code>AceStepTransformer1DModel</code></td><td>Diffusion Transformer denoiser in audio latent space.</td></tr>
+          <tr><td>Qwen3-based text encoder</td><td>Prompt and lyric conditioning.</td></tr>
+          <tr><td><code>AceStepConditionEncoder</code></td><td>Combines text, lyric, and timbre conditioning.</td></tr>
+          <tr><td><code>FlowMatchEulerDiscreteScheduler</code></td><td>Flow-matching sampling schedule.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="modalities">
+      <h2>3. Modalities and Sub-Pipelines</h2>
+      <table>
+        <thead>
+          <tr><th>Task type</th><th>What it does</th><th>Initial status</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>text2music</code></td><td>Generate music from prompts and lyrics.</td><td>Implement first.</td></tr>
+          <tr><td><code>cover</code></td><td>Generate audio with timbre transfer from reference audio or semantic codes.</td><td>Later.</td></tr>
+          <tr><td><code>repaint</code></td><td>Regenerate a region of existing audio.</td><td>Later.</td></tr>
+          <tr><td><code>extract</code></td><td>Extract a track such as vocals or drums.</td><td>Later.</td></tr>
+          <tr><td><code>lego</code></td><td>Generate a specific track from audio context.</td><td>Later.</td></tr>
+          <tr><td><code>complete</code></td><td>Complete audio with additional track classes.</td><td>Later.</td></tr>
+        </tbody>
+      </table>
+      <p>
+        Inputs can include text, lyrics, source audio, reference audio, semantic
+        audio codes, track names, and music metadata such as BPM, key, and time
+        signature. Outputs should be persisted as WAV files in SynthaEngine.
+      </p>
+    </section>
+
+    <section id="variants">
+      <h2>4. Model Variants</h2>
+      <table>
+        <thead>
+          <tr><th>Variant</th><th>Hub repo</th><th>CFG</th><th>Default steps</th><th>Notes</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>turbo</td><td><code>ACE-Step/Ace-Step1.5</code></td><td>off, distilled</td><td>8</td><td>Best first local target.</td></tr>
+          <tr><td>base</td><td><code>ACE-Step/acestep-v15-base</code></td><td>on</td><td>8 documented; often 30-60 for quality</td><td>More tunable.</td></tr>
+          <tr><td>sft</td><td><code>ACE-Step/acestep-v15-sft</code></td><td>on</td><td>8 documented; often 30-60 for quality</td><td>Higher quality, narrower behavior.</td></tr>
+          <tr><td>XL Turbo</td><td><code>ACE-Step/acestep-v15-xl-turbo-diffusers</code></td><td>off, distilled</td><td>8</td><td>Advanced only; use offload plus INT8 on 12 GB.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="hardware">
+      <h2>5. Hardware Feasibility</h2>
+      <p>
+        Local facts: CUDA and BF16 are available on the RTX 3060 12 GB;
+        <code>bitsandbytes</code>, <code>scipy</code>, and
+        <code>torchaudio</code> are installed; <code>torchao</code>,
+        <code>optimum-quanto</code>, <code>flash_attn</code>, and
+        <code>soundfile</code> are not installed.
+      </p>
+      <table>
+        <thead>
+          <tr><th>Option</th><th>Feasible?</th><th>Recommendation</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>2B turbo, 10-30 sec, BF16, one job</td><td>Yes</td><td>First target.</td></tr>
+          <tr><td>2B turbo with model CPU offload</td><td>Yes</td><td>Recommended app default.</td></tr>
+          <tr><td>2B direct CUDA</td><td>Probably, measure first</td><td>Smoke test only before exposing.</td></tr>
+          <tr><td>Base/SFT, 30-60 steps</td><td>Yes, slower</td><td>Advanced quality mode.</td></tr>
+          <tr><td>Long 5-10 minute generation</td><td>No by default</td><td>Stress-test later.</td></tr>
+          <tr><td>Batching multiple songs</td><td>No by default</td><td>Serialize jobs instead.</td></tr>
+          <tr><td>XL Turbo on 12 GB</td><td>Yes with caution</td><td>Require offload plus INT8 experiment.</td></tr>
+          <tr><td>XL direct CUDA</td><td>No</td><td>Use larger GPU.</td></tr>
+        </tbody>
+      </table>
+      <h3>Recommended Defaults</h3>
+      <pre><code>{
+  "model": "ACE-Step1.5 Turbo",
+  "variant": "turbo",
+  "audio_duration": 30.0,
+  "num_inference_steps": 8,
+  "guidance_scale": 1.0,
+  "shift": 3.0,
+  "num_audios": 1,
+  "vocal_language": "en",
+  "memory_preset": "model_offload",
+  "quantization": "none",
+  "output_format": "wav"
+}</code></pre>
+    </section>
+
+    <section id="quantization">
+      <h2>6. Quantization</h2>
+      <p>
+        SynthaEngine already has a Diffusers pipeline quantization helper for
+        <code>none</code> and <code>bnb_8bit</code>. Treat
+        <code>bnb_8bit</code> as the first advanced experiment for Ace-Step,
+        especially for XL. Keep BF16 as the initial default for 2B turbo.
+      </p>
+      <pre><code>from backend.quantization import build_diffusers_pipeline_quantization_config
+
+quantization_config = build_diffusers_pipeline_quantization_config(
+    "bnb_8bit",
+    components_to_quantize=["transformer", "text_encoder"],
+    task_type="ace-step.text2music",
+)</code></pre>
+      <table>
+        <thead>
+          <tr><th>Mode</th><th>Expose initially?</th><th>Reason</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>BF16 / <code>none</code></td><td>Yes</td><td>Stable first path.</td></tr>
+          <tr><td><code>bnb_8bit</code></td><td>Advanced after smoke test</td><td>Installed locally and already patterned in the app.</td></tr>
+          <tr><td><code>bnb_4bit</code></td><td>No</td><td>Needs new helper branch and quality validation.</td></tr>
+          <tr><td>torchao</td><td>No</td><td>Not installed.</td></tr>
+          <tr><td>Quanto</td><td>No</td><td>Not installed.</td></tr>
+          <tr><td>GGUF</td><td>No</td><td>Separate C++ runner, not Diffusers.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="hosting">
+      <h2>7. Cloud and Hosting</h2>
+      <p>
+        The checked official ACE-Step model cards do not show an active Hugging
+        Face Inference Provider deployment. Treat cloud as GPU hosting for your
+        runtime rather than a guaranteed managed model API.
+      </p>
+      <table>
+        <thead>
+          <tr><th>Provider</th><th>Useful GPUs</th><th>Best use</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Hugging Face Spaces GPU</td><td>L4 24 GB, A10G 24 GB, L40S 48 GB, A100 80 GB</td><td>Demos close to Hub models.</td></tr>
+          <tr><td>RunPod</td><td>RTX 3090/4090 24 GB, A40/L40S 48 GB, A100/H100 80 GB</td><td>Flexible pods/serverless experiments.</td></tr>
+          <tr><td>Lambda GPU Cloud</td><td>A10 24 GB, A6000 48 GB, A100/H100 classes when available</td><td>Managed VM development.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="smoke">
+      <h2>8. Smoke Test</h2>
+      <p>
+        Before integration, run one standalone 20-30 second turbo generation and
+        write a WAV with <code>scipy</code>, which is already available locally.
+      </p>
+      <pre><code>from pathlib import Path
+
+import numpy as np
+import torch
+from diffusers import AceStepPipeline
+from scipy.io import wavfile
+
+pipe = AceStepPipeline.from_pretrained(
+    "ACE-Step/Ace-Step1.5",
+    torch_dtype=torch.bfloat16,
+)
+pipe.enable_model_cpu_offload()
+
+if getattr(pipe, "vae", None) is not None and hasattr(pipe.vae, "enable_tiling"):
+    pipe.vae.enable_tiling()
+
+output = pipe(
+    prompt="An upbeat synthwave track with driving drums and warm analog bass",
+    lyrics="[verse]\nNeon lights are calling\n[chorus]\nWe ride the wave tonight",
+    audio_duration=20.0,
+    vocal_language="en",
+    num_inference_steps=8,
+    guidance_scale=1.0,
+    shift=3.0,
+    generator=torch.Generator(device="cpu").manual_seed(42),
+)
+
+audio = output.audios[0].detach().cpu().float()
+audio_np = audio.T.numpy() if audio.ndim == 2 else audio.numpy()
+audio_np = np.clip(audio_np, -1.0, 1.0)
+wavfile.write(Path("ace_step_smoke.wav"), int(pipe.sample_rate), (audio_np * 32767).astype(np.int16))</code></pre>
+    </section>
+
+    <section id="implementation">
+      <h2>9. SynthaEngine Plan</h2>
+      <h3>Public Identifiers</h3>
+      <pre><code>family: ace-step
+first task: ace-step.text2music
+later tasks:
+  ace-step.cover
+  ace-step.repaint
+  ace-step.extract
+  ace-step.lego
+  ace-step.complete</code></pre>
+
+      <h3>Required Capability Additions</h3>
+      <ul>
+        <li>Audio upload/artifact support with a new audio artifact prefix.</li>
+        <li><code>AudiosWithBatchOutput</code> returning <code>batch_id</code> and <code>audios</code>.</li>
+        <li>History and frontend audio playback.</li>
+        <li><code>backend/ace_step/</code> subprocess runtime using <code>AceStepPipeline</code>.</li>
+        <li>Explicit WAV writing and JSON sidecar metadata.</li>
+      </ul>
+
+      <h3>Initial Schema Sketch</h3>
+      <pre><code>class AceStepText2MusicInputs(BaseModel):
+    prompt: str = ""
+    lyrics: str = ""
+    audio_duration: float = Field(default=30.0, ge=10.0, le=120.0)
+    vocal_language: str = "en"
+    steps: int = Field(default=8, ge=1, le=100)
+    guidance_scale: float = Field(default=1.0, ge=0.0, le=30.0)
+    shift: float = Field(default=3.0, ge=1.0, le=3.0)
+    seed: int | None = None
+    model: str | None = None
+    variant: Literal["turbo", "base", "sft", "xl_turbo"] = "turbo"
+    num_audios: int = Field(default=1, ge=1, le=1)
+    bpm: int | None = Field(default=None, ge=40, le=240)
+    keyscale: str | None = None
+    timesignature: str | None = None
+    instruction: str | None = None
+    max_text_length: int = Field(default=256, ge=32, le=512)
+    max_lyric_length: int = Field(default=2048, ge=0, le=4096)
+    cfg_interval_start: float = Field(default=0.0, ge=0.0, le=1.0)
+    cfg_interval_end: float = Field(default=1.0, ge=0.0, le=1.0)
+    output_format: Literal["wav"] = "wav"
+    memory_preset: Literal["direct_cuda", "model_offload", "sequential_offload"] = "model_offload"
+    quantization: Literal["none", "bnb_8bit"] = "none"
+    experimental_ack: bool = True</code></pre>
+
+      <h3>Runtime Sketch</h3>
+      <pre><code>@torch.inference_mode()
+def generate_text2music_in_process(params: dict[str, object]) -> dict[str, object]:
+    pipe = None
+    try:
+        pipe = load_ace_step_pipeline(
+            model=params.get("model"),
+            variant=str(params.get("variant") or "turbo"),
+            memory_preset=str(params.get("memory_preset") or "model_offload"),
+            quantization=str(params.get("quantization") or "none"),
+        )
+
+        output = pipe(
+            prompt=str(params.get("prompt") or ""),
+            lyrics=str(params.get("lyrics") or ""),
+            audio_duration=float(params.get("audio_duration") or 30.0),
+            vocal_language=str(params.get("vocal_language") or "en"),
+            num_inference_steps=int(params.get("steps") or 8),
+            guidance_scale=float(params.get("guidance_scale") or 1.0),
+            shift=float(params.get("shift") or 3.0),
+            generator=torch.Generator(device="cpu").manual_seed(resolve_seed(params.get("seed"))),
+            task_type="text2music",
+        )
+        return save_audio_output(output.audios[0], sample_rate=pipe.sample_rate, params=params)
+    finally:
+        release_pipeline(pipe, logger=logger)</code></pre>
+
+      <h3>Workflow Example</h3>
+      <pre><code>{
+  "kind": "workflow",
+  "payload": {
+    "tasks": [
+      {
+        "id": "t1",
+        "type": "ace-step.text2music",
+        "inputs": {
+          "prompt": "upbeat synthwave track with driving drums and warm analog bass",
+          "lyrics": "[verse]\nNeon lights are calling\n[chorus]\nWe ride the wave tonight",
+          "audio_duration": 30.0,
+          "vocal_language": "en",
+          "steps": 8,
+          "guidance_scale": 1.0,
+          "shift": 3.0,
+          "memory_preset": "model_offload",
+          "quantization": "none",
+          "experimental_ack": true
+        }
+      }
+    ],
+    "return": "@t1.audios"
+  }
+}</code></pre>
+    </section>
+
+    <section id="options">
+      <h2>10. Options and Flags</h2>
+      <table>
+        <thead>
+          <tr><th>Option</th><th>Expose initially?</th><th>Notes</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>prompt</code></td><td>Yes</td><td>Music description.</td></tr>
+          <tr><td><code>lyrics</code></td><td>Yes</td><td>Structured sections such as verse/chorus.</td></tr>
+          <tr><td><code>audio_duration</code></td><td>Yes</td><td>Default 30 sec, cap initially.</td></tr>
+          <tr><td><code>vocal_language</code></td><td>Yes</td><td>Should match lyrics.</td></tr>
+          <tr><td><code>num_inference_steps</code></td><td>Yes as steps</td><td>Turbo default 8.</td></tr>
+          <tr><td><code>guidance_scale</code></td><td>Yes</td><td>Turbo ignores CFG guidance above 1.</td></tr>
+          <tr><td><code>shift</code></td><td>Advanced</td><td>Default 3.0.</td></tr>
+          <tr><td><code>seed/generator</code></td><td>Yes as seed</td><td>Use CPU generator.</td></tr>
+          <tr><td><code>instruction</code></td><td>Advanced</td><td>Auto-generated when omitted.</td></tr>
+          <tr><td><code>max_text_length</code>, <code>max_lyric_length</code></td><td>Advanced</td><td>Prompt and lyric token caps.</td></tr>
+          <tr><td><code>bpm</code>, <code>keyscale</code>, <code>timesignature</code></td><td>Yes</td><td>Optional music metadata controls.</td></tr>
+          <tr><td><code>task_type</code></td><td>No free text</td><td>Map to workflow task ids.</td></tr>
+          <tr><td><code>track_name</code>, <code>complete_track_classes</code></td><td>Later</td><td>Track tasks.</td></tr>
+          <tr><td><code>src_audio</code>, <code>reference_audio</code></td><td>Later</td><td>Requires audio artifact support.</td></tr>
+          <tr><td><code>audio_codes</code></td><td>Later</td><td>Semantic-code cover path.</td></tr>
+          <tr><td><code>repainting_start</code>, <code>repainting_end</code></td><td>Later</td><td>Repaint/lego.</td></tr>
+          <tr><td><code>audio_cover_strength</code></td><td>Later</td><td>Cover blending.</td></tr>
+          <tr><td><code>cfg_interval_start</code>, <code>cfg_interval_end</code></td><td>Advanced</td><td>Validate start <= end.</td></tr>
+          <tr><td><code>timesteps</code>, callbacks, latents</td><td>No</td><td>Internal or future advanced controls.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="done">
+      <h2>11. Definition of Done</h2>
+      <ul>
+        <li>Audio artifacts can be uploaded and cleaned up.</li>
+        <li><code>ace-step.text2music</code> appears in workflow task discovery.</li>
+        <li>The catalog exposes an <code>ace-step</code> audio capability.</li>
+        <li>Workflow jobs return <code>audios</code> URLs.</li>
+        <li>WAV files and sidecar metadata are written under <code>outputs/batch_*</code>.</li>
+        <li>History can show and play audio records.</li>
+        <li>Runtime is subprocess-backed, serialized, and cleans up pipeline hooks.</li>
+        <li>Tests cover schemas, catalog, adapter dispatch, subprocess bridge, and history without downloading the model.</li>
+      </ul>
+    </section>
+
+    <section id="sources">
+      <h2>12. Sources</h2>
+      <ul>
+        <li><a href="https://huggingface.co/docs/diffusers/api/pipelines/ace_step">Diffusers ACE-Step 1.5 docs</a></li>
+        <li><a href="https://huggingface.co/ACE-Step/Ace-Step1.5">ACE-Step/Ace-Step1.5 model card</a></li>
+        <li><a href="https://huggingface.co/ACE-Step/acestep-v15-base">ACE-Step base model card</a></li>
+        <li><a href="https://huggingface.co/ACE-Step/acestep-v15-sft">ACE-Step SFT model card</a></li>
+        <li><a href="https://huggingface.co/ACE-Step/acestep-v15-xl-turbo-diffusers">ACE-Step XL Turbo Diffusers model card</a></li>
+        <li><a href="https://huggingface.co/docs/diffusers/main/en/optimization/memory">Diffusers memory optimization docs</a></li>
+        <li><a href="https://huggingface.co/docs/diffusers/v0.38.0/quantization/bitsandbytes">Diffusers bitsandbytes quantization docs</a></li>
+        <li><a href="https://huggingface.co/docs/hub/spaces-gpus">Hugging Face GPU Spaces docs</a></li>
+        <li><a href="https://docs.runpod.io/references/gpu-types">RunPod GPU types docs</a></li>
+        <li><a href="https://lambda.ai/service/gpu-cloud">Lambda GPU Cloud</a></li>
+        <li><a href="https://arxiv.org/abs/2602.00744">ACE-Step 1.5 arXiv paper</a></li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

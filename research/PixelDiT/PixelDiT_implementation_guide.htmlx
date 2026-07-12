@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>PixelDiT Implementation Guide for SynthaEngine</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.55;
+      margin: 0;
+      color: #202124;
+      background: #f7f7f4;
+    }
+    main {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 32px 22px 64px;
+      background: #fffdf8;
+    }
+    h1, h2, h3 {
+      color: #1f2933;
+      line-height: 1.2;
+    }
+    h1 {
+      margin-top: 0;
+      font-size: 2rem;
+    }
+    h2 {
+      border-top: 1px solid #d8d5cc;
+      padding-top: 22px;
+      margin-top: 34px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0 22px;
+      font-size: 0.95rem;
+    }
+    th, td {
+      border: 1px solid #d4d0c4;
+      padding: 8px 10px;
+      vertical-align: top;
+    }
+    th {
+      background: #ece8dc;
+      text-align: left;
+    }
+    code {
+      background: #eeeae0;
+      padding: 0.1rem 0.25rem;
+      border-radius: 3px;
+    }
+    pre {
+      overflow-x: auto;
+      background: #202124;
+      color: #f8f8f2;
+      padding: 14px;
+      border-radius: 6px;
+    }
+    pre code {
+      background: transparent;
+      padding: 0;
+      color: inherit;
+    }
+    .note {
+      border-left: 4px solid #5b8def;
+      background: #eef4ff;
+      padding: 10px 12px;
+      margin: 16px 0;
+    }
+  </style>
+</head>
+<body>
+<main>
+  <h1>PixelDiT Implementation Guide for SynthaEngine</h1>
+  <p><strong>Date:</strong> 2026-06-03</p>
+  <p>
+    Research target: PixelDiT, Pixel Diffusion Transformers for Image Generation.
+    Project page: <a href="https://pixeldit.github.io/">https://pixeldit.github.io/</a>.
+    Code: <a href="https://github.com/NVlabs/PixelDiT">https://github.com/NVlabs/PixelDiT</a>.
+  </p>
+
+  <div class="note">
+    This companion HTMLX file mirrors the implementation guide in a browser-readable
+    form and includes code blocks for workflow payloads, schema sketches, and command
+    examples. It is documentation only; no application source files were changed.
+  </div>
+
+  <h2>Executive Summary</h2>
+  <p>
+    PixelDiT is a VAE-free pixel-space diffusion transformer. It generates directly
+    in RGB pixel space using a dual-level transformer architecture: a patch-level
+    pathway for global semantics and a pixel-level pathway for texture refinement.
+  </p>
+  <table>
+    <tr><th>Question</th><th>Answer</th></tr>
+    <tr><td>Official NVIDIA code?</td><td>Yes, in <code>NVlabs/PixelDiT</code>.</td></tr>
+    <tr><td>Hugging Face weights?</td><td>Yes, ImageNet and T2I model repos exist.</td></tr>
+    <tr><td>Official Hugging Face Diffusers pipeline?</td><td>No current first-class <code>PixelDiT*Pipeline</code> support found.</td></tr>
+    <tr><td>Local RTX 3060 12 GB?</td><td>Possible for constrained experiments, not comfortable for 1024px production or training.</td></tr>
+    <tr><td>Recommended SynthaEngine path?</td><td>Custom <code>pixeldit</code> workflow family with subprocess isolation.</td></tr>
+  </table>
+
+  <h2>What PixelDiT Is</h2>
+  <p>
+    PixelDiT removes the VAE bottleneck used by latent diffusion systems. Instead
+    of denoising compressed latents and decoding through a VAE, it denoises pixels
+    directly. This can preserve high-frequency details such as text and texture, but
+    it increases activation pressure at higher resolutions.
+  </p>
+  <table>
+    <tr><th>Architecture part</th><th>Purpose</th></tr>
+    <tr><td>Patch-level DiT pathway</td><td>Global layout, semantics, prompt alignment.</td></tr>
+    <tr><td>Pixel-level DiT pathway</td><td>Dense local detail and texture refinement.</td></tr>
+    <tr><td>Pixel-wise AdaLN</td><td>Per-pixel modulation from semantic tokens.</td></tr>
+    <tr><td>Pixel token compaction</td><td>Reduces dense attention cost without a VAE.</td></tr>
+    <tr><td>FlowDPM solver</td><td>Official inference sampler style.</td></tr>
+  </table>
+  <pre><code class="language-text">prompt
+  -> Gemma-2 text encoder
+  -> patch-level MM-DiT semantic pathway
+  -> semantic tokens + timestep
+  -> pixel-wise AdaLN conditioning
+  -> pixel-level transformer refinement
+  -> RGB pixel output</code></pre>
+
+  <h2>Modalities And Sub-Pipelines</h2>
+  <table>
+    <tr><th>Modality</th><th>Availability</th><th>SynthaEngine recommendation</th></tr>
+    <tr><td>ImageNet class-to-image</td><td>Available in <code>c2i/</code>.</td><td>Optional <code>pixeldit.class2img</code>.</td></tr>
+    <tr><td>Text-to-image</td><td>Available in <code>t2i/</code>.</td><td>Initial <code>pixeldit.text2img</code>.</td></tr>
+    <tr><td>FlowEdit image editing</td><td>Research/demo direction.</td><td>Do not expose until stable code and contract exist.</td></tr>
+    <tr><td>Img2img</td><td>No official standalone pipeline.</td><td>Do not expose initially.</td></tr>
+    <tr><td>Inpaint</td><td>No official standalone pipeline.</td><td>Do not expose initially.</td></tr>
+    <tr><td>ControlNet</td><td>No official PixelDiT ControlNet pipeline.</td><td>Do not expose initially.</td></tr>
+    <tr><td>IP-Adapter</td><td>Not part of official contract.</td><td>Do not expose initially.</td></tr>
+    <tr><td>Video</td><td>Not available.</td><td>Out of scope.</td></tr>
+  </table>
+
+  <h2>Diffusers Support Check</h2>
+  <p>
+    Current evidence shows no official PixelDiT pipeline in Hugging Face Diffusers.
+    NVIDIA PixelDiT depends on Diffusers in its requirements, but its model and
+    sampler code live in custom PixelDiT modules such as <code>pixdit_core</code>,
+    <code>c2i</code>, and <code>t2i</code>.
+  </p>
+  <pre><code class="language-powershell">.venv\Scripts\python.exe -c "import diffusers; print(diffusers.__version__); print(any('PixelDiT' in name or 'PixDiT' in name for name in dir(diffusers)))"</code></pre>
+  <p>Observed locally in SynthaEngine: Diffusers <code>0.38.0</code>, PixelDiT symbol check <code>False</code>.</p>
+
+  <h2>Local Feasibility: Yes And No</h2>
+  <table>
+    <tr><th>Path</th><th>Verdict</th><th>Details</th></tr>
+    <tr><td>Yes: local proof-of-concept</td><td>Feasible to attempt</td><td>Use 256px or 512px, batch 1, one image, 25-50 steps, subprocess execution, and careful cleanup.</td></tr>
+    <tr><td>No: local production/training</td><td>Not realistic</td><td>Do not promise 1024px T2I, batching, 50K evaluation, or training on RTX 3060 12 GB.</td></tr>
+  </table>
+  <pre><code class="language-json">{
+  "task_type": "pixeldit.text2img",
+  "defaults": {
+    "width": 512,
+    "height": 512,
+    "steps": 25,
+    "cfg_scale": 2.75,
+    "num_images": 1,
+    "sampling_algo": "flow_dpm-solver",
+    "interval_guidance": [0.0, 1.0],
+    "memory_preset": "subprocess_low_vram",
+    "precision": "bf16",
+    "quantization": "none",
+    "experimental_ack": true
+  }
+}</code></pre>
+
+  <h2>Quantization Options</h2>
+  <table>
+    <tr><th>Option</th><th>Possible?</th><th>Recommendation</th></tr>
+    <tr><td>BF16 / FP16</td><td>Yes</td><td>Use first. Try BF16, fall back to FP16 if needed.</td></tr>
+    <tr><td>CPU offload / staged load</td><td>Yes with wrapper work</td><td>Recommended before quantization.</td></tr>
+    <tr><td>Text encoder bitsandbytes</td><td>Maybe</td><td>Experimental; depends on Windows support and code changes.</td></tr>
+    <tr><td>Diffusers pipeline quantization</td><td>No direct path</td><td>Requires official or custom Diffusers pipeline components.</td></tr>
+    <tr><td>GGUF</td><td>No direct path</td><td>Requires model conversion and compatible model class.</td></tr>
+    <tr><td>torchao / quanto</td><td>Maybe</td><td>Future manual model-level optimization.</td></tr>
+  </table>
+  <pre><code class="language-python">PixelDiTQuantization = Literal[
+    "none",
+    "text_encoder_bnb_8bit",
+    "text_encoder_bnb_4bit",
+    "model_torchao_int8_experimental",
+    "model_quanto_int8_experimental"
+]</code></pre>
+
+  <h2>Cloud Options</h2>
+  <table>
+    <tr><th>Provider</th><th>Use case</th><th>Notes</th></tr>
+    <tr><td>RunPod</td><td>Custom Docker experiments</td><td>Good for RTX 4090, A6000, A100, H100, H200 style pods.</td></tr>
+    <tr><td>Lambda Cloud</td><td>Managed GPU VMs</td><td>Good for A6000, A100, H100, B200 options.</td></tr>
+    <tr><td>Vast.ai</td><td>Lower-cost marketplace</td><td>Best for interruptible or budget experiments after checking host reliability.</td></tr>
+    <tr><td>Hugging Face Inference Endpoints</td><td>Managed private serving</td><td>Use a custom container; PixelDiT is not currently deployed by default providers.</td></tr>
+    <tr><td>AWS/GCP/Azure</td><td>Enterprise controls</td><td>More expensive, useful for compliance and private networking.</td></tr>
+  </table>
+
+  <h2>SynthaEngine Implementation Plan</h2>
+  <p>Add PixelDiT as a new model family and workflow task.</p>
+  <pre><code class="language-text">backend/pixeldit/__init__.py
+backend/pixeldit/pipeline.py
+backend/pixeldit/subprocess_runner.py
+backend/pixeldit/subprocess_io.py
+backend/workflow/pixeldit.py
+frontend/pixeldit/text2img.html
+frontend/pixeldit/text2img.js
+testing/test_pixeldit_workflow.py
+testing/test_pixeldit_subprocess.py
+testing/test_frontend_pixeldit_scripts.py</code></pre>
+
+  <h3>Workflow Schema Sketch</h3>
+  <pre><code class="language-python">class PixelDiTText2ImgInputs(BaseModel):
+    prompt: str = ""
+    negative_prompt: str = "low quality, worst quality, over-saturated, blurry, deformed, watermark"
+    steps: int = Field(default=25, ge=1, le=100)
+    cfg_scale: float = Field(default=2.75, ge=0.0, le=30.0)
+    width: int = Field(default=512, ge=256, le=1536)
+    height: int = Field(default=512, ge=256, le=1536)
+    seed: int | None = None
+    model: str | None = None
+    model_path: str | None = None
+    config: str = "t2i/configs/PixelDiT_1024px_pixel_diffusion_stage3.yaml"
+    num_images: int = Field(default=1, ge=1, le=1)
+    sampling_algo: Literal["flow_dpm-solver"] = "flow_dpm-solver"
+    interval_guidance: tuple[float, float] = (0.0, 1.0)
+    precision: Literal["bf16", "fp16", "fp32"] = "bf16"
+    memory_preset: Literal["subprocess_low_vram", "subprocess_standard"] = "subprocess_low_vram"
+    quantization: Literal["none", "text_encoder_bnb_8bit", "text_encoder_bnb_4bit"] = "none"
+    experimental_ack: bool = True
+    batch_id: str | None = None</code></pre>
+
+  <h3>Workflow Payload</h3>
+  <pre><code class="language-json">{
+  "kind": "workflow",
+  "payload": {
+    "tasks": [
+      {
+        "id": "t1",
+        "type": "pixeldit.text2img",
+        "inputs": {
+          "prompt": "a quiet glass greenhouse at sunrise, detailed plants, soft mist",
+          "negative_prompt": "low quality, blurry, watermark",
+          "width": 512,
+          "height": 512,
+          "steps": 25,
+          "cfg_scale": 2.75,
+          "seed": 2026,
+          "memory_preset": "subprocess_low_vram",
+          "experimental_ack": true
+        }
+      }
+    ],
+    "return": "@t1.images"
+  }
+}</code></pre>
+
+  <h3>Subprocess Wrapper Sketch</h3>
+  <pre><code class="language-python">def generate_text2img(params: dict[str, object]) -> dict[str, list[str]]:
+    return run_pixeldit_subprocess("text2img", params)
+
+
+def run_pixeldit_subprocess(operation: str, params: dict[str, object]) -> dict[str, list[str]]:
+    with tempfile.TemporaryDirectory(prefix="pixeldit_") as tmpdir:
+        input_path = Path(tmpdir) / "input.json"
+        output_path = Path(tmpdir) / "output.json"
+        input_path.write_text(json.dumps({"operation": operation, "params": params}))
+        completed = subprocess.run(
+            [sys.executable, "-m", "backend.pixeldit.subprocess_runner", str(input_path), str(output_path)],
+            cwd=str(REPO_ROOT),
+        )
+        payload = json.loads(output_path.read_text())
+        if completed.returncode != 0 or not payload.get("ok"):
+            raise RuntimeError(f"PixelDiT subprocess failed: {payload.get('error')}")
+        return payload["result"]</code></pre>
+
+  <h2>Official Command Example</h2>
+  <pre><code class="language-bash">cd t2i/
+python inference.py \
+  --config configs/PixelDiT_1024px_pixel_diffusion_stage3.yaml \
+  --model_path pixeldit_t2i_v1.pth \
+  --txt_file prompts.txt \
+  --custom_height 512 --custom_width 512 \
+  --cfg_scale 2.75 --seed 2026 \
+  --step 25 \
+  --negative_prompt "low quality, worst quality, over-saturated, blurry, deformed, watermark" \
+  --work_dir "."</code></pre>
+
+  <h2>Validation Commands</h2>
+  <pre><code class="language-powershell">.venv\Scripts\python.exe -m compileall backend
+.venv\Scripts\python.exe -m pytest testing/test_pixeldit_workflow.py -q
+.venv\Scripts\python.exe -m pytest testing/test_pixeldit_subprocess.py -q
+.venv\Scripts\python.exe -m pytest testing/test_workflow_catalog_capabilities.py -q</code></pre>
+
+  <h2>Recommended First PR Scope</h2>
+  <ul>
+    <li><code>pixeldit.text2img</code> only.</li>
+    <li>One checkpoint: <code>nvidia/PixelDiT-1300M-1024px</code>.</li>
+    <li>512x512 default, batch size 1.</li>
+    <li><code>flow_dpm-solver</code> only.</li>
+    <li><code>quantization: "none"</code> only.</li>
+    <li>No LoRA, ControlNet, IP-Adapter, img2img, inpaint, or training.</li>
+    <li>Subprocess execution only.</li>
+  </ul>
+
+  <h2>Sources</h2>
+  <ul>
+    <li><a href="https://pixeldit.github.io/">PixelDiT project page</a></li>
+    <li><a href="https://github.com/NVlabs/PixelDiT">NVIDIA PixelDiT GitHub repository</a></li>
+    <li><a href="https://huggingface.co/nvidia/PixelDiT-ImageNet">PixelDiT ImageNet model card</a></li>
+    <li><a href="https://huggingface.co/nvidia/PixelDiT-1300M-1024px">PixelDiT T2I model card</a></li>
+    <li><a href="https://huggingface.co/docs/diffusers/main/en/api/pipelines/overview">Diffusers pipeline overview</a></li>
+    <li><a href="https://huggingface.co/docs/diffusers/main/en/optimization/memory">Diffusers memory optimization docs</a></li>
+    <li><a href="https://huggingface.co/docs/diffusers/main/en/quantization/overview">Diffusers quantization overview</a></li>
+    <li><a href="https://www.runpod.io/product/cloud-gpus">RunPod GPU cloud page</a></li>
+    <li><a href="https://lambda.ai/instances">Lambda Cloud instances page</a></li>
+    <li><a href="https://docs.vast.ai/guides/instances/pricing">Vast.ai pricing docs</a></li>
+    <li><a href="https://huggingface.co/docs/inference-endpoints/en/pricing">Hugging Face Inference Endpoints pricing</a></li>
+  </ul>
+</main>
+</body>
+</html>

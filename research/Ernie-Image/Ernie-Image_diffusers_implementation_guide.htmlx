@@ -1,0 +1,518 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ERNIE-Image Diffusers Implementation Guide for SynthaEngine</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f8faf9;
+      --fg: #161a1d;
+      --muted: #59636f;
+      --line: #d8e0df;
+      --panel: #ffffff;
+      --panel-2: #edf3f1;
+      --accent: #0b6f68;
+      --accent-2: #9a3412;
+      --code-bg: #111827;
+      --code-fg: #f8fafc;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #101416;
+        --fg: #e9eef0;
+        --muted: #a8b3ba;
+        --line: #313c41;
+        --panel: #171d20;
+        --panel-2: #20292d;
+        --accent: #5eead4;
+        --accent-2: #fdba74;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: "Segoe UI", Arial, sans-serif;
+      line-height: 1.58;
+    }
+
+    main {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 36px 20px 64px;
+    }
+
+    header {
+      border-bottom: 1px solid var(--line);
+      padding: 20px 0 24px;
+    }
+
+    h1,
+    h2,
+    h3 {
+      letter-spacing: 0;
+      line-height: 1.18;
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: clamp(2rem, 4vw, 3.4rem);
+    }
+
+    h2 {
+      border-top: 1px solid var(--line);
+      margin: 36px 0 14px;
+      padding-top: 28px;
+      font-size: 1.55rem;
+    }
+
+    h3 {
+      margin: 26px 0 10px;
+      font-size: 1.15rem;
+    }
+
+    p,
+    ul,
+    ol,
+    table,
+    pre {
+      margin: 0 0 18px;
+    }
+
+    ul,
+    ol {
+      padding-left: 1.35rem;
+    }
+
+    a {
+      color: var(--accent);
+      overflow-wrap: anywhere;
+    }
+
+    code {
+      font-family: "Cascadia Code", Consolas, monospace;
+      font-size: 0.94em;
+    }
+
+    :not(pre) > code {
+      background: color-mix(in srgb, var(--accent) 12%, transparent);
+      border-radius: 4px;
+      padding: 0.08rem 0.28rem;
+    }
+
+    pre {
+      background: var(--code-bg);
+      border-radius: 8px;
+      color: var(--code-fg);
+      overflow-x: auto;
+      padding: 16px;
+    }
+
+    pre code {
+      display: block;
+      background: transparent;
+      color: inherit;
+      line-height: 1.55;
+      white-space: pre;
+    }
+
+    table {
+      border-collapse: collapse;
+      display: block;
+      overflow-x: auto;
+      width: 100%;
+    }
+
+    th,
+    td {
+      border: 1px solid var(--line);
+      padding: 9px 11px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--panel-2);
+    }
+
+    .lede {
+      max-width: 840px;
+      color: var(--muted);
+      font-size: 1.08rem;
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    .pill {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--panel);
+      color: var(--muted);
+      padding: 6px 10px;
+      white-space: nowrap;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin: 18px 0;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 14px;
+    }
+
+    .card strong {
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .yes {
+      border-left: 4px solid var(--accent);
+    }
+
+    .no {
+      border-left: 4px solid var(--accent-2);
+    }
+
+    .note {
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--accent);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 14px 16px;
+      margin: 18px 0;
+    }
+
+    @media (max-width: 760px) {
+      main {
+        padding: 28px 14px 48px;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>ERNIE-Image Diffusers Implementation Guide</h1>
+      <p class="lede">
+        A step-by-step guide for understanding ERNIE-Image, deciding whether it
+        fits a 64 GB RAM plus RTX 3060 12 GB machine, and fitting the released
+        Diffusers pipeline into SynthaEngine.
+      </p>
+      <div class="meta">
+        <span class="pill">Date: 2026-05-30</span>
+        <span class="pill">Pipeline: ErnieImagePipeline</span>
+        <span class="pill">Default target: ERNIE-Image-Turbo</span>
+        <span class="pill">Documentation-only artifact</span>
+      </div>
+    </header>
+
+    <section>
+      <h2>1. What This Is</h2>
+      <p>
+        ERNIE-Image is Baidu's open text-to-image model family in Diffusers. It
+        is an 8B-parameter, single-stream diffusion transformer model with a
+        multilingual prompt stack, an optional Prompt Enhancer, a FlowMatch
+        Euler scheduler, and a VAE image decoder.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Area</th>
+            <th>Detail</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>Main task</td><td>Text to image</td></tr>
+          <tr><td>Diffusers class</td><td><code>ErnieImagePipeline</code></td></tr>
+          <tr><td>Core model</td><td><code>ErnieImageTransformer2DModel</code></td></tr>
+          <tr><td>Text encoder</td><td>Mistral-3 style text encoder</td></tr>
+          <tr><td>Prompt Enhancer</td><td>Optional Ministral-3 style causal LM</td></tr>
+          <tr><td>VAE</td><td><code>AutoencoderKLFlux2</code></td></tr>
+          <tr><td>Scheduler</td><td><code>FlowMatchEulerDiscreteScheduler</code></td></tr>
+        </tbody>
+      </table>
+
+      <h3>Modalities And Sub-Pipelines</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Capability</th>
+            <th>Available?</th>
+            <th>Implementation note</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>Text to image</td><td>Yes</td><td>Official <code>ErnieImagePipeline</code></td></tr>
+          <tr><td>Image to image</td><td>No</td><td>No official ERNIE img2img pipeline currently exposed</td></tr>
+          <tr><td>Inpaint</td><td>No</td><td>No official ERNIE inpaint pipeline currently exposed</td></tr>
+          <tr><td>ControlNet</td><td>No</td><td>No official ERNIE ControlNet pipeline currently exposed</td></tr>
+          <tr><td>IP-Adapter</td><td>No</td><td>Not part of the official contract</td></tr>
+          <tr><td>Prompt Enhancer</td><td>Yes</td><td>Expose as <code>load_pe</code> and <code>use_pe</code></td></tr>
+          <tr><td>LoRA</td><td>Possible</td><td>SynthaEngine already exposes ERNIE LoRA adapter selection</td></tr>
+          <tr><td>Quantization</td><td>Experimental</td><td>Test before exposing as a user-facing flag</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>2. Feasibility On RTX 3060 12 GB</h2>
+      <div class="grid">
+        <div class="card yes">
+          <strong>Yes path</strong>
+          <p>
+            Feasible with Turbo, one image, 768 px, BF16, sequential CPU
+            offload, PE disabled, VAE tiling/slicing, and subprocess execution.
+          </p>
+        </div>
+        <div class="card no">
+          <strong>No path</strong>
+          <p>
+            Not comfortable for full BF16 base ERNIE, high resolutions,
+            multiple images, PE-on defaults, or persistent in-process loading.
+          </p>
+        </div>
+        <div class="card">
+          <strong>Cloud path</strong>
+          <p>
+            Use fal, Hugging Face providers/endpoints, RunPod, Lambda Cloud, or
+            Vast.ai when local throughput or stability is not acceptable.
+          </p>
+        </div>
+      </div>
+
+      <h3>Current Environment Snapshot</h3>
+      <pre><code>torch=2.10.0+cu128
+diffusers=0.38.0
+transformers=5.8.0
+accelerate=1.13.0
+bitsandbytes=0.49.2
+torchao=NOT_AVAILABLE
+gguf=NOT_AVAILABLE
+cuda_available=True
+cuda_device=NVIDIA GeForce RTX 3060
+cuda_capability=(8, 6)
+bf16_supported=True
+total_vram_gb=12.00
+diffusers_imports=OK ErnieImagePipeline PipelineQuantizationConfig TorchAoConfig BitsAndBytesConfig</code></pre>
+
+      <h3>Safe Local Profile</h3>
+      <pre><code>{
+  "model": "ERNIE-Image-Turbo",
+  "width": 768,
+  "height": 768,
+  "steps": 8,
+  "guidance_scale": 1.0,
+  "num_images": 1,
+  "use_pe": false,
+  "load_pe": false,
+  "memory_preset": "sequential_offload"
+}</code></pre>
+    </section>
+
+    <section>
+      <h2>3. Quantization Options</h2>
+      <p>
+        Diffusers supports general quantization flows through
+        <code>PipelineQuantizationConfig</code>, <code>BitsAndBytesConfig</code>,
+        <code>TorchAoConfig</code>, and GGUF-oriented component loading. In this
+        repo, bitsandbytes is installed, while torchao and gguf are not.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Option</th>
+            <th>Status</th>
+            <th>Recommendation</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>BF16</td><td>Available</td><td>Keep as default</td></tr>
+          <tr><td>bitsandbytes 8-bit</td><td>Installed</td><td>Good first experiment</td></tr>
+          <tr><td>bitsandbytes 4-bit</td><td>Installed</td><td>Possible, validate quality</td></tr>
+          <tr><td>torchao int8/int4</td><td>Not installed</td><td>Add only after approval</td></tr>
+          <tr><td>torchao fp8</td><td>Not recommended</td><td>RTX 3060 is not the right FP8 target</td></tr>
+          <tr><td>GGUF</td><td>Not installed</td><td>Separate research path</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Research-Only Quantization Sketch</h3>
+      <pre><code>import torch
+from diffusers import BitsAndBytesConfig, ErnieImagePipeline, PipelineQuantizationConfig
+
+quant_config = PipelineQuantizationConfig(
+    quant_backend="bitsandbytes_4bit",
+    quant_kwargs={
+        "load_in_4bit": True,
+        "bnb_4bit_quant_type": "nf4",
+        "bnb_4bit_compute_dtype": torch.bfloat16,
+    },
+    components_to_quantize=["transformer"],
+)
+
+pipe = ErnieImagePipeline.from_pretrained(
+    "baidu/ERNIE-Image-Turbo",
+    torch_dtype=torch.bfloat16,
+    quantization_config=quant_config,
+)
+pipe.enable_model_cpu_offload()</code></pre>
+
+      <div class="note">
+        Keep quantization behind an experimental flag until local memory,
+        image-quality, LoRA, and subprocess tests pass.
+      </div>
+    </section>
+
+    <section>
+      <h2>4. SynthaEngine Implementation Plan</h2>
+      <ol>
+        <li>Verify dependencies and import <code>ErnieImagePipeline</code>.</li>
+        <li>Register <code>ERNIE-Image-Turbo</code> under family <code>ernie-image</code>.</li>
+        <li>Add or verify workflow task <code>ernie-image.text2img</code>.</li>
+        <li>Expose safe schema defaults: 8 steps, CFG 1.0, 768 x 768, one image, PE off.</li>
+        <li>Load the pipeline in <code>backend/ernie_image/pipeline.py</code> with BF16 and offload.</li>
+        <li>Run generation in a short-lived subprocess.</li>
+        <li>Wire workflow engine input model, output model, and handler.</li>
+        <li>Add frontend controls for prompt, negative prompt, model, size, seed, PE, memory, and LoRA.</li>
+        <li>Update workflow API, lifecycle, and architecture docs when behavior changes.</li>
+        <li>Run focused tests and the memory harness before raising defaults.</li>
+      </ol>
+
+      <h3>Model Registry Entry</h3>
+      <pre><code>{
+  "name": "ERNIE-Image-Turbo",
+  "family": "ernie-image",
+  "model_type": "diffusers",
+  "location_type": "hub",
+  "model_id": 13,
+  "version": "turbo",
+  "link": "baidu/ERNIE-Image-Turbo"
+}</code></pre>
+
+      <h3>Workflow Payload</h3>
+      <pre><code>{
+  "kind": "workflow",
+  "payload": {
+    "tasks": [
+      {
+        "id": "t1",
+        "type": "ernie-image.text2img",
+        "inputs": {
+          "prompt": "a quiet sunlit library with glass walls",
+          "negative_prompt": "blurry, distorted text",
+          "steps": 8,
+          "guidance_scale": 1.0,
+          "width": 768,
+          "height": 768,
+          "memory_preset": "sequential_offload",
+          "use_pe": false,
+          "load_pe": false
+        }
+      }
+    ],
+    "return": "@t1.images"
+  }
+}</code></pre>
+
+      <h3>Local Loader Pattern</h3>
+      <pre><code>import torch
+from diffusers import ErnieImagePipeline
+
+pipe = ErnieImagePipeline.from_pretrained(
+    model_source,
+    torch_dtype=torch.bfloat16,
+    low_cpu_mem_usage=True,
+    pe=None,
+    pe_tokenizer=None,
+)
+pipe.enable_sequential_cpu_offload()
+pipe.vae.enable_slicing()
+pipe.vae.enable_tiling()</code></pre>
+    </section>
+
+    <section>
+      <h2>5. Feature And Flag Checklist</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Feature or flag</th>
+            <th>Expose now?</th>
+            <th>SynthaEngine handling</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td><code>prompt</code></td><td>Yes</td><td>Main prompt textarea</td></tr>
+          <tr><td><code>negative_prompt</code></td><td>Yes</td><td>Useful when CFG is active</td></tr>
+          <tr><td><code>steps</code></td><td>Yes</td><td>Default 8 for Turbo</td></tr>
+          <tr><td><code>guidance_scale</code></td><td>Yes</td><td>Default 1.0 for Turbo</td></tr>
+          <tr><td><code>width</code>, <code>height</code></td><td>Yes</td><td>Default 768 x 768 locally</td></tr>
+          <tr><td><code>seed</code></td><td>Yes</td><td>CPU generator seed</td></tr>
+          <tr><td><code>model</code></td><td>Yes</td><td>Registry model name</td></tr>
+          <tr><td><code>num_images</code></td><td>Limited</td><td>Keep max 1 on 12 GB VRAM</td></tr>
+          <tr><td><code>use_pe</code></td><td>Yes</td><td>Requires <code>load_pe=true</code></td></tr>
+          <tr><td><code>load_pe</code></td><td>Yes</td><td>Default false to reduce memory</td></tr>
+          <tr><td><code>memory_preset</code></td><td>Yes</td><td><code>sequential_offload</code> safest</td></tr>
+          <tr><td><code>lora_adapters</code></td><td>Yes</td><td>Family-validated adapter stack</td></tr>
+          <tr><td><code>quantization</code></td><td>Later</td><td>Experimental after memory harness pass</td></tr>
+          <tr><td><code>execution_mode=remote</code></td><td>Later</td><td>Useful for fal or HF endpoints</td></tr>
+          <tr><td><code>callback_on_step_end</code></td><td>Later</td><td>Only for richer progress events</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>6. Validation Commands</h2>
+      <pre><code>.venv\Scripts\python.exe -m pytest testing/test_ernie_image_workflow.py -q
+.venv\Scripts\python.exe -m pytest testing/test_ernie_image_pipeline.py -q
+.venv\Scripts\python.exe -m pytest testing/test_frontend_ernie_image_scripts.py -q
+.venv\Scripts\python.exe -m pytest testing/test_workflow_catalog_capabilities.py -q
+.venv\Scripts\python.exe -m compileall backend</code></pre>
+
+      <h3>Memory Harness</h3>
+      <pre><code>.venv\Scripts\python.exe tools\measure_ernie_image_memory.py `
+  --model ERNIE-Image-Turbo `
+  --width 768 `
+  --height 768 `
+  --steps 8 `
+  --guidance-scale 1.0 `
+  --memory-preset sequential_offload `
+  --runs 1 `
+  --output-json outputs\ernie_image_memory_768.json</code></pre>
+    </section>
+
+    <section>
+      <h2>7. Sources</h2>
+      <ul>
+        <li><a href="https://huggingface.co/docs/diffusers/main/api/pipelines/ernie_image">Diffusers ERNIE-Image pipeline docs</a></li>
+        <li><a href="https://huggingface.co/docs/diffusers/main/api/pipelines/overview">Diffusers pipeline overview</a></li>
+        <li><a href="https://huggingface.co/baidu/ERNIE-Image">ERNIE-Image Hub model</a></li>
+        <li><a href="https://huggingface.co/baidu/ERNIE-Image-Turbo">ERNIE-Image-Turbo Hub model</a></li>
+        <li><a href="https://huggingface.co/docs/diffusers/main/api/quantization">Diffusers quantization overview</a></li>
+        <li><a href="https://huggingface.co/docs/diffusers/main/quantization/bitsandbytes">Diffusers bitsandbytes quantization docs</a></li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

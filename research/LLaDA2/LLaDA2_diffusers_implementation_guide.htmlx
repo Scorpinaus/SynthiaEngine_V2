@@ -1,0 +1,664 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LLaDA2 Diffusers Implementation Guide for SynthaEngine</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #fbfbf8;
+      --fg: #1c1f23;
+      --muted: #5f6873;
+      --line: #d9ded8;
+      --panel: #ffffff;
+      --accent: #0f6b5f;
+      --code-bg: #171b22;
+      --code-fg: #f4f7fa;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #111417;
+        --fg: #e8ecef;
+        --muted: #a7b0ba;
+        --line: #303841;
+        --panel: #171c21;
+        --accent: #6fd1c4;
+      }
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.58;
+    }
+
+    main {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 48px 24px 72px;
+    }
+
+    header {
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 28px;
+      padding-bottom: 22px;
+    }
+
+    h1, h2, h3 {
+      line-height: 1.2;
+      margin: 0 0 14px;
+    }
+
+    h1 {
+      font-size: clamp(2rem, 4vw, 3.4rem);
+      letter-spacing: 0;
+    }
+
+    h2 {
+      border-top: 1px solid var(--line);
+      font-size: 1.55rem;
+      margin-top: 38px;
+      padding-top: 28px;
+    }
+
+    h3 {
+      font-size: 1.15rem;
+      margin-top: 26px;
+    }
+
+    p, ul, ol, table, pre {
+      margin: 0 0 18px;
+    }
+
+    ul, ol {
+      padding-left: 1.3rem;
+    }
+
+    a {
+      color: var(--accent);
+      overflow-wrap: anywhere;
+    }
+
+    code {
+      font-family: "Cascadia Code", Consolas, "Liberation Mono", monospace;
+      font-size: 0.95em;
+    }
+
+    :not(pre) > code {
+      background: color-mix(in srgb, var(--accent) 10%, transparent);
+      border-radius: 4px;
+      padding: 0.08rem 0.28rem;
+    }
+
+    pre {
+      background: var(--code-bg);
+      border-radius: 8px;
+      color: var(--code-fg);
+      overflow-x: auto;
+      padding: 16px;
+    }
+
+    pre code {
+      background: transparent;
+      color: inherit;
+      display: block;
+      font-size: 0.9rem;
+      line-height: 1.55;
+    }
+
+    table {
+      border-collapse: collapse;
+      display: block;
+      overflow-x: auto;
+      width: 100%;
+    }
+
+    th, td {
+      border: 1px solid var(--line);
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: color-mix(in srgb, var(--accent) 12%, transparent);
+    }
+
+    .summary {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      margin: 22px 0;
+      padding: 18px;
+    }
+
+    .meta {
+      color: var(--muted);
+      font-size: 0.95rem;
+      margin-top: 12px;
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>LLaDA2 Diffusers Implementation Guide for SynthaEngine</h1>
+    <p class="meta">Date: 2026-05-30</p>
+    <p>This companion HTMLX guide explains what LLaDA2 is, how practical it is on a local PC with 64 GB system RAM and an RTX 3060 with 12 GB VRAM, and how to add it to SynthaEngine when you are ready to implement it. No application code is changed by this research file.</p>
+  </header>
+
+  <section>
+    <h2>1. Executive Summary</h2>
+    <div class="summary">
+      <p>LLaDA2 is a text-to-text discrete diffusion language model family. It is not an image-generation model. In Diffusers it appears as <code>LLaDA2Pipeline</code>, a pipeline that generates text by starting from masked tokens and refining blocks of tokens over repeated steps.</p>
+    </div>
+    <p>Your current local environment is already close to ready:</p>
+    <ul>
+      <li>Installed: <code>diffusers 0.38.0</code>, <code>transformers 5.8.0</code>, <code>torch 2.10.0+cu128</code>.</li>
+      <li>Hardware visible to PyTorch: <code>NVIDIA GeForce RTX 3060</code>.</li>
+      <li>CUDA is available, the GPU reports compute capability <code>(8, 6)</code>, and PyTorch reports BF16 support.</li>
+      <li><code>bitsandbytes</code> is installed, which matters because the full BF16 model is larger than 12 GB VRAM.</li>
+      <li><code>from diffusers import LLaDA2Pipeline, BlockRefinementScheduler</code> works in the repo virtual environment.</li>
+    </ul>
+    <p>The practical answer:</p>
+    <ul>
+      <li><code>inclusionAI/LLaDA2.1-mini</code> is runnable experimentally on this PC if you use <code>device_map="auto"</code> with CPU offload and/or 8-bit or 4-bit quantization.</li>
+      <li>It is not a clean "fits fully in RTX 3060 VRAM" model. The model card lists 16B parameters, and the repository stores roughly 32.5 GB of safetensors shards. Full BF16 weights alone are about 32 GB before runtime overhead, so 12 GB VRAM requires CPU RAM participation or quantization.</li>
+      <li><code>inclusionAI/LLaDA2.1-flash</code> is not recommended for this machine. It is a 100B/103B-class model and is outside a comfortable local consumer-GPU path.</li>
+    </ul>
+    <p>Recommended first implementation target:</p>
+    <ul>
+      <li>Add an experimental workflow task named <code>llada2.text2text</code>.</li>
+      <li>Support only <code>inclusionAI/LLaDA2.1-mini</code> at first.</li>
+      <li>Use a short-lived subprocess, matching large model families already in this repo.</li>
+      <li>Default to a safe speed profile: <code>gen_length=256</code>, <code>block_length=32</code>, <code>num_inference_steps=32</code>, <code>threshold=0.5</code>, <code>editing_threshold=None</code>, <code>max_post_steps=16</code>, <code>temperature=0.0</code>, and <code>quantization="8bit"</code> or <code>quantization="4bit"</code> as an explicit user option.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>2. What LLaDA2 Is</h2>
+    <p>LLaDA2 is a diffusion language model family. Unlike a conventional autoregressive language model that generates one token after another from left to right, LLaDA2 starts with a masked output sequence and progressively fills and optionally edits tokens block by block.</p>
+    <p>The official Diffusers documentation describes LLaDA2 as a family of discrete diffusion language models that generate text through block-wise iterative refinement. The Diffusers pipeline keeps a template sequence filled with mask tokens, refines active blocks, samples candidate tokens from model logits, and commits tokens based on confidence.</p>
+    <p>Key mental model:</p>
+    <ul>
+      <li>Input: prompt or chat messages.</li>
+      <li>Output: generated text, not images.</li>
+      <li>Core model: loaded with Transformers <code>AutoModelForCausalLM</code> and <code>trust_remote_code=True</code>.</li>
+      <li>Diffusers wrapper: <code>LLaDA2Pipeline</code>.</li>
+      <li>Scheduler: <code>BlockRefinementScheduler</code>.</li>
+      <li>Generation knobs: <code>gen_length</code>, <code>block_length</code>, <code>num_inference_steps</code>, <code>threshold</code>, <code>editing_threshold</code>, <code>max_post_steps</code>, <code>temperature</code>, <code>top_p</code>, <code>top_k</code>.</li>
+    </ul>
+    <p>Official references:</p>
+    <ul>
+      <li><a href="https://huggingface.co/docs/diffusers/api/pipelines/llada2">Diffusers LLaDA2 pipeline docs</a></li>
+      <li><a href="https://huggingface.co/docs/diffusers/api/pipelines/overview">Diffusers pipeline overview listing LLaDA2 as text2text</a></li>
+      <li><a href="https://github.com/huggingface/diffusers/releases/tag/v0.38.0">Diffusers 0.38.0 release notes</a></li>
+      <li><a href="https://huggingface.co/inclusionAI/LLaDA2.1-mini">LLaDA2.1-mini model card</a></li>
+      <li><a href="https://arxiv.org/abs/2602.08676">LLaDA2.1 paper</a></li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>3. Current Diffusers Support</h2>
+    <ul>
+      <li>Diffusers <code>0.38.0</code> includes <code>LLaDA2Pipeline</code>.</li>
+      <li>Diffusers <code>0.38.0</code> includes <code>BlockRefinementScheduler</code>.</li>
+      <li>The official example loads <code>inclusionAI/LLaDA2.1-mini</code> with <code>AutoModelForCausalLM.from_pretrained(..., trust_remote_code=True, dtype=torch.bfloat16, device_map="auto")</code>, creates <code>BlockRefinementScheduler()</code>, then constructs <code>LLaDA2Pipeline</code>.</li>
+      <li>The pipeline accepts either <code>prompt</code>, <code>messages</code>, or pre-tokenized <code>input_ids</code>.</li>
+      <li>The pipeline output has <code>sequences</code> and optional decoded <code>texts</code>.</li>
+    </ul>
+    <p>The local import check passed with this command:</p>
+    <pre><code class="language-powershell">.venv\Scripts\python.exe -c "from diffusers import LLaDA2Pipeline, BlockRefinementScheduler; import inspect; print(inspect.signature(LLaDA2Pipeline.__call__))"</code></pre>
+    <p>This means the first implementation does not need a community pipeline or a vendored pipeline copy. Treat it as a first-class Diffusers pipeline.</p>
+  </section>
+
+  <section>
+    <h2>4. Model Variants and Hardware Fit</h2>
+    <h3>LLaDA2.1-mini</h3>
+    <p>The <code>inclusionAI/LLaDA2.1-mini</code> model card lists:</p>
+    <ul>
+      <li>Type: Mixture-of-Experts diffusion language model.</li>
+      <li>Total non-embedding parameters: 16B.</li>
+      <li>Layers: 20.</li>
+      <li>Attention heads: 16.</li>
+      <li>Context length: 32,768 tokens.</li>
+      <li>Vocabulary size: 157,184.</li>
+      <li>License: Apache 2.0.</li>
+    </ul>
+    <p>The file listing contains 8 safetensors shards totaling roughly 32.5 GB. This is consistent with a 16B BF16 model footprint before activation and runtime overhead. A 12 GB VRAM GPU cannot hold it fully in BF16.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Mode</th>
+          <th>Expected viability</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Full BF16 on GPU</td>
+          <td>Not viable</td>
+          <td>Weights alone exceed 12 GB VRAM.</td>
+        </tr>
+        <tr>
+          <td>BF16 with <code>device_map="auto"</code> CPU offload</td>
+          <td>Viable but slow</td>
+          <td>64 GB RAM should help, but CPU/GPU transfers can dominate.</td>
+        </tr>
+        <tr>
+          <td>8-bit bitsandbytes</td>
+          <td>Best first local path</td>
+          <td>Smaller VRAM pressure, likely acceptable quality, still may use CPU offload.</td>
+        </tr>
+        <tr>
+          <td>4-bit bitsandbytes</td>
+          <td>Most memory-efficient path</td>
+          <td>Better fit for 12 GB VRAM, but quality/performance should be validated.</td>
+        </tr>
+        <tr>
+          <td>SGLang/vLLM service</td>
+          <td>Interesting later</td>
+          <td>Better for serving, but adds a second runtime stack and Windows friction.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>Recommended first local smoke test:</p>
+    <ul>
+      <li>Use <code>LLaDA2.1-mini</code>.</li>
+      <li>Start with <code>gen_length=128</code> or <code>256</code>.</li>
+      <li>Use speed mode: <code>threshold=0.5</code>, <code>editing_threshold=None</code>.</li>
+      <li>Keep batch size at 1.</li>
+      <li>Expect first-run download and model load to be the slow part.</li>
+    </ul>
+    <h3>LLaDA2.1-flash</h3>
+    <p>The <code>inclusionAI/LLaDA2.1-flash</code> model card lists a 100B/103B-class model. Do not target this variant for the RTX 3060 12 GB implementation. It belongs in a server, multi-GPU, or hosted inference plan.</p>
+  </section>
+
+  <section>
+    <h2>5. Why LLaDA2 Is Different for SynthaEngine</h2>
+    <p>SynthaEngine is currently workflow-first and generation-family oriented. The primary job API accepts <code>kind: "workflow"</code> jobs, executes tasks from <code>backend/workflow/</code>, and returns per-task outputs.</p>
+    <p>Existing generation families are image or video oriented:</p>
+    <ul>
+      <li><code>sd15.*</code></li>
+      <li><code>sdxl.*</code></li>
+      <li><code>flux.*</code></li>
+      <li><code>qwen-image.*</code></li>
+      <li><code>z-image.*</code></li>
+      <li><code>ernie-image.*</code></li>
+      <li><code>anima.*</code></li>
+      <li><code>wan.*</code></li>
+    </ul>
+    <p>LLaDA2 should not be forced into the image output contract. It should be a new text output family:</p>
+    <ul>
+      <li>Family key: <code>llada2</code></li>
+      <li>Initial task type: <code>llada2.text2text</code></li>
+      <li>Output shape: text-oriented, for example <code>{ "texts": ["..."] }</code></li>
+    </ul>
+    <p>This is API-visible, so implementation must update code, docs, schema, catalog, and tests together.</p>
+  </section>
+
+  <section>
+    <h2>6. Implementation Plan for This App</h2>
+    <p>This section is the concrete step-by-step path to add LLaDA2 later. It is written to fit the current codebase patterns and the repository rules.</p>
+
+    <h3>Step 1: Add dependency policy</h3>
+    <p>Current <code>requirements.txt</code> already has the core pieces:</p>
+    <ul>
+      <li><code>diffusers&gt;=0.38.0</code></li>
+      <li><code>transformers&gt;=5.8.0</code></li>
+      <li><code>accelerate&gt;=1.2.1</code></li>
+      <li><code>safetensors&gt;=0.4.5</code></li>
+    </ul>
+    <p>For a realistic 12 GB VRAM implementation, add or confirm:</p>
+    <pre><code class="language-text">bitsandbytes&gt;=0.49.2</code></pre>
+    <p>Rationale: Transformers supports bitsandbytes quantization through <code>BitsAndBytesConfig</code>. Current bitsandbytes docs list CUDA and Windows support for modern NVIDIA hardware. The local environment already has <code>bitsandbytes 0.49.2</code>.</p>
+
+    <h3>Step 2: Add a model registry fallback</h3>
+    <p>Add a new family in the base-model registry flow:</p>
+    <ul>
+      <li>Family: <code>llada2</code></li>
+      <li>Default model name: <code>LLaDA2.1-mini</code></li>
+      <li>Default Hub id: <code>inclusionAI/LLaDA2.1-mini</code></li>
+      <li>Model type: <code>transformers-diffusers</code> or plain <code>diffusers</code>, depending on how strictly you want to classify it.</li>
+    </ul>
+    <p>Create a helper in the new LLaDA2 runtime module named <code>_get_llada2_model_entry(model_name: str | None)</code>. The fallback entry should resolve to the Hub repo when no registry entry is present.</p>
+
+    <h3>Step 3: Add workflow input schema</h3>
+    <p>Edit <code>backend/workflow/schema_input.py</code> and add:</p>
+    <pre><code class="language-python">class LLaDA2Text2TextInputs(BaseModel):
+    prompt: str = ""
+    model: str | None = None
+    gen_length: int = Field(default=256, ge=1, le=4096)
+    block_length: int = Field(default=32, ge=1, le=256)
+    num_inference_steps: int = Field(default=32, ge=1, le=256)
+    threshold: float = Field(default=0.5, ge=0.0, le=1.0)
+    editing_threshold: float | None = None
+    max_post_steps: int = Field(default=16, ge=0, le=128)
+    temperature: float = Field(default=0.0, ge=0.0, le=5.0)
+    top_p: float | None = Field(default=None, ge=0.0, le=1.0)
+    top_k: int | None = Field(default=None, ge=1, le=1000)
+    sampling_method: str = "multinomial"
+    seed: int | None = None
+    use_chat_template: bool = True
+    add_generation_prompt: bool = True
+    quantization: Literal["none", "8bit", "4bit"] = "8bit"
+    cpu_offload: bool = True
+    trust_remote_code: bool = True</code></pre>
+    <p>Keep <code>gen_length</code> conservative. Add <code>messages</code> later if needed; start with <code>prompt</code> to keep the first contract small.</p>
+
+    <h3>Step 4: Add workflow output schema</h3>
+    <p>Edit <code>backend/workflow/schema_output.py</code> and add:</p>
+    <pre><code class="language-python">class TextsOutput(BaseModel):
+    texts: list[str]</code></pre>
+    <p>Recommendation for the first implementation: use <code>{ "texts": [...] }</code> only. Add metadata only if frontend or history support needs it.</p>
+
+    <h3>Step 5: Add the workflow adapter</h3>
+    <p>Create <code>backend/workflow/llada2.py</code>:</p>
+    <pre><code class="language-python">from __future__ import annotations
+
+from typing import Any
+
+
+def run_llada2_text2text_task(inputs: dict[str, Any], deps: dict[str, Any]) -&gt; dict[str, Any]:
+    generate_text2text = deps["generate_text2text"]
+    result = generate_text2text(dict(inputs))
+    if not isinstance(result, dict):
+        raise ValueError("llada2.text2text must return an object")
+    if not isinstance(result.get("texts"), list):
+        raise ValueError("llada2.text2text must return texts")
+    return result</code></pre>
+    <p>This mirrors the thin family adapter style used by ERNIE-Image and Anima.</p>
+
+    <h3>Step 6: Add the runtime package</h3>
+    <p>Create:</p>
+    <ul>
+      <li><code>backend/llada2/__init__.py</code></li>
+      <li><code>backend/llada2/pipeline.py</code></li>
+      <li><code>backend/llada2/subprocess_runner.py</code></li>
+    </ul>
+    <p>Use a subprocess because the project lifecycle policy keeps pipelines job-scoped by default, and large families already use one-shot subprocesses so Windows can reclaim GPU and system memory after generation.</p>
+    <p>Runtime responsibilities:</p>
+    <ul>
+      <li>Resolve model from registry or fallback Hub id.</li>
+      <li>Load tokenizer with <code>trust_remote_code=True</code>.</li>
+      <li>Load model with safe memory mode: 8-bit or 4-bit bitsandbytes, <code>device_map="auto"</code>, and BF16 compute when supported.</li>
+      <li>Build <code>BlockRefinementScheduler</code> and <code>LLaDA2Pipeline</code>.</li>
+      <li>Run text generation and return <code>{ "texts": [text] }</code>.</li>
+      <li>In <code>finally</code>, release pipeline/model/tokenizer refs and call <code>cleanup_memory()</code>.</li>
+    </ul>
+    <p>Runtime sketch:</p>
+    <pre><code class="language-python">import torch
+from diffusers import BlockRefinementScheduler, LLaDA2Pipeline
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+
+
+def _load_quant_config(mode: str):
+    if mode == "8bit":
+        return BitsAndBytesConfig(load_in_8bit=True)
+    if mode == "4bit":
+        return BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_quant_type="nf4",
+        )
+    return None
+
+
+def _generate_text2text_subprocess_child(params: dict[str, object]) -&gt; dict[str, list[str]]:
+    source = resolve_llada2_source(params.get("model"))
+    quantization = str(params.get("quantization") or "8bit")
+    quant_config = _load_quant_config(quantization)
+
+    load_kwargs = {
+        "trust_remote_code": True,
+        "device_map": "auto",
+        "dtype": torch.bfloat16,
+    }
+    if quant_config is not None:
+        load_kwargs["quantization_config"] = quant_config
+
+    model = AutoModelForCausalLM.from_pretrained(source, **load_kwargs)
+    model.eval()
+    tokenizer = AutoTokenizer.from_pretrained(source, trust_remote_code=True)
+    scheduler = BlockRefinementScheduler()
+    pipe = LLaDA2Pipeline(model=model, tokenizer=tokenizer, scheduler=scheduler)
+
+    output = pipe(
+        prompt=str(params.get("prompt") or ""),
+        gen_length=int(params.get("gen_length") or 256),
+        block_length=int(params.get("block_length") or 32),
+        num_inference_steps=int(params.get("num_inference_steps") or 32),
+        threshold=float(params.get("threshold") or 0.5),
+        editing_threshold=params.get("editing_threshold"),
+        max_post_steps=int(params.get("max_post_steps") or 16),
+        temperature=float(params.get("temperature") or 0.0),
+        top_p=params.get("top_p"),
+        top_k=params.get("top_k"),
+        sampling_method=str(params.get("sampling_method") or "multinomial"),
+        use_chat_template=bool(params.get("use_chat_template", True)),
+        add_generation_prompt=bool(params.get("add_generation_prompt", True)),
+    )
+    return {"texts": [str(text) for text in (output.texts or [])]}</code></pre>
+    <p>Implementation caution: verify whether the installed Transformers version expects <code>dtype=</code> or <code>torch_dtype=</code>. Do not call <code>.to("cuda")</code> after loading with bitsandbytes and <code>device_map</code>; let Accelerate manage placement.</p>
+
+    <h3>Step 7: Register the task in the workflow engine</h3>
+    <p>Edit <code>backend/workflow/engine.py</code>. Add imports:</p>
+    <pre><code class="language-python">from backend.workflow.schema_input import LLaDA2Text2TextInputs
+from backend.workflow.schema_output import TextsOutput
+from backend.workflow.llada2 import run_llada2_text2text_task as _run_llada2_text2text</code></pre>
+    <p>Add to <code>TASK_INPUT_MODELS</code>:</p>
+    <pre><code class="language-python">"llada2.text2text": LLaDA2Text2TextInputs,</code></pre>
+    <p>Add to <code>TASK_OUTPUT_MODELS</code>:</p>
+    <pre><code class="language-python">"llada2.text2text": TextsOutput,</code></pre>
+    <p>Add runtime deps and handler:</p>
+    <pre><code class="language-python">def _llada2_runtime_deps() -&gt; dict[str, Any]:
+    llada2_pipeline_module = importlib.import_module("backend.llada2.pipeline")
+    return {
+        "generate_text2text": llada2_pipeline_module.generate_text2text,
+    }
+
+
+def _llada2_text2text(inputs: dict[str, Any], _ctx: WorkflowContext) -&gt; dict[str, Any]:
+    return _run_llada2_text2text(inputs, _llada2_runtime_deps())</code></pre>
+    <p>Add to <code>TASK_REGISTRY</code>:</p>
+    <pre><code class="language-python">"llada2.text2text": _llada2_text2text,</code></pre>
+
+    <h3>Step 8: Update catalog capabilities</h3>
+    <p>Edit <code>backend/workflow/catalog.py</code> and add family metadata:</p>
+    <pre><code class="language-python">"llada2": {"label": "LLaDA2", "aliases": ["llada"]},</code></pre>
+    <p>Update <code>_infer_model_family</code> so <code>llada2.text2text</code> maps to <code>llada2</code>. Expected catalog behavior:</p>
+    <pre><code class="language-json">{
+  "capabilities": {
+    "llada2": {
+      "label": "LLaDA2",
+      "aliases": ["llada"],
+      "task_types": ["llada2.text2text"],
+      "features": {
+        "text2text": true
+      }
+    }
+  }
+}</code></pre>
+
+    <h3>Step 9: Update API docs</h3>
+    <p>Edit <code>docs/WORKFLOW_API.md</code> and <code>docs/PIPELINE_LIFECYCLE.md</code>. Add <code>llada2</code> to current families, document input/output contract, and include a workflow example:</p>
+    <pre><code class="language-json">{
+  "kind": "workflow",
+  "payload": {
+    "tasks": [
+      {
+        "id": "answer",
+        "type": "llada2.text2text",
+        "inputs": {
+          "prompt": "Write a two sentence explanation of block diffusion.",
+          "gen_length": 128,
+          "threshold": 0.5,
+          "editing_threshold": null,
+          "quantization": "8bit"
+        }
+      }
+    ],
+    "return": "@answer.texts"
+  }
+}</code></pre>
+
+    <h3>Step 10: Add tests</h3>
+    <p>Add focused tests before running a real model:</p>
+    <ul>
+      <li>Catalog exposes <code>llada2.text2text</code>.</li>
+      <li>Schema accepts minimal input.</li>
+      <li>Task output shape is <code>texts</code>.</li>
+      <li>Workflow engine can run the task with a mocked <code>generate_text2text</code>.</li>
+      <li>Invalid output from the runtime adapter raises a clear error.</li>
+    </ul>
+    <p>Do not download the 32 GB model in normal tests. Mock the runtime dependency.</p>
+
+    <h3>Step 11: Add optional frontend only after backend works</h3>
+    <p>The app can support LLaDA2 without a dedicated frontend page because workflows can be posted directly to <code>/api/jobs</code>. If adding UI later, create <code>frontend/llada2/text2text.html</code> and <code>frontend/llada2/text2text.js</code>, submit <code>llada2.text2text</code> workflow jobs, and render text output rather than gallery media.</p>
+  </section>
+
+  <section>
+    <h2>7. Local Smoke Test Script Before Full App Integration</h2>
+    <p>Before wiring the workflow task, run a one-off script outside the app. This is the fastest way to learn whether your exact Windows, CUDA, and bitsandbytes stack can load the model.</p>
+    <p>Suggested file name if you create it later: <code>tools/smoke_llada2.py</code></p>
+    <pre><code class="language-python">import torch
+from diffusers import BlockRefinementScheduler, LLaDA2Pipeline
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+
+model_id = "inclusionAI/LLaDA2.1-mini"
+
+quantization_config = BitsAndBytesConfig(load_in_8bit=True)
+
+model = AutoModelForCausalLM.from_pretrained(
+    model_id,
+    trust_remote_code=True,
+    dtype=torch.bfloat16,
+    device_map="auto",
+    quantization_config=quantization_config,
+)
+model.eval()
+
+tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+scheduler = BlockRefinementScheduler()
+pipe = LLaDA2Pipeline(model=model, scheduler=scheduler, tokenizer=tokenizer)
+
+out = pipe(
+    prompt="Write a short note about why local AI tools need memory planning.",
+    gen_length=128,
+    block_length=32,
+    num_inference_steps=32,
+    threshold=0.5,
+    editing_threshold=None,
+    max_post_steps=16,
+    temperature=0.0,
+)
+
+print(out.texts[0])</code></pre>
+    <p>Run:</p>
+    <pre><code class="language-powershell">.venv\Scripts\python.exe tools\smoke_llada2.py</code></pre>
+    <p>If 8-bit fails, try 4-bit NF4, reduce <code>gen_length</code> to <code>64</code>, confirm <code>bitsandbytes</code> loads CUDA support, or consider WSL2 if native Windows quantized loading is unstable.</p>
+  </section>
+
+  <section>
+    <h2>8. Recommended Defaults for RTX 3060 12 GB</h2>
+    <pre><code class="language-json">{
+  "gen_length": 256,
+  "block_length": 32,
+  "num_inference_steps": 32,
+  "threshold": 0.5,
+  "editing_threshold": null,
+  "max_post_steps": 16,
+  "temperature": 0.0,
+  "top_p": null,
+  "top_k": null,
+  "quantization": "8bit",
+  "cpu_offload": true
+}</code></pre>
+    <p>These defaults follow the official Diffusers examples and the model card's speed-mode guidance while staying conservative for 12 GB VRAM. Expose quality mode later with <code>threshold=0.7</code>, <code>editing_threshold=0.5</code>, and <code>max_post_steps=16</code>.</p>
+  </section>
+
+  <section>
+    <h2>9. Risk Register</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Risk</th>
+          <th>Impact</th>
+          <th>Mitigation</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Model download is roughly 32 GB</td>
+          <td>Long first run, disk pressure</td>
+          <td>Document expected download and cache location.</td>
+        </tr>
+        <tr>
+          <td>Full BF16 does not fit VRAM</td>
+          <td>OOM</td>
+          <td>Default to 8-bit or 4-bit plus <code>device_map="auto"</code>.</td>
+        </tr>
+        <tr>
+          <td><code>trust_remote_code=True</code> required</td>
+          <td>Security review needed</td>
+          <td>Only allow approved model ids by default. Document the trust boundary.</td>
+        </tr>
+        <tr>
+          <td>Transformers <code>dtype</code> vs <code>torch_dtype</code> changes</td>
+          <td>Load errors across versions</td>
+          <td>Test against local Transformers 5.8.0 and pin examples in docs.</td>
+        </tr>
+        <tr>
+          <td>Text output differs from media output</td>
+          <td>API/frontend assumptions</td>
+          <td>Add explicit <code>TextsOutput</code> and docs; do not reuse <code>ImagesOutput</code>.</td>
+        </tr>
+        <tr>
+          <td>Windows bitsandbytes edge cases</td>
+          <td>Load failures</td>
+          <td>Keep smoke test separate; consider WSL2 fallback.</td>
+        </tr>
+        <tr>
+          <td>Long generation length is slow</td>
+          <td>Poor UX</td>
+          <td>Conservative defaults and clear <code>gen_length</code> bounds.</td>
+        </tr>
+        <tr>
+          <td>Large model memory not released</td>
+          <td>Subsequent jobs fail</td>
+          <td>Use a one-shot subprocess and <code>cleanup_memory()</code>.</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>10. Definition of Done for a Future Implementation</h2>
+    <ul>
+      <li><code>llada2.text2text</code> appears in <code>/api/workflow/task-types</code>.</li>
+      <li><code>/api/workflow/catalog</code> includes <code>llada2</code> capabilities and schema.</li>
+      <li>A minimal workflow job can return <code>{ "texts": ["..."] }</code>.</li>
+      <li>Docs include the task contract and example workflow.</li>
+      <li><code>docs/PIPELINE_LIFECYCLE.md</code> covers LLaDA2 cleanup.</li>
+      <li>Focused unit tests pass without downloading the real model.</li>
+      <li>Backend compiles:</li>
+    </ul>
+    <pre><code class="language-powershell">.venv\Scripts\python.exe -m compileall backend</code></pre>
+    <p>Relevant workflow/catalog tests pass:</p>
+    <pre><code class="language-powershell">.venv\Scripts\python.exe -m pytest testing/test_workflow_catalog_capabilities.py -q
+.venv\Scripts\python.exe -m pytest testing/test_*workflow*.py -q</code></pre>
+    <p>Optional but strongly recommended: one manual local smoke test with <code>inclusionAI/LLaDA2.1-mini</code>, <code>gen_length=128</code>, and <code>quantization="8bit"</code> or <code>"4bit"</code>.</p>
+  </section>
+
+  <section>
+    <h2>11. Bottom Line</h2>
+    <p>LLaDA2 is now a real Diffusers pipeline, and this repo's installed Diffusers version can import it today. The model family is text-to-text, so the right SynthaEngine integration is a new text workflow family, not another image pipeline.</p>
+    <p>On this PC, target <code>LLaDA2.1-mini</code> only. Treat it as experimental, use a subprocess, default to quantization/offload, keep output length conservative, and validate with a standalone smoke test before wiring the workflow task.</p>
+  </section>
+</main>
+</body>
+</html>

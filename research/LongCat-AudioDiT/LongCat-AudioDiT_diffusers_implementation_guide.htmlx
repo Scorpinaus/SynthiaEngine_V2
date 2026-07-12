@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LongCat-AudioDiT Diffusers Implementation Guide for SynthaEngine</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f7f8f8;
+      --fg: #15191d;
+      --muted: #5b6570;
+      --line: #d9dedf;
+      --panel: #ffffff;
+      --panel-2: #edf1f2;
+      --accent: #0f766e;
+      --accent-2: #7c2d12;
+      --code-bg: #111827;
+      --code-fg: #f8fafc;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #101416;
+        --fg: #e9eef0;
+        --muted: #a8b3ba;
+        --line: #313c41;
+        --panel: #171d20;
+        --panel-2: #20292d;
+        --accent: #5eead4;
+        --accent-2: #fdba74;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: "Segoe UI", Arial, sans-serif;
+      line-height: 1.58;
+    }
+
+    main {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 36px 20px 64px;
+    }
+
+    header {
+      border-bottom: 1px solid var(--line);
+      padding: 20px 0 24px;
+    }
+
+    h1,
+    h2,
+    h3 {
+      letter-spacing: 0;
+      line-height: 1.18;
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: clamp(2rem, 4vw, 3.3rem);
+    }
+
+    h2 {
+      border-top: 1px solid var(--line);
+      margin: 36px 0 14px;
+      padding-top: 28px;
+      font-size: 1.55rem;
+    }
+
+    h3 {
+      margin: 26px 0 10px;
+      font-size: 1.15rem;
+    }
+
+    p,
+    ul,
+    ol,
+    table,
+    pre {
+      margin: 0 0 18px;
+    }
+
+    ul,
+    ol {
+      padding-left: 1.35rem;
+    }
+
+    a {
+      color: var(--accent);
+      overflow-wrap: anywhere;
+    }
+
+    code {
+      font-family: "Cascadia Code", Consolas, monospace;
+      font-size: 0.94em;
+    }
+
+    :not(pre) > code {
+      background: color-mix(in srgb, var(--accent) 12%, transparent);
+      border-radius: 4px;
+      padding: 0.08rem 0.28rem;
+    }
+
+    pre {
+      background: var(--code-bg);
+      border-radius: 8px;
+      color: var(--code-fg);
+      overflow-x: auto;
+      padding: 16px;
+    }
+
+    pre code {
+      display: block;
+      background: transparent;
+      color: inherit;
+      line-height: 1.55;
+      white-space: pre;
+    }
+
+    table {
+      border-collapse: collapse;
+      display: block;
+      overflow-x: auto;
+      width: 100%;
+    }
+
+    th,
+    td {
+      border: 1px solid var(--line);
+      padding: 9px 11px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--panel-2);
+    }
+
+    .lede {
+      max-width: 850px;
+      color: var(--muted);
+      font-size: 1.08rem;
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    .pill {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--panel);
+      color: var(--muted);
+      padding: 6px 10px;
+      white-space: nowrap;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin: 18px 0;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 14px;
+    }
+
+    .card strong {
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .note {
+      border-left: 4px solid var(--accent);
+      background: color-mix(in srgb, var(--accent) 10%, transparent);
+      padding: 12px 14px;
+    }
+
+    .warn {
+      border-left-color: var(--accent-2);
+      background: color-mix(in srgb, var(--accent-2) 12%, transparent);
+    }
+
+    @media (max-width: 780px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>LongCat-AudioDiT Diffusers Implementation Guide</h1>
+      <p class="lede">Step-by-step research note for adding Meituan LongCat-AudioDiT to SynthaEngine as a new workflow-first text-to-audio feature.</p>
+      <div class="meta">
+        <span class="pill">Date: 2026-05-30</span>
+        <span class="pill">Pipeline: LongCatAudioDiTPipeline</span>
+        <span class="pill">Task: text-to-audio</span>
+        <span class="pill">Target PC: RTX 3060 12 GB, 64 GB RAM</span>
+      </div>
+    </header>
+
+    <section>
+      <h2>Executive Summary</h2>
+      <div class="grid">
+        <div class="card">
+          <strong>What This Is</strong>
+          <p>LongCat-AudioDiT is a text-conditioned audio diffusion model. Diffusers exposes it through <code>LongCatAudioDiTPipeline</code> for mono waveform generation.</p>
+        </div>
+        <div class="card">
+          <strong>Local Feasibility</strong>
+          <p>The 1B Diffusers-format checkpoint is plausible locally for short clips with FP16/BF16, one output per job, subprocess execution, and offload fallback.</p>
+        </div>
+        <div class="card">
+          <strong>Implementation Shape</strong>
+          <p>Add a new <code>longcat-audiodit.text2audio</code> workflow task and a first-class audio output contract instead of reusing image/video output keys.</p>
+        </div>
+      </div>
+      <p class="note">No existing application files were changed by this guide. The implementation plan below is intended for a future additive code change.</p>
+    </section>
+
+    <section>
+      <h2>What This Is</h2>
+      <p>LongCat-AudioDiT uses a waveform VAE plus a diffusion transformer. Text is encoded with a UMT5 text encoder, the transformer denoises audio latents, and the VAE decodes those latents into mono 24 kHz audio.</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Area</th>
+            <th>Detail</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>Main task</td><td>Text to audio</td></tr>
+          <tr><td>Diffusers class</td><td><code>LongCatAudioDiTPipeline</code></td></tr>
+          <tr><td>Denoiser</td><td><code>LongCatAudioDiTTransformer</code></td></tr>
+          <tr><td>Audio VAE</td><td><code>LongCatAudioDiTVae</code></td></tr>
+          <tr><td>Text encoder</td><td><code>UMT5EncoderModel</code></td></tr>
+          <tr><td>Scheduler</td><td><code>FlowMatchEulerDiscreteScheduler</code></td></tr>
+          <tr><td>Output</td><td>Mono waveform, typically saved as WAV</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Canonical Diffusers Usage</h3>
+      <pre><code class="language-python">import soundfile as sf
+import torch
+from diffusers import LongCatAudioDiTPipeline
+
+pipeline = LongCatAudioDiTPipeline.from_pretrained(
+    "ruixiangma/LongCat-AudioDiT-1B-Diffusers",
+    torch_dtype=torch.float16,
+)
+pipeline = pipeline.to("cuda")
+
+audio = pipeline(
+    "A calm ocean wave ambience with soft wind in the background.",
+    audio_duration_s=5.0,
+    num_inference_steps=16,
+    guidance_scale=4.0,
+    generator=torch.Generator("cuda").manual_seed(42),
+).audios[0, 0]
+
+sf.write("longcat.wav", audio, pipeline.sample_rate)</code></pre>
+    </section>
+
+    <section>
+      <h2>Modalities</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Modality or sub-pipeline</th>
+            <th>Available in Diffusers?</th>
+            <th>Implementation note</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>Text to audio</td><td>Yes</td><td>Use <code>LongCatAudioDiTPipeline</code>.</td></tr>
+          <tr><td>Text to speech</td><td>Yes, via text-to-audio</td><td>Pipeline outputs waveform audio.</td></tr>
+          <tr><td>Negative prompt / CFG</td><td>Yes</td><td><code>negative_prompt</code> and <code>guidance_scale</code>.</td></tr>
+          <tr><td>Duration control</td><td>Yes</td><td><code>audio_duration_s</code>.</td></tr>
+          <tr><td>Voice cloning</td><td>No</td><td>Reference repo has scripts; Diffusers pipeline does not expose prompt audio.</td></tr>
+          <tr><td>APG guidance</td><td>No</td><td>Reference repo concept, not current Diffusers call option.</td></tr>
+          <tr><td>Image/video generation</td><td>No</td><td>This architecture is audio-only.</td></tr>
+          <tr><td>LoRA</td><td>Not documented</td><td>Keep out of first SynthaEngine implementation.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Local Feasibility</h2>
+      <p>The 1B Diffusers-format package is around 5.31 GB on disk and the current virtual environment imports the pipeline successfully. This makes short local clips realistic, but not a promise of fast production throughput.</p>
+      <pre><code class="language-text">torch=2.10.0+cu128
+diffusers=0.38.0
+transformers=5.8.0
+accelerate=1.13.0
+bitsandbytes=0.49.2
+torchao=NOT_AVAILABLE
+gguf=NOT_AVAILABLE
+soundfile=NOT_AVAILABLE
+scipy=AVAILABLE
+torchaudio=AVAILABLE
+cuda_available=True
+cuda_device=NVIDIA GeForce RTX 3060
+bf16_supported=True
+total_vram_gb=12.00</code></pre>
+
+      <h3>Yes Path</h3>
+      <pre><code class="language-json">{
+  "model": "LongCat-AudioDiT-1B-Diffusers",
+  "audio_duration_s": 5.0,
+  "steps": 16,
+  "guidance_scale": 4.0,
+  "seed": 42,
+  "num_audios": 1,
+  "precision": "fp16",
+  "memory_preset": "cuda",
+  "quantization": "none"
+}</code></pre>
+
+      <h3>No Path</h3>
+      <p class="note warn">Do not treat the 3.5B reference checkpoint, voice cloning, long clips, multi-output batches, or production hot-pipeline serving as default local features on an RTX 3060 12 GB.</p>
+    </section>
+
+    <section>
+      <h2>Quantization</h2>
+      <p>Quantization is possible to investigate with Diffusers pipeline quantization. Start with bitsandbytes because it is installed locally. Treat the result as experimental until quality and memory are measured.</p>
+      <pre><code class="language-python">import torch
+from diffusers import LongCatAudioDiTPipeline
+from diffusers.quantizers import PipelineQuantizationConfig
+
+quant_config = PipelineQuantizationConfig(
+    quant_backend="bitsandbytes_8bit",
+    quant_kwargs={"load_in_8bit": True},
+    components_to_quantize=["transformer", "text_encoder"],
+)
+
+pipe = LongCatAudioDiTPipeline.from_pretrained(
+    "ruixiangma/LongCat-AudioDiT-1B-Diffusers",
+    torch_dtype=torch.float16,
+    quantization_config=quant_config,
+)
+pipe.enable_model_cpu_offload()</code></pre>
+
+      <pre><code class="language-python">quant_config = PipelineQuantizationConfig(
+    quant_backend="bitsandbytes_4bit",
+    quant_kwargs={
+        "load_in_4bit": True,
+        "bnb_4bit_quant_type": "nf4",
+        "bnb_4bit_compute_dtype": torch.float16,
+    },
+    components_to_quantize=["transformer", "text_encoder"],
+)</code></pre>
+    </section>
+
+    <section>
+      <h2>Cloud Options</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Provider</th>
+            <th>Good fit</th>
+            <th>GPU target</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>Hugging Face Inference Endpoints</td><td>Managed production API</td><td>24 GB+ for comfort, 40 GB+ for heavier tests</td></tr>
+          <tr><td>RunPod Pods</td><td>Manual experiments</td><td>RTX 4090, A40, A100</td></tr>
+          <tr><td>RunPod Serverless</td><td>Queue-backed API</td><td>24 GB+</td></tr>
+          <tr><td>Vast.ai</td><td>Low-cost rentals</td><td>RTX 4090, L40/L40S, A40, A100</td></tr>
+          <tr><td>Lambda Cloud</td><td>Standard GPU VM</td><td>A100 40/80 GB, H100</td></tr>
+          <tr><td>Modal</td><td>Python-first serverless GPU</td><td>A10G/A100/H100</td></tr>
+          <tr><td>Replicate custom model</td><td>Hosted model API</td><td>A40/A100/H100 class</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Implementation Plan</h2>
+      <ol>
+        <li>Add a new <code>longcat-audiodit</code> model family and <code>longcat-audiodit.text2audio</code> task.</li>
+        <li>Add <code>AudiosWithBatchOutput</code> and return <code>{ "batch_id": "...", "audios": ["/outputs/...wav"] }</code>.</li>
+        <li>Add WAV history support with <code>media_type="audio"</code> and an <code>audio_&lt;batch_id&gt;.wav.json</code> sidecar.</li>
+        <li>Add <code>LongCatAudioDiTText2AudioInputs</code> with prompt, negative prompt, duration, steps, guidance, seed, model, precision, memory preset, quantization, and WAV output format.</li>
+        <li>Add <code>backend/longcat_audiodit/pipeline.py</code> and <code>subprocess_runner.py</code> using the existing one-shot subprocess lifecycle.</li>
+        <li>Add a workflow adapter in <code>backend/workflow/longcat_audiodit.py</code>.</li>
+        <li>Register the task in workflow input/output maps and the task registry.</li>
+        <li>Extend catalog capabilities with a <code>text2audio</code> feature flag and UI hints.</li>
+        <li>Add frontend files under <code>frontend/longcat_audiodit/</code> plus a reusable audio gallery component.</li>
+        <li>Update <code>docs/WORKFLOW_API.md</code>, <code>docs/PIPELINE_LIFECYCLE.md</code>, and <code>docs/ARCHITECTURE.md</code>.</li>
+        <li>Add focused workflow, pipeline, frontend, catalog, and history tests.</li>
+        <li>Run backend compile, focused tests, and one real 5 second FP16 smoke test.</li>
+      </ol>
+
+      <h3>Input Schema Sketch</h3>
+      <pre><code class="language-python">class LongCatAudioDiTText2AudioInputs(BaseModel):
+    prompt: str = ""
+    negative_prompt: str = ""
+    audio_duration_s: float = Field(default=5.0, ge=0.5, le=30.0)
+    steps: int = Field(default=16, ge=1, le=100)
+    guidance_scale: float = Field(default=4.0, ge=0.0, le=30.0)
+    seed: int | None = None
+    model: str | None = None
+    num_audios: int = Field(default=1, ge=1, le=1)
+    precision: Literal["fp16", "bf16"] = "fp16"
+    memory_preset: Literal["cuda", "model_offload", "sequential_offload"] = "cuda"
+    quantization: Literal["none", "bnb_8bit", "bnb_4bit"] = "none"
+    output_format: Literal["wav"] = "wav"
+    mono_to_stereo: bool = False
+    execution_mode: Literal["subprocess"] = "subprocess"
+    batch_id: str | None = None</code></pre>
+
+      <h3>Workflow Payload</h3>
+      <pre><code class="language-json">{
+  "kind": "workflow",
+  "payload": {
+    "tasks": [
+      {
+        "id": "t1",
+        "type": "longcat-audiodit.text2audio",
+        "inputs": {
+          "prompt": "A calm ocean wave ambience with soft wind in the background.",
+          "audio_duration_s": 5.0,
+          "steps": 16,
+          "guidance_scale": 4.0,
+          "seed": 42
+        }
+      }
+    ],
+    "return": "@t1.audios"
+  }
+}</code></pre>
+
+      <h3>Runtime Loader Sketch</h3>
+      <pre><code class="language-python">def load_text2audio_pipeline(model_name, *, precision, memory_preset, quantization):
+    entry = _get_longcat_model_entry(model_name)
+    source = resolve_model_source(entry)
+    dtype = torch.bfloat16 if precision == "bf16" else torch.float16
+    quantization_config = build_longcat_quantization_config(quantization)
+
+    kwargs = {"torch_dtype": dtype, "low_cpu_mem_usage": True}
+    if quantization_config is not None:
+        kwargs["quantization_config"] = quantization_config
+
+    pipe = LongCatAudioDiTPipeline.from_pretrained(source, **kwargs)
+
+    if memory_preset == "cuda":
+        pipe.to("cuda")
+    elif memory_preset == "model_offload":
+        pipe.enable_model_cpu_offload()
+    elif memory_preset == "sequential_offload":
+        pipe.enable_sequential_cpu_offload()
+    else:
+        raise ValueError(f"Unsupported LongCat memory_preset: {memory_preset}")
+
+    cleanup_memory()
+    return pipe</code></pre>
+    </section>
+
+    <section>
+      <h2>Validation</h2>
+      <pre><code class="language-powershell">.venv\Scripts\python.exe -m compileall backend
+.venv\Scripts\python.exe -m pytest testing\test_longcat_audiodit_workflow.py testing\test_longcat_audiodit_pipeline.py
+.venv\Scripts\python.exe -m pytest testing\test_workflow_catalog_capabilities.py testing\test_history_api.py
+.venv\Scripts\python.exe -m pytest testing\test_frontend_longcat_audiodit_scripts.py</code></pre>
+    </section>
+
+    <section>
+      <h2>References</h2>
+      <ul>
+        <li><a href="https://huggingface.co/docs/diffusers/main/api/pipelines/longcat_audio_dit">Diffusers LongCat-AudioDiT docs</a></li>
+        <li><a href="https://huggingface.co/docs/diffusers/api/pipelines/overview">Diffusers pipeline overview</a></li>
+        <li><a href="https://github.com/huggingface/diffusers/releases">Diffusers release notes</a></li>
+        <li><a href="https://huggingface.co/docs/diffusers/main/quantization/overview">Diffusers quantization overview</a></li>
+        <li><a href="https://huggingface.co/meituan-longcat/LongCat-AudioDiT-1B">LongCat-AudioDiT 1B reference model</a></li>
+        <li><a href="https://huggingface.co/ruixiangma/LongCat-AudioDiT-1B-Diffusers">LongCat-AudioDiT 1B Diffusers model</a></li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>
