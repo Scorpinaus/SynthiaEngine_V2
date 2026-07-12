@@ -24,6 +24,13 @@ def make_batch_id() -> str:
     return f"b{int(time.time())}_{random.randint(1000, 9999)}"
 
 
+def resolve_base_seed(seed: object) -> int:
+    """Use a requested seed, or generate one when the UI requests randomness."""
+    if seed is None or seed == 0:
+        return int(torch.randint(0, 2**31, (1,)).item())
+    return int(seed)
+
+
 def build_png_metadata(metadata: dict[str, object]) -> PngInfo:
     info = PngInfo()
     for key, value in metadata.items():
@@ -41,6 +48,31 @@ def get_batch_output_dir(output_dir: Path, batch_id: str) -> Path:
 
 def build_batch_output_relpath(batch_id: str, filename: str) -> str:
     return (Path(f"batch_{batch_id}") / filename).as_posix()
+
+
+def save_generated_image(
+    image: Any,
+    batch_output_dir: Path,
+    batch_id: str,
+    seed: int,
+    params: dict[str, object],
+    *,
+    mode: str,
+    pipeline: str,
+    remove_params: tuple[str, ...] = (),
+    size: tuple[int, int] | None = None,
+) -> str:
+    """Save one generated PNG with the standard SynthaEngine metadata."""
+    metadata = dict(params)
+    for name in remove_params:
+        metadata.pop(name, None)
+    metadata.update(mode=mode, pipeline=pipeline, seed=seed, batch_id=batch_id)
+    if size is not None:
+        metadata.update(width=size[0], height=size[1])
+
+    filename = batch_output_dir / f"{batch_id}_{seed}.png"
+    image.save(filename, pnginfo=build_png_metadata(metadata))
+    return build_batch_output_relpath(batch_id, filename.name)
 
 
 def build_fixed_step_timesteps(

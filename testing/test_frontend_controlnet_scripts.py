@@ -706,10 +706,12 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         )
         lora_tag = '<script src="../components/lora_panel.js?v=1"></script>'
         preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
-        z_image_tag = '<script src="text2img.js?v=2"></script>'
+        controller_tag = '<script src="../generation_page.js?v=1"></script>'
+        z_image_tag = '<script src="text2img.js?v=3"></script>'
 
         self.assertIn(lora_tag, z_image_html)
         self.assertIn(preset_tag, z_image_html)
+        self.assertIn(controller_tag, z_image_html)
         self.assertIn(z_image_tag, z_image_html)
         self.assertLess(z_image_html.index(lora_tag), z_image_html.index(z_image_tag))
         self.assertLess(z_image_html.index(preset_tag), z_image_html.index(z_image_tag))
@@ -718,19 +720,14 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         z_image_js = (ROOT / "frontend" / "z_image" / "text2img.js").read_text(
             encoding="utf-8"
         )
-        self.assertIn('window.LoraPanel?.init({ apiBase: API_BASE, family: "z-image" })', z_image_js)
-        self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", z_image_js)
-        self.assertIn("inputs.Lora = {", z_image_js)
-        self.assertIn("inputs.lora_adapters = loraAdapters;", z_image_js)
+        self.assertIn('family: "z-image"', z_image_js)
+        self.assertIn("page.withLora", z_image_js)
 
     def test_z_image_script_wires_preset_panel(self):
         z_image_js = (ROOT / "frontend" / "z_image" / "text2img.js").read_text(
             encoding="utf-8"
         )
-        self.assertIn("window.PresetPanel?.init({", z_image_js)
         self.assertIn('taskType: "z-image.text2img"', z_image_js)
-        self.assertIn("collectSettings: collectZImagePresetSettings", z_image_js)
-        self.assertIn("applySettings: applyZImagePresetSettings", z_image_js)
 
     def test_z_image_img2img_page_includes_lora_script_before_z_image_img2img(self):
         z_image_img2img_html = (ROOT / "frontend" / "z_image" / "img2img.html").read_text(
@@ -738,10 +735,12 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         )
         lora_tag = '<script src="../components/lora_panel.js?v=1"></script>'
         preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
-        z_image_img2img_tag = '<script src="img2img.js?v=2"></script>'
+        controller_tag = '<script src="../generation_page.js?v=1"></script>'
+        z_image_img2img_tag = '<script src="img2img.js?v=3"></script>'
 
         self.assertIn(lora_tag, z_image_img2img_html)
         self.assertIn(preset_tag, z_image_img2img_html)
+        self.assertIn(controller_tag, z_image_img2img_html)
         self.assertIn(z_image_img2img_tag, z_image_img2img_html)
         self.assertLess(z_image_img2img_html.index(lora_tag), z_image_img2img_html.index(z_image_img2img_tag))
         self.assertLess(
@@ -753,18 +752,15 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         z_image_img2img_js = (ROOT / "frontend" / "z_image" / "img2img.js").read_text(
             encoding="utf-8"
         )
-        self.assertIn('window.LoraPanel?.init({ apiBase: API_BASE, family: "z-image" })', z_image_img2img_js)
-        self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", z_image_img2img_js)
-        self.assertIn("taskInputs.lora_adapters = loraAdapters;", z_image_img2img_js)
+        self.assertIn('family: "z-image"', z_image_img2img_js)
+        self.assertIn("page.withLora", z_image_img2img_js)
+        self.assertIn("inputs.initial_image", z_image_img2img_js)
 
     def test_z_image_img2img_script_wires_preset_panel(self):
         z_image_img2img_js = (ROOT / "frontend" / "z_image" / "img2img.js").read_text(
             encoding="utf-8"
         )
-        self.assertIn("window.PresetPanel?.init({", z_image_img2img_js)
         self.assertIn('taskType: "z-image.img2img"', z_image_img2img_js)
-        self.assertIn("collectSettings: collectZImageImg2ImgPresetSettings", z_image_img2img_js)
-        self.assertIn("applySettings: applyZImageImg2ImgPresetSettings", z_image_img2img_js)
 
     def test_z_image_inpaint_page_includes_lora_script_before_z_image_inpaint(self):
         z_image_inpaint_html = (ROOT / "frontend" / "z_image" / "inpaint.html").read_text(
@@ -772,10 +768,12 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         )
         lora_tag = '<script src="../components/lora_panel.js?v=1"></script>'
         preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
-        z_image_inpaint_tag = '<script src="inpaint.js?v=1"></script>'
+        editor_tag = '<script src="../components/inpaint_editor.js?v=1"></script>'
+        z_image_inpaint_tag = '<script src="inpaint.js?v=3"></script>'
 
         self.assertIn(lora_tag, z_image_inpaint_html)
         self.assertIn(preset_tag, z_image_inpaint_html)
+        self.assertIn(editor_tag, z_image_inpaint_html)
         self.assertIn(z_image_inpaint_tag, z_image_inpaint_html)
         self.assertLess(
             z_image_inpaint_html.index(lora_tag),
@@ -790,46 +788,46 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         z_image_inpaint_js = (ROOT / "frontend" / "z_image" / "inpaint.js").read_text(
             encoding="utf-8"
         )
-        self.assertIn(
-            'window.LoraPanel?.init({ apiBase: API_BASE, family: "z-image" })',
-            z_image_inpaint_js,
-        )
-        self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", z_image_inpaint_js)
-        self.assertIn("taskInputs.lora_adapters = loraAdapters;", z_image_inpaint_js)
+        self.assertIn('family: "z-image"', z_image_inpaint_js)
+        self.assertIn("page.withLora", z_image_inpaint_js)
+        self.assertIn("inputs.mask_image", z_image_inpaint_js)
 
     def test_z_image_inpaint_script_wires_preset_panel(self):
         z_image_inpaint_js = (ROOT / "frontend" / "z_image" / "inpaint.js").read_text(
             encoding="utf-8"
         )
-        self.assertIn("window.PresetPanel?.init({", z_image_inpaint_js)
         self.assertIn('taskType: "z-image.inpaint"', z_image_inpaint_js)
-        self.assertIn("collectSettings: collectZImageInpaintPresetSettings", z_image_inpaint_js)
-        self.assertIn("applySettings: applyZImageInpaintPresetSettings", z_image_inpaint_js)
 
     def test_flux_page_includes_lora_script_before_flux(self):
         flux_html = (ROOT / "frontend" / "flux" / "text2img.html").read_text(encoding="utf-8")
         lora_tag = '<script src="../components/lora_panel.js?v=1"></script>'
         preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
-        flux_tag = '<script src="text2img.js?v=2"></script>'
+        controller_tag = '<script src="../generation_page.js?v=1"></script>'
+        flux_tag = '<script src="text2img.js?v=3"></script>'
 
         self.assertIn(lora_tag, flux_html)
         self.assertIn(preset_tag, flux_html)
+        self.assertIn(controller_tag, flux_html)
         self.assertIn(flux_tag, flux_html)
         self.assertLess(flux_html.index(lora_tag), flux_html.index(flux_tag))
         self.assertLess(flux_html.index(preset_tag), flux_html.index(flux_tag))
+        self.assertLess(flux_html.index(controller_tag), flux_html.index(flux_tag))
 
     def test_flux_script_wires_lora_panel_and_payload(self):
         flux_js = (ROOT / "frontend" / "flux" / "text2img.js").read_text(encoding="utf-8")
-        self.assertIn('window.LoraPanel?.init({ apiBase: API_BASE, family: "flux" })', flux_js)
-        self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", flux_js)
-        self.assertIn("inputs.lora_adapters = loraAdapters;", flux_js)
+        controller_js = (ROOT / "frontend" / "generation_page.js").read_text(encoding="utf-8")
+        self.assertIn('family: "flux"', flux_js)
+        self.assertIn("page.withLora", flux_js)
+        self.assertIn("window.LoraPanel?.init", controller_js)
+        self.assertIn("inputs.lora_adapters", controller_js)
 
     def test_flux_script_wires_preset_panel(self):
         flux_js = (ROOT / "frontend" / "flux" / "text2img.js").read_text(encoding="utf-8")
-        self.assertIn("window.PresetPanel?.init({", flux_js)
+        controller_js = (ROOT / "frontend" / "generation_page.js").read_text(encoding="utf-8")
+        self.assertIn("window.PresetPanel?.init({", controller_js)
         self.assertIn('taskType: "flux.text2img"', flux_js)
-        self.assertIn("collectSettings: collectFluxPresetSettings", flux_js)
-        self.assertIn("applySettings: applyFluxPresetSettings", flux_js)
+        self.assertIn("collectSettings,", controller_js)
+        self.assertIn("applySettings,", controller_js)
 
     def test_flux_img2img_page_includes_lora_script_before_flux_img2img(self):
         flux_img2img_html = (ROOT / "frontend" / "flux" / "img2img.html").read_text(
@@ -837,10 +835,12 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         )
         lora_tag = '<script src="../components/lora_panel.js?v=1"></script>'
         preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
-        flux_img2img_tag = '<script src="img2img.js?v=2"></script>'
+        controller_tag = '<script src="../generation_page.js?v=1"></script>'
+        flux_img2img_tag = '<script src="img2img.js?v=3"></script>'
 
         self.assertIn(lora_tag, flux_img2img_html)
         self.assertIn(preset_tag, flux_img2img_html)
+        self.assertIn(controller_tag, flux_img2img_html)
         self.assertIn(flux_img2img_tag, flux_img2img_html)
         self.assertLess(
             flux_img2img_html.index(lora_tag), flux_img2img_html.index(flux_img2img_tag)
@@ -848,19 +848,25 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertLess(
             flux_img2img_html.index(preset_tag), flux_img2img_html.index(flux_img2img_tag)
         )
+        self.assertLess(
+            flux_img2img_html.index(controller_tag), flux_img2img_html.index(flux_img2img_tag)
+        )
 
     def test_flux_img2img_script_wires_lora_panel_and_payload(self):
         flux_img2img_js = (ROOT / "frontend" / "flux" / "img2img.js").read_text(encoding="utf-8")
-        self.assertIn('window.LoraPanel?.init({ apiBase: API_BASE, family: "flux" })', flux_img2img_js)
-        self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", flux_img2img_js)
-        self.assertIn("inputs.lora_adapters = loraAdaptersEnabled ? loraAdapters : [];", flux_img2img_js)
+        controller_js = (ROOT / "frontend" / "generation_page.js").read_text(encoding="utf-8")
+        self.assertIn('family: "flux"', flux_img2img_js)
+        self.assertIn("alwaysSendLoraAdapters: true", flux_img2img_js)
+        self.assertIn("page.withLora", flux_img2img_js)
+        self.assertIn("inputs.lora_adapters", controller_js)
 
     def test_flux_img2img_script_wires_preset_panel(self):
         flux_img2img_js = (ROOT / "frontend" / "flux" / "img2img.js").read_text(encoding="utf-8")
-        self.assertIn("window.PresetPanel?.init({", flux_img2img_js)
+        controller_js = (ROOT / "frontend" / "generation_page.js").read_text(encoding="utf-8")
+        self.assertIn("window.PresetPanel?.init({", controller_js)
         self.assertIn('taskType: "flux.img2img"', flux_img2img_js)
-        self.assertIn("collectSettings: collectFluxImg2ImgPresetSettings", flux_img2img_js)
-        self.assertIn("applySettings: applyFluxImg2ImgPresetSettings", flux_img2img_js)
+        self.assertIn("collectSettings,", controller_js)
+        self.assertIn("applySettings,", controller_js)
 
     def test_flux_inpaint_page_includes_lora_script_before_flux_inpaint(self):
         flux_inpaint_html = (ROOT / "frontend" / "flux" / "inpaint.html").read_text(
@@ -868,10 +874,12 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         )
         lora_tag = '<script src="../components/lora_panel.js?v=1"></script>'
         preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
-        flux_inpaint_tag = '<script src="inpaint.js?v=2"></script>'
+        editor_tag = '<script src="../components/inpaint_editor.js?v=1"></script>'
+        flux_inpaint_tag = '<script src="inpaint.js?v=3"></script>'
 
         self.assertIn(lora_tag, flux_inpaint_html)
         self.assertIn(preset_tag, flux_inpaint_html)
+        self.assertIn(editor_tag, flux_inpaint_html)
         self.assertIn(flux_inpaint_tag, flux_inpaint_html)
         self.assertLess(
             flux_inpaint_html.index(lora_tag), flux_inpaint_html.index(flux_inpaint_tag)
@@ -882,16 +890,13 @@ class FrontendControlNetScriptTests(unittest.TestCase):
 
     def test_flux_inpaint_script_wires_lora_panel_and_payload(self):
         flux_inpaint_js = (ROOT / "frontend" / "flux" / "inpaint.js").read_text(encoding="utf-8")
-        self.assertIn('window.LoraPanel?.init({ apiBase: API_BASE, family: "flux" })', flux_inpaint_js)
-        self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", flux_inpaint_js)
-        self.assertIn("inputs.lora_adapters = loraAdapters;", flux_inpaint_js)
+        self.assertIn('family: "flux"', flux_inpaint_js)
+        self.assertIn("page.withLora", flux_inpaint_js)
+        self.assertIn("inputs.mask_image", flux_inpaint_js)
 
     def test_flux_inpaint_script_wires_preset_panel(self):
         flux_inpaint_js = (ROOT / "frontend" / "flux" / "inpaint.js").read_text(encoding="utf-8")
-        self.assertIn("window.PresetPanel?.init({", flux_inpaint_js)
         self.assertIn('taskType: "flux.inpaint"', flux_inpaint_js)
-        self.assertIn("collectSettings: collectFluxInpaintPresetSettings", flux_inpaint_js)
-        self.assertIn("applySettings: applyFluxInpaintPresetSettings", flux_inpaint_js)
 
     def test_qwen_image_page_includes_lora_script_before_qwen_image(self):
         qwen_image_html = (ROOT / "frontend" / "qwen_image" / "text2img.html").read_text(
@@ -899,10 +904,12 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         )
         lora_tag = '<script src="../components/lora_panel.js?v=1"></script>'
         preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
-        qwen_image_tag = '<script src="text2img.js?v=2"></script>'
+        controller_tag = '<script src="../generation_page.js?v=1"></script>'
+        qwen_image_tag = '<script src="text2img.js?v=3"></script>'
 
         self.assertIn(lora_tag, qwen_image_html)
         self.assertIn(preset_tag, qwen_image_html)
+        self.assertIn(controller_tag, qwen_image_html)
         self.assertIn(qwen_image_tag, qwen_image_html)
         self.assertLess(qwen_image_html.index(lora_tag), qwen_image_html.index(qwen_image_tag))
         self.assertLess(qwen_image_html.index(preset_tag), qwen_image_html.index(qwen_image_tag))
@@ -911,21 +918,15 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         qwen_image_js = (ROOT / "frontend" / "qwen_image" / "text2img.js").read_text(
             encoding="utf-8"
         )
-        self.assertIn(
-            'window.LoraPanel?.init({ apiBase: API_BASE, family: "qwen-image" })',
-            qwen_image_js,
-        )
-        self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", qwen_image_js)
-        self.assertIn("inputs.lora_adapters = loraAdapters;", qwen_image_js)
+        self.assertIn('family: "qwen-image"', qwen_image_js)
+        self.assertIn("page.withLora", qwen_image_js)
 
     def test_qwen_image_script_wires_preset_panel(self):
         qwen_image_js = (ROOT / "frontend" / "qwen_image" / "text2img.js").read_text(
             encoding="utf-8"
         )
-        self.assertIn("window.PresetPanel?.init({", qwen_image_js)
         self.assertIn('taskType: "qwen-image.text2img"', qwen_image_js)
-        self.assertIn("collectSettings: collectQwenImagePresetSettings", qwen_image_js)
-        self.assertIn("applySettings: applyQwenImagePresetSettings", qwen_image_js)
+        self.assertIn('key: "true_cfg_scale"', qwen_image_js)
 
     def test_qwen_image_img2img_page_includes_lora_script_before_qwen_image_img2img(self):
         qwen_image_img2img_html = (ROOT / "frontend" / "qwen_image" / "img2img.html").read_text(
@@ -933,10 +934,12 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         )
         lora_tag = '<script src="../components/lora_panel.js?v=1"></script>'
         preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
-        qwen_image_img2img_tag = '<script src="img2img.js?v=2"></script>'
+        controller_tag = '<script src="../generation_page.js?v=1"></script>'
+        qwen_image_img2img_tag = '<script src="img2img.js?v=3"></script>'
 
         self.assertIn(lora_tag, qwen_image_img2img_html)
         self.assertIn(preset_tag, qwen_image_img2img_html)
+        self.assertIn(controller_tag, qwen_image_img2img_html)
         self.assertIn(qwen_image_img2img_tag, qwen_image_img2img_html)
         self.assertLess(
             qwen_image_img2img_html.index(lora_tag),
@@ -951,21 +954,16 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         qwen_image_img2img_js = (ROOT / "frontend" / "qwen_image" / "img2img.js").read_text(
             encoding="utf-8"
         )
-        self.assertIn(
-            'window.LoraPanel?.init({ apiBase: API_BASE, family: "qwen-image" })',
-            qwen_image_img2img_js,
-        )
-        self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", qwen_image_img2img_js)
-        self.assertIn("inputs.lora_adapters = loraAdapters;", qwen_image_img2img_js)
+        self.assertIn('family: "qwen-image"', qwen_image_img2img_js)
+        self.assertIn("page.withLora", qwen_image_img2img_js)
+        self.assertIn("inputs.initial_image", qwen_image_img2img_js)
 
     def test_qwen_image_img2img_script_wires_preset_panel(self):
         qwen_image_img2img_js = (ROOT / "frontend" / "qwen_image" / "img2img.js").read_text(
             encoding="utf-8"
         )
-        self.assertIn("window.PresetPanel?.init({", qwen_image_img2img_js)
         self.assertIn('taskType: "qwen-image.img2img"', qwen_image_img2img_js)
-        self.assertIn("collectSettings: collectQwenImageImg2ImgPresetSettings", qwen_image_img2img_js)
-        self.assertIn("applySettings: applyQwenImageImg2ImgPresetSettings", qwen_image_img2img_js)
+        self.assertIn('key: "true_cfg_scale"', qwen_image_img2img_js)
 
     def test_qwen_image_inpaint_page_includes_lora_script_before_qwen_image_inpaint(self):
         qwen_image_inpaint_html = (ROOT / "frontend" / "qwen_image" / "inpaint.html").read_text(
@@ -973,10 +971,12 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         )
         lora_tag = '<script src="../components/lora_panel.js?v=1"></script>'
         preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
-        qwen_image_inpaint_tag = '<script src="inpaint.js?v=2"></script>'
+        editor_tag = '<script src="../components/inpaint_editor.js?v=1"></script>'
+        qwen_image_inpaint_tag = '<script src="inpaint.js?v=3"></script>'
 
         self.assertIn(lora_tag, qwen_image_inpaint_html)
         self.assertIn(preset_tag, qwen_image_inpaint_html)
+        self.assertIn(editor_tag, qwen_image_inpaint_html)
         self.assertIn(qwen_image_inpaint_tag, qwen_image_inpaint_html)
         self.assertLess(
             qwen_image_inpaint_html.index(lora_tag),
@@ -991,21 +991,16 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         qwen_image_inpaint_js = (ROOT / "frontend" / "qwen_image" / "inpaint.js").read_text(
             encoding="utf-8"
         )
-        self.assertIn(
-            'window.LoraPanel?.init({ apiBase: API_BASE, family: "qwen-image" })',
-            qwen_image_inpaint_js,
-        )
-        self.assertIn("window.LoraPanel?.getSelectedAdapters?.() ?? []", qwen_image_inpaint_js)
-        self.assertIn("inputs.lora_adapters = loraAdapters;", qwen_image_inpaint_js)
+        self.assertIn('family: "qwen-image"', qwen_image_inpaint_js)
+        self.assertIn("page.withLora", qwen_image_inpaint_js)
+        self.assertIn("inputs.mask_image", qwen_image_inpaint_js)
 
     def test_qwen_image_inpaint_script_wires_preset_panel(self):
         qwen_image_inpaint_js = (ROOT / "frontend" / "qwen_image" / "inpaint.js").read_text(
             encoding="utf-8"
         )
-        self.assertIn("window.PresetPanel?.init({", qwen_image_inpaint_js)
         self.assertIn('taskType: "qwen-image.inpaint"', qwen_image_inpaint_js)
-        self.assertIn("collectSettings: collectQwenImageInpaintPresetSettings", qwen_image_inpaint_js)
-        self.assertIn("applySettings: applyQwenImageInpaintPresetSettings", qwen_image_inpaint_js)
+        self.assertIn('key: "true_cfg_scale"', qwen_image_inpaint_js)
 
     def test_preprocessor_modal_has_two_column_layout_hooks(self):
         preprocessor_html = (ROOT / "frontend" / "components" / "controlnet_preprocessor.html").read_text(

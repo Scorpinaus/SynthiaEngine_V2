@@ -18,13 +18,13 @@ from backend.lora.registry import get_lora_entry
 from backend.registries.model import get_model_entry
 from backend.utilities.pipeline import (
     build_fixed_step_timesteps,
-    build_png_metadata,
-    build_batch_output_relpath,
     cleanup_memory,
     get_batch_output_dir,
     make_batch_id,
     release_pipeline,
+    resolve_base_seed,
     resolve_model_source,
+    save_generated_image,
 )
 from backend.utilities.schedulers import create_scheduler
 from backend.z_image.subprocess_io import serialize_params_for_subprocess
@@ -316,11 +316,7 @@ def generate_text2img_in_process(params: dict[str, object]) -> dict[str, list[st
     scheduler = str(params.get("scheduler") or "euler")
     lora_adapters = params.get("lora_adapters")
 
-    #2. Check and set seed value
-    if seed is None or seed == 0:
-        base_seed = torch.randint(0, 2**31, (1,)).item()
-    else:
-        base_seed = int(seed)
+    base_seed = resolve_base_seed(seed)
     logger.info(
         "Z-Image Generate: model=%s seed=%s steps=%s guidance_scale=%s size=%sx%s num_images=%s",
         model, base_seed, steps, guidance_scale, width, height, num_images,
@@ -364,21 +360,17 @@ def generate_text2img_in_process(params: dict[str, object]) -> dict[str, list[st
 
                 image = pipe(**call_kwargs).images[0]
 
-            # Define filenames & Create image_params metadata dict to store metadata
-            filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
-            image_params = dict(params)
-            image_params.update({
-                "mode": "txt2img",
-                "pipeline": "z-image",
-                "seed": current_seed,
-                "batch_id": batch_id,
-            })
-            pnginfo = build_png_metadata(image_params)
-
-            # Save filename to rendered image
-            image.save(filename, pnginfo=pnginfo)
-            logger.info("Image %s saved to %s", i, filename.name)
-            filenames.append(build_batch_output_relpath(batch_id, filename.name))
+            relpath = save_generated_image(
+                image,
+                batch_output_dir,
+                batch_id,
+                current_seed,
+                params,
+                mode="txt2img",
+                pipeline="z-image",
+            )
+            logger.info("Image %s saved to %s", i, relpath)
+            filenames.append(relpath)
 
             # Clean-up memory to prevent OOM
             del image
@@ -410,11 +402,7 @@ def generate_img2img_in_process(params: dict[str, object]) -> dict[str, list[str
     scheduler = str(params.get("scheduler") or "euler")
     lora_adapters = params.get("lora_adapters")
 
-    # 2. Check and set seed value
-    if seed is None or seed == 0:
-        base_seed = torch.randint(0, 2**31, (1,)).item()
-    else:
-        base_seed = int(seed)
+    base_seed = resolve_base_seed(seed)
     logger.info(
         "Z-Image Img2Img: model=%s seed=%s steps=%s guidance_scale=%s size=%sx%s strength=%s num_images=%s",
         model, base_seed, steps, guidance_scale, width, height, strength,
@@ -460,23 +448,17 @@ def generate_img2img_in_process(params: dict[str, object]) -> dict[str, list[str
 
                 image = pipe(**call_kwargs).images[0]
 
-            #define filenames & Create image_params metadata dict to save image metadata
-            filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
-            image_params = dict(params)
-            image_params.update(
-                {
-                    "mode": "img2img",
-                    "pipeline": "z-image",
-                    "seed": current_seed,
-                    "batch_id": batch_id,
-                }
+            relpath = save_generated_image(
+                image,
+                batch_output_dir,
+                batch_id,
+                current_seed,
+                params,
+                mode="img2img",
+                pipeline="z-image",
             )
-            pnginfo = build_png_metadata(image_params)
-
-            # Save filename to rendered image
-            image.save(filename, pnginfo=pnginfo)
-            logger.info("Image %s saved to %s", i, filename.name)
-            filenames.append(build_batch_output_relpath(batch_id, filename.name))
+            logger.info("Image %s saved to %s", i, relpath)
+            filenames.append(relpath)
 
             #Clean-up intermediate memory to prevent OOM
             del image
@@ -508,11 +490,7 @@ def generate_inpaint_in_process(params: dict[str, object]) -> dict[str, list[str
     lora_adapters = params["lora_adapters"]
     width, height = initial_image.size
 
-    #2. Check and set seed value
-    if seed is None or seed == 0:
-        base_seed = torch.randint(0, 2**31, (1,)).item()
-    else:
-        base_seed = int(seed)
+    base_seed = resolve_base_seed(seed)
     logger.info(
         "Z-Image Inpaint: model=%s seed=%s steps=%s guidance_scale=%s size=%sx%s strength=%s num_images=%s",
         model, base_seed, steps, guidance_scale, width, height, strength,
@@ -558,27 +536,19 @@ def generate_inpaint_in_process(params: dict[str, object]) -> dict[str, list[str
 
                 image = pipe(**call_kwargs).images[0]
 
-            # Define filenames & Create image_params to store image metadata
-            filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
-            image_params = dict(params)
-            image_params.pop("initial_image", None)
-            image_params.pop("mask_image", None)
-            image_params.update(
-                {
-                    "mode": "inpaint",
-                    "pipeline": "z-image",
-                    "width": width,
-                    "height": height,
-                    "seed": current_seed,
-                    "batch_id": batch_id,
-                }
+            relpath = save_generated_image(
+                image,
+                batch_output_dir,
+                batch_id,
+                current_seed,
+                params,
+                mode="inpaint",
+                pipeline="z-image",
+                remove_params=("initial_image", "mask_image"),
+                size=(width, height),
             )
-            pnginfo = build_png_metadata(image_params)
-
-            # Save filename to rendered image
-            image.save(filename, pnginfo=pnginfo)
-            logger.info("Image %s saved to %s", i, filename.name)
-            filenames.append(build_batch_output_relpath(batch_id, filename.name))
+            logger.info("Image %s saved to %s", i, relpath)
+            filenames.append(relpath)
 
             # Memory cleanup
             del image

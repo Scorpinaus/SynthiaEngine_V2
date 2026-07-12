@@ -1,230 +1,25 @@
-const gallery = createGalleryViewer({
-    buildImageUrl: (path, idx, stamp) => {
-        return API_BASE + path + `?t=${stamp}_${idx}`;
-    },
-});
-
-gallery.render();
-
-let activeJobToken = 0;
-let activeEventSource = null;
-let loraPanelReady = Promise.resolve();
-
-function closeActiveEventSource() {
-    if (activeEventSource) {
-        activeEventSource.close();
-        activeEventSource = null;
-    }
-}
-
-function setInputValue(elementId, value) {
-    const el = document.getElementById(elementId);
-    if (!el || value === undefined) {
-        return;
-    }
-    el.value = value === null ? "" : String(value);
-}
-
-function setModelSelection(value) {
-    if (value === undefined) {
-        return;
-    }
-    const select = document.getElementById("model_select");
-    if (!select) {
-        return;
-    }
-    if (value === null || value === "") {
-        select.value = "";
-        return;
-    }
-    const normalized = String(value);
-    const hasOption = Array.from(select.options).some((opt) => opt.value === normalized);
-    if (!hasOption) {
-        const option = document.createElement("option");
-        option.value = normalized;
-        option.textContent = `${normalized} (preset)`;
-        select.appendChild(option);
-    }
-    select.value = normalized;
-}
-
-function collectFluxPresetSettings() {
-    return {
-        prompt: WorkflowClient.readTextValue("prompt", ""),
-        negative_prompt: WorkflowClient.readTextValue("negative_prompt", ""),
-        steps: WorkflowClient.readNumberValue("steps", 20, { integer: true }),
-        guidance_scale: WorkflowClient.readNumberValue("cfg", 0.0),
-        scheduler: WorkflowClient.readTextValue("scheduler", "euler"),
-        seed: WorkflowClient.readSeedValue("seed"),
-        width: WorkflowClient.readNumberValue("width", 1024, { integer: true }),
-        height: WorkflowClient.readNumberValue("height", 1024, { integer: true }),
-        model: WorkflowClient.readTextValue("model_select", null),
-        num_images: WorkflowClient.readNumberValue("num_images", 1, { integer: true }),
-        lora_adapters: window.LoraPanel?.getSelectedAdapters?.() ?? [],
-    };
-}
-
-async function applyFluxPresetSettings(settings) {
-    await loraPanelReady;
-
-    setInputValue("prompt", settings.prompt);
-    setInputValue("negative_prompt", settings.negative_prompt);
-    setInputValue("steps", settings.steps);
-    setInputValue("cfg", settings.guidance_scale);
-    setInputValue("scheduler", settings.scheduler);
-    setInputValue("seed", settings.seed);
-    setInputValue("width", settings.width);
-    setInputValue("height", settings.height);
-    setModelSelection(settings.model);
-    setInputValue("num_images", settings.num_images);
-
-    if (Array.isArray(settings.lora_adapters)) {
-        window.LoraPanel?.setSelectedAdapters?.(settings.lora_adapters);
-    }
-}
-
-async function loadModels() {
-    const select = document.getElementById("model_select");
-    select.innerHTML = "";
-    try {
-        const res = await fetch(`${API_BASE}/models?family=flux`);
-        const models = await res.json();
-
-        if (!Array.isArray(models) || models.length === 0) {
-            throw new Error("No models returned.");
-        }
-
-        models.forEach((model, index) => {
-            const option = document.createElement("option");
-            option.value = model.name ?? "";
-            const family = model.family ?? "unknown";
-            const modelType = model.model_type ?? "unknown";
-            option.textContent = `${model.name} (${family}, ${modelType})`;
-            if (index === 0) {
-                option.selected = true;
-            }
-            select.appendChild(option);
-        });
-    } catch (error) {
-        const fallback = document.createElement("option");
-        fallback.value = "black-forest-labs/FLUX.1-schnell";
-        fallback.textContent = "black-forest-labs/FLUX.1-schnell (flux, diffusers)";
-        fallback.selected = true;
-        select.appendChild(fallback);
-        console.warn("Failed to load models:", error);
-    }
-}
-
-loadModels();
-loraPanelReady = window.LoraPanel?.init({ apiBase: API_BASE, family: "flux" }) ?? Promise.resolve();
-window.PresetPanel?.init({
-    apiBase: API_BASE,
+const page = GenerationPage.create({
     family: "flux",
     taskType: "flux.text2img",
-    collectSettings: collectFluxPresetSettings,
-    applySettings: applyFluxPresetSettings,
+    fallbackModel: {
+        value: "black-forest-labs/FLUX.1-schnell",
+        label: "black-forest-labs/FLUX.1-schnell (flux, diffusers)",
+    },
+    fields: [
+        { element: "prompt", key: "prompt", fallback: "" },
+        { element: "negative_prompt", key: "negative_prompt", fallback: "" },
+        { element: "steps", key: "steps", type: "number", integer: true, fallback: 20 },
+        { element: "cfg", key: "guidance_scale", type: "number", fallback: 0.0 },
+        { element: "scheduler", key: "scheduler", fallback: "euler" },
+        { element: "seed", key: "seed", type: "seed" },
+        { element: "width", key: "width", type: "number", integer: true, fallback: 1024 },
+        { element: "height", key: "height", type: "number", integer: true, fallback: 1024 },
+        { element: "model_select", key: "model", fallback: null },
+        { element: "num_images", key: "num_images", type: "number", integer: true, fallback: 1 },
+    ],
 });
-if (window.WorkflowCatalog?.load) {
-    void window.WorkflowCatalog
-        .load(API_BASE)
-        .then(() => {
-            window.WorkflowCatalog.applyDefaultsToForm("flux.text2img", {
-                steps: "steps",
-                cfg: "guidance_scale",
-                width: "width",
-                height: "height",
-                num_images: "num_images",
-            });
-        })
-        .catch(() => {});
-}
-
-function baseInput(inputs, defaults) {
-    const prompt = WorkflowClient.readTextValue("prompt", defaults.prompt ?? "");
-    const negative_prompt = WorkflowClient.readTextValue(
-        "negative_prompt",
-        defaults.negative_prompt ?? ""
-    );
-    const steps = WorkflowClient.readNumberValue("steps", defaults.steps ?? 20, { integer: true });
-    const guidance_scale = WorkflowClient.readNumberValue("cfg", defaults.guidance_scale ?? 0.0);
-    const scheduler = WorkflowClient.readTextValue("scheduler", defaults.scheduler ?? "euler");
-    const seed = WorkflowClient.readSeedValue("seed");
-    const width = WorkflowClient.readNumberValue("width", defaults.width ?? 1024, { integer: true });
-    const height = WorkflowClient.readNumberValue("height", defaults.height ?? 1024, { integer: true });
-    const modelRaw = document.getElementById("model_select")?.value ?? "";
-    const model = modelRaw ? modelRaw : (defaults.model ?? null);
-    const num_images = WorkflowClient.readNumberValue("num_images", defaults.num_images ?? 1, {
-        integer: true,
-    });
-
-    Object.assign(inputs, {
-        prompt,
-        negative_prompt,
-        steps,
-        guidance_scale,
-        scheduler,
-        seed,
-        width,
-        height,
-        model,
-        num_images,
-    });
-
-    return inputs;
-}
 
 async function generate() {
-    const token = ++activeJobToken;
-    closeActiveEventSource();
-
-    const catalog = window.WorkflowCatalog?.load ? await window.WorkflowCatalog.load(API_BASE) : null;
-    const defaults = catalog?.tasks?.["flux.text2img"]?.input_defaults ?? {};
-    const inputs = {};
-    baseInput(inputs, defaults);
-    const loraAdapters = window.LoraPanel?.getSelectedAdapters?.() ?? [];
-    const loraAdaptersEnabled = Array.isArray(loraAdapters) && loraAdapters.length > 0;
-
-    inputs.Lora = {
-        enabled: loraAdaptersEnabled,
-        adapters: loraAdaptersEnabled ? loraAdapters : [],
-    };
-    if (loraAdaptersEnabled) {
-        inputs.lora_adapters = loraAdapters;
-    }
-    console.log("Generate payload", inputs);
-
-    try {
-        const workflowPayload = {
-            tasks: [{ id: "t1", type: "flux.text2img", inputs }],
-            return: "@t1.images",
-        };
-        const idempotencyKey = WorkflowClient.makeIdempotencyKey();
-        const createdJob = await WorkflowClient.submitWorkflow(API_BASE, workflowPayload, idempotencyKey);
-        const jobId = createdJob?.id;
-        if (!jobId) {
-            throw new Error("Job submit did not return an id.");
-        }
-
-        activeEventSource = WorkflowClient.watchJob(API_BASE, jobId, {
-            isStale: () => token !== activeJobToken,
-            onDone: (job) => {
-                const status = job?.status ?? "unknown";
-                if (status === "succeeded") {
-                    const images = job?.result?.outputs;
-                    gallery.setImages(Array.isArray(images) ? images : []);
-                } else {
-                    gallery.setImages([]);
-                }
-            },
-            onError: () => {
-                if (token !== activeJobToken) {
-                    return;
-                }
-                gallery.setImages([]);
-            },
-        });
-    } catch (error) {
-        console.warn("Failed to generate Flux images:", error);
-        gallery.setImages([]);
-    }
+    const inputs = page.withLora(page.collectSettings(await page.defaults()));
+    await page.run(inputs, "Failed to generate Flux images:");
 }

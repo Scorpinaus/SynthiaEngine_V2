@@ -514,13 +514,10 @@ class SdxlInpaintInputs(BaseModel):
     control_guidance_end: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
-class FluxText2ImgInputs(BaseModel):
-    prompt: str = ""
+class _FluxInputs(BaseModel):
     negative_prompt: str = ""
     steps: int = 20
     guidance_scale: float = 0.0
-    width: int = 1024
-    height: int = 1024
     seed: int | None = None
     model: str | None = None
     num_images: int = 1
@@ -528,45 +525,32 @@ class FluxText2ImgInputs(BaseModel):
     lora_adapters: Any | None = None
 
 
-class FluxImg2ImgInputs(BaseModel):
+class FluxText2ImgInputs(_FluxInputs):
+    prompt: str = ""
+    width: int = 1024
+    height: int = 1024
+
+
+class FluxImg2ImgInputs(_FluxInputs):
     initial_image: ImageRef
     prompt: str
-    negative_prompt: str = ""
     strength: float = 0.75
-    steps: int = 20
-    guidance_scale: float = 0.0
     width: int = 1024
     height: int = 1024
-    seed: int | None = None
-    scheduler: str = "euler"
-    model: str | None = None
-    num_images: int = 1
-    lora_adapters: Any | None = None
 
 
-class FluxInpaintInputs(BaseModel):
+class FluxInpaintInputs(_FluxInputs):
     initial_image: ImageRef
     mask_image: ImageRef
     prompt: str
-    negative_prompt: str = ""
     strength: float = 0.5
-    steps: int = 20
-    guidance_scale: float = 0.0
-    seed: int | None = None
-    scheduler: str = "euler"
-    model: str | None = None
-    num_images: int = 1
-    lora_adapters: Any | None = None
 
 
-class QwenImageText2ImgInputs(BaseModel):
-    prompt: str = ""
+class _QwenImageInputs(BaseModel):
     negative_prompt: str = ""
     steps: int = 30
     true_cfg_scale: float = 4.0
     guidance_scale: float = 7.5
-    width: int = 1024
-    height: int = 1024
     seed: int | None = None
     model: str | None = None
     num_images: int = 1
@@ -574,82 +558,57 @@ class QwenImageText2ImgInputs(BaseModel):
     lora_adapters: Any | None = None
 
 
-class QwenImageImg2ImgInputs(BaseModel):
-    initial_image: ImageRef
-    prompt: str
-    negative_prompt: str = ""
-    strength: float = 0.75
-    steps: int = 30
-    true_cfg_scale: float = 4.0
-    guidance_scale: float = 7.5
-    width: int = 1024
-    height: int = 1024
-    seed: int | None = None
-    scheduler: str = "euler"
-    model: str | None = None
-    num_images: int = 1
-    lora_adapters: Any | None = None
-
-
-class QwenImageInpaintInputs(BaseModel):
-    initial_image: ImageRef
-    mask_image: ImageRef
-    prompt: str
-    negative_prompt: str = ""
-    strength: float = 0.5
-    steps: int = 30
-    true_cfg_scale: float = 4.0
-    guidance_scale: float = 7.5
-    seed: int | None = None
-    scheduler: str = "euler"
-    model: str | None = None
-    num_images: int = 1
-    lora_adapters: Any | None = None
-
-
-class ZImageText2ImgInputs(BaseModel):
+class QwenImageText2ImgInputs(_QwenImageInputs):
     prompt: str = ""
-    negative_prompt: str = ""
-    steps: int = 8
-    guidance_scale: float = 0.0
     width: int = 1024
     height: int = 1024
-    seed: int | None = None
-    model: str | None = None
-    num_images: int = 1
-    scheduler: str = "euler"
-    lora_adapters: Any | None = None
 
 
-class ZImageImg2ImgInputs(BaseModel):
+class QwenImageImg2ImgInputs(_QwenImageInputs):
     initial_image: ImageRef
     prompt: str
-    negative_prompt: str = ""
     strength: float = 0.75
-    steps: int = 8
-    guidance_scale: float = 0.0
     width: int = 1024
     height: int = 1024
-    seed: int | None = None
-    scheduler: str = "euler"
-    model: str | None = None
-    num_images: int = 1
-    lora_adapters: Any | None = None
 
 
-class ZImageInpaintInputs(BaseModel):
+class QwenImageInpaintInputs(_QwenImageInputs):
     initial_image: ImageRef
     mask_image: ImageRef
     prompt: str
-    negative_prompt: str = ""
     strength: float = 0.5
+
+
+class _ZImageInputs(BaseModel):
+    negative_prompt: str = ""
     steps: int = 8
     guidance_scale: float = 0.0
     seed: int | None = None
-    scheduler: str = "euler"
     model: str | None = None
     num_images: int = 1
+    scheduler: str = "euler"
     lora_adapters: Any | None = None
+
+
+class ZImageText2ImgInputs(_ZImageInputs):
+    prompt: str = ""
+    width: int = 1024
+    height: int = 1024
+
+
+class ZImageImg2ImgInputs(_ZImageInputs):
+    initial_image: ImageRef
+    prompt: str
+    strength: float = 0.75
+    width: int = 1024
+    height: int = 1024
+
+
+class ZImageInpaintInputs(_ZImageInputs):
+    initial_image: ImageRef
+    mask_image: ImageRef
+    prompt: str
+    strength: float = 0.5
 
 
 class ErnieImageText2ImgInputs(BaseModel):

@@ -14,13 +14,13 @@ from backend.utilities.logging import configure_logging
 from backend.lora.utils import apply_lora_adapters_with_validation, write_lora_coverage_report
 from backend.registries.model import get_model_entry
 from backend.utilities.pipeline import (
-    build_png_metadata,
-    build_batch_output_relpath,
     cleanup_memory,
     get_batch_output_dir,
     make_batch_id,
     release_pipeline,
+    resolve_base_seed,
     resolve_model_source,
+    save_generated_image,
 )
 from backend.utilities.schedulers import create_scheduler
 from backend.qwen_image.subprocess_io import serialize_params_for_subprocess
@@ -193,10 +193,7 @@ def generate_text2img_in_process(params: dict[str, object]) -> dict[str, list[st
     lora_adapters = params.get("lora_adapters")
 
     logger.info("seed=%s", seed)
-    if seed is None or seed == 0:
-        base_seed = torch.randint(0, 2**31, (1,)).item()
-    else:
-        base_seed = int(seed)
+    base_seed = resolve_base_seed(seed)
 
     batch_id = make_batch_id()
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
@@ -248,21 +245,12 @@ def generate_text2img_in_process(params: dict[str, object]) -> dict[str, list[st
 
                 image = pipe(**call_kwargs).images[0]
 
-            filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
-            image_params = dict(params)
-            image_params.update(
-                {
-                    "mode": "txt2img",
-                    "pipeline": "qwen-image",
-                    "seed": current_seed,
-                    "batch_id": batch_id,
-                }
+            relpath = save_generated_image(
+                image, batch_output_dir, batch_id, current_seed, params,
+                mode="txt2img", pipeline="qwen-image",
             )
-            pnginfo = build_png_metadata(image_params)
-            image.save(filename, pnginfo=pnginfo)
-            logger.info("Image %s saved to %s", i, filename.name)
-
-            filenames.append(build_batch_output_relpath(batch_id, filename.name))
+            logger.info("Image %s saved to %s", i, relpath)
+            filenames.append(relpath)
 
             del image
             cleanup_memory()
@@ -298,10 +286,7 @@ def generate_img2img_in_process(params: dict[str, object]) -> dict[str, list[str
     lora_adapters = params.get("lora_adapters")
 
     logger.info("seed=%s", seed)
-    if seed is None or seed == 0:
-        base_seed = torch.randint(0, 2**31, (1,)).item()
-    else:
-        base_seed = int(seed)
+    base_seed = resolve_base_seed(seed)
 
     batch_id = make_batch_id()
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
@@ -356,25 +341,15 @@ def generate_img2img_in_process(params: dict[str, object]) -> dict[str, list[str
 
                 image = pipe(**call_kwargs).images[0]
 
-            filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
             image_width, image_height = initial_image.size
-            image_params = dict(params)
-            image_params.pop("initial_image", None)
-            image_params.update(
-                {
-                    "mode": "img2img",
-                    "pipeline": "qwen-image",
-                    "width": image_width,
-                    "height": image_height,
-                    "seed": current_seed,
-                    "batch_id": batch_id,
-                }
+            relpath = save_generated_image(
+                image, batch_output_dir, batch_id, current_seed, params,
+                mode="img2img", pipeline="qwen-image",
+                remove_params=("initial_image",),
+                size=(image_width, image_height),
             )
-            pnginfo = build_png_metadata(image_params)
-            image.save(filename, pnginfo=pnginfo)
-            logger.info("Image %s saved to %s", i, filename.name)
-
-            filenames.append(build_batch_output_relpath(batch_id, filename.name))
+            logger.info("Image %s saved to %s", i, relpath)
+            filenames.append(relpath)
 
             del image
             cleanup_memory()
@@ -411,10 +386,7 @@ def generate_inpaint_in_process(params: dict[str, object]) -> dict[str, list[str
     lora_adapters = params.get("lora_adapters")
 
     logger.info("seed=%s", seed)
-    if seed is None or seed == 0:
-        base_seed = torch.randint(0, 2**31, (1,)).item()
-    else:
-        base_seed = int(seed)
+    base_seed = resolve_base_seed(seed)
 
     batch_id = make_batch_id()
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
@@ -469,25 +441,14 @@ def generate_inpaint_in_process(params: dict[str, object]) -> dict[str, list[str
 
                 image = pipe(**call_kwargs).images[0]
 
-            filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
-            image_params = dict(params)
-            image_params.pop("initial_image", None)
-            image_params.pop("mask_image", None)
-            image_params.update(
-                {
-                    "mode": "inpaint",
-                    "pipeline": "qwen-image",
-                    "width": width,
-                    "height": height,
-                    "seed": current_seed,
-                    "batch_id": batch_id,
-                }
+            relpath = save_generated_image(
+                image, batch_output_dir, batch_id, current_seed, params,
+                mode="inpaint", pipeline="qwen-image",
+                remove_params=("initial_image", "mask_image"),
+                size=(width, height),
             )
-            pnginfo = build_png_metadata(image_params)
-            image.save(filename, pnginfo=pnginfo)
-            logger.info("Image %s saved to %s", i, filename.name)
-
-            filenames.append(build_batch_output_relpath(batch_id, filename.name))
+            logger.info("Image %s saved to %s", i, relpath)
+            filenames.append(relpath)
 
             del image
             cleanup_memory()

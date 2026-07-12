@@ -1,6 +1,8 @@
 from pathlib import Path
 
-from backend.utilities.pipeline import release_pipeline
+from PIL import Image
+
+from backend.utilities.pipeline import release_pipeline, resolve_base_seed, save_generated_image
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -31,6 +33,34 @@ class _FailingHookPipeline:
 
 def _read_repo_file(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
+
+
+def test_resolve_base_seed_preserves_explicit_seed(monkeypatch):
+    monkeypatch.setattr("backend.utilities.pipeline.torch.randint", lambda *_args: None)
+    assert resolve_base_seed(123) == 123
+
+
+def test_save_generated_image_uses_standard_path_and_metadata(tmp_path):
+    image = Image.new("RGB", (2, 3), "white")
+    relpath = save_generated_image(
+        image,
+        tmp_path,
+        "b1",
+        42,
+        {"prompt": "test", "initial_image": object()},
+        mode="img2img",
+        pipeline="test-family",
+        remove_params=("initial_image",),
+        size=(2, 3),
+    )
+
+    assert relpath == "batch_b1/b1_42.png"
+    saved = Image.open(tmp_path / "b1_42.png")
+    assert saved.text["mode"] == "img2img"
+    assert saved.text["pipeline"] == "test-family"
+    assert saved.text["seed"] == "42"
+    assert saved.text["width"] == "2"
+    assert "initial_image" not in saved.text
 
 
 def test_release_pipeline_calls_diffusers_hook_cleanup(monkeypatch):

@@ -25,13 +25,13 @@ from backend.utilities.logging import configure_logging
 from backend.lora.utils import apply_lora_adapters_with_validation, write_lora_coverage_report
 from backend.registries.model import get_model_entry
 from backend.utilities.pipeline import (
-    build_png_metadata,
-    build_batch_output_relpath,
     cleanup_memory,
     get_batch_output_dir,
     make_batch_id,
     release_pipeline,
+    resolve_base_seed,
     resolve_model_source,
+    save_generated_image,
 )
 from backend.flux.subprocess_io import serialize_params_for_subprocess
 from backend.utilities.pipeline_cache import PipelineCache
@@ -286,10 +286,7 @@ def generate_text2img_in_process(params: dict[str, object]) -> dict[str, list[st
     lora_adapters = params["lora_adapters"]
 
     # 2. Check and set seed value
-    if seed is None or seed == 0:
-        base_seed = torch.randint(0, 2**31, (1,)).item()
-    else:
-        base_seed = int(seed)
+    base_seed = resolve_base_seed(seed)
     logger.info(
         "Flux Text2Image: model=%s, seed=%s, steps=%s, guidance_scale=%s, size=%sx%s, num_images=%s",
         model, base_seed, steps, guidance_scale, width, height, num_images,
@@ -351,23 +348,14 @@ def generate_text2img_in_process(params: dict[str, object]) -> dict[str, list[st
                 image = pipeline_output.images[0]
                 stage_profile["inference"].append(inference_timing)
 
-            # Set filename and create image_params metadata dioct
-            filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
-            image_params = dict(params)
-            image_params.update({
-                "mode": "txt2img",
-                "pipeline": "flux",
-                "seed": current_seed,
-                "batch_id": batch_id,
-            })
-            pnginfo = build_png_metadata(image_params)
             save_started = time.perf_counter()
-            image.save(filename, pnginfo=pnginfo)
+            relpath = save_generated_image(
+                image, batch_output_dir, batch_id, current_seed, params,
+                mode="txt2img", pipeline="flux",
+            )
             stage_profile["output_save_seconds"] += time.perf_counter() - save_started
-            logger.info("Image %s saved to %s", i, filename.name)
-
-            # Save filename to rendered image
-            filenames.append(build_batch_output_relpath(batch_id, filename.name))
+            logger.info("Image %s saved to %s", i, relpath)
+            filenames.append(relpath)
             del image
             cleanup_memory()
         pipeline_healthy = True
@@ -412,10 +400,7 @@ def generate_img2img_in_process(params: dict[str, object]) -> dict[str, list[str
     lora_adapters = params["lora_adapters"]
 
     #2. Check and set seed value
-    if seed is None or seed == 0:
-        base_seed = torch.randint(0, 2**31, (1,)).item()
-    else:
-        base_seed = int(seed)
+    base_seed = resolve_base_seed(seed)
     logger.info(
         "Flux Img2Img: model=%s, seed=%s, steps=%s, guidance_scale=%s, size=%sx%s, strength=%s, num_images=%s",
         model, base_seed, steps, guidance_scale, width, height, strength,num_images,
@@ -479,25 +464,17 @@ def generate_img2img_in_process(params: dict[str, object]) -> dict[str, list[str
                 image = pipeline_output.images[0]
                 stage_profile["inference"].append(inference_timing)
 
-            # define filenames and create image_params dict to save as image metadata
-            filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
             image_width, image_height = initial_image.size
-            image_params = dict(params)
-            image_params.pop("initial_image", None)
-            image_params.update({
-                "mode": "img2img",
-                "pipeline": "flux",
-                "width": image_width,
-                "height": image_height,
-                "seed": current_seed,
-                "batch_id": batch_id,
-            })
-            pnginfo = build_png_metadata(image_params)
             save_started = time.perf_counter()
-            image.save(filename, pnginfo=pnginfo)
+            relpath = save_generated_image(
+                image, batch_output_dir, batch_id, current_seed, params,
+                mode="img2img", pipeline="flux",
+                remove_params=("initial_image",),
+                size=(image_width, image_height),
+            )
             stage_profile["output_save_seconds"] += time.perf_counter() - save_started
-            logger.info("Image %s saved to %s", i, filename.name)
-            filenames.append(build_batch_output_relpath(batch_id, filename.name))
+            logger.info("Image %s saved to %s", i, relpath)
+            filenames.append(relpath)
 
             del image
             cleanup_memory()
@@ -542,10 +519,7 @@ def generate_inpaint_in_process(params: dict[str, object]) -> dict[str, list[str
     lora_adapters = params["lora_adapters"]
 
     #2. Check and set seed value
-    if seed is None or seed == 0:
-        base_seed = torch.randint(0, 2**31, (1,)).item()
-    else:
-        base_seed = int(seed)
+    base_seed = resolve_base_seed(seed)
     logger.info(
         "Flux Inpaint: model=%s, seed=%s, steps=%s, guidance_scale=%s, strength=%s, num_images=%s",
         model, base_seed, steps, guidance_scale, strength, num_images,
@@ -608,28 +582,17 @@ def generate_inpaint_in_process(params: dict[str, object]) -> dict[str, list[str
                 image = pipeline_output.images[0]
                 stage_profile["inference"].append(inference_timing)
 
-            # Define filenames & Create image_params metadata dict
-            filename = batch_output_dir / f"{batch_id}_{current_seed}.png"
             image_width, image_height = initial_image.size
-            image_params = dict(params)
-            image_params.pop("initial_image", None)
-            image_params.pop("mask_image", None)
-            image_params.update({
-                "mode": "inpaint",
-                "pipeline": "flux",
-                "width": image_width,
-                "height": image_height,
-                "seed": current_seed,
-                "batch_id": batch_id,
-            })
-            pnginfo = build_png_metadata(image_params)
             save_started = time.perf_counter()
-            image.save(filename, pnginfo=pnginfo)
+            relpath = save_generated_image(
+                image, batch_output_dir, batch_id, current_seed, params,
+                mode="inpaint", pipeline="flux",
+                remove_params=("initial_image", "mask_image"),
+                size=(image_width, image_height),
+            )
             stage_profile["output_save_seconds"] += time.perf_counter() - save_started
-            logger.info("Image %s saved to %s", i, filename.name)
-            
-            # Save filename to rendered image
-            filenames.append(build_batch_output_relpath(batch_id, filename.name))
+            logger.info("Image %s saved to %s", i, relpath)
+            filenames.append(relpath)
 
             del image
             cleanup_memory()
