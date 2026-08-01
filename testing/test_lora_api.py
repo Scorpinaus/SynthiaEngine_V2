@@ -46,15 +46,16 @@ def test_lora_list_and_create_contract_compatible(tmp_path):
     }
     create_response = client.post("/lora-models", json=payload)
     assert create_response.status_code == 200
-    assert create_response.json() == payload
+    expected_response = {**payload, "prompt_presets": []}
+    assert create_response.json() == expected_response
 
     list_response = client.get("/lora-models")
     assert list_response.status_code == 200
-    assert list_response.json() == [payload]
+    assert list_response.json() == [expected_response]
 
     filtered_response = client.get("/lora-models?family=sd15")
     assert filtered_response.status_code == 200
-    assert filtered_response.json() == [payload]
+    assert filtered_response.json() == [expected_response]
 
 
 def test_lora_detail_endpoint(tmp_path):

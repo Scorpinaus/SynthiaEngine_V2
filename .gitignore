@@ -10,6 +10,7 @@ __pycache__/
 AGENTS.md
 .vscode/
 .pytest_cache/
+.test_cache/
 next_steps.txt
 anima_preview_report.json
 inspect_safetensors.py
@@ -20,6 +21,6 @@ memory-bank/
 tools/codex-rename-vscode/node_modules/
 tools/codex-rename-vscode/out/
 Architecture.MD
-docs/ARCHITECTURE.md
+!docs/ARCHITECTURE.md
 IPAdapter_SDXL_Encoder_Plan.txt
 evaluation/outputs/

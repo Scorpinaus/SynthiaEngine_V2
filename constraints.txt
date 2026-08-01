@@ -3,7 +3,7 @@
 accelerate==1.14.0
 controlnet-aux==0.0.10
 diffusers==0.39.0
-fastapi==0.139.0
+fastapi==0.139.2
 imageio-ffmpeg==0.6.0
 numpy==2.5.1
 peft==0.19.1
@@ -14,7 +14,7 @@ psycopg2-binary==2.9.12
 pydantic==2.13.4
 pytest==9.1.1
 safetensors==0.8.0
-sentencepiece==0.2.1
+sentencepiece==0.2.2
 SQLAlchemy==2.0.51
-transformers==5.13.1
+transformers==5.14.1
 uvicorn==0.51.0

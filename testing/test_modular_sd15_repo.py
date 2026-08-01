@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 import sys
 
@@ -10,7 +9,6 @@ from types import SimpleNamespace
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-os.environ.setdefault("HF_MODULES_CACHE", str(REPO_ROOT / ".pytest_cache" / "hf_modules"))
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 

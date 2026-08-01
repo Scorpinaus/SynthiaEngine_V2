@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+import pytest
+
 import backend.workflow as workflow
 from backend.jobs import queue as job_queue
 from backend.main import _serialize_job
@@ -132,3 +134,39 @@ def test_execute_workflow_job_attaches_summary_profile(monkeypatch):
     assert "nvml_used_current_mb" in profile
     assert "nvml_used_end_mb" in profile
     assert "nvml_used_peak_sampled_mb" in profile
+
+
+def test_execute_workflow_job_cleans_input_and_created_artifacts_after_failure(monkeypatch):
+    cleanup_calls = []
+
+    class FakeSummaryProfiler:
+        profile = None
+
+        def __init__(self, *, on_update=None):
+            self.on_update = on_update
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+    def fail_workflow(_payload, *, ctx=None):
+        error = RuntimeError("synthetic generation failure")
+        error._workflow_created_artifacts = {"created-artifact"}
+        raise error
+
+    monkeypatch.setattr(resource_logging, "SummaryProfiler", FakeSummaryProfiler)
+    monkeypatch.setattr(workflow, "collect_artifact_ids", lambda _payload: {"input-artifact"})
+    monkeypatch.setattr(workflow, "cleanup_artifacts", lambda ids: cleanup_calls.append(set(ids)))
+    monkeypatch.setattr(workflow, "execute_workflow", fail_workflow)
+
+    with pytest.raises(RuntimeError, match="synthetic generation failure"):
+        job_queue.execute_job(
+            job_id="job-1",
+            kind="workflow",
+            payload={"tasks": []},
+            SessionLocal=object(),
+        )
+
+    assert cleanup_calls == [{"input-artifact", "created-artifact"}]

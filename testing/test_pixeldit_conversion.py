@@ -1,6 +1,8 @@
 import argparse
+import importlib
 import json
 from pathlib import Path
+import sys
 
 import torch
 from diffusers import ComponentsManager
@@ -109,6 +111,15 @@ def test_pixeldit_converter_writes_diffusers_component_repo(tmp_path: Path, monk
     import diffusers.utils.dynamic_modules_utils as dynamic_modules_utils
 
     monkeypatch.setattr(dynamic_modules_utils, "HF_MODULES_CACHE", str(module_cache))
+    # Diffusers maps every local custom repository to the same dynamic package.
+    # Put this test's cache first and remove the package loaded from any earlier
+    # local-repository test before switching to this generated repo.
+    monkeypatch.syspath_prepend(str(module_cache))
+    for module_name in tuple(sys.modules):
+        if module_name == "diffusers_modules" or module_name.startswith("diffusers_modules."):
+            monkeypatch.delitem(sys.modules, module_name)
+    importlib.invalidate_caches()
+
     components_manager = ComponentsManager()
     pipe = PixelDiTModularPipeline.from_pretrained(
         output_dir,

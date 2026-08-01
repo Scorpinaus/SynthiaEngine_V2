@@ -99,6 +99,14 @@ class _FakeImageEncoder:
 
 
 class Sd15IpAdapterPipelineTests(unittest.TestCase):
+    def setUp(self):
+        prompt_patcher = patch(
+            "backend.sd15.pipeline.build_prompt_embeddings",
+            return_value=(None, None, False),
+        )
+        prompt_patcher.start()
+        self.addCleanup(prompt_patcher.stop)
+
     def test_generate_ip_adapter_image_embeds_uses_minimal_encoder(self):
         image = Image.new("RGB", (16, 16))
         fake_encoder = _FakeImageEncoder()

@@ -114,6 +114,24 @@ class FluxSubprocessTests(unittest.TestCase):
         self.assertIn("-m", command)
         self.assertIn("backend.flux.subprocess_runner", command)
 
+    def test_flux_bridge_propagates_typed_child_failure(self):
+        flux_pipeline = _import_flux_pipeline()
+
+        def fake_run(cmd, cwd):
+            output_path = Path(cmd[-1])
+            output_path.write_text(
+                '{"ok": false, "error_type": "ValueError", "error": "bad input"}',
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="")
+
+        with patch.object(flux_pipeline.subprocess, "run", side_effect=fake_run):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "Flux subprocess failed: ValueError: bad input",
+            ):
+                flux_pipeline.generate_text2img({"prompt": "test prompt"})
+
     def test_flux_bridge_serializes_pil_images_for_child_process(self):
         flux_pipeline = _import_flux_pipeline()
         image = Image.new("RGB", (4, 3), "red")
