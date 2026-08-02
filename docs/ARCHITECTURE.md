@@ -59,9 +59,9 @@ The detailed rules are intentionally conservative:
 - Supporting adapters, registries, LoRA, and utilities must not depend on API,
   jobs, or concrete model-family runtimes.
 
-Three current narrow support-layer edges remain visible until their owning
-refactor tasks: adapters use workflow artifact/reference helpers, the preset
-registry uses workflow input schemas, and utilities use model registry lookup.
+Two current narrow support-layer edges remain visible until their owning
+refactor tasks: the preset registry uses workflow input schemas, and utilities
+use model registry lookup.
 They are allowed explicitly rather than being hidden as general exemptions.
 
 `testing/test_architecture_contracts.py` enforces the static import boundaries,
@@ -191,7 +191,9 @@ Core modules:
 Ownership:
 
 - `schema_input.py`, `schema_output.py`, and `types.py` own the Pydantic workflow contracts.
-- Family modules such as `sd15.py`, `sdxl.py`, and `flux.py` own authoritative task definitions and family-specific input normalization.
+- Family facades such as `sd15.py` and `sdxl.py` compose operation-specific task
+  adapters; other family modules such as `flux.py` own authoritative task
+  definitions and family-specific input normalization directly.
 - `assembly.py` binds concrete runtime dependencies, merges family registrations with duplicate detection, and derives the compatibility registry/schema views.
 - `engine.py` validates workflow envelopes, preflights references and cycles, derives stable execution order, resolves references, dispatches authoritative definitions, publishes progress, and aggregates results.
 - `catalog.py` derives schema, defaults, UI hints, and capabilities from the assembled task definitions; it is not a second registry.
@@ -255,6 +257,26 @@ Primary pipeline modules:
 - `backend/ernie_image/pipeline.py`
 - `backend/anima/pipeline.py`
 
+The SD1.5 and SDXL `pipeline.py` modules are compatibility facades. Their
+runtime ownership is intentionally split as follows:
+
+- `runtime_common.py`: shared imports, constants, and runtime dependencies
+- `loaders.py`: Diffusers pipeline factories
+- `preparation.py`: prompt/image/latent preparation and render-call helpers
+- `adapters.py`: task-scoped LoRA/IP-Adapter policy and cleanup
+- `transport.py`: stable one-shot subprocess entrypoints
+- `text2img.py`, `img2img.py`, and `inpaint.py`: operation-specific generation
+- SD1.5 `hires_fix.py`: Hi-Res Fix generation
+- SDXL `controlnet.py` and `results.py`: ControlNet operations and result saving
+
+Stable parent-process entrypoints continue to accept one parameter dictionary:
+SD1.5 `generate_images*` returns relative output paths, while SDXL
+`generate_text2img`, `generate_img2img`, `generate_inpaint`, and their
+ControlNet variants return the existing image-result object. Their matching
+`*_in_process` entrypoints retain the child-process call signatures. SD1.5
+`run_sd15_hires_fix` retains its keyword-only operation contract. Architecture
+tests compare the facade parameter surface with the owning implementation.
+
 Common behavior across families:
 
 - Resolve selected model from model registry
@@ -266,15 +288,16 @@ Common behavior across families:
 
 Family-specific runtime adapters in workflow layer:
 
-- `backend/workflow/sd15.py`
-- `backend/workflow/sdxl.py`
+- `backend/workflow/sd15.py` plus `sd15_*_task.py` operation adapters
+- `backend/workflow/sdxl.py` plus `sdxl_*_task.py` operation adapters
 - `backend/workflow/flux.py`
 - `backend/workflow/qwen_image.py`
 - `backend/workflow/z_image.py`
 - `backend/workflow/ernie_image.py`
 - `backend/workflow/anima.py`
 
-These modules normalize inputs and call the concrete pipeline functions.
+The facades preserve public imports and task identifiers; the focused operation
+modules normalize inputs and call the concrete pipeline functions.
 
 ### 3.5 Shared Adapter Infrastructure
 

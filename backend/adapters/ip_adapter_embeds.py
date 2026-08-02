@@ -6,8 +6,8 @@ from typing import Any
 
 import torch
 
+from backend.artifacts import artifact_path_for_id, validate_artifact_id
 from backend.config import OUTPUT_DIR
-from backend.workflow.utility import _artifact_path_for_id, _validate_artifact_id
 
 IP_ADAPTER_EMBEDS_FORMAT = "synthengine.sdxl.ip_adapter_image_embeds.v1"
 
@@ -19,7 +19,7 @@ def save_ip_adapter_embeds_artifact(
     family: str = "SDXL",
 ) -> dict[str, str]:
     artifact_id = f"e{uuid.uuid4().hex}"
-    path = _artifact_path_for_id(artifact_id)
+    path = artifact_path_for_id(artifact_id, output_dir=OUTPUT_DIR)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "format": IP_ADAPTER_EMBEDS_FORMAT,
@@ -45,14 +45,14 @@ def _artifact_id_from_ref(ref: Any) -> str:
     else:
         raise ValueError("Unsupported IP-Adapter embeds reference.")
 
-    artifact_id = _validate_artifact_id(artifact_id)
+    artifact_id = validate_artifact_id(artifact_id)
     if not artifact_id.startswith("e"):
         raise ValueError("IP-Adapter embeds reference must use an embed artifact_id.")
     return artifact_id
 
 
 def load_ip_adapter_embeds_artifact(ref: Any) -> dict[str, Any]:
-    path = _artifact_path_for_id(_artifact_id_from_ref(ref))
+    path = artifact_path_for_id(_artifact_id_from_ref(ref), output_dir=OUTPUT_DIR)
     if not path.exists():
         raise ValueError("IP-Adapter embeds artifact was not found.")
     try:

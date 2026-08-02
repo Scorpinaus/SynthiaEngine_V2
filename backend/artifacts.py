@@ -3,18 +3,40 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 import uuid
 
 from PIL import Image
 
 
 VIDEO_ARTIFACT_EXTENSIONS = frozenset({".mp4", ".webm", ".mov", ".gif"})
+_ARTIFACT_ID_RE = re.compile(r"^[apev][0-9a-f]{32}$")
+
+
+def validate_artifact_id(value: str) -> str:
+    artifact_id = value.strip()
+    if not _ARTIFACT_ID_RE.match(artifact_id):
+        raise ValueError("Invalid artifact_id")
+    return artifact_id
 
 
 def artifact_directory(output_dir: Path) -> Path:
     artifacts = output_dir / "artifacts"
     artifacts.mkdir(parents=True, exist_ok=True)
     return artifacts
+
+
+def artifact_path_for_id(artifact_id: str, *, output_dir: Path) -> Path:
+    safe_id = validate_artifact_id(artifact_id)
+    artifacts = artifact_directory(output_dir)
+    if safe_id.startswith("e"):
+        return (artifacts / f"{safe_id}.pt").resolve()
+    if safe_id.startswith("v"):
+        for path in artifacts.glob(f"{safe_id}.*"):
+            if path.suffix.lower() in VIDEO_ARTIFACT_EXTENSIONS:
+                return path.resolve()
+        return (artifacts / f"{safe_id}.mp4").resolve()
+    return (artifacts / f"{safe_id}.png").resolve()
 
 
 def save_artifact_png(

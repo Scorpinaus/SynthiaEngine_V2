@@ -96,16 +96,31 @@ def test_release_pipeline_logs_and_continues_when_hook_cleanup_fails(monkeypatch
 
 
 def test_sd15_pipeline_generation_paths_use_shared_pipeline_release():
-    source = _read_repo_file("backend/sd15/pipeline.py")
+    source = "\n".join(
+        _read_repo_file(path)
+        for path in (
+            "backend/sd15/text2img.py",
+            "backend/sd15/img2img.py",
+            "backend/sd15/inpaint.py",
+            "backend/sd15/hires_fix.py",
+        )
+    )
 
     assert "release_pipeline" in source
-    assert source.count("release_pipeline(pipe, logger=logger)") >= 6
+    assert source.count("release_pipeline(pipe, logger=logger)") >= 7
 
 
 def test_sdxl_pipeline_generation_paths_use_shared_pipeline_release():
-    source = _read_repo_file("backend/sdxl/pipeline.py")
+    source = "\n".join(
+        _read_repo_file(path)
+        for path in (
+            "backend/sdxl/controlnet.py",
+            "backend/sdxl/text2img.py",
+            "backend/sdxl/img2img.py",
+            "backend/sdxl/inpaint.py",
+        )
+    )
 
-    assert "from backend.utilities.pipeline import" in source
     assert "release_pipeline" in source
     assert "def _release_pipeline" not in source
     assert source.count("release_pipeline(pipe, logger=logger)") >= 6

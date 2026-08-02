@@ -233,16 +233,16 @@ errors plus temporary-artifact cleanup.
 **Outcome:** Complex model-family behavior stays explicit but no single file
 owns loading, adapters, prompt preparation, every operation, saving, and cleanup.
 
-- [ ] Inventory the stable public generation entrypoints and characterize their
+- [x] Inventory the stable public generation entrypoints and characterize their
       pipeline-call arguments before moving code.
-- [ ] Split loaders/factories, prompt preparation, adapter policy, ControlNet
+- [x] Split loaders/factories, prompt preparation, adapter policy, ControlNet
       preparation, operation-specific generation, and result saving into named
       modules with a thin compatibility facade.
-- [ ] Split the oversized SD1.5/SDXL workflow adapters by operation or coherent
+- [x] Split the oversized SD1.5/SDXL workflow adapters by operation or coherent
       feature group while keeping public task identifiers unchanged.
-- [ ] Reuse existing scheduler, seed/output, LoRA, IP-Adapter, and pipeline
+- [x] Reuse existing scheduler, seed/output, LoRA, IP-Adapter, and pipeline
       release helpers; remove local copies only when semantics match.
-- [ ] Verify all adapter unloading, hook release, cache invalidation, and memory
+- [x] Verify all adapter unloading, hook release, cache invalidation, and memory
       cleanup in `finally` paths.
 
 **Done when:** Text2img, img2img, inpaint, ControlNet, IP-Adapter, Hi-Res Fix,

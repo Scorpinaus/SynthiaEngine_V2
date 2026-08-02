@@ -5,8 +5,8 @@ and cleaned up in SynthaEngine.
 
 It is intended for maintainers who edit runtime generation code in:
 
-- `backend/sd15/pipeline.py`
-- `backend/sdxl/pipeline.py`
+- `backend/sd15/` runtime modules (with `pipeline.py` as the compatibility facade)
+- `backend/sdxl/` runtime modules (with `pipeline.py` as the compatibility facade)
 - `backend/flux/pipeline.py`
 - `backend/qwen_image/pipeline.py`
 - `backend/z_image/pipeline.py`
@@ -158,10 +158,11 @@ Use `try`/`finally` around pipeline usage. Avoid cleanup only on the success pat
 
 ## Current Family Status
 
-- SD1.5: subprocess-backed for image renders. The child process still runs
-  task-scoped cleanup, and process exit provides the final memory boundary.
-- SDXL: subprocess-backed for image renders. The child process still runs
-  task-scoped cleanup, and process exit provides the final memory boundary.
+- SD1.5: subprocess-backed for image renders. Operation modules enter a
+  release-guarded `try/finally` immediately after a successful pipeline load;
+  process exit provides the final memory boundary.
+- SDXL: subprocess-backed for image renders. Operation modules own task-scoped
+  cleanup in `finally`, and process exit provides the final memory boundary.
 - Flux: subprocess-backed for text2img, img2img, and inpaint. The child process
   still runs task-scoped pipeline release, runs final memory cleanup in the
   subprocess runner, and then exits.

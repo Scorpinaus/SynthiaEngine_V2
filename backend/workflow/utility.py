@@ -8,8 +8,10 @@ from PIL import Image
 
 from backend.artifacts import (
     VIDEO_ARTIFACT_EXTENSIONS,
+    artifact_path_for_id as shared_artifact_path_for_id,
     save_artifact_file as persist_artifact_file,
     save_artifact_png as persist_artifact_png,
+    validate_artifact_id as shared_validate_artifact_id,
 )
 from backend.config import OUTPUT_DIR
 from backend.workflow.schema_input import _DEFAULT_SD15_CONTROLNET_MODEL
@@ -21,17 +23,13 @@ def _artifact_dir() -> Path:
     return artifacts
 
 
-_ARTIFACT_ID_RE = re.compile(r"^[apev][0-9a-f]{32}$")
 _IMAGE_ARTIFACT_ID_RE = re.compile(r"^[ap][0-9a-f]{32}$")
 _VIDEO_ARTIFACT_ID_RE = re.compile(r"^v[0-9a-f]{32}$")
 _VIDEO_ARTIFACT_EXTENSIONS = VIDEO_ARTIFACT_EXTENSIONS
 
 
 def _validate_artifact_id(value: str) -> str:
-    artifact_id = value.strip()
-    if not _ARTIFACT_ID_RE.match(artifact_id):
-        raise ValueError("Invalid artifact_id")
-    return artifact_id
+    return shared_validate_artifact_id(value)
 
 
 def _validate_image_artifact_id(value: str) -> str:
@@ -49,15 +47,7 @@ def _validate_video_artifact_id(value: str) -> str:
 
 
 def _artifact_path_for_id(artifact_id: str) -> Path:
-    safe_id = _validate_artifact_id(artifact_id)
-    if safe_id.startswith("e"):
-        return (_artifact_dir() / f"{safe_id}.pt").resolve()
-    if safe_id.startswith("v"):
-        for path in _artifact_dir().glob(f"{safe_id}.*"):
-            if path.suffix.lower() in _VIDEO_ARTIFACT_EXTENSIONS:
-                return path.resolve()
-        return (_artifact_dir() / f"{safe_id}.mp4").resolve()
-    return (_artifact_dir() / f"{safe_id}.png").resolve()
+    return shared_artifact_path_for_id(artifact_id, output_dir=OUTPUT_DIR)
 
 
 def collect_artifact_ids(value: Any) -> set[str]:
