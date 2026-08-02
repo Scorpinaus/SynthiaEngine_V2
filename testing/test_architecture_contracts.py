@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+from types import ModuleType
 
 from fastapi.routing import APIRoute
 
+import backend.workflow as workflow_package
 from backend.main import app
 from backend.workflow import (
     TASK_DEFINITIONS,
@@ -157,6 +159,59 @@ def test_workflow_task_and_schema_surface_is_stable_and_registry_derived():
         )
         assert task_contract["ui_hints"]["task_type"] == task_type
         assert set(task_contract["input_defaults"]) <= set(definition.input_model.model_fields)
+
+
+def test_workflow_package_has_explicit_compatibility_exports():
+    package_source = (BACKEND_ROOT / "workflow" / "__init__.py").read_text(encoding="utf-8")
+
+    assert isinstance(workflow_package, ModuleType)
+    assert "__getattr__" not in vars(workflow_package)
+    assert "_WorkflowModule" not in package_source
+    assert "sys.modules" not in package_source
+    assert "_sd15_text2img" not in vars(workflow_package)
+    assert workflow_package.execute_workflow.__module__ == "backend.workflow.engine"
+
+
+def test_workflow_engine_is_orchestration_only():
+    engine_path = BACKEND_ROOT / "workflow" / "engine.py"
+    tree = ast.parse(engine_path.read_text(encoding="utf-8"), filename=str(engine_path))
+    functions = {
+        node.name
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    backend_imports = {
+        import_name
+        for _, import_name in _backend_imports(engine_path)
+        if import_name.startswith("backend.")
+    }
+
+    assert functions == {"_execution_order", "execute_workflow"}
+    assert backend_imports == {
+        "backend.workflow.assembly",
+        "backend.workflow.types",
+        "backend.workflow.utility",
+    }
+
+
+def test_workflow_assembly_has_no_central_handler_map():
+    assembly_source = (BACKEND_ROOT / "workflow" / "assembly.py").read_text(encoding="utf-8")
+
+    assert "_TASK_HANDLERS" not in assembly_source
+    assert "merge_task_definitions(" in assembly_source
+
+
+def test_backend_workflow_callers_import_owning_modules():
+    package_imports: list[str] = []
+    for path in sorted(BACKEND_ROOT.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        if any(
+            isinstance(node, ast.ImportFrom) and node.module == "backend.workflow"
+            for node in ast.walk(tree)
+        ):
+            package_imports.append(path.relative_to(ROOT).as_posix())
+
+    assert package_imports == []
 
 
 def test_backend_static_imports_follow_layer_boundaries():

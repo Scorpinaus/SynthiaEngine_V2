@@ -17,7 +17,7 @@ from backend.adapters.controlnet_preprocessors import (
 )
 from backend.adapters.controlnet_preprocessor_registry import CONTROLNET_PREPROCESSOR_REGISTRY
 from backend.api.controlnet import list_controlnet_preprocessors, run_controlnet_preprocessor
-from backend.workflow import _controlnet_preprocess
+from backend.workflow.assembly import _controlnet_preprocess
 
 
 def _png_upload(name: str = "input.png") -> UploadFile:
@@ -206,9 +206,9 @@ class ControlNetPreprocessWorkflowTaskTests(unittest.TestCase):
             def process(self, image, params):
                 return image
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (4, 4))):
-            with patch("backend.workflow.get_preprocessor", return_value=_FakePreprocessor()):
-                with patch("backend.workflow.save_artifact_png", return_value={"artifact_id": "p0" * 16}):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (4, 4))):
+            with patch("backend.workflow.assembly.get_preprocessor", return_value=_FakePreprocessor()):
+                with patch("backend.workflow.assembly.save_artifact_png", return_value={"artifact_id": "p0" * 16}):
                     with self.assertRaisesRegex(ValueError, "params must be an object"):
                         _controlnet_preprocess(
                             {

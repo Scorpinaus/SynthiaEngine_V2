@@ -8,6 +8,8 @@ from backend.workflow import (
     FluxImg2ImgInputs,
     FluxInpaintInputs,
     FluxText2ImgInputs,
+)
+from backend.workflow.assembly import (
     _flux_img2img,
     _flux_inpaint,
     _flux_text2img,
@@ -61,7 +63,7 @@ class FluxWorkflowTests(unittest.TestCase):
         fake_module = SimpleNamespace(generate_img2img=_fake_generate_img2img)
         with (
             patch.dict("sys.modules", {"backend.flux.pipeline": fake_module}),
-            patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))),
+            patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))),
         ):
             result = _flux_img2img(
                 {
@@ -98,7 +100,7 @@ class FluxWorkflowTests(unittest.TestCase):
         with (
             patch.dict("sys.modules", {"backend.flux.pipeline": fake_module}),
             patch(
-                "backend.workflow._open_image_ref",
+                "backend.workflow.assembly._open_image_ref",
                 side_effect=[Image.new("RGB", (64, 64)), Image.new("L", (64, 64))],
             ),
         ):

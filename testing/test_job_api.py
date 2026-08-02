@@ -3,10 +3,11 @@ from types import SimpleNamespace
 
 import pytest
 
-import backend.workflow as workflow
 from backend.api.jobs import serialize_job
 from backend.jobs import queue as job_queue
 from backend.utilities import resource_logging
+from backend.workflow import engine as workflow_engine
+from backend.workflow import utility as workflow_utility
 
 
 def test_serialize_job_timestamps_include_timezone_for_sqlite_naive_datetimes():
@@ -43,8 +44,12 @@ def test_execute_workflow_job_attaches_summary_profile(monkeypatch):
         lambda SessionLocal, job_id, patch: partial_updates.append((job_id, patch)),
     )
     monkeypatch.setattr(job_queue, "is_cancel_requested", lambda SessionLocal, job_id: False)
-    monkeypatch.setattr(workflow, "collect_artifact_ids", lambda payload: set())
-    monkeypatch.setattr(workflow, "cleanup_artifacts", lambda artifact_ids: cleanup_calls.append(set(artifact_ids)))
+    monkeypatch.setattr(workflow_utility, "collect_artifact_ids", lambda payload: set())
+    monkeypatch.setattr(
+        workflow_utility,
+        "cleanup_artifacts",
+        lambda artifact_ids: cleanup_calls.append(set(artifact_ids)),
+    )
 
     class FakeSummaryProfiler:
         def __init__(self, *, on_update=None):
@@ -99,7 +104,7 @@ def test_execute_workflow_job_attaches_summary_profile(monkeypatch):
             "created_artifacts": ["a123"],
         }
 
-    monkeypatch.setattr(workflow, "execute_workflow", fake_execute_workflow)
+    monkeypatch.setattr(workflow_engine, "execute_workflow", fake_execute_workflow)
 
     result = job_queue.execute_job(
         job_id="job-1",
@@ -157,9 +162,17 @@ def test_execute_workflow_job_cleans_input_and_created_artifacts_after_failure(m
         raise error
 
     monkeypatch.setattr(resource_logging, "SummaryProfiler", FakeSummaryProfiler)
-    monkeypatch.setattr(workflow, "collect_artifact_ids", lambda _payload: {"input-artifact"})
-    monkeypatch.setattr(workflow, "cleanup_artifacts", lambda ids: cleanup_calls.append(set(ids)))
-    monkeypatch.setattr(workflow, "execute_workflow", fail_workflow)
+    monkeypatch.setattr(
+        workflow_utility,
+        "collect_artifact_ids",
+        lambda _payload: {"input-artifact"},
+    )
+    monkeypatch.setattr(
+        workflow_utility,
+        "cleanup_artifacts",
+        lambda ids: cleanup_calls.append(set(ids)),
+    )
+    monkeypatch.setattr(workflow_engine, "execute_workflow", fail_workflow)
 
     with pytest.raises(RuntimeError, match="synthetic generation failure"):
         job_queue.execute_job(

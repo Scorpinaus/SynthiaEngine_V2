@@ -9,9 +9,9 @@ from pydantic import ValidationError
 
 from backend.workflow import (
     Sd15AnimateDiffText2VideoInputs,
-    _sd15_animatediff_text2video,
     build_workflow_catalog,
 )
+from backend.workflow.assembly import _sd15_animatediff_text2video
 from backend.sd15.animatediff_pipeline import _make_animatediff_generator
 from backend.sd15.animatediff_pipeline import _validate_animatediff_frame_settings
 from backend.sd15.animatediff_pipeline import _validate_free_init_settings
@@ -75,9 +75,9 @@ class Sd15AnimateDiffText2VideoWorkflowTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.mp4"]
 
-        with patch("backend.workflow.make_batch_id", return_value="batch123"):
+        with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
             with patch(
-                "backend.workflow.generate_videos_text2video",
+                "backend.workflow.assembly.generate_videos_text2video",
                 side_effect=_fake_generate_videos,
             ):
                 result = _sd15_animatediff_text2video(
@@ -152,9 +152,9 @@ class Sd15AnimateDiffText2VideoWorkflowTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.mp4"]
 
-        with patch("backend.workflow.make_batch_id", return_value="batch123"):
+        with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
             with patch(
-                "backend.workflow.generate_videos_text2video",
+                "backend.workflow.assembly.generate_videos_text2video",
                 side_effect=_fake_generate_videos,
             ):
                 _sd15_animatediff_text2video(

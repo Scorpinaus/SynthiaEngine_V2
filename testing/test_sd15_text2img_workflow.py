@@ -4,7 +4,8 @@ from unittest.mock import patch
 from PIL import Image
 from pydantic import ValidationError
 
-from backend.workflow import Sd15Text2ImgInputs, _sd15_ip_adapter_encode, _sd15_text2img
+from backend.workflow import Sd15Text2ImgInputs
+from backend.workflow.assembly import _sd15_ip_adapter_encode, _sd15_text2img
 
 
 class Sd15Text2ImgInputValidationTests(unittest.TestCase):
@@ -29,7 +30,7 @@ class Sd15Text2ImgWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return {"image_embeds": {"artifact_id": "e123", "path": "artifacts/e123.pt", "url": "/outputs/artifacts/e123.pt"}}
 
-        with patch("backend.workflow._open_image_ref", return_value=reference_image):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=reference_image):
             with patch(
                 "backend.sd15.ip_adapter_pipeline.generate_ip_adapter_image_embeds",
                 side_effect=_fake_generate_ip_adapter_image_embeds,
@@ -60,8 +61,8 @@ class Sd15Text2ImgWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow.make_batch_id", return_value="batch123"):
-            with patch("backend.workflow.generate_images", side_effect=_fake_generate_images):
+        with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
+            with patch("backend.workflow.assembly.generate_images", side_effect=_fake_generate_images):
                 result = _sd15_text2img(
                     {
                         "prompt": "test prompt",
@@ -112,8 +113,8 @@ class Sd15Text2ImgWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow.make_batch_id", return_value="batch123"):
-            with patch("backend.workflow.generate_images", side_effect=_fake_generate_images):
+        with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
+            with patch("backend.workflow.assembly.generate_images", side_effect=_fake_generate_images):
                 result = _sd15_text2img(
                     {
                         "prompt": "test prompt",
@@ -141,8 +142,8 @@ class Sd15Text2ImgWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow.make_batch_id", return_value="batch123"):
-            with patch("backend.workflow.generate_images", side_effect=_fake_generate_images):
+        with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
+            with patch("backend.workflow.assembly.generate_images", side_effect=_fake_generate_images):
                 _sd15_text2img(
                     {
                         "prompt": "test prompt",
@@ -163,8 +164,8 @@ class Sd15Text2ImgWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow.make_batch_id", return_value="batch123"):
-            with patch("backend.workflow.generate_images", side_effect=_fake_generate_images):
+        with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
+            with patch("backend.workflow.assembly.generate_images", side_effect=_fake_generate_images):
                 _sd15_text2img(
                     {
                         "prompt": "test prompt",
@@ -187,8 +188,8 @@ class Sd15Text2ImgWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow.make_batch_id", return_value="batch123"):
-            with patch("backend.workflow.generate_images", side_effect=_fake_generate_images):
+        with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
+            with patch("backend.workflow.assembly.generate_images", side_effect=_fake_generate_images):
                 _sd15_text2img(
                     {
                         "prompt": "test prompt",
@@ -211,8 +212,8 @@ class Sd15Text2ImgWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow.make_batch_id", return_value="batch123"):
-            with patch("backend.workflow.generate_images", side_effect=_fake_generate_images):
+        with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
+            with patch("backend.workflow.assembly.generate_images", side_effect=_fake_generate_images):
                 _sd15_text2img(
                     {
                         "prompt": "test prompt",
@@ -237,9 +238,9 @@ class Sd15Text2ImgWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow._open_image_ref", return_value=reference_image):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
-                with patch("backend.workflow.generate_images", side_effect=_fake_generate_images):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=reference_image):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
+                with patch("backend.workflow.assembly.generate_images", side_effect=_fake_generate_images):
                     result = _sd15_text2img(
                         {
                             "prompt": "test prompt",
@@ -275,11 +276,11 @@ class Sd15Text2ImgWorkflowPlumbingTests(unittest.TestCase):
             return ["batch/out.png"]
 
         with patch(
-            "backend.workflow._open_image_ref",
+            "backend.workflow.assembly._open_image_ref",
             side_effect=[reference_image, mask_image],
         ):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
-                with patch("backend.workflow.generate_images", side_effect=_fake_generate_images):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
+                with patch("backend.workflow.assembly.generate_images", side_effect=_fake_generate_images):
                     _sd15_text2img(
                         {
                             "prompt": "test prompt",
@@ -307,8 +308,8 @@ class Sd15Text2ImgWorkflowPlumbingTests(unittest.TestCase):
             return ["batch/out.png"]
 
         embeds_ref = {"artifact_id": "e0123456789abcdef0123456789abcdef"}
-        with patch("backend.workflow.make_batch_id", return_value="batch123"):
-            with patch("backend.workflow.generate_images", side_effect=_fake_generate_images):
+        with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
+            with patch("backend.workflow.assembly.generate_images", side_effect=_fake_generate_images):
                 _sd15_text2img(
                     {
                         "prompt": "test prompt",

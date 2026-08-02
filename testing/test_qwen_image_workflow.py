@@ -8,6 +8,8 @@ from backend.workflow import (
     QwenImageInpaintInputs,
     QwenImageImg2ImgInputs,
     QwenImageText2ImgInputs,
+)
+from backend.workflow.assembly import (
     _qwen_image_inpaint,
     _qwen_image_img2img,
     _qwen_image_text2img,
@@ -100,7 +102,7 @@ class QwenImageWorkflowTests(unittest.TestCase):
 
         fake_module = SimpleNamespace(generate_img2img=_fake_generate_img2img)
         with patch.dict("sys.modules", {"backend.qwen_image.pipeline": fake_module}):
-            with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
                 result = _qwen_image_img2img(
                     {
                         "initial_image": "@artifact:abc123",
@@ -132,7 +134,7 @@ class QwenImageWorkflowTests(unittest.TestCase):
 
         fake_module = SimpleNamespace(generate_inpaint=_fake_generate_inpaint)
         with patch.dict("sys.modules", {"backend.qwen_image.pipeline": fake_module}):
-            with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
                 result = _qwen_image_inpaint(
                     {
                         "initial_image": "@artifact:abc123",

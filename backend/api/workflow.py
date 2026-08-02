@@ -5,12 +5,11 @@ from typing import Any
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from backend.workflow import (
+from backend.workflow.assembly import (
     TASK_REGISTRY,
-    WorkflowRequest,
-    WorkflowTask,
     build_workflow_catalog,
 )
+from backend.workflow.types import WorkflowRequest, WorkflowTask
 
 router = APIRouter(prefix="/api/workflow", tags=["workflow"])
 

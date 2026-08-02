@@ -1,7 +1,8 @@
 from pydantic import BaseModel
 import pytest
 
-from backend.workflow.engine import TASK_DEFINITIONS, TaskDefinition, execute_workflow
+from backend.workflow.engine import TASK_DEFINITIONS, execute_workflow
+from backend.workflow.registry import TaskDefinition
 from backend.workflow.utility import _resolve_refs
 
 

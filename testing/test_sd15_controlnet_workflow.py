@@ -4,7 +4,8 @@ from unittest.mock import patch
 from PIL import Image
 from pydantic import ValidationError
 
-from backend.workflow import Sd15ControlNetText2ImgInputs, _sd15_controlnet_text2img
+from backend.workflow import Sd15ControlNetText2ImgInputs
+from backend.workflow.assembly import _sd15_controlnet_text2img
 
 
 class Sd15ControlNetInputValidationTests(unittest.TestCase):
@@ -40,10 +41,10 @@ class Sd15ControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
                 with patch(
-                    "backend.workflow.generate_images_controlnet",
+                    "backend.workflow.assembly.generate_images_controlnet",
                     side_effect=_fake_generate_images_controlnet,
                 ):
                     result = _sd15_controlnet_text2img(
@@ -86,10 +87,10 @@ class Sd15ControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
                 with patch(
-                    "backend.workflow.generate_images_controlnet",
+                    "backend.workflow.assembly.generate_images_controlnet",
                     side_effect=_fake_generate_images_controlnet,
                 ):
                     _sd15_controlnet_text2img(
@@ -115,10 +116,10 @@ class Sd15ControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
                 with patch(
-                    "backend.workflow.generate_images_controlnet",
+                    "backend.workflow.assembly.generate_images_controlnet",
                     side_effect=_fake_generate_images_controlnet,
                 ):
                     _sd15_controlnet_text2img(
@@ -138,7 +139,7 @@ class Sd15ControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertEqual(captured["lora_adapters"], [])
 
     def test_controlnet_task_rejects_top_level_lora_adapters(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
                 ValueError, "Top-level SD1.5 `lora_adapters` is no longer supported"
             ):
@@ -154,7 +155,7 @@ class Sd15ControlNetWorkflowPlumbingTests(unittest.TestCase):
                 )
 
     def test_controlnet_task_rejects_legacy_lora_wrapper(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
                 ValueError, "Legacy SD1.5 LoRA field `Lora` is no longer supported"
             ):
@@ -173,7 +174,7 @@ class Sd15ControlNetWorkflowPlumbingTests(unittest.TestCase):
                 )
 
     def test_control_guidance_start_must_be_lte_end(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
                 ValueError, "control_guidance_start must be <= control_guidance_end"
             ):
@@ -190,10 +191,10 @@ class Sd15ControlNetWorkflowPlumbingTests(unittest.TestCase):
                 )
 
     def test_warn_mode_returns_warning_on_mismatch(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
                 with patch(
-                    "backend.workflow.generate_images_controlnet",
+                    "backend.workflow.assembly.generate_images_controlnet",
                     return_value=["batch/out.png"],
                 ):
                     result = _sd15_controlnet_text2img(
@@ -212,7 +213,7 @@ class Sd15ControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertGreaterEqual(len(result["warnings"]), 1)
 
     def test_error_mode_rejects_mismatch(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
                 ValueError, "ControlNet model/preprocessor pairing mismatch"
             ):
@@ -236,10 +237,10 @@ class Sd15ControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
                 with patch(
-                    "backend.workflow.generate_images_controlnet",
+                    "backend.workflow.assembly.generate_images_controlnet",
                     side_effect=_fake_generate_images_controlnet,
                 ):
                     result = _sd15_controlnet_text2img(
@@ -265,10 +266,10 @@ class Sd15ControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
                 with patch(
-                    "backend.workflow.generate_images_controlnet",
+                    "backend.workflow.assembly.generate_images_controlnet",
                     side_effect=_fake_generate_images_controlnet,
                 ):
                     result = _sd15_controlnet_text2img(
@@ -302,10 +303,10 @@ class Sd15ControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
                 with patch(
-                    "backend.workflow.generate_images_controlnet",
+                    "backend.workflow.assembly.generate_images_controlnet",
                     side_effect=_fake_generate_images_controlnet,
                 ):
                     _sd15_controlnet_text2img(
@@ -328,7 +329,7 @@ class Sd15ControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertEqual(captured["control_guidance_end"], [0.6, 1.0])
 
     def test_multi_controlnet_scale_list_must_align(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
                 ValueError, "controlnet_conditioning_scales length must match"
             ):
@@ -348,7 +349,7 @@ class Sd15ControlNetWorkflowPlumbingTests(unittest.TestCase):
                 )
 
     def test_multi_controlnet_model_count_guardrail(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
                 ValueError, "At most 2 ControlNet models are supported"
             ):
@@ -368,7 +369,7 @@ class Sd15ControlNetWorkflowPlumbingTests(unittest.TestCase):
                 )
 
     def test_multi_controlnet_scale_range_validation(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
                 ValueError, "controlnet conditioning scales must be within \\[0, 2\\]"
             ):
@@ -388,7 +389,7 @@ class Sd15ControlNetWorkflowPlumbingTests(unittest.TestCase):
                 )
 
     def test_multi_controlnet_guidance_start_list_must_align(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
                 ValueError, "control_guidance_starts length must match"
             ):
@@ -408,7 +409,7 @@ class Sd15ControlNetWorkflowPlumbingTests(unittest.TestCase):
                 )
 
     def test_multi_controlnet_guidance_range_validation_is_indexed(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
                 ValueError, "control_guidance_ends\\[1\\] must be within \\[0, 1\\]"
             ):
@@ -428,7 +429,7 @@ class Sd15ControlNetWorkflowPlumbingTests(unittest.TestCase):
                 )
 
     def test_multi_controlnet_guidance_start_must_be_lte_end_by_index(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
                 ValueError,
                 "control_guidance_starts\\[1\\] must be <= control_guidance_ends\\[1\\]",
@@ -456,10 +457,10 @@ class Sd15ControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
                 with patch(
-                    "backend.workflow.generate_images_controlnet",
+                    "backend.workflow.assembly.generate_images_controlnet",
                     side_effect=_fake_generate_images_controlnet,
                 ):
                     result = _sd15_controlnet_text2img(

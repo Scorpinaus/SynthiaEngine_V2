@@ -4,7 +4,8 @@ from unittest.mock import patch
 from PIL import Image
 from pydantic import ValidationError
 
-from backend.workflow import Sd15Img2ImgInputs, _sd15_img2img
+from backend.workflow import Sd15Img2ImgInputs
+from backend.workflow.assembly import _sd15_img2img
 
 
 class Sd15Img2ImgControlNetInputValidationTests(unittest.TestCase):
@@ -48,10 +49,10 @@ class Sd15Img2ImgControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
                 with patch(
-                    "backend.workflow.generate_images_img2img",
+                    "backend.workflow.assembly.generate_images_img2img",
                     side_effect=_fake_generate_images_img2img,
                 ):
                     result = _sd15_img2img(
@@ -91,10 +92,10 @@ class Sd15Img2ImgControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
                 with patch(
-                    "backend.workflow.generate_images_img2img",
+                    "backend.workflow.assembly.generate_images_img2img",
                     side_effect=_fake_generate_images_img2img,
                 ):
                     _sd15_img2img(
@@ -120,10 +121,10 @@ class Sd15Img2ImgControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
                 with patch(
-                    "backend.workflow.generate_images_img2img",
+                    "backend.workflow.assembly.generate_images_img2img",
                     side_effect=_fake_generate_images_img2img,
                 ):
                     _sd15_img2img(
@@ -149,10 +150,10 @@ class Sd15Img2ImgControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
                 with patch(
-                    "backend.workflow.generate_images_img2img",
+                    "backend.workflow.assembly.generate_images_img2img",
                     side_effect=_fake_generate_images_img2img,
                 ):
                     _sd15_img2img(
@@ -179,10 +180,10 @@ class Sd15Img2ImgControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
                 with patch(
-                    "backend.workflow.generate_images_img2img",
+                    "backend.workflow.assembly.generate_images_img2img",
                     side_effect=_fake_generate_images_img2img,
                 ):
                     _sd15_img2img(
@@ -210,10 +211,10 @@ class Sd15Img2ImgControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
                 with patch(
-                    "backend.workflow.generate_images_img2img",
+                    "backend.workflow.assembly.generate_images_img2img",
                     side_effect=_fake_generate_images_img2img,
                 ):
                     _sd15_img2img(
@@ -243,10 +244,10 @@ class Sd15Img2ImgControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow._open_image_ref", return_value=reference_image):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=reference_image):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
                 with patch(
-                    "backend.workflow.generate_images_img2img",
+                    "backend.workflow.assembly.generate_images_img2img",
                     side_effect=_fake_generate_images_img2img,
                 ):
                     result = _sd15_img2img(
@@ -288,12 +289,12 @@ class Sd15Img2ImgControlNetWorkflowPlumbingTests(unittest.TestCase):
             return ["batch/out.png"]
 
         with patch(
-            "backend.workflow._open_image_ref",
+            "backend.workflow.assembly._open_image_ref",
             side_effect=[initial_image, reference_image, mask_image],
         ):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
                 with patch(
-                    "backend.workflow.generate_images_img2img",
+                    "backend.workflow.assembly.generate_images_img2img",
                     side_effect=_fake_generate_images_img2img,
                 ):
                     _sd15_img2img(
@@ -327,10 +328,10 @@ class Sd15Img2ImgControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow._open_image_ref", return_value=initial_image):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=initial_image):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
                 with patch(
-                    "backend.workflow.generate_images_img2img",
+                    "backend.workflow.assembly.generate_images_img2img",
                     side_effect=_fake_generate_images_img2img,
                 ):
                     _sd15_img2img(
@@ -351,7 +352,7 @@ class Sd15Img2ImgControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertNotIn("ip_adapter_image", captured)
 
     def test_non_controlnet_path_requires_ip_adapter_image_when_enabled(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
                 ValueError, "ip_adapter.image or ip_adapter.image_embeds is required"
             ):
@@ -367,7 +368,7 @@ class Sd15Img2ImgControlNetWorkflowPlumbingTests(unittest.TestCase):
                 )
 
     def test_ip_adapter_rejects_lcm_combination(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
                 ValueError, "sd15.img2img IP-Adapter cannot be combined with LCM mode"
             ):
@@ -389,7 +390,7 @@ class Sd15Img2ImgControlNetWorkflowPlumbingTests(unittest.TestCase):
                 )
 
     def test_ip_adapter_rejects_controlnet_combination(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
                 ValueError, "sd15.img2img IP-Adapter cannot be combined with ControlNet"
             ):
@@ -413,7 +414,7 @@ class Sd15Img2ImgControlNetWorkflowPlumbingTests(unittest.TestCase):
                 )
 
     def test_non_controlnet_lcm_mode_validates_steps_and_cfg(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(ValueError, r"steps within \[1, 8\]"):
                 _sd15_img2img(
                     {
@@ -441,7 +442,7 @@ class Sd15Img2ImgControlNetWorkflowPlumbingTests(unittest.TestCase):
                 )
 
     def test_lcm_mode_rejects_controlnet_combination(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
                 ValueError, "sd15.img2img LCM mode cannot be combined with ControlNet"
             ):
@@ -460,7 +461,7 @@ class Sd15Img2ImgControlNetWorkflowPlumbingTests(unittest.TestCase):
                 )
 
     def test_non_controlnet_path_rejects_top_level_lora_adapters(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
                 ValueError, "Top-level SD1.5 `lora_adapters` is no longer supported"
             ):
@@ -476,7 +477,7 @@ class Sd15Img2ImgControlNetWorkflowPlumbingTests(unittest.TestCase):
                 )
 
     def test_non_controlnet_path_rejects_legacy_lora_wrapper(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
                 ValueError, "Legacy SD1.5 LoRA field `Lora` is no longer supported"
             ):
@@ -501,10 +502,10 @@ class Sd15Img2ImgControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
                 with patch(
-                    "backend.workflow.generate_images_img2img_controlnet",
+                    "backend.workflow.assembly.generate_images_img2img_controlnet",
                     side_effect=_fake_generate_images_img2img_controlnet,
                 ):
                     result = _sd15_img2img(
@@ -552,10 +553,10 @@ class Sd15Img2ImgControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
                 with patch(
-                    "backend.workflow.generate_images_img2img_controlnet",
+                    "backend.workflow.assembly.generate_images_img2img_controlnet",
                     side_effect=_fake_generate_images_img2img_controlnet,
                 ):
                     result = _sd15_img2img(
@@ -582,7 +583,7 @@ class Sd15Img2ImgControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertEqual(captured["lora_adapters"], lora_adapters)
 
     def test_controlnet_missing_control_image_rejected(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
                 ValueError, "control_image is required when using ControlNet in sd15.img2img"
             ):
@@ -598,10 +599,10 @@ class Sd15Img2ImgControlNetWorkflowPlumbingTests(unittest.TestCase):
                 )
 
     def test_warn_mode_returns_warning_on_mismatch(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
                 with patch(
-                    "backend.workflow.generate_images_img2img_controlnet",
+                    "backend.workflow.assembly.generate_images_img2img_controlnet",
                     return_value=["batch/out.png"],
                 ):
                     result = _sd15_img2img(

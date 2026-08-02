@@ -4,7 +4,8 @@ from unittest.mock import patch
 from PIL import Image
 from pydantic import ValidationError
 
-from backend.workflow import Sd15InpaintInputs, _sd15_inpaint
+from backend.workflow import Sd15InpaintInputs
+from backend.workflow.assembly import _sd15_inpaint
 
 
 class Sd15InpaintControlNetInputValidationTests(unittest.TestCase):
@@ -51,10 +52,10 @@ class Sd15InpaintControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
                 with patch(
-                    "backend.workflow.generate_images_inpaint",
+                    "backend.workflow.assembly.generate_images_inpaint",
                     side_effect=_fake_generate_images_inpaint,
                 ):
                     result = _sd15_inpaint(
@@ -88,10 +89,10 @@ class Sd15InpaintControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow._open_image_ref", return_value=reference_image):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=reference_image):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
                 with patch(
-                    "backend.workflow.generate_images_inpaint",
+                    "backend.workflow.assembly.generate_images_inpaint",
                     side_effect=_fake_generate_images_inpaint,
                 ):
                     result = _sd15_inpaint(
@@ -137,7 +138,7 @@ class Sd15InpaintControlNetWorkflowPlumbingTests(unittest.TestCase):
             return ["batch/out.png"]
 
         with patch(
-            "backend.workflow._open_image_ref",
+            "backend.workflow.assembly._open_image_ref",
             side_effect=[
                 initial_image,
                 inpaint_mask_image,
@@ -145,9 +146,9 @@ class Sd15InpaintControlNetWorkflowPlumbingTests(unittest.TestCase):
                 ip_adapter_mask_image,
             ],
         ):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
                 with patch(
-                    "backend.workflow.generate_images_inpaint",
+                    "backend.workflow.assembly.generate_images_inpaint",
                     side_effect=_fake_generate_images_inpaint,
                 ):
                     _sd15_inpaint(
@@ -186,12 +187,12 @@ class Sd15InpaintControlNetWorkflowPlumbingTests(unittest.TestCase):
             return ["batch/out.png"]
 
         with patch(
-            "backend.workflow._open_image_ref",
+            "backend.workflow.assembly._open_image_ref",
             side_effect=[initial_image, inpaint_mask_image],
         ):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
                 with patch(
-                    "backend.workflow.generate_images_inpaint",
+                    "backend.workflow.assembly.generate_images_inpaint",
                     side_effect=_fake_generate_images_inpaint,
                 ):
                     _sd15_inpaint(
@@ -215,7 +216,7 @@ class Sd15InpaintControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertNotIn("ip_adapter_image", captured)
 
     def test_ip_adapter_requires_image_when_enabled(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
                 ValueError, "ip_adapter.image or ip_adapter.image_embeds is required"
             ):
@@ -234,7 +235,7 @@ class Sd15InpaintControlNetWorkflowPlumbingTests(unittest.TestCase):
                 )
 
     def test_ip_adapter_rejects_lcm_combination(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
                 ValueError, "sd15.inpaint IP-Adapter cannot be combined with LCM mode"
             ):
@@ -259,7 +260,7 @@ class Sd15InpaintControlNetWorkflowPlumbingTests(unittest.TestCase):
                 )
 
     def test_ip_adapter_rejects_controlnet_combination(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
                 ValueError, "sd15.inpaint IP-Adapter cannot be combined with ControlNet"
             ):
@@ -292,10 +293,10 @@ class Sd15InpaintControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
                 with patch(
-                    "backend.workflow.generate_images_inpaint",
+                    "backend.workflow.assembly.generate_images_inpaint",
                     side_effect=_fake_generate_images_inpaint,
                 ):
                     _sd15_inpaint(
@@ -324,10 +325,10 @@ class Sd15InpaintControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
                 with patch(
-                    "backend.workflow.generate_images_inpaint",
+                    "backend.workflow.assembly.generate_images_inpaint",
                     side_effect=_fake_generate_images_inpaint,
                 ):
                     _sd15_inpaint(
@@ -356,10 +357,10 @@ class Sd15InpaintControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
                 with patch(
-                    "backend.workflow.generate_images_inpaint",
+                    "backend.workflow.assembly.generate_images_inpaint",
                     side_effect=_fake_generate_images_inpaint,
                 ):
                     _sd15_inpaint(
@@ -389,10 +390,10 @@ class Sd15InpaintControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
                 with patch(
-                    "backend.workflow.generate_images_inpaint",
+                    "backend.workflow.assembly.generate_images_inpaint",
                     side_effect=_fake_generate_images_inpaint,
                 ):
                     _sd15_inpaint(
@@ -423,10 +424,10 @@ class Sd15InpaintControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
                 with patch(
-                    "backend.workflow.generate_images_inpaint",
+                    "backend.workflow.assembly.generate_images_inpaint",
                     side_effect=_fake_generate_images_inpaint,
                 ):
                     _sd15_inpaint(
@@ -452,7 +453,7 @@ class Sd15InpaintControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertEqual(captured["lora_adapters"], [{"lora_id": 121, "strength": 0.65}])
 
     def test_non_controlnet_lcm_mode_validates_steps_and_cfg(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(ValueError, r"steps within \[1, 8\]"):
                 _sd15_inpaint(
                     {
@@ -486,7 +487,7 @@ class Sd15InpaintControlNetWorkflowPlumbingTests(unittest.TestCase):
                 )
 
     def test_lcm_mode_rejects_controlnet_combination(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
                 ValueError, "sd15.inpaint LCM mode cannot be combined with ControlNet"
             ):
@@ -508,7 +509,7 @@ class Sd15InpaintControlNetWorkflowPlumbingTests(unittest.TestCase):
                 )
 
     def test_non_controlnet_path_rejects_top_level_lora_adapters(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
                 ValueError, "Top-level SD1.5 `lora_adapters` is no longer supported"
             ):
@@ -527,7 +528,7 @@ class Sd15InpaintControlNetWorkflowPlumbingTests(unittest.TestCase):
                 )
 
     def test_non_controlnet_path_rejects_legacy_lora_wrapper(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
                 ValueError, "Legacy SD1.5 LoRA field `Lora` is no longer supported"
             ):
@@ -555,10 +556,10 @@ class Sd15InpaintControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
                 with patch(
-                    "backend.workflow.generate_images_inpaint",
+                    "backend.workflow.assembly.generate_images_inpaint",
                     side_effect=_fake_generate_images_inpaint,
                 ):
                     _sd15_inpaint(
@@ -584,10 +585,10 @@ class Sd15InpaintControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
                 with patch(
-                    "backend.workflow.generate_images_inpaint_controlnet",
+                    "backend.workflow.assembly.generate_images_inpaint_controlnet",
                     side_effect=_fake_generate_images_inpaint_controlnet,
                 ):
                     result = _sd15_inpaint(
@@ -637,10 +638,10 @@ class Sd15InpaintControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
                 with patch(
-                    "backend.workflow.generate_images_inpaint_controlnet",
+                    "backend.workflow.assembly.generate_images_inpaint_controlnet",
                     side_effect=_fake_generate_images_inpaint_controlnet,
                 ):
                     result = _sd15_inpaint(
@@ -676,10 +677,10 @@ class Sd15InpaintControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
                 with patch(
-                    "backend.workflow.generate_images_inpaint_controlnet",
+                    "backend.workflow.assembly.generate_images_inpaint_controlnet",
                     side_effect=_fake_generate_images_inpaint_controlnet,
                 ):
                     _sd15_inpaint(
@@ -702,7 +703,7 @@ class Sd15InpaintControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertEqual(captured["padding_mask_crop"], 0)
 
     def test_controlnet_missing_control_image_rejected(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
                 ValueError, "control_image is required when using ControlNet in sd15.inpaint"
             ):
@@ -727,10 +728,10 @@ class Sd15InpaintControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
                 with patch(
-                    "backend.workflow.generate_images_inpaint_controlnet",
+                    "backend.workflow.assembly.generate_images_inpaint_controlnet",
                     side_effect=_fake_generate_images_inpaint_controlnet,
                 ):
                     result = _sd15_inpaint(
@@ -759,10 +760,10 @@ class Sd15InpaintControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.png"]
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
                 with patch(
-                    "backend.workflow.generate_images_inpaint_controlnet",
+                    "backend.workflow.assembly.generate_images_inpaint_controlnet",
                     side_effect=_fake_generate_images_inpaint_controlnet,
                 ):
                     result = _sd15_inpaint(
@@ -785,10 +786,10 @@ class Sd15InpaintControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertTrue(captured["controlnet_inpaint_condition"])
 
     def test_warn_mode_returns_warning_on_mismatch(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
-            with patch("backend.workflow.make_batch_id", return_value="batch123"):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+            with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
                 with patch(
-                    "backend.workflow.generate_images_inpaint_controlnet",
+                    "backend.workflow.assembly.generate_images_inpaint_controlnet",
                     return_value=["batch/out.png"],
                 ):
                     result = _sd15_inpaint(

@@ -166,22 +166,24 @@ Design details:
 Core modules:
 
 - `backend/workflow/__init__.py`
+- `backend/workflow/assembly.py`
 - `backend/workflow/engine.py`
+- `backend/workflow/registry.py`
 - `backend/workflow/types.py`
 - `backend/workflow/utility.py`
 - `backend/workflow/schema_input.py`
 - `backend/workflow/schema_output.py`
 - `backend/workflow/catalog.py`
 
-Responsibilities:
+Ownership:
 
-- Validate workflow payloads with Pydantic models (`WorkflowRequest`, typed task input models)
-- Preflight task references, reject unknown ids/cycles, and derive a stable topological execution order
-- Resolve runtime references (`@taskId.field`, nested/indexed paths, `@artifact:...`) using `_resolve_refs`
-- Dispatch tasks via `TASK_REGISTRY`
-- Aggregate per-task outputs into final `outputs` result
-- Track created artifact IDs and clean up ephemeral artifacts at job completion
-- Expose schema/catalog for frontend/tooling generation support
+- `schema_input.py`, `schema_output.py`, and `types.py` own the Pydantic workflow contracts.
+- Family modules such as `sd15.py`, `sdxl.py`, and `flux.py` own authoritative task definitions and family-specific input normalization.
+- `assembly.py` binds concrete runtime dependencies, merges family registrations with duplicate detection, and derives the compatibility registry/schema views.
+- `engine.py` validates workflow envelopes, preflights references and cycles, derives stable execution order, resolves references, dispatches authoritative definitions, publishes progress, and aggregates results.
+- `catalog.py` derives schema, defaults, UI hints, and capabilities from the assembled task definitions; it is not a second registry.
+- `utility.py` owns artifact/reference helpers; the job layer invokes cleanup after workflow completion.
+- `__init__.py` contains only explicit public compatibility exports. Internal callers import the module that owns each symbol.
 
 Current task families in `TASK_REGISTRY`:
 
@@ -195,9 +197,10 @@ Current task families in `TASK_REGISTRY`:
 - Anima: `anima.text2img`
 - Utility: `controlnet.preprocess`
 
-The task registry and the generated workflow catalog are the source of truth for
-the supported task identifiers. `docs/WORKFLOW_API.md` documents the public
-contract and feature-combination notes in more detail.
+The assembled task definitions are the source of truth for supported task
+identifiers, runtime dispatch, and the generated workflow catalog.
+`docs/WORKFLOW_API.md` documents the public contract and feature-combination
+notes in more detail.
 
 ### 3.3.1 Feature Surface by Model Family
 

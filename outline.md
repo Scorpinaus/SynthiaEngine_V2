@@ -21,7 +21,7 @@ architectural change affects it.
       before structural changes begin.
 - [ ] `backend/main.py` is an application composition root; HTTP domains are
       owned by focused modules under `backend/api/`.
-- [ ] Workflow contracts, registration, runtime dependency binding, and
+- [x] Workflow contracts, registration, runtime dependency binding, and
       execution have explicit owners without package-level module proxy magic.
 - [ ] All subprocess-backed model families use one tested transport/protocol
       implementation while retaining family-specific runners.
@@ -174,16 +174,16 @@ all existing paths, statuses, bodies, upload limits, and security checks.
 **Outcome:** A reader can find a task's contract, registration, runtime binding,
 and execution path without following dynamic package mutation.
 
-- [ ] Replace the lazy `backend.workflow` module proxy and `ModuleType`
+- [x] Replace the lazy `backend.workflow` module proxy and `ModuleType`
       `__setattr__` forwarding with explicit compatibility exports.
-- [ ] Keep schemas in contract modules, task definitions in family modules,
+- [x] Keep schemas in contract modules, task definitions in family modules,
       runtime dependency binding in an assembly module, and DAG execution in
       the engine.
-- [ ] Remove the large central handler map where family registration can be
+- [x] Remove the large central handler map where family registration can be
       explicit and validated for duplicates.
-- [ ] Update internal callers and tests to import from owning modules; retain
+- [x] Update internal callers and tests to import from owning modules; retain
       only intentional public compatibility imports.
-- [ ] Keep catalog/schema generation derived from the authoritative task
+- [x] Keep catalog/schema generation derived from the authoritative task
       definitions rather than adding a second metadata registry.
 
 **Done when:** The engine performs validation, ordering, reference resolution,
@@ -317,6 +317,7 @@ deferred ideas are explicit.
 | 2026-08-01 | Refactor in vertical, independently verified slices. | API, job, workflow, runtime, and frontend contracts are coupled end to end. | Each task must finish green before dependent work begins. |
 | 2026-08-01 | Guard forbidden dependency directions instead of snapshotting every current edge. | Some current support-layer edges are temporary and should be removable without weakening the architecture policy. | New upward/cross-family coupling fails tests; three narrow exceptions remain explicit in `docs/ARCHITECTURE.md`. |
 | 2026-08-01 | Carry typed settings on each FastAPI application instance and keep `backend.main:app` as a factory-created compatibility object. | Upload/security behavior and lifecycle policy must be testable without reloading modules or reparsing environment values inside handlers. | `backend/main.py` is a small composition root; focused routers read application-owned settings through a typed dependency. |
+| 2026-08-02 | Make `backend.workflow.assembly` the runtime composition boundary and keep `engine.py` orchestration-only. | Runtime imports, dependency binding, registry construction, and DAG execution previously shared one module and were exposed through package mutation. | Package exports are explicit, family registrations merge with duplicate detection, internal imports target owners, and engine responsibility is enforced by architecture tests. |
 
 ## Validation record
 
@@ -333,8 +334,11 @@ deferred ideas are explicit.
 | ARC-02 focused API/settings/subprocess suite | Passed | 93 settings, factory, route ownership, API behavior, queue lifecycle, cache, and family subprocess tests; upload bytes/pixels, CORS, loopback path security, response bodies, and repository working directories covered. |
 | ARC-02 full automated suite | Passed | 635 passed, 0 failed, 36 third-party warnings in 86.79s. |
 | ARC-02 composition-root metric | Recorded | `backend/main.py` reduced from 461 to 120 lines; endpoint behavior moved to focused routers plus shared artifact persistence. |
+| ARC-03 focused workflow/architecture suite | Passed | 245 workflow, catalog/schema, DAG, family adapter, job integration, and architecture-boundary tests passed; 395 unrelated tests were deselected. |
+| ARC-03 full automated suite | Passed | 640 passed, 0 failed, 36 third-party warnings in 84.91s. |
+| ARC-03 workflow ownership metric | Recorded | `backend/workflow/engine.py` reduced from 587 to 123 physical lines; runtime binding moved to the 415-line assembly module. Maintained code is 219 files / 38,958 likely code lines; tests are 73 files / 15,484 likely code lines. |
 | Test compilation | Passed | `.venv\Scripts\python.exe -m compileall -q backend testing`. |
-| Runtime/GPU generation | Not run | ARC-02 changes application structure and process configuration, not model inference behavior; no model downloads were performed. |
+| Runtime/GPU generation | Not run | ARC-02 and ARC-03 change application/workflow structure, not model inference behavior; no model downloads were performed. |
 | `git diff --check` | Passed | No whitespace errors; Git reported line-ending conversion advisories for edited files only. |
 
 ## Risks and blockers
@@ -386,3 +390,8 @@ deferred ideas are explicit.
   cleanup coverage, documented the allowed dependency direction and current
   exceptions, made the architecture source-of-truth document trackable, and
   finished with 622 passing tests.
+- 2026-08-02: Completed ARC-03. Replaced package proxy mutation with explicit
+  compatibility exports, separated runtime assembly from DAG execution, made
+  family registration explicit and duplicate-safe, moved WAN normalization to
+  its family module, updated internal import/mock owners, and added executable
+  workflow-boundary guards. The full suite passes with 640 tests.

@@ -28,3 +28,17 @@ def bind_task(
     except KeyError as exc:
         raise RuntimeError(f"No runtime handler was provided for task type: {task_type}") from exc
     return TaskDefinition(input_model, output_model, handler)
+
+
+def merge_task_definitions(
+    *definition_groups: Mapping[str, TaskDefinition],
+) -> dict[str, TaskDefinition]:
+    """Merge explicit task groups and reject ambiguous registrations."""
+    merged: dict[str, TaskDefinition] = {}
+    for definitions in definition_groups:
+        overlap = merged.keys() & definitions.keys()
+        if overlap:
+            duplicates = ", ".join(sorted(overlap))
+            raise RuntimeError(f"Duplicate workflow task registrations: {duplicates}")
+        merged.update(definitions)
+    return merged

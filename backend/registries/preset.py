@@ -8,7 +8,7 @@ from sqlalchemy import Integer, String, Text, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 from backend.config import DATABASE_DIR
-from backend.workflow import TASK_INPUT_MODELS
+from backend.workflow.assembly import TASK_INPUT_MODELS
 
 
 class PresetRegistryCreate(BaseModel):

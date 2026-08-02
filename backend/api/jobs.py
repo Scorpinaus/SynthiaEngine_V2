@@ -18,7 +18,7 @@ from backend.jobs.queue import (
     list_jobs,
     request_cancel_job,
 )
-from backend.workflow import WorkflowRequest
+from backend.workflow.types import WorkflowRequest
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 

@@ -11,10 +11,9 @@ from pydantic import ValidationError
 from backend.workflow import (
     WanImage2VideoInputs,
     WanText2VideoInputs,
-    _wan_image2video,
-    _wan_text2video,
     build_workflow_catalog,
 )
+from backend.workflow.assembly import _wan_image2video, _wan_text2video
 from backend.wan.pipeline import (
     generate_image2video,
     generate_image2video_in_process,
@@ -168,9 +167,9 @@ class WanText2VideoWorkflowTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.mp4"]
 
-        with patch("backend.workflow.make_batch_id", return_value="batch123"):
+        with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
             with patch(
-                "backend.workflow.generate_wan_text2video",
+                "backend.workflow.assembly.generate_wan_text2video",
                 side_effect=_fake_generate_videos,
             ):
                 result = _wan_text2video(
@@ -219,11 +218,11 @@ class WanText2VideoWorkflowTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.mp4"]
 
-        with patch("backend.workflow.make_batch_id", return_value="batch123"):
-            with patch("backend.workflow._open_image_ref", side_effect=[reference, mask]):
-                with patch("backend.workflow._open_video_ref", return_value=video_path):
+        with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
+            with patch("backend.workflow.assembly._open_image_ref", side_effect=[reference, mask]):
+                with patch("backend.workflow.assembly._open_video_ref", return_value=video_path):
                     with patch(
-                        "backend.workflow.generate_wan_text2video",
+                        "backend.workflow.assembly.generate_wan_text2video",
                         side_effect=_fake_generate_videos,
                     ):
                         result = _wan_text2video(
@@ -462,10 +461,10 @@ class WanImage2VideoWorkflowTests(unittest.TestCase):
             captured.update(params)
             return ["batch/out.mp4"]
 
-        with patch("backend.workflow.make_batch_id", return_value="batch123"):
-            with patch("backend.workflow._open_image_ref", return_value=image):
+        with patch("backend.workflow.assembly.make_batch_id", return_value="batch123"):
+            with patch("backend.workflow.assembly._open_image_ref", return_value=image):
                 with patch(
-                    "backend.workflow.generate_wan_image2video",
+                    "backend.workflow.assembly.generate_wan_image2video",
                     side_effect=_fake_generate_videos,
                 ):
                     result = _wan_image2video(

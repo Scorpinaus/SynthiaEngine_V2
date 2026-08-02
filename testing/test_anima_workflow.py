@@ -4,9 +4,9 @@ from unittest.mock import patch
 
 from backend.workflow import (
     AnimaText2ImgInputs,
-    _anima_text2img,
     build_workflow_catalog,
 )
+from backend.workflow.assembly import _anima_text2img
 
 
 class AnimaWorkflowTests(unittest.TestCase):

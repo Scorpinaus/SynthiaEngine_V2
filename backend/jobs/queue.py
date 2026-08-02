@@ -522,8 +522,10 @@ def execute_job(
     SessionLocal: sessionmaker,
 ) -> dict[str, Any]:
     if kind == "workflow":
-        from backend.workflow import WorkflowCanceled, WorkflowContext, cleanup_artifacts, collect_artifact_ids, execute_workflow
         from backend.utilities.resource_logging import SummaryProfiler
+        from backend.workflow.engine import execute_workflow
+        from backend.workflow.types import WorkflowCanceled, WorkflowContext
+        from backend.workflow.utility import cleanup_artifacts, collect_artifact_ids
 
         def _progress(patch: dict[str, Any]) -> None:
             update_job_task_progress(SessionLocal, job_id, patch)
@@ -585,7 +587,7 @@ class JobWorker:
             self._thread.join(timeout=timeout_s)
 
     def _run_loop(self) -> None:
-        from backend.workflow import WorkflowCanceled
+        from backend.workflow.types import WorkflowCanceled
 
         init_job_db(self._engine)
         if self._config.requeue_running_on_startup:

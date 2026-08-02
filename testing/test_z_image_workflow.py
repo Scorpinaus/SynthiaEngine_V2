@@ -8,6 +8,8 @@ from backend.workflow import (
     ZImageInpaintInputs,
     ZImageImg2ImgInputs,
     ZImageText2ImgInputs,
+)
+from backend.workflow.assembly import (
     _z_image_inpaint,
     _z_image_img2img,
     _z_image_text2img,
@@ -60,7 +62,7 @@ class ZImageWorkflowTests(unittest.TestCase):
 
         fake_module = SimpleNamespace(generate_img2img=_fake_generate_img2img)
         with patch.dict("sys.modules", {"backend.z_image.pipeline": fake_module}), patch(
-            "backend.workflow._open_image_ref"
+            "backend.workflow.assembly._open_image_ref"
         ) as mock_open_image:
             fake_image = SimpleNamespace(
                 convert=lambda _mode: SimpleNamespace(
@@ -99,7 +101,7 @@ class ZImageWorkflowTests(unittest.TestCase):
 
         fake_module = SimpleNamespace(generate_inpaint=_fake_generate_inpaint)
         with patch.dict("sys.modules", {"backend.z_image.pipeline": fake_module}), patch(
-            "backend.workflow._open_image_ref",
+            "backend.workflow.assembly._open_image_ref",
             return_value=Image.new("RGB", (64, 64)),
         ):
             result = _z_image_inpaint(

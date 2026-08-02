@@ -1,50 +1,146 @@
-from __future__ import annotations
+"""Stable public workflow contracts and execution entry points.
 
-from importlib import import_module
-import sys
-import types
-from typing import Any
+Internal runtime adapters are owned by :mod:`backend.workflow.assembly` and
+are intentionally not re-exported from this compatibility surface.
+"""
 
-_ENGINE_MODULE = "backend.workflow.engine"
-_CONTRACT_MODULES = ("backend.workflow.schema_input", "backend.workflow.schema_output")
+from backend.workflow.assembly import (
+    TASK_DEFINITIONS,
+    TASK_INPUT_MODELS,
+    TASK_OUTPUT_MODELS,
+    TASK_REGISTRY,
+    build_workflow_catalog,
+)
+from backend.workflow.engine import execute_workflow
+from backend.workflow.schema_input import (
+    AnimaText2ImgInputs,
+    ArtifactRef,
+    ControlNetPreprocessInputs,
+    EmbedArtifactRef,
+    EmbedRef,
+    ErnieImageText2ImgInputs,
+    FluxImg2ImgInputs,
+    FluxInpaintInputs,
+    FluxText2ImgInputs,
+    ImageRef,
+    QwenImageImg2ImgInputs,
+    QwenImageInpaintInputs,
+    QwenImageText2ImgInputs,
+    Sd15AnimateDiffText2VideoInputs,
+    Sd15ControlNetText2ImgInputs,
+    Sd15EffectiveControlNetItem,
+    Sd15HiresContract,
+    Sd15HiresFixInputs,
+    Sd15Img2ImgInputs,
+    Sd15InpaintInputs,
+    Sd15IpAdapterContract,
+    Sd15IpAdapterEncodeInputs,
+    Sd15LcmContract,
+    Sd15Text2ImgInputs,
+    Sd15UnifiedLoraContract,
+    SdxlControlNetText2ImgInputs,
+    SdxlImg2ImgInputs,
+    SdxlInpaintInputs,
+    SdxlIpAdapterContract,
+    SdxlIpAdapterEncodeInputs,
+    SdxlText2ImgInputs,
+    VideoArtifactRef,
+    VideoRef,
+    WanImage2VideoInputs,
+    WanText2VideoInputs,
+    ZImageImg2ImgInputs,
+    ZImageInpaintInputs,
+    ZImageText2ImgInputs,
+)
+from backend.workflow.schema_output import (
+    ArtifactInfo,
+    ControlNetPreprocessOutput,
+    ImagesOutput,
+    ImagesWithBatchOutput,
+    ImagesWithRuntimeProfileOutput,
+    Sd15ControlNetText2ImgOutput,
+    Sd15Img2ImgOutput,
+    Sd15InpaintOutput,
+    Sd15IpAdapterEncodeOutput,
+    SdxlControlNetText2ImgOutput,
+    SdxlImg2ImgOutput,
+    SdxlInpaintOutput,
+    SdxlIpAdapterEncodeOutput,
+    VideosWithBatchOutput,
+)
+from backend.workflow.types import (
+    TaskType,
+    WorkflowCanceled,
+    WorkflowContext,
+    WorkflowRequest,
+    WorkflowTask,
+)
+from backend.workflow.utility import cleanup_artifacts, collect_artifact_ids
 
-
-def _load_engine() -> types.ModuleType:
-    module = import_module(_ENGINE_MODULE)
-    for name, value in vars(module).items():
-        if not (name.startswith("__") and name.endswith("__")):
-            globals().setdefault(name, value)
-    # Preserve the historical package-level contract exports now that schema
-    # classes are owned outside the orchestration engine.
-    for contract_module_name in _CONTRACT_MODULES:
-        contract_module = import_module(contract_module_name)
-        for name, value in vars(contract_module).items():
-            if not name.startswith("__"):
-                globals().setdefault(name, value)
-    return module
-
-
-def __getattr__(name: str) -> Any:
-    module = _load_engine()
-    try:
-        value = getattr(module, name)
-    except AttributeError as exc:
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from exc
-    globals()[name] = value
-    return value
-
-
-def __dir__() -> list[str]:
-    module = _load_engine()
-    return sorted(set(globals()) | set(dir(module)))
-
-
-class _WorkflowModule(types.ModuleType):
-    def __setattr__(self, name: str, value: Any) -> None:
-        super().__setattr__(name, value)
-        module = sys.modules.get(_ENGINE_MODULE)
-        if module is not None and hasattr(module, name):
-            setattr(module, name, value)
-
-
-sys.modules[__name__].__class__ = _WorkflowModule
+__all__ = [
+    "AnimaText2ImgInputs",
+    "ArtifactInfo",
+    "ArtifactRef",
+    "ControlNetPreprocessInputs",
+    "ControlNetPreprocessOutput",
+    "EmbedArtifactRef",
+    "EmbedRef",
+    "ErnieImageText2ImgInputs",
+    "FluxImg2ImgInputs",
+    "FluxInpaintInputs",
+    "FluxText2ImgInputs",
+    "ImageRef",
+    "ImagesOutput",
+    "ImagesWithBatchOutput",
+    "ImagesWithRuntimeProfileOutput",
+    "QwenImageImg2ImgInputs",
+    "QwenImageInpaintInputs",
+    "QwenImageText2ImgInputs",
+    "Sd15AnimateDiffText2VideoInputs",
+    "Sd15ControlNetText2ImgInputs",
+    "Sd15ControlNetText2ImgOutput",
+    "Sd15EffectiveControlNetItem",
+    "Sd15HiresContract",
+    "Sd15HiresFixInputs",
+    "Sd15Img2ImgInputs",
+    "Sd15Img2ImgOutput",
+    "Sd15InpaintInputs",
+    "Sd15InpaintOutput",
+    "Sd15IpAdapterContract",
+    "Sd15IpAdapterEncodeInputs",
+    "Sd15IpAdapterEncodeOutput",
+    "Sd15LcmContract",
+    "Sd15Text2ImgInputs",
+    "Sd15UnifiedLoraContract",
+    "SdxlControlNetText2ImgInputs",
+    "SdxlControlNetText2ImgOutput",
+    "SdxlImg2ImgInputs",
+    "SdxlImg2ImgOutput",
+    "SdxlInpaintInputs",
+    "SdxlInpaintOutput",
+    "SdxlIpAdapterContract",
+    "SdxlIpAdapterEncodeInputs",
+    "SdxlIpAdapterEncodeOutput",
+    "SdxlText2ImgInputs",
+    "TASK_DEFINITIONS",
+    "TASK_INPUT_MODELS",
+    "TASK_OUTPUT_MODELS",
+    "TASK_REGISTRY",
+    "TaskType",
+    "VideoArtifactRef",
+    "VideoRef",
+    "VideosWithBatchOutput",
+    "WanImage2VideoInputs",
+    "WanText2VideoInputs",
+    "WorkflowCanceled",
+    "WorkflowContext",
+    "WorkflowRequest",
+    "WorkflowTask",
+    "ZImageImg2ImgInputs",
+    "ZImageInpaintInputs",
+    "ZImageText2ImgInputs",
+    "build_workflow_catalog",
+    "cleanup_artifacts",
+    "collect_artifact_ids",
+    "execute_workflow",
+]

@@ -16,9 +16,9 @@ from backend.ernie_image.pipeline import (
 from backend.registries.model import ModelRegistryEntry
 from backend.workflow import (
     ErnieImageText2ImgInputs,
-    _ernie_image_text2img,
     build_workflow_catalog,
 )
+from backend.workflow.assembly import _ernie_image_text2img
 
 
 class ErnieImageWorkflowTests(unittest.TestCase):

@@ -10,6 +10,8 @@ from backend.workflow import (
     SdxlInpaintInputs,
     SdxlIpAdapterEncodeInputs,
     SdxlText2ImgInputs,
+)
+from backend.workflow.assembly import (
     _sdxl_controlnet_text2img,
     _sdxl_img2img,
     _sdxl_inpaint,
@@ -211,7 +213,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(payload)
             return {"images": ["/outputs/batch/out.png"]}
 
-        with patch("backend.workflow._open_image_ref", return_value=reference_image):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=reference_image):
             with patch("backend.sdxl.pipeline.generate_text2img", side_effect=_fake_generate_text2img):
                 result = _sdxl_text2img(
                     {
@@ -308,7 +310,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
                 }
             }
 
-        with patch("backend.workflow._open_image_ref", return_value=reference_image):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=reference_image):
             with patch(
                 "backend.sdxl.ip_adapter_pipeline.generate_ip_adapter_image_embeds",
                 side_effect=_fake_generate_ip_adapter_image_embeds,
@@ -342,7 +344,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(payload)
             return {"images": ["/outputs/batch/out.png"]}
 
-        with patch("backend.workflow._open_image_ref", return_value=reference_image):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=reference_image):
             with patch("backend.sdxl.pipeline.generate_img2img", side_effect=_fake_generate_img2img):
                 result = _sdxl_img2img(
                     {
@@ -372,7 +374,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertEqual(captured["ip_adapter_weight_name"], "ip-adapter_sdxl.bin")
 
     def test_sdxl_img2img_requires_ip_adapter_image_when_enabled(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
                 ValueError, "ip_adapter.image is required when IP-Adapter is enabled"
             ):
@@ -388,7 +390,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
                 )
 
     def test_sdxl_img2img_rejects_ip_adapter_controlnet_combination(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
                 ValueError, "sdxl.img2img IP-Adapter cannot be combined with ControlNet"
             ):
@@ -419,7 +421,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(payload)
             return {"images": ["/outputs/batch/out.png"]}
 
-        with patch("backend.workflow._open_image_ref", return_value=reference_image):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=reference_image):
             with patch("backend.sdxl.pipeline.generate_inpaint", side_effect=_fake_generate_inpaint):
                 result = _sdxl_inpaint(
                     {
@@ -452,7 +454,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertEqual(captured["ip_adapter_weight_name"], "ip-adapter_sdxl.bin")
 
     def test_sdxl_inpaint_requires_ip_adapter_image_when_enabled(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
                 ValueError, "ip_adapter.image is required when IP-Adapter is enabled"
             ):
@@ -471,7 +473,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
                 )
 
     def test_sdxl_inpaint_rejects_ip_adapter_controlnet_combination(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
                 ValueError, "sdxl.inpaint IP-Adapter cannot be combined with ControlNet"
             ):
@@ -504,7 +506,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return {"images": ["/outputs/batch/out.png"]}
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with patch(
                 "backend.sdxl.pipeline.generate_controlnet_text2img",
                 side_effect=_fake_generate_controlnet_text2img,
@@ -540,7 +542,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertEqual(captured["control_guidance_end"], 0.9)
 
     def test_control_guidance_start_must_be_lte_end(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
                 ValueError, "control_guidance_start must be <= control_guidance_end"
             ):
@@ -561,7 +563,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return {"images": ["/outputs/batch/out.png"]}
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with patch(
                 "backend.sdxl.pipeline.generate_controlnet_text2img",
                 side_effect=_fake_generate_controlnet_text2img,
@@ -589,7 +591,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertTrue(any("VRAM use" in warning for warning in result["warnings"]))
 
     def test_multi_controlnet_scale_list_must_align(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
                 ValueError, "controlnet_conditioning_scales length must match"
             ):
@@ -607,7 +609,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
                 )
 
     def test_multi_controlnet_model_count_guardrail(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
                 ValueError, "At most 2 ControlNet models are supported"
             ):
@@ -625,7 +627,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
                 )
 
     def test_multi_controlnet_scale_range_validation(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
                 ValueError, "controlnet conditioning scales must be within \\[0, 2\\]"
             ):
@@ -649,7 +651,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return {"images": ["/outputs/batch/out.png"]}
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with patch(
                 "backend.sdxl.pipeline.generate_img2img_controlnet",
                 side_effect=_fake_generate_img2img_controlnet,
@@ -693,7 +695,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return {"images": ["/outputs/batch/out.png"]}
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with patch(
                 "backend.sdxl.pipeline.generate_img2img_controlnet",
                 side_effect=_fake_generate_img2img_controlnet,
@@ -712,7 +714,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertEqual(captured["lora_adapters"], [{"lora_id": 101, "strength": 0.8}])
 
     def test_img2img_controlnet_missing_control_image_rejected(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
                 ValueError, "control_image is required when using ControlNet in sdxl.img2img"
             ):
@@ -726,7 +728,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
                 )
 
     def test_img2img_warn_mode_returns_warning_on_unknown_preprocessor(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with patch(
                 "backend.sdxl.pipeline.generate_img2img_controlnet",
                 return_value={"images": ["/outputs/batch/out.png"]},
@@ -752,7 +754,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return {"images": ["/outputs/batch/plain.png"]}
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with patch(
                 "backend.sdxl.pipeline.generate_img2img",
                 side_effect=_fake_generate_img2img,
@@ -780,7 +782,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return {"images": ["/outputs/batch/out.png"]}
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with patch(
                 "backend.sdxl.pipeline.generate_inpaint_controlnet",
                 side_effect=_fake_generate_inpaint_controlnet,
@@ -824,7 +826,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return {"images": ["/outputs/batch/out.png"]}
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with patch(
                 "backend.sdxl.pipeline.generate_inpaint_controlnet",
                 side_effect=_fake_generate_inpaint_controlnet,
@@ -844,7 +846,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
         self.assertEqual(captured["lora_adapters"], [{"lora_id": 101, "strength": 0.8}])
 
     def test_inpaint_controlnet_missing_control_image_rejected(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with self.assertRaisesRegex(
                 ValueError, "control_image is required when using ControlNet in sdxl.inpaint"
             ):
@@ -864,7 +866,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
             Image.new("L", (32, 32)),
             Image.new("RGB", (64, 64)),
         ]
-        with patch("backend.workflow._open_image_ref", side_effect=opened):
+        with patch("backend.workflow.assembly._open_image_ref", side_effect=opened):
             with self.assertRaisesRegex(
                 ValueError,
                 "mask_image dimensions must match initial_image dimensions when using ControlNet in sdxl.inpaint",
@@ -885,7 +887,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
             Image.new("L", (64, 64)),
             Image.new("RGB", (32, 32)),
         ]
-        with patch("backend.workflow._open_image_ref", side_effect=opened):
+        with patch("backend.workflow.assembly._open_image_ref", side_effect=opened):
             with self.assertRaisesRegex(
                 ValueError,
                 "control_image dimensions must match initial_image dimensions in sdxl.inpaint",
@@ -901,7 +903,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
                 )
 
     def test_inpaint_warn_mode_returns_warning_on_unknown_preprocessor(self):
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with patch(
                 "backend.sdxl.pipeline.generate_inpaint_controlnet",
                 return_value={"images": ["/outputs/batch/out.png"]},
@@ -928,7 +930,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return {"images": ["/outputs/batch/plain.png"]}
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with patch(
                 "backend.sdxl.pipeline.generate_inpaint",
                 side_effect=_fake_generate_inpaint,
@@ -957,7 +959,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return {"images": ["/outputs/batch/plain.png"]}
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with patch("backend.sdxl.pipeline.generate_inpaint", side_effect=_fake_generate_inpaint):
                 _sdxl_inpaint(
                     {
@@ -978,7 +980,7 @@ class SdxlControlNetWorkflowPlumbingTests(unittest.TestCase):
             captured.update(params)
             return {"images": ["/outputs/batch/out.png"]}
 
-        with patch("backend.workflow._open_image_ref", return_value=Image.new("RGB", (64, 64))):
+        with patch("backend.workflow.assembly._open_image_ref", return_value=Image.new("RGB", (64, 64))):
             with patch(
                 "backend.sdxl.pipeline.generate_inpaint_controlnet",
                 side_effect=_fake_generate_inpaint_controlnet,
