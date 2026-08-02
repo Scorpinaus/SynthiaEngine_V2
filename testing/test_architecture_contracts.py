@@ -172,6 +172,41 @@ def test_workflow_package_has_explicit_compatibility_exports():
     assert workflow_package.execute_workflow.__module__ == "backend.workflow.engine"
 
 
+def test_job_persistence_execution_and_polling_have_explicit_boundaries():
+    store_path = BACKEND_ROOT / "jobs" / "store.py"
+    execution_path = BACKEND_ROOT / "jobs" / "execution.py"
+    worker_path = BACKEND_ROOT / "jobs" / "worker.py"
+    queue_path = BACKEND_ROOT / "jobs" / "queue.py"
+
+    store_imports = {name for _, name in _backend_imports(store_path)}
+    assert not any(
+        name.startswith(("backend.workflow", "backend.utilities"))
+        for name in store_imports
+    )
+
+    execution_imports = {name for _, name in _backend_imports(execution_path)}
+    assert not any(name.startswith("sqlalchemy") for name in execution_imports)
+    assert not any(
+        name.startswith(("backend.jobs.db", "backend.jobs.models", "backend.jobs.store"))
+        for name in execution_imports
+    )
+
+    worker_imports = {name for _, name in _backend_imports(worker_path)}
+    assert not any(name.startswith("sqlalchemy") for name in worker_imports)
+    assert not any(
+        name.startswith(("backend.workflow", "backend.jobs.store"))
+        for name in worker_imports
+    )
+
+    queue_tree = ast.parse(queue_path.read_text(encoding="utf-8"), filename=str(queue_path))
+    queue_functions = {
+        node.name
+        for node in queue_tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    assert queue_functions == {"execute_job", "create_job_queue"}
+
+
 def test_workflow_engine_is_orchestration_only():
     engine_path = BACKEND_ROOT / "workflow" / "engine.py"
     tree = ast.parse(engine_path.read_text(encoding="utf-8"), filename=str(engine_path))

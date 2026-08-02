@@ -1,17 +1,16 @@
-from backend.jobs.queue import (
-    JobQueueConfig,
+from backend.jobs.store import (
     _mark_job_failed,
     _mark_job_succeeded,
-    create_job_queue,
+    create_job_store,
     enqueue_job,
     list_job_tasks,
     update_job_task_progress,
 )
 
 
-def _queue(tmp_path):
+def _store(tmp_path):
     url = f"sqlite:///{(tmp_path / 'jobs.sqlite3').as_posix()}"
-    return create_job_queue(JobQueueConfig(db_url=url))
+    return create_job_store(url)
 
 
 def _payload():
@@ -24,7 +23,7 @@ def _payload():
 
 
 def test_workflow_tasks_are_persisted_in_declared_order(tmp_path):
-    engine, sessions, _worker = _queue(tmp_path)
+    engine, sessions, _job_store = _store(tmp_path)
     try:
         job, _ = enqueue_job(sessions, kind="workflow", payload=_payload())
         tasks = list_job_tasks(sessions, job.id)
@@ -38,7 +37,7 @@ def test_workflow_tasks_are_persisted_in_declared_order(tmp_path):
 
 
 def test_task_progress_and_outputs_are_persisted(tmp_path):
-    engine, sessions, _worker = _queue(tmp_path)
+    engine, sessions, _job_store = _store(tmp_path)
     try:
         job, _ = enqueue_job(sessions, kind="workflow", payload=_payload())
         update_job_task_progress(
@@ -68,7 +67,7 @@ def test_task_progress_and_outputs_are_persisted(tmp_path):
 
 
 def test_failure_marks_active_task_failed_and_remaining_tasks_skipped(tmp_path):
-    engine, sessions, _worker = _queue(tmp_path)
+    engine, sessions, _job_store = _store(tmp_path)
     try:
         job, _ = enqueue_job(sessions, kind="workflow", payload=_payload())
         update_job_task_progress(

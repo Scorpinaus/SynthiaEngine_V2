@@ -195,13 +195,13 @@ catalog/schema comparisons pass.
 **Outcome:** SQLite coordination and workflow execution can be understood and
 tested independently.
 
-- [ ] Split job/task persistence and lease operations from worker polling and
+- [x] Split job/task persistence and lease operations from worker polling and
       workflow execution orchestration.
-- [ ] Define typed boundaries for claim, heartbeat, progress, terminal state,
+- [x] Define typed boundaries for claim, heartbeat, progress, terminal state,
       cancellation, crash recovery, and artifact cleanup.
-- [ ] Keep the single-render invariant and existing transaction semantics
+- [x] Keep the single-render invariant and existing transaction semantics
       explicit; do not introduce parallel rendering in this initiative.
-- [ ] Make cleanup and failure precedence deterministic when both rendering and
+- [x] Make cleanup and failure precedence deterministic when both rendering and
       cleanup fail.
 
 **Done when:** Queue/lease tests exercise persistence without loading workflow

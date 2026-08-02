@@ -139,7 +139,14 @@ Major route groups:
 
 Core modules:
 
-- `backend/jobs/queue.py`
+- `backend/jobs/contracts.py`: typed claim, persistence, execution, cancellation,
+  and cleanup boundaries
+- `backend/jobs/store.py`: SQLite job/task persistence, leases, recovery, and
+  state transitions
+- `backend/jobs/execution.py`: workflow execution, progress/profile reporting,
+  cancellation checks, and artifact cleanup
+- `backend/jobs/worker.py`: polling, heartbeat, and terminal-state orchestration
+- `backend/jobs/queue.py`: compatibility exports and subsystem composition
 - `backend/jobs/models.py`
 - `backend/jobs/db.py`
 - `backend/jobs/render_worker.py`
@@ -156,7 +163,13 @@ Design details:
 - Idempotency is supported via `Idempotency-Key` header or body `idempotency_key`
 - SSE endpoint polls job state and emits updates until terminal status
 - Each claimed job has a worker-owned renewable lease and heartbeat; only expired leases are recovered after a renderer crash
+- Terminal updates require the same worker ownership as the active lease
 - Jobs carry derived resource requirements; workers may filter claims by configured VRAM capacity
+- Persistence and lease tests load only the store; execution and polling tests
+  use fake stores/executors without SQLite or workflow runtimes
+- Artifact cleanup runs once after execution. If rendering and cleanup both
+  fail, the rendering error remains the terminal failure and the cleanup error
+  is logged; cleanup-only failures fail the job
 - Execution is effectively serialized:
   - DB uniqueness on one `running` row
   - `EXECUTION_LOCK` around execution path

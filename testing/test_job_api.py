@@ -1,13 +1,29 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
 from backend.api.jobs import serialize_job
-from backend.jobs import queue as job_queue
+from backend.jobs.execution import WorkflowJobExecutor
 from backend.utilities import resource_logging
 from backend.workflow import engine as workflow_engine
 from backend.workflow import utility as workflow_utility
+
+
+class FakeExecutionStore:
+    def __init__(self, *, cancel_requested: bool = False) -> None:
+        self.cancel_requested = cancel_requested
+        self.partial_updates: list[tuple[str, dict[str, Any]]] = []
+
+    def is_cancel_requested(self, job_id: str) -> bool:
+        return self.cancel_requested
+
+    def record_progress(self, job_id: str, progress: dict[str, Any]) -> None:
+        self.partial_updates.append((job_id, {"progress": progress}))
+
+    def merge_partial_result(self, job_id: str, patch: dict[str, Any]) -> None:
+        self.partial_updates.append((job_id, patch))
 
 
 def test_serialize_job_timestamps_include_timezone_for_sqlite_naive_datetimes():
@@ -35,15 +51,8 @@ def test_serialize_job_timestamps_include_timezone_for_sqlite_naive_datetimes():
 
 
 def test_execute_workflow_job_attaches_summary_profile(monkeypatch):
-    partial_updates = []
+    store = FakeExecutionStore()
     cleanup_calls = []
-
-    monkeypatch.setattr(
-        job_queue,
-        "update_job_partial_result",
-        lambda SessionLocal, job_id, patch: partial_updates.append((job_id, patch)),
-    )
-    monkeypatch.setattr(job_queue, "is_cancel_requested", lambda SessionLocal, job_id: False)
     monkeypatch.setattr(workflow_utility, "collect_artifact_ids", lambda payload: set())
     monkeypatch.setattr(
         workflow_utility,
@@ -106,18 +115,19 @@ def test_execute_workflow_job_attaches_summary_profile(monkeypatch):
 
     monkeypatch.setattr(workflow_engine, "execute_workflow", fake_execute_workflow)
 
-    result = job_queue.execute_job(
+    result = WorkflowJobExecutor(store).execute(
         job_id="job-1",
         kind="workflow",
         payload={"tasks": []},
-        SessionLocal=object(),
     )
 
     assert result["outputs"] == {"ok": True}
     assert result["tasks"] == {}
     assert "created_artifacts" not in result
-    assert ("job-1", {"progress": {"phase": "running"}}) in partial_updates
-    profile_updates = [patch["profile"] for _, patch in partial_updates if "profile" in patch]
+    assert ("job-1", {"progress": {"phase": "running"}}) in store.partial_updates
+    profile_updates = [
+        patch["profile"] for _, patch in store.partial_updates if "profile" in patch
+    ]
     assert profile_updates[0]["rss_current_mb"] == 10.0
     assert profile_updates[-1]["elapsed_seconds"] == 1.0
     assert cleanup_calls == [{"a123"}]
@@ -142,6 +152,7 @@ def test_execute_workflow_job_attaches_summary_profile(monkeypatch):
 
 
 def test_execute_workflow_job_cleans_input_and_created_artifacts_after_failure(monkeypatch):
+    store = FakeExecutionStore()
     cleanup_calls = []
 
     class FakeSummaryProfiler:
@@ -175,11 +186,50 @@ def test_execute_workflow_job_cleans_input_and_created_artifacts_after_failure(m
     monkeypatch.setattr(workflow_engine, "execute_workflow", fail_workflow)
 
     with pytest.raises(RuntimeError, match="synthetic generation failure"):
-        job_queue.execute_job(
+        WorkflowJobExecutor(store).execute(
             job_id="job-1",
             kind="workflow",
             payload={"tasks": []},
-            SessionLocal=object(),
         )
 
     assert cleanup_calls == [{"input-artifact", "created-artifact"}]
+
+
+def test_execution_failure_takes_precedence_when_artifact_cleanup_also_fails(
+    monkeypatch,
+    caplog,
+):
+    class FakeSummaryProfiler:
+        profile = None
+
+        def __init__(self, *, on_update=None):
+            self.on_update = on_update
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+    def fail_workflow(_payload, *, ctx=None):
+        raise RuntimeError("render failed first")
+
+    def fail_cleanup(_artifact_ids):
+        raise OSError("cleanup failed second")
+
+    monkeypatch.setattr(resource_logging, "SummaryProfiler", FakeSummaryProfiler)
+    monkeypatch.setattr(workflow_utility, "collect_artifact_ids", lambda _payload: set())
+    monkeypatch.setattr(workflow_engine, "execute_workflow", fail_workflow)
+
+    with pytest.raises(RuntimeError, match="render failed first"):
+        WorkflowJobExecutor(
+            FakeExecutionStore(),
+            artifact_cleanup=fail_cleanup,
+        ).execute(
+            job_id="job-1",
+            kind="workflow",
+            payload={"tasks": []},
+        )
+
+    assert "Artifact cleanup also failed" in caplog.text
+    assert "cleanup failed second" in caplog.text

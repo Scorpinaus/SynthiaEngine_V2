@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from backend.jobs.queue import (
+from backend.jobs.store import (
     IdempotencyConflictError,
     JobNotFoundError,
     enqueue_job,
