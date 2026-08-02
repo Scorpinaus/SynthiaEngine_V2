@@ -20,6 +20,7 @@ from diffusers import (
 )
 
 from backend.config import OUTPUT_DIR
+from backend.settings import REPOSITORY_ROOT
 from backend.adapters.ip_adapter import IpAdapterManager
 from backend.adapters.ip_adapter_embeds import (
     load_ip_adapter_embeds_artifact,
@@ -47,7 +48,6 @@ _DEFAULT_IP_ADAPTER_MODEL = "h94/IP-Adapter"
 _DEFAULT_IP_ADAPTER_SUBFOLDER = "sdxl_models"
 _DEFAULT_IP_ADAPTER_WEIGHT_NAME = "ip-adapter_sdxl.bin"
 _DEFAULT_IP_ADAPTER_SCALE = 0.6
-_REPO_ROOT = Path(__file__).resolve().parents[2]
 _SDXL_SUBPROCESS_SEMAPHORE = threading.Semaphore(1)
 
 """ 
@@ -313,7 +313,7 @@ def _run_sdxl_subprocess(operation: str, params: dict[str, object]) -> dict[str,
             str(output_path),
         ]
         with _SDXL_SUBPROCESS_SEMAPHORE:
-            completed = subprocess.run(cmd, cwd=str(_REPO_ROOT))
+            completed = subprocess.run(cmd, cwd=str(REPOSITORY_ROOT))
 
         if not output_path.exists():
             raise RuntimeError("SDXL subprocess failed: No subprocess result was written.")

@@ -5,6 +5,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from fastapi.routing import APIRoute
+
 from backend.main import app
 from backend.workflow import (
     TASK_DEFINITIONS,
@@ -186,3 +188,41 @@ def test_backend_main_is_the_only_fastapi_composition_root():
             app_constructors.append(path.relative_to(ROOT).as_posix())
 
     assert app_constructors == ["backend/main.py"]
+
+
+def test_http_domains_are_owned_by_focused_api_modules():
+    expected_owners = {
+        "/api/artifacts": "backend.api.artifacts",
+        "/api/controlnet/preprocess": "backend.api.controlnet",
+        "/api/controlnet/preprocessor-models": "backend.api.controlnet",
+        "/api/controlnet/preprocessors": "backend.api.controlnet",
+        "/api/local-path/select": "backend.api.local_paths",
+        "/api/tools/analyze-model": "backend.api.model_analysis",
+        "/create-blur-mask": "backend.api.masks",
+        "/history": "backend.api.history",
+    }
+    included_routes = []
+    for route in app.routes:
+        if isinstance(route, APIRoute):
+            included_routes.append(route)
+            continue
+        original_router = getattr(route, "original_router", None)
+        if original_router is not None:
+            included_routes.extend(original_router.routes)
+    actual_owners = {
+        route.path: route.endpoint.__module__
+        for route in included_routes
+        if isinstance(route, APIRoute) and route.path in expected_owners
+    }
+
+    assert actual_owners == expected_owners
+
+
+def test_composition_root_has_no_scattered_environment_parsing_or_path_creation():
+    main_source = (BACKEND_ROOT / "main.py").read_text(encoding="utf-8")
+    config_source = (BACKEND_ROOT / "config.py").read_text(encoding="utf-8")
+
+    assert "os.getenv" not in main_source
+    assert "os.environ" not in main_source
+    assert ".mkdir(" not in config_source
+    assert "def create_app(" in main_source

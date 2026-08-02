@@ -155,14 +155,14 @@ checks, and the refactor can distinguish movement from behavior change.
 **Outcome:** `backend/main.py` creates the app and owns lifecycle assembly, not
 unrelated endpoint behavior or scattered environment parsing.
 
-- [ ] Introduce a typed settings boundary for paths, upload limits, CORS,
+- [x] Introduce a typed settings boundary for paths, upload limits, CORS,
       worker startup, logging role, cache budgets, and related environment
       values; keep model-specific tuning next to its runtime.
-- [ ] Resolve repository-relative paths in one place and avoid unnecessary
+- [x] Resolve repository-relative paths in one place and avoid unnecessary
       import-time filesystem side effects.
-- [ ] Move artifacts, local-path selection, ControlNet preprocessing, model
+- [x] Move artifacts, local-path selection, ControlNet preprocessing, model
       analysis, and mask utilities into focused `backend/api/` routers/services.
-- [ ] Provide an application factory or equally testable assembly function while
+- [x] Provide an application factory or equally testable assembly function while
       preserving the current `backend.main:app` startup contract.
 
 **Done when:** `backend/main.py` contains application assembly, middleware,
@@ -316,6 +316,7 @@ deferred ideas are explicit.
 | 2026-08-01 | Preserve static HTML/JS and public workflow contracts. | These are explicit repository constraints and stable user-facing surfaces. | No framework migration or API redesign is included. |
 | 2026-08-01 | Refactor in vertical, independently verified slices. | API, job, workflow, runtime, and frontend contracts are coupled end to end. | Each task must finish green before dependent work begins. |
 | 2026-08-01 | Guard forbidden dependency directions instead of snapshotting every current edge. | Some current support-layer edges are temporary and should be removable without weakening the architecture policy. | New upward/cross-family coupling fails tests; three narrow exceptions remain explicit in `docs/ARCHITECTURE.md`. |
+| 2026-08-01 | Carry typed settings on each FastAPI application instance and keep `backend.main:app` as a factory-created compatibility object. | Upload/security behavior and lifecycle policy must be testable without reloading modules or reparsing environment values inside handlers. | `backend/main.py` is a small composition root; focused routers read application-owned settings through a typed dependency. |
 
 ## Validation record
 
@@ -329,9 +330,12 @@ deferred ideas are explicit.
 | ARC-01 focused contract suite | Passed | 41 route, workflow, job, lease, subprocess, cleanup, and lifecycle tests; 2 code-metrics tests and 2 docs-contract tests also passed. |
 | ARC-01 full automated suite | Passed | 622 passed, 0 failed, 36 third-party deprecation warnings in 86.54s. |
 | ARC-01 metrics | Recorded | Maintained code unchanged at 210 files / 38,593 likely code lines; tests now 72 files / 15,174 likely code lines; vendored pipelines unchanged at 22 files / 9,143 likely code lines. |
-| Test compilation | Passed | `.venv\Scripts\python.exe -m compileall -q testing`. |
-| Runtime/GPU generation | Not run | Planning work does not authorize model downloads and does not change runtime behavior. |
-| `git diff --check` | Passed | No whitespace errors; Git reported only the existing CRLF conversion warning for `constraints.txt`. |
+| ARC-02 focused API/settings/subprocess suite | Passed | 93 settings, factory, route ownership, API behavior, queue lifecycle, cache, and family subprocess tests; upload bytes/pixels, CORS, loopback path security, response bodies, and repository working directories covered. |
+| ARC-02 full automated suite | Passed | 635 passed, 0 failed, 36 third-party warnings in 86.79s. |
+| ARC-02 composition-root metric | Recorded | `backend/main.py` reduced from 461 to 120 lines; endpoint behavior moved to focused routers plus shared artifact persistence. |
+| Test compilation | Passed | `.venv\Scripts\python.exe -m compileall -q backend testing`. |
+| Runtime/GPU generation | Not run | ARC-02 changes application structure and process configuration, not model inference behavior; no model downloads were performed. |
+| `git diff --check` | Passed | No whitespace errors; Git reported line-ending conversion advisories for edited files only. |
 
 ## Risks and blockers
 

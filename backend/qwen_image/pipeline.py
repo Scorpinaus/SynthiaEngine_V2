@@ -10,6 +10,7 @@ import torch
 from diffusers import QwenImageImg2ImgPipeline, QwenImageInpaintPipeline, QwenImagePipeline
 
 from backend.config import OUTPUT_DIR
+from backend.settings import REPOSITORY_ROOT
 from backend.utilities.logging import configure_logging
 from backend.lora.utils import apply_lora_adapters_with_validation, write_lora_coverage_report
 from backend.registries.model import get_model_entry
@@ -25,7 +26,6 @@ from backend.utilities.pipeline import (
 from backend.utilities.schedulers import create_scheduler
 from backend.qwen_image.subprocess_io import serialize_params_for_subprocess
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
 _QWEN_IMAGE_SUBPROCESS_SEMAPHORE = threading.Semaphore(1)
 
 logger = logging.getLogger(__name__)
@@ -146,7 +146,7 @@ def _run_qwen_image_subprocess(operation: str, params: dict[str, object]) -> dic
             str(output_path),
         ]
         with _QWEN_IMAGE_SUBPROCESS_SEMAPHORE:
-            completed = subprocess.run(cmd, cwd=str(_REPO_ROOT))
+            completed = subprocess.run(cmd, cwd=str(REPOSITORY_ROOT))
 
         if not output_path.exists():
             raise RuntimeError("Qwen-Image subprocess failed: No subprocess result was written.")

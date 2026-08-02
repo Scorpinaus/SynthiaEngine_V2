@@ -1,11 +1,12 @@
 import logging
-import os
+
+from backend.settings import load_settings
 
 
 _LOG_FORMAT = "%(asctime)s %(levelname)s [%(synthia_role)s] %(name)s: %(message)s"
 _LOG_DATE_FORMAT = "%H:%M:%S"
 _LOG_RECORD_FACTORY_INSTALLED = False
-_LOG_ROLE = os.getenv("SYNTHA_LOG_ROLE", "app")
+_LOG_ROLE = load_settings().logging.role
 
 
 def _install_log_record_factory() -> None:
@@ -28,8 +29,6 @@ def configure_logging(level: int = logging.INFO, *, role: str | None = None) -> 
     global _LOG_ROLE
     if role:
         _LOG_ROLE = role
-    elif os.getenv("SYNTHA_LOG_ROLE"):
-        _LOG_ROLE = os.environ["SYNTHA_LOG_ROLE"]
 
     _install_log_record_factory()
 

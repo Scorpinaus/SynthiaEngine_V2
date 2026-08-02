@@ -11,6 +11,7 @@ import torch
 from diffusers import ErnieImagePipeline
 
 from backend.config import OUTPUT_DIR
+from backend.settings import REPOSITORY_ROOT
 from backend.lora.utils import apply_lora_adapters_with_validation, write_lora_coverage_report
 from backend.registries.model import ModelRegistryEntry, list_model_entries
 from backend.utilities.logging import configure_logging
@@ -24,7 +25,6 @@ from backend.utilities.pipeline import (
 )
 
 _ERNIE_IMAGE_SUBPROCESS_SEMAPHORE = threading.Semaphore(1)
-_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 logger = logging.getLogger(__name__)
 configure_logging()
@@ -120,7 +120,7 @@ def run_text2img_subprocess(params: dict[str, object]) -> dict[str, list[str]]:
             str(output_path),
         ]
         with _ERNIE_IMAGE_SUBPROCESS_SEMAPHORE:
-            completed = subprocess.run(cmd, cwd=str(_REPO_ROOT))
+            completed = subprocess.run(cmd, cwd=str(REPOSITORY_ROOT))
 
         if not output_path.exists():
             raise RuntimeError("ERNIE-Image subprocess failed: No subprocess result was written.")

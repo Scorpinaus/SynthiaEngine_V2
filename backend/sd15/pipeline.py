@@ -36,6 +36,7 @@ from diffusers import (
 )
 
 from backend.config import OUTPUT_DIR
+from backend.settings import REPOSITORY_ROOT
 from backend.utilities.logging import configure_logging
 from backend.registries.model import get_model_entry
 from backend.utilities.resource_logging import resource_logger
@@ -76,7 +77,6 @@ _DEFAULT_IP_ADAPTER_MODEL = "h94/IP-Adapter"
 _DEFAULT_IP_ADAPTER_SUBFOLDER = "models"
 _DEFAULT_IP_ADAPTER_WEIGHT_NAME = "ip-adapter_sd15.bin"
 _DEFAULT_IP_ADAPTER_SCALE = 0.6
-_REPO_ROOT = Path(__file__).resolve().parents[2]
 _SD15_SUBPROCESS_SEMAPHORE = threading.Semaphore(1)
 
 """
@@ -360,7 +360,7 @@ def _run_sd15_subprocess(operation: str, params: dict[str, object]) -> list[str]
             str(output_path),
         ]
         with _SD15_SUBPROCESS_SEMAPHORE:
-            completed = subprocess.run(cmd, cwd=str(_REPO_ROOT))
+            completed = subprocess.run(cmd, cwd=str(REPOSITORY_ROOT))
 
         if not output_path.exists():
             raise RuntimeError("SD1.5 subprocess failed: No subprocess result was written.")

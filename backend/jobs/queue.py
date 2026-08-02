@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import logging
-import os
 import threading
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
 
@@ -16,6 +15,7 @@ from sqlalchemy.exc import OperationalError
 from backend.jobs.db import JobDbConfig, create_job_engine, create_sessionmaker
 from backend.jobs.db import DEFAULT_JOB_DB_URL
 from backend.jobs.models import Base, Job, JobTask, utcnow
+from backend.settings import load_settings
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ class JobQueueConfig:
     requeue_running_on_startup: bool = True
     lease_duration_s: float = 30.0
     heartbeat_interval_s: float = 5.0
-    worker_vram_mb: int = int(os.getenv("SYNTHA_WORKER_VRAM_MB", "0"))
+    worker_vram_mb: int = field(default_factory=lambda: load_settings().worker.vram_mb)
 
 
 def _sqlite_column_exists(engine: Engine, *, table: str, column: str) -> bool:

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import os
 import threading
 import weakref
 from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Callable, Generic, Hashable, TypeVar
+
+from backend.settings import PipelineCacheSettings, load_settings
 
 T = TypeVar("T")
 _CACHES: "weakref.WeakSet[PipelineCache]" = weakref.WeakSet()
@@ -34,11 +35,17 @@ class PipelineCache(Generic[T]):
         _CACHES.add(self)
 
     @classmethod
-    def from_env(cls, prefix: str = "SYNTHA_PIPELINE_CACHE") -> "PipelineCache[T]":
+    def from_settings(
+        cls,
+        settings: PipelineCacheSettings | None = None,
+        *,
+        name: str = "pipeline",
+    ) -> "PipelineCache[T]":
+        budget = settings or load_settings().pipeline_cache
         return cls(
-            max_entries=int(os.getenv(f"{prefix}_MAX_ENTRIES", "0")),
-            max_cost_mb=int(os.getenv(f"{prefix}_MAX_MB", "0")),
-            name=prefix.lower(),
+            max_entries=budget.max_entries,
+            max_cost_mb=budget.max_cost_mb,
+            name=name,
         )
 
     @property

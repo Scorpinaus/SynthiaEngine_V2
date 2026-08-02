@@ -16,7 +16,7 @@ from backend.adapters.controlnet_preprocessors import (
     list_preprocessors,
 )
 from backend.adapters.controlnet_preprocessor_registry import CONTROLNET_PREPROCESSOR_REGISTRY
-from backend.main import list_controlnet_preprocessors, run_controlnet_preprocessor
+from backend.api.controlnet import list_controlnet_preprocessors, run_controlnet_preprocessor
 from backend.workflow import _controlnet_preprocess
 
 

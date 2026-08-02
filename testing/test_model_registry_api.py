@@ -115,7 +115,7 @@ def test_local_path_select_returns_picker_path(monkeypatch):
         assert selection_type == "folder"
         return r"D:\diffusion\models\base"
 
-    monkeypatch.setattr("backend.main._open_local_path_dialog", fake_picker)
+    monkeypatch.setattr("backend.api.local_paths.open_local_path_dialog", fake_picker)
 
     selected = client.post("/api/local-path/select", json={"selection_type": "folder"})
 

@@ -38,6 +38,7 @@ Backend dependencies should point from orchestration toward implementation:
 
 ```text
 backend/main.py
+  -> backend/settings.py
   -> backend/api/
      -> backend/jobs/ and backend/workflow/
         -> family runtimes
@@ -79,9 +80,28 @@ contracts remain owned by focused tests:
 
 ## 3. Backend Architecture
 
-### 3.1 API Layer (`backend/main.py`)
+### 3.1 API Composition and Routers
 
-`backend/main.py` owns HTTP concerns and keeps core behavior in backend modules.
+`backend/main.py` is the application composition root. Its `create_app()`
+factory owns settings selection, logging setup, middleware, static mounts,
+router inclusion, health, and lifespan/queue wiring while preserving the
+`backend.main:app` startup target. Endpoint behavior lives under `backend/api/`:
+
+- `artifacts.py`: bounded image/video uploads, backed by `backend/artifacts.py`
+- `local_paths.py`: loopback-protected native path selection
+- `controlnet.py`: preprocessor catalog and preprocessing
+- `model_analysis.py`: temporary-file model inspection
+- `masks.py`: inpainting mask utilities
+- `jobs.py`, `workflow.py`, `history.py`, `models.py`, `loras.py`, and
+  `presets.py`: their named HTTP domains
+
+`backend/settings.py` parses process configuration into frozen typed settings.
+It resolves the repository root, outputs/database paths, CORS origins, upload
+limits, embedded worker and path-picker policy, logging role, worker capacity,
+and shared pipeline-cache budgets. Model-family tuning remains in the owning
+runtime module. `backend/config.py` retains compatibility constants without
+creating directories when merely imported; directory creation is explicit in
+application startup and persistence services.
 
 Major route groups:
 
@@ -100,7 +120,7 @@ Major route groups:
   - `GET /api/workflow/catalog`
 - Artifacts:
   - `POST /api/artifacts`
-  - Static serving via `app.mount("/outputs", StaticFiles(directory=OUTPUT_DIR), name="outputs")`
+  - Static serving via the configured output directory at `/outputs`
 - Registries:
   - Models: `/models` and `/models/{model_name}`
   - LoRAs: `/lora-models` and `/lora-models/{lora_id}`

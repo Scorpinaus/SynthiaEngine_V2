@@ -4,8 +4,8 @@ from types import SimpleNamespace
 import pytest
 
 import backend.workflow as workflow
+from backend.api.jobs import serialize_job
 from backend.jobs import queue as job_queue
-from backend.main import _serialize_job
 from backend.utilities import resource_logging
 
 
@@ -25,7 +25,7 @@ def test_serialize_job_timestamps_include_timezone_for_sqlite_naive_datetimes():
         finished_at=datetime(2026, 4, 25, 5, 52, 59, 197138, tzinfo=timezone.utc),
     )
 
-    payload = _serialize_job(job).model_dump()
+    payload = serialize_job(job).model_dump()
 
     assert payload["created_at"] == "2026-04-25T05:52:47.541776+00:00"
     assert payload["updated_at"] == "2026-04-25T05:52:59.197138+00:00"

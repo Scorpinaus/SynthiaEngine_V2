@@ -1,10 +1,11 @@
-from pathlib import Path
+"""Compatibility constants backed by the centralized settings boundary."""
 
-OUTPUT_DIR = Path("outputs")
-OUTPUT_DIR.mkdir(exist_ok=True)
+from backend.settings import load_settings
 
-DATABASE_DIR = Path("database")
-DATABASE_DIR.mkdir(exist_ok=True)
+
+_SETTINGS = load_settings()
+OUTPUT_DIR = _SETTINGS.paths.output_dir
+DATABASE_DIR = _SETTINGS.paths.database_dir
 
 DEFAULTS = {
     "steps": 20,

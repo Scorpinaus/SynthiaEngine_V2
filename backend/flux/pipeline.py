@@ -34,14 +34,14 @@ from backend.utilities.pipeline import (
     save_generated_image,
 )
 from backend.flux.subprocess_io import serialize_params_for_subprocess
+from backend.settings import REPOSITORY_ROOT
 from backend.utilities.pipeline_cache import PipelineCache
 
 """
     Static Variables and Logging
 """
-_REPO_ROOT = Path(__file__).resolve().parents[2]
 _FLUX_SUBPROCESS_SEMAPHORE = threading.Semaphore(1)
-_FLUX_PIPELINE_CACHE = PipelineCache.from_env()
+_FLUX_PIPELINE_CACHE = PipelineCache.from_settings(name="flux")
 
 logger = logging.getLogger(__name__)
 configure_logging()
@@ -91,7 +91,7 @@ def _run_flux_subprocess(operation: str, params: dict[str, object]) -> dict[str,
             str(output_path),
         ]
         with _FLUX_SUBPROCESS_SEMAPHORE:
-            completed = subprocess.run(cmd, cwd=str(_REPO_ROOT))
+            completed = subprocess.run(cmd, cwd=str(REPOSITORY_ROOT))
 
         if not output_path.exists():
             raise RuntimeError("Flux subprocess failed: No subprocess result was written.")

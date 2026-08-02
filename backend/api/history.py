@@ -5,10 +5,10 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from PIL import Image
 
-from backend.config import OUTPUT_DIR
+from backend.api.dependencies import get_app_settings
 
 router = APIRouter(tags=["history"])
 logger = logging.getLogger(__name__)
@@ -81,17 +81,18 @@ def _media_type(path: Path) -> str | None:
 
 
 @router.get("/history")
-async def list_history():
-    if not OUTPUT_DIR.exists():
+async def list_history(request: Request):
+    output_dir = get_app_settings(request).paths.output_dir
+    if not output_dir.exists():
         return []
 
     records: list[dict[str, object]] = []
-    for media_path in OUTPUT_DIR.rglob("*"):
+    for media_path in output_dir.rglob("*"):
         media_type = _media_type(media_path) if media_path.is_file() else None
         if media_type is None:
             continue
         timestamp = media_path.stat().st_mtime
-        relative_path = media_path.relative_to(OUTPUT_DIR)
+        relative_path = media_path.relative_to(output_dir)
         metadata = (
             _read_png_metadata(media_path)
             if media_type == "image"

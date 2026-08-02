@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import re
-import uuid
 from pathlib import Path
 from typing import Any
 
 from PIL import Image
 
+from backend.artifacts import (
+    VIDEO_ARTIFACT_EXTENSIONS,
+    save_artifact_file as persist_artifact_file,
+    save_artifact_png as persist_artifact_png,
+)
 from backend.config import OUTPUT_DIR
 from backend.workflow.schema_input import _DEFAULT_SD15_CONTROLNET_MODEL
 
@@ -20,7 +24,7 @@ def _artifact_dir() -> Path:
 _ARTIFACT_ID_RE = re.compile(r"^[apev][0-9a-f]{32}$")
 _IMAGE_ARTIFACT_ID_RE = re.compile(r"^[ap][0-9a-f]{32}$")
 _VIDEO_ARTIFACT_ID_RE = re.compile(r"^v[0-9a-f]{32}$")
-_VIDEO_ARTIFACT_EXTENSIONS = {".mp4", ".webm", ".mov", ".gif"}
+_VIDEO_ARTIFACT_EXTENSIONS = VIDEO_ARTIFACT_EXTENSIONS
 
 
 def _validate_artifact_id(value: str) -> str:
@@ -106,24 +110,16 @@ def cleanup_artifacts(artifact_ids: set[str]) -> None:
 
 
 def save_artifact_png(image: Image.Image, *, prefix: str = "a") -> dict[str, str]:
-    artifact_id = f"{prefix}{uuid.uuid4().hex}"
-    path = _artifact_dir() / f"{artifact_id}.png"
-    image.save(path, format="PNG")
-    rel = path.relative_to(OUTPUT_DIR).as_posix()
-    return {"artifact_id": artifact_id, "path": rel, "url": f"/outputs/{rel}"}
+    return persist_artifact_png(image, output_dir=OUTPUT_DIR, prefix=prefix)
 
 
 def save_artifact_file(file_bytes: bytes, *, extension: str, prefix: str = "v") -> dict[str, str]:
-    ext = extension.lower()
-    if not ext.startswith("."):
-        ext = f".{ext}"
-    if ext not in _VIDEO_ARTIFACT_EXTENSIONS:
-        raise ValueError("Unsupported artifact file extension.")
-    artifact_id = f"{prefix}{uuid.uuid4().hex}"
-    path = _artifact_dir() / f"{artifact_id}{ext}"
-    path.write_bytes(file_bytes)
-    rel = path.relative_to(OUTPUT_DIR).as_posix()
-    return {"artifact_id": artifact_id, "path": rel, "url": f"/outputs/{rel}"}
+    return persist_artifact_file(
+        file_bytes,
+        extension=extension,
+        output_dir=OUTPUT_DIR,
+        prefix=prefix,
+    )
 
 
 def _load_image_from_outputs_url(url: str) -> Image.Image:

@@ -115,6 +115,23 @@ set SYNTHA_LOG_ROLE=render
 .venv\Scripts\python.exe -m backend.jobs.render_worker
 ```
 
+Process configuration is parsed centrally by `backend/settings.py`. Defaults
+are repository-relative and can be overridden before startup:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `SYNTHA_OUTPUT_DIR` | `outputs` | Generated and uploaded artifact directory |
+| `SYNTHA_DATABASE_DIR` | `database` | SQLite state directory |
+| `SYNTHA_CORS_ORIGINS` | local frontend origins | Comma-separated allowed browser origins |
+| `SYNTHA_MAX_UPLOAD_BYTES` | `104857600` | Artifact upload byte limit |
+| `SYNTHA_MAX_IMAGE_PIXELS` | `67108864` | Decoded artifact image pixel limit |
+| `SYNTHA_API_START_WORKER` | `1` | Enable the embedded API renderer |
+| `SYNTHA_ALLOW_REMOTE_PATH_PICKER` | `0` | Allow non-loopback clients to open the host picker |
+| `SYNTHA_LOG_ROLE` | process default | Role included in log records |
+| `SYNTHA_WORKER_VRAM_MB` | `0` | Worker capacity filter (`0` disables filtering) |
+| `SYNTHA_PIPELINE_CACHE_MAX_ENTRIES` | `0` | Shared pipeline-cache entry budget |
+| `SYNTHA_PIPELINE_CACHE_MAX_MB` | `0` | Shared pipeline-cache memory budget |
+
 Note: `requirements.txt` currently references a local editable dependency `-e ./controlnet_aux`. If you don't have that folder in this repo checkout, `pip install -r requirements.txt` will fail; either add it (if you use it) or remove/replace that line.
 
 ## API docs

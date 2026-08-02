@@ -23,6 +23,7 @@ from diffusers.hooks.group_offloading import apply_group_offloading
 from transformers import CLIPVisionModel
 
 from backend.config import OUTPUT_DIR
+from backend.settings import REPOSITORY_ROOT
 from backend.quantization import build_diffusers_pipeline_quantization_config
 from backend.utilities.logging import configure_logging
 from backend.utilities.pipeline import (
@@ -36,7 +37,6 @@ from backend.wan.subprocess_io import serialize_params_for_subprocess
 logger = logging.getLogger(__name__)
 configure_logging()
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
 _WAN_SUBPROCESS_SEMAPHORE = threading.Semaphore(1)
 _DEFAULT_MODEL_ID = r"D:\diffusion\diffusers\Wan2.1-T2V-1.3B-Diffusers"
 _DEFAULT_VACE_MODEL_ID = r"D:\diffusion\diffusers\Wan2.1-VACE-1.3B-diffusers"
@@ -314,7 +314,7 @@ def _run_wan_subprocess(operation: str, params: dict[str, object]) -> list[str]:
             str(output_path),
         ]
         with _WAN_SUBPROCESS_SEMAPHORE:
-            completed = subprocess.run(cmd, cwd=str(_REPO_ROOT))
+            completed = subprocess.run(cmd, cwd=str(REPOSITORY_ROOT))
 
         if not output_path.exists():
             raise RuntimeError("WAN subprocess failed: No subprocess result was written.")

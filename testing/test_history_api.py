@@ -1,10 +1,10 @@
 import json
+from dataclasses import replace
 
 from fastapi.testclient import TestClient
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 
-import backend.api.history as history_module
 from backend.main import app
 
 
@@ -50,7 +50,8 @@ def test_history_lists_images_and_videos(tmp_path, monkeypatch):
     fallback_video_path = fallback_dir / "fallback456_1.mp4"
     fallback_video_path.write_bytes(b"fake fallback mp4 bytes")
 
-    monkeypatch.setattr(history_module, "OUTPUT_DIR", output_dir)
+    paths = replace(app.state.settings.paths, output_dir=output_dir)
+    monkeypatch.setattr(app.state, "settings", replace(app.state.settings, paths=paths))
 
     client = TestClient(app)
     response = client.get("/history")

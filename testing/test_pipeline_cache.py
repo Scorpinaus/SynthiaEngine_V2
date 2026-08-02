@@ -1,5 +1,17 @@
 from backend.utilities.pipeline_cache import PipelineCache
 from backend.flux.pipeline import _timed_pipeline_call
+from backend.settings import PipelineCacheSettings
+
+
+def test_cache_uses_typed_budget_settings():
+    cache = PipelineCache.from_settings(
+        PipelineCacheSettings(max_entries=2, max_cost_mb=512),
+        name="test",
+    )
+
+    assert cache.name == "test"
+    assert cache.max_entries == 2
+    assert cache.max_cost_mb == 512
 
 
 def test_disabled_cache_leaves_value_owned_by_caller():
