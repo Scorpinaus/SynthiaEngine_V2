@@ -1,16 +1,10 @@
-import json
 import logging
-import subprocess
-import sys
-import tempfile
 import threading
-from pathlib import Path
 
 import torch
 from diffusers import QwenImageImg2ImgPipeline, QwenImageInpaintPipeline, QwenImagePipeline
 
 from backend.config import OUTPUT_DIR
-from backend.settings import REPOSITORY_ROOT
 from backend.utilities.logging import configure_logging
 from backend.lora.utils import apply_lora_adapters_with_validation, write_lora_coverage_report
 from backend.registries.model import get_model_entry
@@ -24,7 +18,11 @@ from backend.utilities.pipeline import (
     save_generated_image,
 )
 from backend.utilities.schedulers import create_scheduler
-from backend.qwen_image.subprocess_io import serialize_params_for_subprocess
+from backend.utilities.subprocess_transport import (
+    SubprocessTransport,
+    normalize_image_result,
+    run_subprocess,
+)
 
 _QWEN_IMAGE_SUBPROCESS_SEMAPHORE = threading.Semaphore(1)
 
@@ -123,46 +121,17 @@ def load_inpaint_pipeline(model_name: str | None) -> QwenImageInpaintPipeline:
 """ Methods involving generation using Qwen_Image related pipelines """
 
 def _run_qwen_image_subprocess(operation: str, params: dict[str, object]) -> dict[str, list[str]]:
-
-
-    with tempfile.TemporaryDirectory(prefix="qwen_image_") as tmpdir:
-        tmp_path = Path(tmpdir)
-        input_path = tmp_path / "input.json"
-        output_path = tmp_path / "output.json"
-        payload = {
-            "operation": operation,
-            "params": serialize_params_for_subprocess(params, tmp_path),
-        }
-        input_path.write_text(
-            json.dumps(payload, separators=(",", ": ")),
-            encoding="utf-8",
-        )
-
-        cmd = [
-            sys.executable,
-            "-m",
-            "backend.qwen_image.subprocess_runner",
-            str(input_path),
-            str(output_path),
-        ]
-        with _QWEN_IMAGE_SUBPROCESS_SEMAPHORE:
-            completed = subprocess.run(cmd, cwd=str(REPOSITORY_ROOT))
-
-        if not output_path.exists():
-            raise RuntimeError("Qwen-Image subprocess failed: No subprocess result was written.")
-
-        result_payload = json.loads(output_path.read_text(encoding="utf-8"))
-        if completed.returncode != 0 or not result_payload.get("ok"):
-            detail = result_payload.get("error") or "Unknown subprocess failure."
-            error_type = result_payload.get("error_type")
-            if error_type:
-                detail = f"{error_type}: {detail}"
-            raise RuntimeError(f"Qwen-Image subprocess failed: {detail}")
-
-        result = result_payload.get("result")
-        if not isinstance(result, dict) or not isinstance(result.get("images"), list):
-            raise RuntimeError("Qwen-Image subprocess returned an invalid result.")
-        return {"images": [str(path) for path in result["images"]]}
+    result = run_subprocess(
+        SubprocessTransport(
+            family="Qwen-Image",
+            runner_module="backend.qwen_image.subprocess_runner",
+            temp_prefix="qwen_image_",
+            launch_gate=_QWEN_IMAGE_SUBPROCESS_SEMAPHORE,
+        ),
+        operation,
+        params,
+    )
+    return normalize_image_result(result, family="Qwen-Image")
 
 
 def generate_text2img(params: dict[str, object]) -> dict[str, list[str]]:

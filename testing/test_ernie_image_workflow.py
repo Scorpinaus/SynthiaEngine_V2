@@ -142,7 +142,7 @@ class ErnieImageWorkflowTests(unittest.TestCase):
             output_path = Path(cmd[-1])
             self.assertEqual(
                 __import__("json").loads(input_path.read_text(encoding="utf-8")),
-                {"prompt": "test"},
+                {"operation": "text2img", "params": {"prompt": "test"}},
             )
             output_path.write_text(
                 '{"ok": true, "result": {"images": ["/outputs/fake.png"]}}',
@@ -150,7 +150,10 @@ class ErnieImageWorkflowTests(unittest.TestCase):
             )
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-        with patch("backend.ernie_image.pipeline.subprocess.run", side_effect=fake_run) as run_mock:
+        with patch(
+            "backend.utilities.subprocess_transport.subprocess.run",
+            side_effect=fake_run,
+        ) as run_mock:
             result = run_text2img_subprocess(params)
 
         self.assertEqual(result, {"images": ["/outputs/fake.png"]})
@@ -228,7 +231,7 @@ class ErnieImageWorkflowTests(unittest.TestCase):
 
         with (
             patch("backend.ernie_image.pipeline._ERNIE_IMAGE_SUBPROCESS_SEMAPHORE", FakeSemaphore()),
-            patch("backend.ernie_image.pipeline.subprocess.run", side_effect=fake_run),
+            patch("backend.utilities.subprocess_transport.subprocess.run", side_effect=fake_run),
         ):
             result = run_text2img_subprocess(params)
 
@@ -243,7 +246,10 @@ class ErnieImageWorkflowTests(unittest.TestCase):
                     with tempfile.TemporaryDirectory(prefix="ernie_runner_test_") as tmpdir:
                         input_path = Path(tmpdir) / "input.json"
                         output_path = Path(tmpdir) / "output.json"
-                        input_path.write_text('{"prompt": "test"}', encoding="utf-8")
+                        input_path.write_text(
+                            '{"operation": "text2img", "params": {"prompt": "test"}}',
+                            encoding="utf-8",
+                        )
 
                         code = subprocess_runner.main([str(input_path), str(output_path)])
 
@@ -258,7 +264,10 @@ class ErnieImageWorkflowTests(unittest.TestCase):
                     with tempfile.TemporaryDirectory(prefix="ernie_runner_test_") as tmpdir:
                         input_path = Path(tmpdir) / "input.json"
                         output_path = Path(tmpdir) / "output.json"
-                        input_path.write_text('{"prompt": "test"}', encoding="utf-8")
+                        input_path.write_text(
+                            '{"operation": "text2img", "params": {"prompt": "test"}}',
+                            encoding="utf-8",
+                        )
 
                         code = subprocess_runner.main([str(input_path), str(output_path)])
                         payload = json.loads(output_path.read_text(encoding="utf-8"))

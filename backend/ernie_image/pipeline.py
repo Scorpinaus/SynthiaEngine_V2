@@ -1,17 +1,11 @@
-import json
 import logging
-import subprocess
-import sys
-import tempfile
 import threading
-from pathlib import Path
 from typing import Literal
 
 import torch
 from diffusers import ErnieImagePipeline
 
 from backend.config import OUTPUT_DIR
-from backend.settings import REPOSITORY_ROOT
 from backend.lora.utils import apply_lora_adapters_with_validation, write_lora_coverage_report
 from backend.registries.model import ModelRegistryEntry, list_model_entries
 from backend.utilities.logging import configure_logging
@@ -22,6 +16,11 @@ from backend.utilities.pipeline import (
     get_batch_output_dir,
     make_batch_id,
     resolve_model_source,
+)
+from backend.utilities.subprocess_transport import (
+    SubprocessTransport,
+    normalize_image_result,
+    run_subprocess,
 )
 
 _ERNIE_IMAGE_SUBPROCESS_SEMAPHORE = threading.Semaphore(1)
@@ -102,42 +101,17 @@ def load_text2img_pipeline(
 
 
 def run_text2img_subprocess(params: dict[str, object]) -> dict[str, list[str]]:
-    child_params = dict(params)
-
-    with tempfile.TemporaryDirectory(prefix="ernie_image_") as tmpdir:
-        input_path = Path(tmpdir) / "input.json"
-        output_path = Path(tmpdir) / "output.json"
-        input_path.write_text(
-            json.dumps(child_params, separators=(",", ": ")),
-            encoding="utf-8",
-        )
-
-        cmd = [
-            sys.executable,
-            "-m",
-            "backend.ernie_image.subprocess_runner",
-            str(input_path),
-            str(output_path),
-        ]
-        with _ERNIE_IMAGE_SUBPROCESS_SEMAPHORE:
-            completed = subprocess.run(cmd, cwd=str(REPOSITORY_ROOT))
-
-        if not output_path.exists():
-            raise RuntimeError("ERNIE-Image subprocess failed: No subprocess result was written.")
-
-        payload = json.loads(output_path.read_text(encoding="utf-8"))
-        if completed.returncode != 0 or not payload.get("ok"):
-            detail = payload.get("error") or "Unknown subprocess failure."
-            error_type = payload.get("error_type")
-            if error_type:
-                detail = f"{error_type}: {detail}"
-            raise RuntimeError(f"ERNIE-Image subprocess failed: {detail}")
-
-        result = payload.get("result")
-        if not isinstance(result, dict) or not isinstance(result.get("images"), list):
-            raise RuntimeError("ERNIE-Image subprocess returned an invalid result.")
-
-        return {"images": [str(path) for path in result["images"]]}
+    result = run_subprocess(
+        SubprocessTransport(
+            family="ERNIE-Image",
+            runner_module="backend.ernie_image.subprocess_runner",
+            temp_prefix="ernie_image_",
+            launch_gate=_ERNIE_IMAGE_SUBPROCESS_SEMAPHORE,
+        ),
+        "text2img",
+        params,
+    )
+    return normalize_image_result(result, family="ERNIE-Image")
 
 
 def generate_text2img(params: dict[str, object]) -> dict[str, list[str]]:

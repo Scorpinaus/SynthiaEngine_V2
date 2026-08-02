@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from PIL import Image
 
-from backend.qwen_image.subprocess_io import serialize_params_for_subprocess
+from backend.utilities.subprocess_transport import serialize_params_for_subprocess
 
 
 def _ensure_lightweight_runtime_modules():
@@ -65,7 +65,7 @@ class QwenImageSubprocessTests(unittest.TestCase):
 
         with (
             patch.object(qwen_image_pipeline, "_QWEN_IMAGE_SUBPROCESS_SEMAPHORE", FakeSemaphore()),
-            patch.object(qwen_image_pipeline.subprocess, "run", side_effect=fake_run),
+            patch("backend.utilities.subprocess_transport.subprocess.run", side_effect=fake_run),
         ):
             result = qwen_image_pipeline.generate_text2img(params)
 
@@ -88,7 +88,10 @@ class QwenImageSubprocessTests(unittest.TestCase):
             )
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-        with patch.object(qwen_image_pipeline.subprocess, "run", side_effect=fake_run) as run_mock:
+        with patch(
+            "backend.utilities.subprocess_transport.subprocess.run",
+            side_effect=fake_run,
+        ) as run_mock:
             result = qwen_image_pipeline.generate_text2img(params)
 
         self.assertEqual(result, {"images": ["/outputs/fake.png"]})
@@ -105,7 +108,8 @@ class QwenImageSubprocessTests(unittest.TestCase):
             output_path = Path(cmd[-1])
             payload = json.loads(input_path.read_text(encoding="utf-8"))
             marker = payload["params"]["initial_image"]
-            image_path = Path(marker["__qwen_image_subprocess_image__"])
+            self.assertEqual(marker["__syntha_subprocess_value__"], "image")
+            image_path = Path(marker["path"])
             self.assertTrue(image_path.exists())
             with Image.open(image_path) as saved:
                 self.assertEqual(saved.size, (4, 3))
@@ -116,7 +120,10 @@ class QwenImageSubprocessTests(unittest.TestCase):
             )
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-        with patch.object(qwen_image_pipeline.subprocess, "run", side_effect=fake_run):
+        with patch(
+            "backend.utilities.subprocess_transport.subprocess.run",
+            side_effect=fake_run,
+        ):
             result = qwen_image_pipeline.generate_img2img({"initial_image": image})
 
         self.assertEqual(result, {"images": ["/outputs/fake.png"]})

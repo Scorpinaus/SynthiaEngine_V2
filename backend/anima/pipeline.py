@@ -1,17 +1,11 @@
-import json
 import logging
-import subprocess
-import sys
-import tempfile
 import threading
-from pathlib import Path
 from typing import Literal
 
 import torch
 from diffusers import DiffusionPipeline
 
 from backend.config import OUTPUT_DIR
-from backend.settings import REPOSITORY_ROOT
 from backend.registries.model import ModelRegistryEntry, list_model_entries
 from backend.utilities.logging import configure_logging
 from backend.utilities.pipeline import (
@@ -24,6 +18,11 @@ from backend.utilities.pipeline import (
     resolve_model_source,
 )
 from backend.utilities.schedulers import create_scheduler
+from backend.utilities.subprocess_transport import (
+    SubprocessTransport,
+    normalize_image_result,
+    run_subprocess,
+)
 
 _ANIMA_SUBPROCESS_SEMAPHORE = threading.Semaphore(1)
 
@@ -111,42 +110,17 @@ def load_text2img_pipeline(
 
 
 def run_text2img_subprocess(params: dict[str, object]) -> dict[str, list[str]]:
-    child_params = dict(params)
-
-    with tempfile.TemporaryDirectory(prefix="anima_") as tmpdir:
-        input_path = Path(tmpdir) / "input.json"
-        output_path = Path(tmpdir) / "output.json"
-        input_path.write_text(
-            json.dumps(child_params, separators=(",", ": ")),
-            encoding="utf-8",
-        )
-
-        cmd = [
-            sys.executable,
-            "-m",
-            "backend.anima.subprocess_runner",
-            str(input_path),
-            str(output_path),
-        ]
-        with _ANIMA_SUBPROCESS_SEMAPHORE:
-            completed = subprocess.run(cmd, cwd=str(REPOSITORY_ROOT))
-
-        if not output_path.exists():
-            raise RuntimeError("Anima subprocess failed: No subprocess result was written.")
-
-        payload = json.loads(output_path.read_text(encoding="utf-8"))
-        if completed.returncode != 0 or not payload.get("ok"):
-            detail = payload.get("error") or "Unknown subprocess failure."
-            error_type = payload.get("error_type")
-            if error_type:
-                detail = f"{error_type}: {detail}"
-            raise RuntimeError(f"Anima subprocess failed: {detail}")
-
-        result = payload.get("result")
-        if not isinstance(result, dict) or not isinstance(result.get("images"), list):
-            raise RuntimeError("Anima subprocess returned an invalid result.")
-
-        return {"images": [str(path) for path in result["images"]]}
+    result = run_subprocess(
+        SubprocessTransport(
+            family="Anima",
+            runner_module="backend.anima.subprocess_runner",
+            temp_prefix="anima_",
+            launch_gate=_ANIMA_SUBPROCESS_SEMAPHORE,
+        ),
+        "text2img",
+        params,
+    )
+    return normalize_image_result(result, family="Anima")
 
 
 def generate_text2img(params: dict[str, object]) -> dict[str, list[str]]:

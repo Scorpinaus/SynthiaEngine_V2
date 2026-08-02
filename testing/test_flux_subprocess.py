@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from PIL import Image
 
-from backend.flux.subprocess_io import serialize_params_for_subprocess
+from backend.utilities.subprocess_transport import serialize_params_for_subprocess
 
 
 def _ensure_lightweight_runtime_modules():
@@ -83,7 +83,7 @@ class FluxSubprocessTests(unittest.TestCase):
 
         with (
             patch.object(flux_pipeline, "_FLUX_SUBPROCESS_SEMAPHORE", FakeSemaphore()),
-            patch.object(flux_pipeline.subprocess, "run", side_effect=fake_run),
+            patch("backend.utilities.subprocess_transport.subprocess.run", side_effect=fake_run),
         ):
             result = flux_pipeline.generate_text2img(params)
 
@@ -106,7 +106,10 @@ class FluxSubprocessTests(unittest.TestCase):
             )
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-        with patch.object(flux_pipeline.subprocess, "run", side_effect=fake_run) as run_mock:
+        with patch(
+            "backend.utilities.subprocess_transport.subprocess.run",
+            side_effect=fake_run,
+        ) as run_mock:
             result = flux_pipeline.generate_text2img(params)
 
         self.assertEqual(result, {"images": ["/outputs/fake.png"]})
@@ -125,7 +128,10 @@ class FluxSubprocessTests(unittest.TestCase):
             )
             return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="")
 
-        with patch.object(flux_pipeline.subprocess, "run", side_effect=fake_run):
+        with patch(
+            "backend.utilities.subprocess_transport.subprocess.run",
+            side_effect=fake_run,
+        ):
             with self.assertRaisesRegex(
                 RuntimeError,
                 "Flux subprocess failed: ValueError: bad input",
@@ -141,7 +147,8 @@ class FluxSubprocessTests(unittest.TestCase):
             output_path = Path(cmd[-1])
             payload = json.loads(input_path.read_text(encoding="utf-8"))
             marker = payload["params"]["initial_image"]
-            image_path = Path(marker["__flux_subprocess_image__"])
+            self.assertEqual(marker["__syntha_subprocess_value__"], "image")
+            image_path = Path(marker["path"])
             self.assertTrue(image_path.exists())
             with Image.open(image_path) as saved:
                 self.assertEqual(saved.size, (4, 3))
@@ -152,7 +159,10 @@ class FluxSubprocessTests(unittest.TestCase):
             )
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-        with patch.object(flux_pipeline.subprocess, "run", side_effect=fake_run):
+        with patch(
+            "backend.utilities.subprocess_transport.subprocess.run",
+            side_effect=fake_run,
+        ):
             result = flux_pipeline.generate_img2img({"initial_image": image})
 
         self.assertEqual(result, {"images": ["/outputs/fake.png"]})

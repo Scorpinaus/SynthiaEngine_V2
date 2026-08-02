@@ -1,8 +1,4 @@
-import json
 import logging
-import subprocess
-import sys
-import tempfile
 import threading
 from contextlib import contextmanager
 from pathlib import Path
@@ -20,7 +16,6 @@ from diffusers import (
 )
 
 from backend.config import OUTPUT_DIR
-from backend.settings import REPOSITORY_ROOT
 from backend.adapters.ip_adapter import IpAdapterManager
 from backend.adapters.ip_adapter_embeds import (
     load_ip_adapter_embeds_artifact,
@@ -39,7 +34,11 @@ from backend.utilities.pipeline import (
     resolve_model_source,
 )
 from backend.utilities.schedulers import create_scheduler
-from backend.sdxl.subprocess_io import serialize_params_for_subprocess
+from backend.utilities.subprocess_transport import (
+    SubprocessTransport,
+    normalize_image_result,
+    run_subprocess,
+)
 
 logger = logging.getLogger(__name__)
 configure_logging()
@@ -291,45 +290,17 @@ def _metadata_without_runtime_images(params: dict[str, object]) -> dict[str, obj
 
 
 def _run_sdxl_subprocess(operation: str, params: dict[str, object]) -> dict[str, list[str]]:
-
-    with tempfile.TemporaryDirectory(prefix="sdxl_") as tmpdir:
-        tmp_path = Path(tmpdir)
-        input_path = tmp_path / "input.json"
-        output_path = tmp_path / "output.json"
-        payload = {
-            "operation": operation,
-            "params": serialize_params_for_subprocess(params, tmp_path),
-        }
-        input_path.write_text(
-            json.dumps(payload, separators=(",", ": ")),
-            encoding="utf-8",
-        )
-
-        cmd = [
-            sys.executable,
-            "-m",
-            "backend.sdxl.subprocess_runner",
-            str(input_path),
-            str(output_path),
-        ]
-        with _SDXL_SUBPROCESS_SEMAPHORE:
-            completed = subprocess.run(cmd, cwd=str(REPOSITORY_ROOT))
-
-        if not output_path.exists():
-            raise RuntimeError("SDXL subprocess failed: No subprocess result was written.")
-
-        result_payload = json.loads(output_path.read_text(encoding="utf-8"))
-        if completed.returncode != 0 or not result_payload.get("ok"):
-            detail = result_payload.get("error") or "Unknown subprocess failure."
-            error_type = result_payload.get("error_type")
-            if error_type:
-                detail = f"{error_type}: {detail}"
-            raise RuntimeError(f"SDXL subprocess failed: {detail}")
-
-        result = result_payload.get("result")
-        if not isinstance(result, dict) or not isinstance(result.get("images"), list):
-            raise RuntimeError("SDXL subprocess returned an invalid result.")
-        return {"images": [str(path) for path in result["images"]]}
+    result = run_subprocess(
+        SubprocessTransport(
+            family="SDXL",
+            runner_module="backend.sdxl.subprocess_runner",
+            temp_prefix="sdxl_",
+            launch_gate=_SDXL_SUBPROCESS_SEMAPHORE,
+        ),
+        operation,
+        params,
+    )
+    return normalize_image_result(result, family="SDXL")
 
 
 def generate_controlnet_text2img(params: dict[str, object]) -> dict[str, list[str]]:

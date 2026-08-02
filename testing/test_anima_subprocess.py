@@ -87,7 +87,7 @@ class AnimaSubprocessTests(unittest.TestCase):
 
         with (
             patch.object(anima_pipeline, "_ANIMA_SUBPROCESS_SEMAPHORE", FakeSemaphore()),
-            patch.object(anima_pipeline.subprocess, "run", side_effect=fake_run),
+            patch("backend.utilities.subprocess_transport.subprocess.run", side_effect=fake_run),
         ):
             result = anima_pipeline.generate_text2img(params)
 
@@ -102,14 +102,17 @@ class AnimaSubprocessTests(unittest.TestCase):
             input_path = Path(cmd[-2])
             output_path = Path(cmd[-1])
             payload = json.loads(input_path.read_text(encoding="utf-8"))
-            self.assertEqual(payload, params)
+            self.assertEqual(payload, {"operation": "text2img", "params": params})
             output_path.write_text(
                 '{"ok": true, "result": {"images": ["/outputs/fake.png"]}}',
                 encoding="utf-8",
             )
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-        with patch.object(anima_pipeline.subprocess, "run", side_effect=fake_run) as run_mock:
+        with patch(
+            "backend.utilities.subprocess_transport.subprocess.run",
+            side_effect=fake_run,
+        ) as run_mock:
             result = anima_pipeline.generate_text2img(params)
 
         self.assertEqual(result, {"images": ["/outputs/fake.png"]})
@@ -128,7 +131,7 @@ class AnimaSubprocessTests(unittest.TestCase):
                     input_path = Path(tmpdir) / "input.json"
                     output_path = Path(tmpdir) / "output.json"
                     input_path.write_text(
-                        '{"prompt": "test"}',
+                        '{"operation": "text2img", "params": {"prompt": "test"}}',
                         encoding="utf-8",
                     )
 

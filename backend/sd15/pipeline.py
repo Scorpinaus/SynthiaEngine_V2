@@ -12,12 +12,8 @@ aim to be deterministic (seeded) and side-effectful only in well-defined ways
 """
 
 import torch
-import json
 import logging
 import math
-import subprocess
-import sys
-import tempfile
 import threading
 import numpy as np
 from contextlib import contextmanager
@@ -36,7 +32,6 @@ from diffusers import (
 )
 
 from backend.config import OUTPUT_DIR
-from backend.settings import REPOSITORY_ROOT
 from backend.utilities.logging import configure_logging
 from backend.registries.model import get_model_entry
 from backend.utilities.resource_logging import resource_logger
@@ -64,7 +59,11 @@ from backend.utilities.pipeline_layer_logging import (
     collect_pipeline_layers,
 )
 from backend.lora.utils import apply_lora_adapters_with_validation, write_lora_coverage_report
-from backend.sd15.subprocess_io import serialize_params_for_subprocess
+from backend.utilities.subprocess_transport import (
+    SubprocessTransport,
+    normalize_path_list,
+    run_subprocess,
+)
 
 logger = logging.getLogger(__name__)
 configure_logging()
@@ -338,45 +337,17 @@ def _build_ip_adapter_kwargs(
 
 
 def _run_sd15_subprocess(operation: str, params: dict[str, object]) -> list[str]:
-
-    with tempfile.TemporaryDirectory(prefix="sd15_") as tmpdir:
-        tmp_path = Path(tmpdir)
-        input_path = tmp_path / "input.json"
-        output_path = tmp_path / "output.json"
-        payload = {
-            "operation": operation,
-            "params": serialize_params_for_subprocess(params, tmp_path),
-        }
-        input_path.write_text(
-            json.dumps(payload, separators=(",", ": ")),
-            encoding="utf-8",
-        )
-
-        cmd = [
-            sys.executable,
-            "-m",
-            "backend.sd15.subprocess_runner",
-            str(input_path),
-            str(output_path),
-        ]
-        with _SD15_SUBPROCESS_SEMAPHORE:
-            completed = subprocess.run(cmd, cwd=str(REPOSITORY_ROOT))
-
-        if not output_path.exists():
-            raise RuntimeError("SD1.5 subprocess failed: No subprocess result was written.")
-
-        result_payload = json.loads(output_path.read_text(encoding="utf-8"))
-        if completed.returncode != 0 or not result_payload.get("ok"):
-            detail = result_payload.get("error") or "Unknown subprocess failure."
-            error_type = result_payload.get("error_type")
-            if error_type:
-                detail = f"{error_type}: {detail}"
-            raise RuntimeError(f"SD1.5 subprocess failed: {detail}")
-
-        result = result_payload.get("result")
-        if not isinstance(result, list):
-            raise RuntimeError("SD1.5 subprocess returned an invalid result.")
-        return [str(path) for path in result]
+    result = run_subprocess(
+        SubprocessTransport(
+            family="SD1.5",
+            runner_module="backend.sd15.subprocess_runner",
+            temp_prefix="sd15_",
+            launch_gate=_SD15_SUBPROCESS_SEMAPHORE,
+        ),
+        operation,
+        params,
+    )
+    return normalize_path_list(result, family="SD1.5")
 
 
 def generate_images_controlnet(params: dict[str, object]) -> list[str]:

@@ -33,6 +33,22 @@ That means a generation function should:
 Do not keep hidden module-level pipeline instances unless a future change adds an
 explicit cache with ownership, eviction, and cleanup rules.
 
+### Shared subprocess transport
+
+`backend.utilities.subprocess_transport` owns the one-shot parent/child
+protocol for every subprocess-backed family. The parent writes a typed request
+envelope containing `operation` and `params`; the child writes either a success
+envelope containing `result` or an error envelope containing the exception
+type, message, and traceback. The shared serializer handles nested primitives,
+PIL images, local paths, and runtime-profile dictionaries.
+
+The transport also owns temporary artifacts, command construction, repository
+working-directory selection, launch logging, exit-code and envelope validation,
+and cleanup of the temporary directory. Family pipeline modules select the
+runner, operation, launch gate, and public result shape. Family
+`subprocess_runner.py` modules retain only their operation dispatch table,
+generation functions, and final `cleanup_memory()` callback.
+
 SD1.5 image renders run in a one-shot subprocess by default. The API worker
 serializes the task parameters, launches `backend.sd15.subprocess_runner`, and
 the child process loads Diffusers, runs inference, writes outputs, and exits.
@@ -161,6 +177,8 @@ Use `try`/`finally` around pipeline usage. Avoid cleanup only on the success pat
 - WAN: subprocess-backed for text2video, VACE, and image2video. The child
   process still runs task-scoped pipeline release, runs final memory cleanup in
   the subprocess runner, and then exits.
+- Anima: subprocess-backed for text-to-image renders by default. The child runs
+  task-scoped pipeline release and final memory cleanup before process exit.
 
 ## Explicit Pipeline Cache
 

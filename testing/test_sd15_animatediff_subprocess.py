@@ -122,7 +122,10 @@ class Sd15AnimateDiffSubprocessTests(unittest.TestCase):
             )
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-        with patch("backend.sd15.pipeline.subprocess.run", side_effect=fake_run) as run_mock:
+        with patch(
+            "backend.utilities.subprocess_transport.subprocess.run",
+            side_effect=fake_run,
+        ) as run_mock:
             result = animatediff_pipeline.generate_videos_text2video(params)
 
         self.assertEqual(result, ["batch_b1/out.mp4"])

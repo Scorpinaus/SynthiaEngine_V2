@@ -9,7 +9,7 @@ from PIL import Image
 
 from backend.sd15 import pipeline as sd15_pipeline
 from backend.sd15 import subprocess_runner
-from backend.sd15.subprocess_io import serialize_params_for_subprocess
+from backend.utilities.subprocess_transport import serialize_params_for_subprocess
 
 
 class Sd15SubprocessTests(unittest.TestCase):
@@ -35,7 +35,7 @@ class Sd15SubprocessTests(unittest.TestCase):
 
         with (
             patch("backend.sd15.pipeline._SD15_SUBPROCESS_SEMAPHORE", FakeSemaphore()),
-            patch("backend.sd15.pipeline.subprocess.run", side_effect=fake_run),
+            patch("backend.utilities.subprocess_transport.subprocess.run", side_effect=fake_run),
         ):
             result = sd15_pipeline.generate_images(params)
 
@@ -57,7 +57,10 @@ class Sd15SubprocessTests(unittest.TestCase):
             )
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-        with patch("backend.sd15.pipeline.subprocess.run", side_effect=fake_run) as run_mock:
+        with patch(
+            "backend.utilities.subprocess_transport.subprocess.run",
+            side_effect=fake_run,
+        ) as run_mock:
             result = sd15_pipeline.generate_images(params)
 
         self.assertEqual(result, ["batch_b1/out.png"])
@@ -73,7 +76,8 @@ class Sd15SubprocessTests(unittest.TestCase):
             output_path = Path(cmd[-1])
             payload = json.loads(input_path.read_text(encoding="utf-8"))
             marker = payload["params"]["initial_image"]
-            image_path = Path(marker["__sd15_subprocess_image__"])
+            self.assertEqual(marker["__syntha_subprocess_value__"], "image")
+            image_path = Path(marker["path"])
             self.assertTrue(image_path.exists())
             with Image.open(image_path) as saved:
                 self.assertEqual(saved.size, (4, 3))
@@ -84,7 +88,10 @@ class Sd15SubprocessTests(unittest.TestCase):
             )
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-        with patch("backend.sd15.pipeline.subprocess.run", side_effect=fake_run):
+        with patch(
+            "backend.utilities.subprocess_transport.subprocess.run",
+            side_effect=fake_run,
+        ):
             result = sd15_pipeline.generate_images_img2img({"initial_image": image})
 
         self.assertEqual(result, ["batch_b1/img2img.png"])

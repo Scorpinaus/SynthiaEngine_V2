@@ -23,7 +23,7 @@ architectural change affects it.
       owned by focused modules under `backend/api/`.
 - [x] Workflow contracts, registration, runtime dependency binding, and
       execution have explicit owners without package-level module proxy magic.
-- [ ] All subprocess-backed model families use one tested transport/protocol
+- [x] All subprocess-backed model families use one tested transport/protocol
       implementation while retaining family-specific runners.
 - [ ] Job persistence/leases and workflow execution are separated behind clear,
       typed interfaces.
@@ -213,16 +213,16 @@ behavior remains unchanged.
 **Outcome:** Parent/child process mechanics have one implementation, while each
 model family retains a small, explicit runner.
 
-- [ ] Define typed request/result envelopes and a shared JSON serializer for
+- [x] Define typed request/result envelopes and a shared JSON serializer for
       PIL images, paths, primitives, runtime profiles, and errors.
-- [ ] Centralize temporary-directory creation, command construction, repository
+- [x] Centralize temporary-directory creation, command construction, repository
       working directory, exit-code checks, malformed/missing-result handling,
       logging, and cleanup.
-- [ ] Migrate SD1.5, SDXL, Flux, Qwen-Image, Z-Image, WAN, ERNIE-Image, and Anima
+- [x] Migrate SD1.5, SDXL, Flux, Qwen-Image, Z-Image, WAN, ERNIE-Image, and Anima
       one family at a time.
-- [ ] Keep family runners responsible only for operation dispatch, family input
+- [x] Keep family runners responsible only for operation dispatch, family input
       conversion, generation calls, and final pipeline cleanup.
-- [ ] Preserve one-shot process isolation and the opt-in Flux cache behavior.
+- [x] Preserve one-shot process isolation and the opt-in Flux cache behavior.
 
 **Done when:** Family-specific subprocess I/O copies are removed, every family
 passes focused subprocess tests, and crash/invalid-result tests prove actionable
@@ -337,8 +337,10 @@ deferred ideas are explicit.
 | ARC-03 focused workflow/architecture suite | Passed | 245 workflow, catalog/schema, DAG, family adapter, job integration, and architecture-boundary tests passed; 395 unrelated tests were deselected. |
 | ARC-03 full automated suite | Passed | 640 passed, 0 failed, 36 third-party warnings in 84.91s. |
 | ARC-03 workflow ownership metric | Recorded | `backend/workflow/engine.py` reduced from 587 to 123 physical lines; runtime binding moved to the 415-line assembly module. Maintained code is 219 files / 38,958 likely code lines; tests are 73 files / 15,484 likely code lines. |
+| ARC-05 focused subprocess suite | Passed | 64 shared-transport and family subprocess tests passed across SD1.5, SDXL, Flux, Qwen-Image, Z-Image, WAN, ERNIE-Image, and Anima; malformed, missing, crashed, typed-error, cleanup, serializer, cwd, and Flux-cache boundaries covered. |
+| ARC-05 full automated suite | Passed | 651 passed, 0 failed, 36 third-party warnings in 83.97s. |
 | Test compilation | Passed | `.venv\Scripts\python.exe -m compileall -q backend testing`. |
-| Runtime/GPU generation | Not run | ARC-02 and ARC-03 change application/workflow structure, not model inference behavior; no model downloads were performed. |
+| Runtime/GPU generation | Not run | ARC-02, ARC-03, and ARC-05 change application/workflow/process structure, not model inference behavior; no model downloads were performed. |
 | `git diff --check` | Passed | No whitespace errors; Git reported line-ending conversion advisories for edited files only. |
 
 ## Risks and blockers
@@ -395,3 +397,9 @@ deferred ideas are explicit.
   family registration explicit and duplicate-safe, moved WAN normalization to
   its family module, updated internal import/mock owners, and added executable
   workflow-boundary guards. The full suite passes with 640 tests.
+- 2026-08-02: Completed ARC-05. Added one typed, failure-safe subprocess
+  transport and serializer; migrated all eight families; reduced runners to
+  dispatch and cleanup; removed six family protocol copies; preserved one-shot
+  isolation and Flux cache behavior; and added crash, malformed-result, typed
+  error, serializer, cwd, and temporary-cleanup tests. The full suite passes
+  with 651 tests.

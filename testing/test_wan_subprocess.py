@@ -9,7 +9,7 @@ from PIL import Image
 
 from backend.wan import pipeline as wan_pipeline
 from backend.wan import subprocess_runner
-from backend.wan.subprocess_io import serialize_params_for_subprocess
+from backend.utilities.subprocess_transport import serialize_params_for_subprocess
 
 
 class WanSubprocessTests(unittest.TestCase):
@@ -35,7 +35,7 @@ class WanSubprocessTests(unittest.TestCase):
 
         with (
             patch("backend.wan.pipeline._WAN_SUBPROCESS_SEMAPHORE", FakeSemaphore()),
-            patch("backend.wan.pipeline.subprocess.run", side_effect=fake_run),
+            patch("backend.utilities.subprocess_transport.subprocess.run", side_effect=fake_run),
         ):
             result = wan_pipeline.generate_text2video(params)
 
@@ -57,7 +57,10 @@ class WanSubprocessTests(unittest.TestCase):
             )
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-        with patch("backend.wan.pipeline.subprocess.run", side_effect=fake_run) as run_mock:
+        with patch(
+            "backend.utilities.subprocess_transport.subprocess.run",
+            side_effect=fake_run,
+        ) as run_mock:
             result = wan_pipeline.generate_text2video(params)
 
         self.assertEqual(result, ["batch_b1/out.mp4"])
@@ -73,7 +76,8 @@ class WanSubprocessTests(unittest.TestCase):
             output_path = Path(cmd[-1])
             payload = json.loads(input_path.read_text(encoding="utf-8"))
             marker = payload["params"]["image"]
-            image_path = Path(marker["__wan_subprocess_image__"])
+            self.assertEqual(marker["__syntha_subprocess_value__"], "image")
+            image_path = Path(marker["path"])
             self.assertTrue(image_path.exists())
             with Image.open(image_path) as saved:
                 self.assertEqual(saved.size, (4, 3))
@@ -84,7 +88,10 @@ class WanSubprocessTests(unittest.TestCase):
             )
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-        with patch("backend.wan.pipeline.subprocess.run", side_effect=fake_run):
+        with patch(
+            "backend.utilities.subprocess_transport.subprocess.run",
+            side_effect=fake_run,
+        ):
             result = wan_pipeline.generate_image2video({"prompt": "test", "image": image})
 
         self.assertEqual(result, ["batch_b1/i2v.mp4"])
@@ -97,14 +104,18 @@ class WanSubprocessTests(unittest.TestCase):
             output_path = Path(cmd[-1])
             payload = json.loads(input_path.read_text(encoding="utf-8"))
             marker = payload["params"]["conditioning_video"]
-            self.assertEqual(marker["__wan_subprocess_path__"], str(video_path))
+            self.assertEqual(marker["__syntha_subprocess_value__"], "path")
+            self.assertEqual(marker["path"], str(video_path))
             output_path.write_text(
                 '{"ok": true, "result": ["batch_b1/vace.mp4"]}',
                 encoding="utf-8",
             )
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-        with patch("backend.wan.pipeline.subprocess.run", side_effect=fake_run):
+        with patch(
+            "backend.utilities.subprocess_transport.subprocess.run",
+            side_effect=fake_run,
+        ):
             result = wan_pipeline.generate_text2video(
                 {"prompt": "test", "conditioning_video": video_path}
             )

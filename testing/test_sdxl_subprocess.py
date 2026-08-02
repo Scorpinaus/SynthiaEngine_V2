@@ -9,7 +9,7 @@ from PIL import Image
 
 from backend.sdxl import pipeline as sdxl_pipeline
 from backend.sdxl import subprocess_runner
-from backend.sdxl.subprocess_io import serialize_params_for_subprocess
+from backend.utilities.subprocess_transport import serialize_params_for_subprocess
 
 
 class SdxlSubprocessTests(unittest.TestCase):
@@ -35,7 +35,7 @@ class SdxlSubprocessTests(unittest.TestCase):
 
         with (
             patch("backend.sdxl.pipeline._SDXL_SUBPROCESS_SEMAPHORE", FakeSemaphore()),
-            patch("backend.sdxl.pipeline.subprocess.run", side_effect=fake_run),
+            patch("backend.utilities.subprocess_transport.subprocess.run", side_effect=fake_run),
         ):
             result = sdxl_pipeline.generate_text2img(params)
 
@@ -57,7 +57,10 @@ class SdxlSubprocessTests(unittest.TestCase):
             )
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-        with patch("backend.sdxl.pipeline.subprocess.run", side_effect=fake_run) as run_mock:
+        with patch(
+            "backend.utilities.subprocess_transport.subprocess.run",
+            side_effect=fake_run,
+        ) as run_mock:
             result = sdxl_pipeline.generate_text2img(params)
 
         self.assertEqual(result, {"images": ["/outputs/batch_b1/out.png"]})
@@ -73,7 +76,8 @@ class SdxlSubprocessTests(unittest.TestCase):
             output_path = Path(cmd[-1])
             payload = json.loads(input_path.read_text(encoding="utf-8"))
             marker = payload["params"]["initial_image"]
-            image_path = Path(marker["__sdxl_subprocess_image__"])
+            self.assertEqual(marker["__syntha_subprocess_value__"], "image")
+            image_path = Path(marker["path"])
             self.assertTrue(image_path.exists())
             with Image.open(image_path) as saved:
                 self.assertEqual(saved.size, (4, 3))
@@ -84,7 +88,10 @@ class SdxlSubprocessTests(unittest.TestCase):
             )
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-        with patch("backend.sdxl.pipeline.subprocess.run", side_effect=fake_run):
+        with patch(
+            "backend.utilities.subprocess_transport.subprocess.run",
+            side_effect=fake_run,
+        ):
             result = sdxl_pipeline.generate_img2img({"initial_image": image})
 
         self.assertEqual(result, {"images": ["/outputs/batch_b1/img2img.png"]})

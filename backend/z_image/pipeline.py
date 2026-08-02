@@ -1,19 +1,13 @@
 import logging
-import json
 import re
-import subprocess
-import sys
-import tempfile
 import torch
 import threading
 from typing import Any
-from pathlib import Path
 
 from diffusers import ZImageImg2ImgPipeline, ZImagePipeline, ZImageInpaintPipeline
 
 
 from backend.config import OUTPUT_DIR
-from backend.settings import REPOSITORY_ROOT
 from backend.utilities.logging import configure_logging
 from backend.lora.registry import get_lora_entry
 from backend.registries.model import get_model_entry
@@ -28,7 +22,11 @@ from backend.utilities.pipeline import (
     save_generated_image,
 )
 from backend.utilities.schedulers import create_scheduler
-from backend.z_image.subprocess_io import serialize_params_for_subprocess
+from backend.utilities.subprocess_transport import (
+    SubprocessTransport,
+    normalize_image_result,
+    run_subprocess,
+)
 
 _Z_IMAGE_SUBPROCESS_SEMAPHORE = threading.Semaphore(1)
 
@@ -144,45 +142,17 @@ def _cleanup_lora_adapters(pipe: Any | None, adapter_names: list[str]) -> None:
 
 
 def _run_z_image_subprocess(operation: str, params: dict[str, object]) -> dict[str, list[str]]:
-
-    with tempfile.TemporaryDirectory(prefix="z_image_") as tmpdir:
-        tmp_path = Path(tmpdir)
-        input_path = tmp_path / "input.json"
-        output_path = tmp_path / "output.json"
-        payload = {
-            "operation": operation,
-            "params": serialize_params_for_subprocess(params, tmp_path),
-        }
-        input_path.write_text(
-            json.dumps(payload, separators=(",", ": ")),
-            encoding="utf-8",
-        )
-
-        cmd = [
-            sys.executable,
-            "-m",
-            "backend.z_image.subprocess_runner",
-            str(input_path),
-            str(output_path),
-        ]
-        with _Z_IMAGE_SUBPROCESS_SEMAPHORE:
-            completed = subprocess.run(cmd, cwd=str(REPOSITORY_ROOT))
-
-        if not output_path.exists():
-            raise RuntimeError("Z-Image subprocess failed: No subprocess result was written.")
-
-        result_payload = json.loads(output_path.read_text(encoding="utf-8"))
-        if completed.returncode != 0 or not result_payload.get("ok"):
-            detail = result_payload.get("error") or "Unknown subprocess failure."
-            error_type = result_payload.get("error_type")
-            if error_type:
-                detail = f"{error_type}: {detail}"
-            raise RuntimeError(f"Z-Image subprocess failed: {detail}")
-
-        result = result_payload.get("result")
-        if not isinstance(result, dict) or not isinstance(result.get("images"), list):
-            raise RuntimeError("Z-Image subprocess returned an invalid result.")
-        return {"images": [str(path) for path in result["images"]]}
+    result = run_subprocess(
+        SubprocessTransport(
+            family="Z-Image",
+            runner_module="backend.z_image.subprocess_runner",
+            temp_prefix="z_image_",
+            launch_gate=_Z_IMAGE_SUBPROCESS_SEMAPHORE,
+        ),
+        operation,
+        params,
+    )
+    return normalize_image_result(result, family="Z-Image")
 
 
 def generate_text2img(params: dict[str, object]) -> dict[str, list[str]]:

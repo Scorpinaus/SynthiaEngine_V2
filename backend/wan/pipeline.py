@@ -4,9 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import subprocess
-import sys
-import tempfile
 import threading
 import torch
 
@@ -23,7 +20,6 @@ from diffusers.hooks.group_offloading import apply_group_offloading
 from transformers import CLIPVisionModel
 
 from backend.config import OUTPUT_DIR
-from backend.settings import REPOSITORY_ROOT
 from backend.quantization import build_diffusers_pipeline_quantization_config
 from backend.utilities.logging import configure_logging
 from backend.utilities.pipeline import (
@@ -32,7 +28,11 @@ from backend.utilities.pipeline import (
     make_batch_id,
     release_pipeline,
 )
-from backend.wan.subprocess_io import serialize_params_for_subprocess
+from backend.utilities.subprocess_transport import (
+    SubprocessTransport,
+    normalize_path_list,
+    run_subprocess,
+)
 
 logger = logging.getLogger(__name__)
 configure_logging()
@@ -292,45 +292,17 @@ def _prepare_vace_conditions(
 
 
 def _run_wan_subprocess(operation: str, params: dict[str, object]) -> list[str]:
-
-    with tempfile.TemporaryDirectory(prefix="wan_") as tmpdir:
-        tmp_path = Path(tmpdir)
-        input_path = tmp_path / "input.json"
-        output_path = tmp_path / "output.json"
-        payload = {
-            "operation": operation,
-            "params": serialize_params_for_subprocess(params, tmp_path),
-        }
-        input_path.write_text(
-            json.dumps(payload, separators=(",", ": ")),
-            encoding="utf-8",
-        )
-
-        cmd = [
-            sys.executable,
-            "-m",
-            "backend.wan.subprocess_runner",
-            str(input_path),
-            str(output_path),
-        ]
-        with _WAN_SUBPROCESS_SEMAPHORE:
-            completed = subprocess.run(cmd, cwd=str(REPOSITORY_ROOT))
-
-        if not output_path.exists():
-            raise RuntimeError("WAN subprocess failed: No subprocess result was written.")
-
-        result_payload = json.loads(output_path.read_text(encoding="utf-8"))
-        if completed.returncode != 0 or not result_payload.get("ok"):
-            detail = result_payload.get("error") or "Unknown subprocess failure."
-            error_type = result_payload.get("error_type")
-            if error_type:
-                detail = f"{error_type}: {detail}"
-            raise RuntimeError(f"WAN subprocess failed: {detail}")
-
-        result = result_payload.get("result")
-        if not isinstance(result, list):
-            raise RuntimeError("WAN subprocess returned an invalid result.")
-        return [str(path) for path in result]
+    result = run_subprocess(
+        SubprocessTransport(
+            family="WAN",
+            runner_module="backend.wan.subprocess_runner",
+            temp_prefix="wan_",
+            launch_gate=_WAN_SUBPROCESS_SEMAPHORE,
+        ),
+        operation,
+        params,
+    )
+    return normalize_path_list(result, family="WAN")
 
 
 def generate_text2video(params: dict[str, object]) -> list[str]:
