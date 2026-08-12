@@ -24,7 +24,10 @@ class FrontendHistoryScriptTests(unittest.TestCase):
         self.assertIn("Generate an image or video", js)
 
     def test_history_styles_support_video_records(self):
-        css = (ROOT / "frontend" / "style.css").read_text(encoding="utf-8")
+        css = "\n".join(
+            (ROOT / "frontend" / "styles" / name).read_text(encoding="utf-8")
+            for name in ("generation.css", "registry-tools.css")
+        )
 
         self.assertIn(".history-video-preview", css)
         self.assertIn(".history-video-thumb", css)

@@ -373,7 +373,9 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("adapter-panel:loaded", adapter_panel_js)
 
     def test_adapter_modal_allows_preprocessor_modal_to_stack_above_it(self):
-        style_css = (ROOT / "frontend" / "style.css").read_text(encoding="utf-8")
+        style_css = (ROOT / "frontend" / "styles" / "generation.css").read_text(
+            encoding="utf-8"
+        )
 
         self.assertIn("#adapter-modal {\n    z-index: 1000;", style_css)
         self.assertIn("#preprocessor-modal {\n    z-index: 1010;", style_css)
@@ -382,7 +384,9 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         adapter_panel_js = (ROOT / "frontend" / "components" / "adapter_panel.js").read_text(
             encoding="utf-8"
         )
-        style_css = (ROOT / "frontend" / "style.css").read_text(encoding="utf-8")
+        style_css = (ROOT / "frontend" / "styles" / "generation.css").read_text(
+            encoding="utf-8"
+        )
 
         self.assertIn("initAdapterModalOpenState", adapter_panel_js)
         self.assertIn('"adapter-modal-open"', adapter_panel_js)
@@ -1151,7 +1155,10 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);", preprocessor_html)
 
     def test_preprocessor_modal_styles_define_viewport_height_preview(self):
-        style_css = (ROOT / "frontend" / "style.css").read_text(encoding="utf-8")
+        style_css = "\n".join(
+            (ROOT / "frontend" / "styles" / name).read_text(encoding="utf-8")
+            for name in ("components.css", "responsive.css")
+        )
         preprocessor_html = (ROOT / "frontend" / "components" / "controlnet_preprocessor.html").read_text(
             encoding="utf-8"
         )

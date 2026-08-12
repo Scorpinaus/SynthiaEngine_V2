@@ -274,12 +274,13 @@ frontend contract tests pass.
 **Outcome:** Styles are discoverable by layer and feature without introducing a
 frontend build system.
 
-- [ ] Classify `frontend/style.css` into tokens/base, layout, shared components,
+- [x] Classify `frontend/style.css` into tokens/base, layout, shared components,
       generation pages, registry/tools pages, and responsive rules.
-- [ ] Split those layers into named CSS files while retaining `style.css` as the
+- [x] Split those layers into named CSS files while retaining `style.css` as the
       stable compatibility entrypoint.
-- [ ] Remove dead selectors only with repository-wide usage evidence.
-- [ ] Visually verify representative desktop and narrow layouts for text2img,
+- [x] Remove dead selectors only with repository-wide usage evidence. No
+      selector was removed; all 385 original rule blocks were preserved.
+- [x] Visually verify representative desktop and narrow layouts for text2img,
       inpaint, workflow builder, registry, history, and profiler pages.
 
 **Done when:** Existing HTML entrypoints continue to load styles without a
@@ -339,6 +340,9 @@ deferred ideas are explicit.
 | ARC-03 workflow ownership metric | Recorded | `backend/workflow/engine.py` reduced from 587 to 123 physical lines; runtime binding moved to the 415-line assembly module. Maintained code is 219 files / 38,958 likely code lines; tests are 73 files / 15,484 likely code lines. |
 | ARC-05 focused subprocess suite | Passed | 64 shared-transport and family subprocess tests passed across SD1.5, SDXL, Flux, Qwen-Image, Z-Image, WAN, ERNIE-Image, and Anima; malformed, missing, crashed, typed-error, cleanup, serializer, cwd, and Flux-cache boundaries covered. |
 | ARC-05 full automated suite | Passed | 651 passed, 0 failed, 36 third-party warnings in 83.97s. |
+| ARC-08 style integrity | Passed | The browser loaded and parsed the stable entrypoint plus 7 ordered layers. The split preserved all 385 original CSS rule blocks; no selector was removed. |
+| ARC-08 frontend suite | Passed | 141 frontend contract and style ownership tests passed. |
+| ARC-08 visual checks | Passed | Text-to-image, inpaint, workflow builder, registry, history, and profiler were checked at 1440x1000 and 390x844. No page had horizontal overflow or a stylesheet error. API-backed panels showed expected offline states because the API was not part of this check. |
 | Test compilation | Passed | `.venv\Scripts\python.exe -m compileall -q backend testing`. |
 | Runtime/GPU generation | Not run | ARC-02, ARC-03, and ARC-05 change application/workflow/process structure, not model inference behavior; no model downloads were performed. |
 | `git diff --check` | Passed | No whitespace errors; Git reported line-ending conversion advisories for edited files only. |
@@ -403,3 +407,8 @@ deferred ideas are explicit.
   isolation and Flux cache behavior; and added crash, malformed-result, typed
   error, serializer, cwd, and temporary-cleanup tests. The full suite passes
   with 651 tests.
+- 2026-08-12: Completed ARC-08. Split the stable stylesheet into ordered token,
+  base, layout, component, generation, registry/tools, and responsive layers.
+  Preserved all original rule blocks, documented ownership, added layer
+  contract tests, passed 141 frontend tests, and checked six page types at
+  desktop and narrow viewports.

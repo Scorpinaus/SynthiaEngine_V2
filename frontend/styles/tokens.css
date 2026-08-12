@@ -1,0 +1,10 @@
+:root {
+    --font-sans: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+    --color-text: #2b2a28;
+    --color-text-muted: #6b645c;
+    --color-surface: #ffffff;
+    --color-surface-soft: #fdfbf7;
+    --color-border: #e1dbd2;
+    --color-accent: #3a5a40;
+    --color-accent-hover: #2f4e36;
+}

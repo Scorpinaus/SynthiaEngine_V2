@@ -93,7 +93,9 @@ class FrontendSd15AnimateDiffScriptTests(unittest.TestCase):
         self.assertIn('label: "SD 1.5 AnimateDiff"', js)
 
     def test_style_supports_video_viewer(self):
-        css = (ROOT / "frontend" / "style.css").read_text(encoding="utf-8")
+        css = (ROOT / "frontend" / "styles" / "generation.css").read_text(
+            encoding="utf-8"
+        )
 
         self.assertIn(".viewer-frame video", css)
 

@@ -1,0 +1,78 @@
+/* Viewport-specific overrides. Keep this layer last in style.css. */
+
+@media (max-width: 700px) {
+    #preprocessor-modal .preprocessor-layout {
+        grid-template-columns: 1fr;
+    }
+
+    #preprocessor-modal .preprocessor-preview-panel img {
+        max-height: 55vh;
+    }
+}
+
+@media (max-width: 720px) {
+    .header {
+        display: grid;
+        justify-content: stretch;
+    }
+
+    .header-nav {
+        flex-wrap: wrap;
+    }
+
+    .tools-metadata-table th:first-child,
+    .tools-metadata-table td:first-child {
+        min-width: 160px;
+    }
+
+    .profiler-header,
+    .profiler-selected {
+        display: grid;
+    }
+
+    .profiler-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .profiler-jobs {
+        position: static;
+    }
+
+    .profiler-metrics {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 720px) {
+    .lora-preset-edit-row {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 760px) {
+    #adapter-modal .adapter-modal-content {
+        width: min(96vw, 640px);
+    }
+
+    .adapter-overview-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 900px) {
+    .layout {
+        grid-template-columns: 1fr;
+    }
+
+    .controls {
+        position: static;
+    }
+
+    .history-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .history-batches {
+        max-height: none;
+    }
+}

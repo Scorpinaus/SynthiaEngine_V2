@@ -33,7 +33,9 @@ class FrontendProfilerTests(unittest.TestCase):
 
     def test_profiler_nav_and_styles_exist(self):
         nav_js = (ROOT / "frontend" / "components" / "nav_bar.js").read_text(encoding="utf-8")
-        css = (ROOT / "frontend" / "style.css").read_text(encoding="utf-8")
+        css = (ROOT / "frontend" / "styles" / "registry-tools.css").read_text(
+            encoding="utf-8"
+        )
 
         self.assertIn('{ href: "others/profiler.html", label: "Profiler" }', nav_js)
         self.assertIn(".profiler-panel", css)

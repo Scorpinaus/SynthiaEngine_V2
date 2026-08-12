@@ -1,0 +1,27 @@
+/* Global element defaults and document behavior. */
+
+body {
+    font-family: var(--font-sans);
+    background: linear-gradient(135deg, #f8f4ef 0%, #e6e2d9 100%);
+    box-sizing: border-box;
+    color: var(--color-text);
+    margin: 0;
+    padding: 24px;
+}
+
+img {
+    max-width: 100%;
+}
+
+/* Make the page scroll normally */
+html,
+body {
+    height: 100%;
+    overflow: auto;
+}
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
