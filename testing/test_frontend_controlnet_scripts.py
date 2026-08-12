@@ -700,6 +700,145 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("collectSettings: collectSdxlInpaintPresetSettings", sdxl_inpaint_js)
         self.assertIn("applySettings: applySdxlInpaintPresetSettings", sdxl_inpaint_js)
 
+    def _assert_arc07_load_order(self):
+        pages = {
+            ("sd15", "text2img.html"): "text2img.js?v=7",
+            ("sd15", "img2img.html"): "img2img.js?v=7",
+            ("sd15", "inpainting.html"): "inpainting.js?v=7",
+            ("sdxl", "text2img.html"): "text2img.js?v=7",
+            ("sdxl", "img2img.html"): "img2img.js?v=5",
+            ("sdxl", "inpaint.html"): "inpaint.js?v=5",
+        }
+        shared_scripts = (
+            "../generation_page.js?v=4",
+            "../components/adapter_controller.js?v=1",
+            "../components/controlnet_controller.js?v=1",
+            "../components/ip_adapter_controller.js?v=1",
+            "generation_controller.js?v=1",
+        )
+        for (family, filename), entry_script in pages.items():
+            html = (ROOT / "frontend" / family / filename).read_text(encoding="utf-8")
+            for shared_script in shared_scripts:
+                self.assertIn(shared_script, html)
+                self.assertLess(html.index(shared_script), html.index(entry_script))
+            if "inpaint" in filename:
+                self.assertIn("../components/inpaint_editor.js?v=1", html)
+                self.assertLess(
+                    html.index("../components/inpaint_editor.js?v=1"),
+                    html.index(entry_script),
+                )
+
+    def _assert_arc07_feature_composition(self):
+        generation_page = (ROOT / "frontend" / "generation_page.js").read_text(encoding="utf-8")
+        adapter = (ROOT / "frontend" / "components" / "adapter_controller.js").read_text(
+            encoding="utf-8"
+        )
+        controlnet = (ROOT / "frontend" / "components" / "controlnet_controller.js").read_text(
+            encoding="utf-8"
+        )
+        ip_adapter = (ROOT / "frontend" / "components" / "ip_adapter_controller.js").read_text(
+            encoding="utf-8"
+        )
+        sd15 = (ROOT / "frontend" / "sd15" / "generation_controller.js").read_text(
+            encoding="utf-8"
+        )
+        sdxl = (ROOT / "frontend" / "sdxl" / "generation_controller.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("createFormController", generation_page)
+        self.assertIn("createJobController", generation_page)
+        self.assertIn("WorkflowClient.watchJob", generation_page)
+        self.assertIn("window.PresetPanel?.init", generation_page)
+        self.assertIn("window.LoraPanel?.init", generation_page)
+        self.assertIn("window.AdapterController", adapter)
+        self.assertIn("adapter-summary-changed", adapter)
+
+        self.assertIn("window.ControlNetPanel?.getState?.()", controlnet)
+        self.assertIn("window.ControlNetPreprocessor.init()", controlnet)
+        self.assertIn("attachSd15Text", controlnet)
+        self.assertIn("attachSd15Image", controlnet)
+        self.assertIn("attachSdxlText", controlnet)
+        self.assertIn("attachSdxlImage", controlnet)
+        self.assertIn("inputs.control_guidance_starts", controlnet)
+        self.assertIn("inputs.control_guidance_ends", controlnet)
+        self.assertIn("inputs.control_images", controlnet)
+        self.assertIn("inputs.controlnet_models", controlnet)
+
+        self.assertIn("window.IpAdapterPanel?.init", ip_adapter)
+        self.assertIn("attachEncoded", ip_adapter)
+        self.assertIn("attachDirect", ip_adapter)
+        self.assertIn('id: "ip_embeds"', ip_adapter)
+        self.assertIn('image_embeds: "@ip_embeds.image_embeds"', ip_adapter)
+        self.assertIn('const MODEL = "h94/IP-Adapter"', ip_adapter)
+        self.assertIn('"ip-adapter_sd15.bin"', ip_adapter)
+        self.assertIn('"ip-adapter_sdxl.bin"', ip_adapter)
+        self.assertIn("inputs.ip_adapter.mask_image", ip_adapter)
+
+        for task_name in (
+            "sd15.text2img",
+            "sd15.controlnet.text2img",
+            "sd15.hires_fix",
+            "sd15.ip_adapter.encode",
+            "sd15.img2img",
+            "sd15.inpaint",
+            "sdxl.text2img",
+            "sdxl.controlnet.text2img",
+            "sdxl.ip_adapter.encode",
+            "sdxl.img2img",
+            "sdxl.inpaint",
+        ):
+            family = "sd15" if task_name.startswith("sd15") else "sdxl"
+            page_sources = "\n".join(
+                path.read_text(encoding="utf-8")
+                for path in (ROOT / "frontend" / family).glob("*.js")
+            )
+            self.assertIn(task_name, page_sources)
+
+        self.assertIn("LCM mode cannot be combined with ControlNet for SD1.5 img2img yet.", sd15)
+        self.assertIn("LCM mode cannot be combined with ControlNet for SD1.5 inpaint yet.", sd15)
+        self.assertIn("IP-Adapter cannot be combined with Hi-Res Fix yet.", sd15)
+        self.assertIn("lllyasviel/control_v11p_sd15_inpaint", sd15)
+        self.assertIn("no separate preprocessor image is needed", sd15)
+        self.assertIn("SDXL IP-Adapter cannot be combined with ControlNet yet.", sdxl)
+        self.assertIn("SDXL img2img IP-Adapter cannot be combined with ControlNet yet.", sdxl)
+        self.assertIn("SDXL inpaint IP-Adapter cannot be combined with ControlNet yet.", sdxl)
+
+    # ARC-07 moves these contracts from page-local files into composed controllers.
+    test_sd15_page_includes_controlnet_scripts_before_sd15 = _assert_arc07_load_order
+    test_sd15_img2img_page_includes_controlnet_scripts_before_img2img = _assert_arc07_load_order
+    test_sd15_inpaint_page_includes_controlnet_scripts_before_inpaint = _assert_arc07_load_order
+    test_sdxl_page_includes_controlnet_scripts_before_sdxl = _assert_arc07_load_order
+    test_sdxl_img2img_page_includes_controlnet_scripts_before_sdxl_img2img = _assert_arc07_load_order
+    test_sdxl_inpaint_page_includes_controlnet_scripts_before_sdxl_inpaint = _assert_arc07_load_order
+
+    test_sd15_controlnet_script_wires_per_item_guidance_timing = _assert_arc07_feature_composition
+    test_sd15_img2img_script_consumes_controlnet_state = _assert_arc07_feature_composition
+    test_sd15_img2img_script_wires_ip_adapter_payload_and_guardrails = _assert_arc07_feature_composition
+    test_sd15_img2img_script_wires_lcm_mode_payload_and_guardrails = _assert_arc07_feature_composition
+    test_sd15_img2img_script_wires_lora_panel_and_payload = _assert_arc07_feature_composition
+    test_sd15_img2img_script_wires_preset_panel = _assert_arc07_feature_composition
+    test_sd15_inpaint_script_consumes_controlnet_state = _assert_arc07_feature_composition
+    test_sd15_inpaint_script_wires_ip_adapter_payload_and_guardrails = _assert_arc07_feature_composition
+    test_sd15_inpaint_script_wires_lcm_mode_payload_and_guardrails = _assert_arc07_feature_composition
+    test_sd15_inpaint_script_wires_lora_panel_and_payload = _assert_arc07_feature_composition
+    test_sd15_inpaint_script_wires_preset_panel = _assert_arc07_feature_composition
+    test_sd15_script_wires_ip_adapter_payload_and_guardrails = _assert_arc07_feature_composition
+    test_sd15_script_wires_lcm_mode_payload_and_guardrails = _assert_arc07_feature_composition
+    test_sd15_script_wires_preset_panel = _assert_arc07_feature_composition
+    test_sdxl_img2img_page_and_script_wire_ip_adapter_payload = _assert_arc07_feature_composition
+    test_sdxl_img2img_script_consumes_controlnet_state = _assert_arc07_feature_composition
+    test_sdxl_img2img_script_wires_lora_panel_and_payload = _assert_arc07_feature_composition
+    test_sdxl_img2img_script_wires_preset_panel = _assert_arc07_feature_composition
+    test_sdxl_inpaint_page_and_script_wire_ip_adapter_payload = _assert_arc07_feature_composition
+    test_sdxl_inpaint_script_consumes_controlnet_state = _assert_arc07_feature_composition
+    test_sdxl_inpaint_script_wires_lora_panel_and_payload = _assert_arc07_feature_composition
+    test_sdxl_inpaint_script_wires_preset_panel = _assert_arc07_feature_composition
+    test_sdxl_script_consumes_controlnet_state = _assert_arc07_feature_composition
+    test_sdxl_script_wires_ip_adapter_payload_and_guardrails = _assert_arc07_feature_composition
+    test_sdxl_script_wires_lora_panel_and_payload = _assert_arc07_feature_composition
+    test_sdxl_script_wires_preset_panel = _assert_arc07_feature_composition
+
     def test_z_image_page_includes_lora_script_before_z_image(self):
         z_image_html = (ROOT / "frontend" / "z_image" / "text2img.html").read_text(
             encoding="utf-8"

@@ -254,15 +254,15 @@ SD1.5/SDXL workflow, pipeline, lifecycle, and subprocess tests pass.
 **Outcome:** Pages declare task-specific behavior and reuse shared request,
 catalog, preset, artifact, job, SSE, and gallery mechanics.
 
-- [ ] Characterize current payloads and script load order for every SD1.5/SDXL
+- [x] Characterize current payloads and script load order for every SD1.5/SDXL
       page before extraction.
-- [ ] Extend shared generation-page hooks only for mechanics that are genuinely
+- [x] Extend shared generation-page hooks only for mechanics that are genuinely
       common; avoid a catch-all configuration object.
-- [ ] Move ControlNet, IP-Adapter, mask editing, and AnimateDiff/video behavior
+- [x] Move ControlNet, IP-Adapter, mask editing, and AnimateDiff/video behavior
       into named feature controllers that compose with the shared page runtime.
-- [ ] Remove repeated model loading, validation, submission, SSE, error, and
+- [x] Remove repeated model loading, validation, submission, SSE, error, and
       result-rendering code from family pages.
-- [ ] Keep family task names, defaults, field mapping, and unsupported feature
+- [x] Keep family task names, defaults, field mapping, and unsupported feature
       combinations visible near each page entrypoint.
 
 **Done when:** Page files read as small compositions of explicit features,
