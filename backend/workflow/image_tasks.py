@@ -61,6 +61,7 @@ def run_inpaint(
     defaults: ImageTaskDefaults,
     *,
     lora_adapters: Any = None,
+    passthrough_fields: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     image = deps["open_image_ref"](inputs["initial_image"]).convert("RGB")
     mask = deps["open_image_ref"](inputs["mask_image"]).convert("L")
@@ -74,6 +75,7 @@ def run_inpaint(
         strength=_strength(inputs, 0.5),
         lora_adapters=inputs.get("lora_adapters") if lora_adapters is None else lora_adapters,
     )
+    payload.update({name: inputs.get(name) for name in passthrough_fields})
     return _require_result(task_type, deps["generate_inpaint"](payload))
 
 

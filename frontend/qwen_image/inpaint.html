@@ -68,6 +68,23 @@
 
                 <div class="field-row">
                     <label class="field">
+                        <span>Width</span>
+                        <input id="width" type="number" value="1024" step="8" min="64" max="2048" />
+                    </label>
+                    <label class="field">
+                        <span>Height</span>
+                        <input id="height" type="number" value="1024" step="8" min="64" max="2048" />
+                    </label>
+                </div>
+
+                <label class="field">
+                    <span>Padding Mask Crop</span>
+                    <input id="padding_mask_crop" type="number" min="0" max="2048" step="1" placeholder="Disabled" />
+                </label>
+                <div class="field-hint">Leave blank to process the full image. Set a margin to crop around the masked area.</div>
+
+                <div class="field-row">
+                    <label class="field">
                         <span>Seed</span>
                         <input id="seed" type="number" value="0" step="1" />
                     </label>
@@ -173,7 +190,7 @@
     <script src="../components/preset_panel.js?v=1"></script>
     <script src="../generation_page.js?v=1"></script>
     <script src="../components/inpaint_editor.js?v=1"></script>
-    <script src="inpaint.js?v=5"></script>
+    <script src="inpaint.js?v=6"></script>
 </body>
 
 </html>

@@ -44,6 +44,7 @@ _DEFAULT_NEGATIVE_PROMPT = (
 _DEFAULT_INFERENCE_STEPS = 50
 _DEFAULT_TRUE_CFG_SCALE = 4.0
 _DEFAULT_IMAGE_SIZE = 1328
+_DEFAULT_INPAINT_IMAGE_SIZE = 1024
 _DEFAULT_STRENGTH = 0.6
 _DEFAULT_SCHEDULER = "flowmatch_euler"
 _NO_REVISION_VALUES = {"", "hub", "local"}
@@ -501,6 +502,12 @@ def generate_inpaint_in_process(params: dict[str, object]) -> dict[str, list[str
     negative_prompt = _negative_prompt(params)
     steps = int(params.get("steps", _DEFAULT_INFERENCE_STEPS))
     true_cfg_scale = float(params.get("true_cfg_scale", _DEFAULT_TRUE_CFG_SCALE))
+    width = int(params.get("width") or _DEFAULT_INPAINT_IMAGE_SIZE)
+    height = int(params.get("height") or _DEFAULT_INPAINT_IMAGE_SIZE)
+    padding_mask_crop_value = params.get("padding_mask_crop")
+    padding_mask_crop = (
+        None if padding_mask_crop_value is None else int(padding_mask_crop_value)
+    )
     seed = params.get("seed")
     model = params.get("model")
     num_images = int(params.get("num_images", 1))
@@ -512,10 +519,9 @@ def generate_inpaint_in_process(params: dict[str, object]) -> dict[str, list[str
     batch_id = make_batch_id()
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
 
-    width, height = initial_image.size
     logger.info(
         "Qwen-Image Inpaint: model=%s seed=%s steps=%s true_cfg_scale=%s "
-        "size=%sx%s strength=%s num_images=%s",
+        "size=%sx%s strength=%s num_images=%s padding_mask_crop=%s",
         model,
         base_seed,
         steps,
@@ -524,6 +530,7 @@ def generate_inpaint_in_process(params: dict[str, object]) -> dict[str, list[str
         height,
         strength,
         num_images,
+        padding_mask_crop,
     )
 
     filenames: list[str] = []
@@ -543,17 +550,21 @@ def generate_inpaint_in_process(params: dict[str, object]) -> dict[str, list[str
                     "image": initial_image,
                     "mask_image": mask_image,
                     "strength": strength,
+                    "width": width,
+                    "height": height,
                     "num_inference_steps": steps,
                     "true_cfg_scale": true_cfg_scale,
                     "generator": generator,
                 }
+                if padding_mask_crop is not None:
+                    call_kwargs["padding_mask_crop"] = padding_mask_crop
                 image = pipe(**call_kwargs).images[0]
 
             relpath = save_generated_image(
                 image, batch_output_dir, batch_id, current_seed, params,
                 mode="inpaint", pipeline="qwen-image",
                 remove_params=("initial_image", "mask_image"),
-                size=(width, height),
+                size=image.size,
             )
             logger.info("Image %s saved to %s", i, relpath)
             filenames.append(relpath)

@@ -1070,6 +1070,8 @@ Qwen-Image-2512 settings:
 - The three Qwen-Image tasks default to `steps: 50`, `true_cfg_scale: 4.0`, `scheduler: "flowmatch_euler"`, and `num_images: 1`.
 - The default negative prompt is `低分辨率，低画质，肢体畸形，手指畸形，画面过饱和，蜡像感，人脸无细节，过度光滑，画面具有AI感。构图混乱。文字模糊，扭曲。`.
 - Text-to-image and image-to-image default to `width: 1328` and `height: 1328`.
+- Inpaint defaults to `width: 1024` and `height: 1024`. These fields set the Diffusers processing size.
+- Inpaint `padding_mask_crop` defaults to `null`. Set a non-negative pixel margin to crop processing around the masked area. The pipeline overlays the generated region on the original image.
 - Image-to-image and inpaint default to `strength: 0.6`.
 - `guidance_scale` is accepted for compatibility and defaults to `null`. Qwen-Image-2512 is not a guidance-distilled model, so the runtime does not send this value to Diffusers. Use `true_cfg_scale` for classifier-free guidance.
 - The runtime always sends `negative_prompt`. An explicitly empty string stays empty.

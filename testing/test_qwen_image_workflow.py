@@ -125,6 +125,45 @@ class QwenImageWorkflowTests(unittest.TestCase):
                 lora_adapters=[{"lora_id": 101, "strength": 0.8}],
             )
 
+    def test_qwen_image_inpaint_forwards_size_and_mask_crop(self):
+        captured = {}
+        initial_image = Image.new("RGB", (64, 48))
+        mask_image = Image.new("L", (64, 48))
+
+        def _fake_generate_inpaint(payload):
+            captured.update(payload)
+            return {"images": ["/outputs/batch/out.png"]}
+
+        def _open_image_ref(reference):
+            return mask_image if reference == "@artifact:def456" else initial_image
+
+        fake_module = SimpleNamespace(generate_inpaint=_fake_generate_inpaint)
+        with (
+            patch.dict("sys.modules", {"backend.qwen_image.pipeline": fake_module}),
+            patch(
+                "backend.workflow.assembly._open_image_ref",
+                side_effect=_open_image_ref,
+            ),
+        ):
+            result = _qwen_image_inpaint(
+                {
+                    "initial_image": "@artifact:abc123",
+                    "mask_image": "@artifact:def456",
+                    "prompt": "test prompt",
+                    "width": 768,
+                    "height": 1024,
+                    "padding_mask_crop": 0,
+                },
+                _ctx=None,
+            )
+
+        self.assertEqual(result["images"], ["/outputs/batch/out.png"])
+        self.assertEqual(captured["width"], 768)
+        self.assertEqual(captured["height"], 1024)
+        self.assertEqual(captured["padding_mask_crop"], 0)
+        self.assertEqual(captured["initial_image"].size, (64, 48))
+        self.assertEqual(captured["mask_image"].size, (64, 48))
+
     def test_qwen_image_inpaint_forwards_lora_adapters(self):
         captured = {}
 

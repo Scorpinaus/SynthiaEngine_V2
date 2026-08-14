@@ -69,4 +69,5 @@ def run_qwen_image_inpaint_task(inputs: dict[str, Any], deps: dict[str, Any]) ->
         deps,
         DEFAULTS,
         lora_adapters=_lora_adapters(inputs, deps),
+        passthrough_fields=("width", "height", "padding_mask_crop"),
     )

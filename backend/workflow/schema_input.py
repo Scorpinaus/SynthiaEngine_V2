@@ -627,6 +627,9 @@ class QwenImageInpaintInputs(_QwenImageInputs):
     mask_image: ImageRef
     prompt: str
     strength: float = Field(default=0.6, ge=0.0, le=1.0)
+    width: int = Field(default=1024, ge=64, le=2048)
+    height: int = Field(default=1024, ge=64, le=2048)
+    padding_mask_crop: int | None = Field(default=None, ge=0, le=2048)
 
 
 class _ZImageInputs(BaseModel):

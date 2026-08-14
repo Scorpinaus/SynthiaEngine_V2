@@ -94,6 +94,8 @@ def test_qwen_image_workflow_and_catalog_defaults_match_model_card():
     assert (img2img.width, img2img.height) == (1328, 1328)
     assert img2img.strength == 0.6
     assert inpaint.strength == 0.6
+    assert (inpaint.width, inpaint.height) == (1024, 1024)
+    assert inpaint.padding_mask_crop is None
 
     catalog = build_workflow_catalog()
     for task_type in (
@@ -109,6 +111,11 @@ def test_qwen_image_workflow_and_catalog_defaults_match_model_card():
         assert defaults["guidance_scale"] is None
         assert defaults["scheduler"] == "flowmatch_euler"
         assert task["input_schema"]["properties"]["guidance_scale"]["deprecated"] is True
+
+    inpaint_defaults = catalog["tasks"]["qwen-image.inpaint"]["input_defaults"]
+    assert inpaint_defaults["width"] == 1024
+    assert inpaint_defaults["height"] == 1024
+    assert inpaint_defaults["padding_mask_crop"] is None
 
 
 def test_qwen_image_runtime_uses_model_settings_without_distilled_guidance():
@@ -139,10 +146,18 @@ def test_qwen_image_runtime_uses_model_settings_without_distilled_guidance():
                 "prompt": "test",
                 "initial_image": initial_image,
                 "mask_image": mask_image,
+                "width": 768,
+                "height": 1024,
+                "padding_mask_crop": 32,
                 "seed": 11,
                 "guidance_scale": 9.0,
             },
-            {"strength": 0.6},
+            {
+                "width": 768,
+                "height": 1024,
+                "padding_mask_crop": 32,
+                "strength": 0.6,
+            },
         ),
     )
 
@@ -197,6 +212,19 @@ def test_qwen_image_pages_match_backend_defaults():
         )
         assert 'id="width" type="number" value="1328"' in html
         assert 'id="height" type="number" value="1328"' in html
+
+    inpaint_html = (ROOT / "frontend" / "qwen_image" / "inpaint.html").read_text(
+        encoding="utf-8"
+    )
+    inpaint_javascript = (
+        ROOT / "frontend" / "qwen_image" / "inpaint.js"
+    ).read_text(encoding="utf-8")
+    assert 'id="width" type="number" value="1024"' in inpaint_html
+    assert 'id="height" type="number" value="1024"' in inpaint_html
+    assert 'id="padding_mask_crop" type="number"' in inpaint_html
+    assert 'key: "width", type: "number", integer: true, fallback: 1024' in inpaint_javascript
+    assert 'key: "height", type: "number", integer: true, fallback: 1024' in inpaint_javascript
+    assert 'key: "padding_mask_crop"' in inpaint_javascript
 
     scheduler_script = (
         ROOT / "frontend" / "components" / "scheduler_panel.js"
