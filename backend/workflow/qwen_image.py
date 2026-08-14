@@ -59,6 +59,7 @@ def run_qwen_image_img2img_task(inputs: dict[str, Any], deps: dict[str, Any]) ->
         DEFAULTS,
         lora_adapters=_lora_adapters(inputs, deps),
         remap_strength=True,
+        passthrough_fields=("live_preview",),
     )
 
 
@@ -69,5 +70,5 @@ def run_qwen_image_inpaint_task(inputs: dict[str, Any], deps: dict[str, Any]) ->
         deps,
         DEFAULTS,
         lora_adapters=_lora_adapters(inputs, deps),
-        passthrough_fields=("width", "height", "padding_mask_crop"),
+        passthrough_fields=("width", "height", "padding_mask_crop", "live_preview"),
     )

@@ -114,7 +114,7 @@ Returns task rows in declared execution order. Each row includes `task_id`,
 
 Cancellation semantics:
 - If queued: job transitions to `canceled` immediately.
-- If running: server sets `cancel_requested=true`; workflow stops at **task boundaries**.
+- If running: server sets `cancel_requested=true`. Qwen-Image stops at the next denoising step callback. Other tasks stop at task boundaries unless their runtime has a finer cancellation check.
 
 ### Stream job status (SSE)
 
@@ -550,6 +550,7 @@ Notes:
 - `result.outputs` is the resolved final output.
 - `result.tasks` is the per-task result map (useful for debugging / UI).
 - `result.progress` is best-effort; it may be absent for completed jobs created before progress reporting existed.
+- While Qwen-Image denoises, `result.progress` includes `phase: "denoising"`, one-based `image_number` and `step`, `total_images`, `total_steps`, `percent`, and an optional `preview_url`. The preview URL points to one temporary image that the runtime replaces after each intermediate step.
 - `result.profile` is an optional single-run summary measured during workflow execution, excluding queue wait time. While a job is running, the worker updates `result.profile` with current RAM/VRAM fields and SSE clients receive those snapshots through `/api/jobs/{job_id}/events`. CUDA peak/current fields come from PyTorch allocator stats in the job worker process. For task families that render in subprocesses, use the NVML used VRAM fields for device-level usage. NVML fields are best-effort and are `null` when NVML/pynvml is unavailable.
 - Job responses include `resource_requirements` with model families, estimated VRAM class, maximum declared pixels/frames, and video requirements. A renderer configured with `SYNTHA_WORKER_VRAM_MB` skips queued jobs above its capacity so another compatible worker can claim them.
 - Final profiles include `pipeline_caches` hit/miss/eviction and estimated-cost state for caches loaded in the renderer process.
@@ -1075,6 +1076,8 @@ Qwen-Image-2512 settings:
 - Image-to-image and inpaint default to `strength: 0.6`.
 - `guidance_scale` is accepted for compatibility and defaults to `null`. Qwen-Image-2512 is not a guidance-distilled model, so the runtime does not send this value to Diffusers. Use `true_cfg_scale` for classifier-free guidance.
 - The runtime always sends `negative_prompt`. An explicitly empty string stays empty.
+- `live_preview` defaults to `true`. Set it to `false` to stop intermediate image decoding while keeping step progress and cancellation active.
+- An internal Diffusers step-end callback reports progress, checks cancellation, and, when `live_preview` is enabled, decodes each intermediate step. Preview images have a maximum edge of 768 pixels. They are removed after the subprocess ends. The additional VAE decodes can make generation slower.
 
 Qwen-Image SDNQ compatibility gates:
 

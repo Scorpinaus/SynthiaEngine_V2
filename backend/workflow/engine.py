@@ -95,7 +95,27 @@ def execute_workflow(payload: dict[str, Any], *, ctx: WorkflowContext | None = N
             # against the task that actually failed.
             validated_inputs = definition.input_model.model_validate(resolved_inputs)
 
-            result = definition.handler(validated_inputs.model_dump(by_alias=True), context)
+            task_context = context
+            if context.update_progress:
+                def _task_progress(patch: dict[str, Any]) -> None:
+                    context.update_progress(
+                        {
+                            **patch,
+                            "current_task": task.id,
+                            "current_task_index": idx,
+                            "total_tasks": len(ordered_tasks),
+                        }
+                    )
+
+                task_context = WorkflowContext(
+                    update_progress=_task_progress,
+                    should_cancel=context.should_cancel,
+                )
+
+            result = definition.handler(
+                validated_inputs.model_dump(by_alias=True),
+                task_context,
+            )
             if not isinstance(result, dict):
                 raise ValueError(f"Task {task.id} must return an object")
             definition.output_model.model_validate(result)

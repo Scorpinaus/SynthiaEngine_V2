@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="../style.css?v=4" />
+    <link rel="stylesheet" href="../style.css?v=5" />
 </head>
 
 <body>
@@ -83,6 +83,11 @@
                     <input id="num_images" type="number" value="1" min="1" max="8" />
                 </label>
 
+                <label class="field checkbox-field">
+                    <input id="live_preview" type="checkbox" checked />
+                    <span>Live step preview (slower)</span>
+                </label>
+
                 <button class="primary" onclick="generateQwenImageImg2Img()">Generate</button>
             </section>
 
@@ -90,6 +95,13 @@
                 <div class="gallery-header">
                     <h2>Qwen-Image Img2Img Gallery</h2>
                     <p>Outputs appear here as they render.</p>
+                </div>
+                <div id="generation-progress" class="generation-progress" hidden>
+                    <div class="generation-progress-header">
+                        <span id="generation-progress-label">Waiting...</span>
+                        <button id="generation-cancel" class="secondary" type="button" disabled>Cancel</button>
+                    </div>
+                    <progress id="generation-progress-bar" max="100"></progress>
                 </div>
                 <div class="viewer">
                     <div class="viewer-frame">
@@ -117,8 +129,8 @@
     <script src="../workflow_client.js?v=1"></script>
     <script src="../workflow_catalog.js?v=1"></script>
     <script src="../components/preset_panel.js?v=1"></script>
-    <script src="../generation_page.js?v=1"></script>
-    <script src="img2img.js?v=5"></script>
+    <script src="../generation_page.js?v=2"></script>
+    <script src="img2img.js?v=6"></script>
 </body>
 
 </html>

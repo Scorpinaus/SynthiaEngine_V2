@@ -1,11 +1,14 @@
 from contextlib import nullcontext
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from PIL import Image
+import pytest
 
 from backend.qwen_image import pipeline as qwen_image_pipeline
+from backend.utilities.subprocess_transport import SubprocessCanceled, SubprocessRuntime
 from backend.workflow import (
     QwenImageImg2ImgInputs,
     QwenImageInpaintInputs,
@@ -89,6 +92,7 @@ def test_qwen_image_workflow_and_catalog_defaults_match_model_card():
         assert inputs.true_cfg_scale == 4.0
         assert serialized_inputs["guidance_scale"] is None
         assert inputs.scheduler == "flowmatch_euler"
+        assert inputs.live_preview is True
 
     assert (text2img.width, text2img.height) == (1328, 1328)
     assert (img2img.width, img2img.height) == (1328, 1328)
@@ -110,6 +114,7 @@ def test_qwen_image_workflow_and_catalog_defaults_match_model_card():
         assert defaults["true_cfg_scale"] == 4.0
         assert defaults["guidance_scale"] is None
         assert defaults["scheduler"] == "flowmatch_euler"
+        assert defaults["live_preview"] is True
         assert task["input_schema"]["properties"]["guidance_scale"]["deprecated"] is True
 
     inpaint_defaults = catalog["tasks"]["qwen-image.inpaint"]["input_defaults"]
@@ -184,6 +189,112 @@ def test_qwen_image_runtime_preserves_an_explicit_empty_negative_prompt():
     assert qwen_image_pipeline._negative_prompt({"negative_prompt": ""}) == ""
 
 
+def test_qwen_image_step_callback_writes_a_preview_on_every_intermediate_step(
+    tmp_path,
+):
+    progress_path = tmp_path / "progress.json"
+    preview_path = tmp_path / "preview.png"
+    runtime = SubprocessRuntime(
+        progress_path=progress_path,
+        cancel_path=tmp_path / "cancel.requested",
+    )
+    pipe = SimpleNamespace(num_timesteps=8)
+    callback = qwen_image_pipeline._build_step_callback(
+        runtime,
+        requested_steps=8,
+        image_index=0,
+        total_images=1,
+        width=1328,
+        height=1328,
+        preview_path=preview_path,
+        preview_url="/outputs/batch_test/preview.png",
+    )
+    callback_kwargs = {"latents": object()}
+
+    with patch.object(
+        qwen_image_pipeline,
+        "_decode_preview_image",
+        return_value=Image.new("RGB", (1024, 512), "blue"),
+    ):
+        returned = callback(pipe, 0, None, callback_kwargs)
+
+    progress = json.loads(progress_path.read_text(encoding="utf-8"))
+    assert returned is callback_kwargs
+    assert progress == {
+        "phase": "denoising",
+        "image_number": 1,
+        "total_images": 1,
+        "step": 1,
+        "total_steps": 8,
+        "percent": 12.5,
+        "preview_url": "/outputs/batch_test/preview.png",
+    }
+    with Image.open(preview_path) as preview:
+        assert preview.size == (768, 384)
+
+
+def test_qwen_image_step_callback_skips_preview_decode_when_disabled(tmp_path):
+    progress_path = tmp_path / "progress.json"
+    runtime = SubprocessRuntime(
+        progress_path=progress_path,
+        cancel_path=tmp_path / "cancel.requested",
+    )
+    call_kwargs = {}
+    qwen_image_pipeline._install_step_callback(
+        call_kwargs,
+        runtime,
+        requested_steps=8,
+        image_index=0,
+        total_images=1,
+        width=1328,
+        height=1328,
+        preview_path=tmp_path / "preview.png",
+        preview_url="/outputs/batch_test/preview.png",
+        live_preview=False,
+    )
+
+    assert call_kwargs["callback_on_step_end_tensor_inputs"] == []
+    with patch.object(qwen_image_pipeline, "_decode_preview_image") as decode:
+        call_kwargs["callback_on_step_end"](
+            SimpleNamespace(num_timesteps=8),
+            0,
+            None,
+            {},
+        )
+
+    decode.assert_not_called()
+    assert json.loads(progress_path.read_text(encoding="utf-8")) == {
+        "phase": "denoising",
+        "image_number": 1,
+        "total_images": 1,
+        "step": 1,
+        "total_steps": 8,
+        "percent": 12.5,
+    }
+
+
+def test_qwen_image_step_callback_stops_on_cancel(tmp_path):
+    cancel_path = tmp_path / "cancel.requested"
+    cancel_path.touch()
+    runtime = SubprocessRuntime(
+        progress_path=tmp_path / "progress.json",
+        cancel_path=cancel_path,
+    )
+    callback = qwen_image_pipeline._build_step_callback(
+        runtime,
+        requested_steps=8,
+        image_index=0,
+        total_images=1,
+        width=1328,
+        height=1328,
+        preview_path=tmp_path / "preview.png",
+        preview_url="/outputs/batch_test/preview.png",
+    )
+
+    with pytest.raises(SubprocessCanceled, match="Cancel requested"):
+        callback(SimpleNamespace(num_timesteps=8), 0, None, {"latents": object()})
+
+
 def test_qwen_image_pages_match_backend_defaults():
     for page_name in ("text2img", "img2img", "inpaint"):
         html = (ROOT / "frontend" / "qwen_image" / f"{page_name}.html").read_text(
@@ -196,6 +307,7 @@ def test_qwen_image_pages_match_backend_defaults():
         assert EXPECTED_NEGATIVE_PROMPT in html
         assert EXPECTED_NEGATIVE_PROMPT in javascript
         assert 'id="steps" type="number" value="50"' in html
+        assert 'id="live_preview" type="checkbox" checked' in html
         assert 'data-default-scheduler="flowmatch_euler"' in html
         assert 'data-allowed-schedulers="flowmatch_euler"' in html
         assert 'id="lora-panel-root"' not in html
@@ -204,6 +316,7 @@ def test_qwen_image_pages_match_backend_defaults():
         assert 'key: "guidance_scale"' not in javascript
         assert 'key: "scheduler", fallback: "flowmatch_euler"' in javascript
         assert 'key: "steps", type: "number", integer: true, fallback: 50' in javascript
+        assert 'key: "live_preview", type: "checkbox", fallback: true' in javascript
         assert "page.withLora" not in javascript
 
     for page_name in ("text2img", "img2img"):

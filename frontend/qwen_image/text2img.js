@@ -15,6 +15,7 @@ const page = GenerationPage.create({
         { element: "height", key: "height", type: "number", integer: true, fallback: 1328 },
         { element: "model_select", key: "model", fallback: null },
         { element: "num_images", key: "num_images", type: "number", integer: true, fallback: 1 },
+        { element: "live_preview", key: "live_preview", type: "checkbox", fallback: true },
     ],
 });
 

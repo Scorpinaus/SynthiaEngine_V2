@@ -567,6 +567,10 @@ class _QwenImageInputs(BaseModel):
     seed: int | None = None
     model: str | None = None
     num_images: int = Field(default=1, ge=1, le=8)
+    live_preview: bool = Field(
+        default=True,
+        description="Decode and publish an intermediate image after each denoising step.",
+    )
     scheduler: Literal["flowmatch_euler"] = Field(
         default="flowmatch_euler",
         description="Fixed scheduler for the current Qwen-Image SDNQ profile.",

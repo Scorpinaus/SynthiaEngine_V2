@@ -5,6 +5,7 @@ import logging
 import subprocess
 import sys
 import tempfile
+import threading
 import traceback
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
@@ -18,6 +19,28 @@ from backend.settings import REPOSITORY_ROOT
 logger = logging.getLogger(__name__)
 
 _VALUE_MARKER = "__syntha_subprocess_value__"
+_RUNTIME_MARKER = "__syntha_subprocess_runtime__"
+_RUNTIME_POLL_INTERVAL_S = 0.1
+
+
+class SubprocessCanceled(RuntimeError):
+    """Signal a cooperative cancellation across the subprocess boundary."""
+
+
+@dataclass(frozen=True)
+class SubprocessRuntime:
+    progress_path: Path | None = None
+    cancel_path: Path | None = None
+
+    def update_progress(self, patch: Mapping[str, Any]) -> None:
+        if self.progress_path is None:
+            return
+        temp_path = self.progress_path.with_suffix(".tmp")
+        _write_json(temp_path, patch)
+        temp_path.replace(self.progress_path)
+
+    def should_cancel(self) -> bool:
+        return self.cancel_path is not None and self.cancel_path.exists()
 
 
 class SubprocessRequest(TypedDict):
@@ -50,6 +73,24 @@ class SubprocessTransport:
     runner_module: str
     temp_prefix: str
     launch_gate: AbstractContextManager[object]
+
+
+def pop_subprocess_runtime(params: dict[str, object]) -> SubprocessRuntime:
+    """Remove and return the optional child-side runtime signal paths."""
+
+    value = params.pop(_RUNTIME_MARKER, None)
+    if value is None:
+        return SubprocessRuntime()
+    if not isinstance(value, Mapping):
+        raise ValueError("Subprocess runtime settings must be an object.")
+
+    progress_value = value.get("progress_path")
+    cancel_value = value.get("cancel_path")
+    if not isinstance(progress_value, str) or not progress_value:
+        raise ValueError("Subprocess runtime progress path is missing.")
+    if not isinstance(cancel_value, str) or not cancel_value:
+        raise ValueError("Subprocess runtime cancel path is missing.")
+    return SubprocessRuntime(Path(progress_value), Path(cancel_value))
 
 
 def serialize_params_for_subprocess(
@@ -165,12 +206,95 @@ def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
     )
 
 
+def _forward_progress(
+    progress_path: Path,
+    previous_text: str | None,
+    on_progress: Callable[[dict[str, Any]], None] | None,
+) -> str | None:
+    if on_progress is None or not progress_path.exists():
+        return previous_text
+    try:
+        current_text = progress_path.read_text(encoding="utf-8")
+        if not current_text or current_text == previous_text:
+            return previous_text
+        payload = json.loads(current_text)
+    except (OSError, json.JSONDecodeError):
+        return previous_text
+    if not isinstance(payload, dict):
+        return previous_text
+    on_progress(cast(dict[str, Any], payload))
+    return current_text
+
+
+def _run_with_runtime_signals(
+    runner: ProcessRunner,
+    command: list[str],
+    transport: SubprocessTransport,
+    *,
+    progress_path: Path,
+    cancel_path: Path,
+    on_progress: Callable[[dict[str, Any]], None] | None,
+    should_cancel: Callable[[], bool] | None,
+) -> ProcessResult:
+    process_done = threading.Event()
+    process_result: list[ProcessResult] = []
+    process_error: list[BaseException] = []
+
+    def _run() -> None:
+        try:
+            with transport.launch_gate:
+                process_result.append(runner(command, cwd=str(REPOSITORY_ROOT)))
+        except BaseException as exc:
+            process_error.append(exc)
+        finally:
+            process_done.set()
+
+    thread = threading.Thread(
+        target=_run,
+        name=f"{transport.family}-subprocess",
+        daemon=True,
+    )
+    if should_cancel is not None and should_cancel():
+        cancel_path.touch(exist_ok=True)
+    thread.start()
+
+    previous_progress: str | None = None
+    monitor_error: BaseException | None = None
+    while not process_done.is_set():
+        try:
+            if should_cancel is not None and should_cancel():
+                cancel_path.touch(exist_ok=True)
+            previous_progress = _forward_progress(
+                progress_path,
+                previous_progress,
+                on_progress,
+            )
+        except BaseException as exc:
+            monitor_error = exc
+            cancel_path.touch(exist_ok=True)
+            break
+        process_done.wait(_RUNTIME_POLL_INTERVAL_S)
+
+    thread.join()
+    if monitor_error is None:
+        _forward_progress(progress_path, previous_progress, on_progress)
+    if process_error:
+        raise process_error[0]
+    if monitor_error is not None:
+        raise monitor_error
+    if not process_result:
+        raise RuntimeError(f"{transport.family} subprocess did not return a process result.")
+    return process_result[0]
+
+
 def run_subprocess(
     transport: SubprocessTransport,
     operation: str,
     params: Mapping[str, object],
     *,
     process_runner: ProcessRunner | None = None,
+    on_progress: Callable[[dict[str, Any]], None] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> object:
     """Run one family operation through the shared one-shot transport."""
 
@@ -179,9 +303,20 @@ def run_subprocess(
         temp_dir = Path(tmpdir)
         input_path = temp_dir / "input.json"
         output_path = temp_dir / "output.json"
+        progress_path = temp_dir / "progress.json"
+        cancel_path = temp_dir / "cancel.requested"
+        serialized_params = serialize_params_for_subprocess(params, temp_dir)
+        if _RUNTIME_MARKER in serialized_params:
+            raise ValueError(f"Parameter name {_RUNTIME_MARKER!r} is reserved.")
+        use_runtime_signals = on_progress is not None or should_cancel is not None
+        if use_runtime_signals:
+            serialized_params[_RUNTIME_MARKER] = {
+                "progress_path": str(progress_path),
+                "cancel_path": str(cancel_path),
+            }
         request: SubprocessRequest = {
             "operation": operation,
-            "params": serialize_params_for_subprocess(params, temp_dir),
+            "params": serialized_params,
         }
         _write_json(input_path, request)
 
@@ -198,8 +333,19 @@ def run_subprocess(
             operation,
             transport.runner_module,
         )
-        with transport.launch_gate:
-            completed = runner(command, cwd=str(REPOSITORY_ROOT))
+        if use_runtime_signals:
+            completed = _run_with_runtime_signals(
+                runner,
+                command,
+                transport,
+                progress_path=progress_path,
+                cancel_path=cancel_path,
+                on_progress=on_progress,
+                should_cancel=should_cancel,
+            )
+        else:
+            with transport.launch_gate:
+                completed = runner(command, cwd=str(REPOSITORY_ROOT))
 
         if not output_path.exists():
             raise RuntimeError(
@@ -221,6 +367,8 @@ def run_subprocess(
             error_type = payload.get("error_type")
             if not isinstance(detail, str) or not detail:
                 detail = "Unknown subprocess failure."
+            if error_type == SubprocessCanceled.__name__:
+                raise SubprocessCanceled(detail)
             if isinstance(error_type, str) and error_type:
                 detail = f"{error_type}: {detail}"
             raise RuntimeError(f"{transport.family} subprocess failed: {detail}")

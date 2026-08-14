@@ -3,6 +3,7 @@ import pytest
 
 from backend.workflow.engine import TASK_DEFINITIONS, execute_workflow
 from backend.workflow.registry import TaskDefinition
+from backend.workflow.types import WorkflowContext
 from backend.workflow.utility import _resolve_refs
 
 
@@ -58,6 +59,33 @@ def test_unknown_reference_fails_before_any_task_executes(monkeypatch):
             {"tasks": [{"id": "task", "type": "test.task", "inputs": {"value": "@missing.value"}}]}
         )
     assert calls == []
+
+
+def test_handler_progress_keeps_current_task_metadata(monkeypatch):
+    updates = []
+
+    def handler(_inputs, ctx):
+        ctx.update_progress({"phase": "denoising", "step": 2, "total_steps": 10})
+        return {"value": "done"}
+
+    monkeypatch.setattr(
+        "backend.workflow.engine.TASK_DEFINITIONS",
+        {"test.task": _definition(handler)},
+    )
+
+    execute_workflow(
+        {"tasks": [{"id": "render", "type": "test.task", "inputs": {}}]},
+        ctx=WorkflowContext(update_progress=updates.append),
+    )
+
+    assert updates[1] == {
+        "phase": "denoising",
+        "step": 2,
+        "total_steps": 10,
+        "current_task": "render",
+        "current_task_index": 0,
+        "total_tasks": 1,
+    }
 
 
 def test_reference_cycle_reports_all_involved_tasks(monkeypatch):

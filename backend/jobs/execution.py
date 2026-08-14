@@ -32,6 +32,7 @@ class WorkflowJobExecutor:
             raise ValueError(f"Unsupported job kind: {kind}")
 
         from backend.utilities.resource_logging import SummaryProfiler
+        from backend.utilities.subprocess_transport import SubprocessCanceled
         from backend.workflow.engine import execute_workflow
         from backend.workflow.types import WorkflowCanceled, WorkflowContext
         from backend.workflow.utility import cleanup_artifacts, collect_artifact_ids
@@ -89,7 +90,7 @@ class WorkflowJobExecutor:
                         cleanup_error.__traceback__,
                     ),
                 )
-            if isinstance(execution_error, WorkflowCanceled):
+            if isinstance(execution_error, (WorkflowCanceled, SubprocessCanceled)):
                 raise JobExecutionCanceled(job_id) from execution_error
             raise execution_error.with_traceback(execution_traceback)
 

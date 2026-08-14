@@ -5,8 +5,10 @@ from typing import Any
 import pytest
 
 from backend.api.jobs import serialize_job
+from backend.jobs.contracts import JobExecutionCanceled
 from backend.jobs.execution import WorkflowJobExecutor
 from backend.utilities import resource_logging
+from backend.utilities.subprocess_transport import SubprocessCanceled
 from backend.workflow import engine as workflow_engine
 from backend.workflow import utility as workflow_utility
 
@@ -193,6 +195,33 @@ def test_execute_workflow_job_cleans_input_and_created_artifacts_after_failure(m
         )
 
     assert cleanup_calls == [{"input-artifact", "created-artifact"}]
+
+
+def test_execute_workflow_job_maps_subprocess_cancel_to_job_cancel(monkeypatch):
+    class FakeSummaryProfiler:
+        profile = None
+
+        def __init__(self, *, on_update=None):
+            self.on_update = on_update
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+    def cancel_workflow(_payload, *, ctx=None):
+        raise SubprocessCanceled("Cancel requested")
+
+    monkeypatch.setattr(resource_logging, "SummaryProfiler", FakeSummaryProfiler)
+    monkeypatch.setattr(workflow_engine, "execute_workflow", cancel_workflow)
+
+    with pytest.raises(JobExecutionCanceled):
+        WorkflowJobExecutor(FakeExecutionStore()).execute(
+            job_id="job-1",
+            kind="workflow",
+            payload={"tasks": []},
+        )
 
 
 def test_execution_failure_takes_precedence_when_artifact_cleanup_also_fails(

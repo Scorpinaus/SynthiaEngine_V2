@@ -234,7 +234,80 @@
 
         let activeToken = 0;
         let activeEventSource = null;
+        let activeJobId = null;
         let loraReady = Promise.resolve();
+        const progressPanel = document.getElementById("generation-progress");
+        const progressLabel = document.getElementById("generation-progress-label");
+        const progressBar = document.getElementById("generation-progress-bar");
+        const cancelButton = document.getElementById("generation-cancel");
+
+        function renderProgress(status, progress = null, cancelRequested = false) {
+            if (!progressPanel) return;
+            progressPanel.hidden = false;
+
+            let label = "Starting...";
+            if (status === "succeeded") {
+                label = "Complete";
+            } else if (status === "canceled") {
+                label = "Canceled";
+            } else if (status === "failed" || status === "stream-error") {
+                label = "Generation failed";
+            } else if (cancelRequested) {
+                label = "Cancel pending...";
+            } else if (status === "submitting") {
+                label = "Submitting job...";
+            } else if (status === "queued") {
+                label = "Waiting in queue...";
+            } else if (progress?.phase === "loading_model") {
+                label = "Loading model...";
+            } else if (progress?.phase === "image_completed") {
+                label = `Image ${progress.image_number} of ${progress.total_images} complete`;
+            } else if (progress?.phase === "denoising") {
+                label = `Image ${progress.image_number} of ${progress.total_images} - ` +
+                    `Step ${progress.step} of ${progress.total_steps}`;
+            }
+
+            if (progressLabel) {
+                progressLabel.textContent = label;
+            }
+            if (progressBar) {
+                const percent = Number(progress?.percent);
+                if (Number.isFinite(percent)) {
+                    progressBar.value = Math.max(0, Math.min(100, percent));
+                } else {
+                    progressBar.removeAttribute("value");
+                }
+            }
+            if (cancelButton) {
+                const terminal = ["succeeded", "failed", "canceled", "stream-error"].includes(status);
+                cancelButton.disabled = !activeJobId || terminal || cancelRequested;
+                cancelButton.textContent = cancelRequested && !terminal ? "Cancel pending" : "Cancel";
+            }
+        }
+
+        cancelButton?.addEventListener("click", async () => {
+            if (!activeJobId) return;
+            cancelButton.disabled = true;
+            cancelButton.textContent = "Canceling...";
+            try {
+                const response = await fetch(`${API_BASE}/api/jobs/${activeJobId}/cancel`, {
+                    method: "POST",
+                });
+                if (!response.ok) {
+                    throw new Error(`Cancel failed (${response.status}): ${await response.text()}`);
+                }
+                const job = await response.json();
+                renderProgress(
+                    job?.status ?? "running",
+                    job?.result?.progress,
+                    Boolean(job?.cancel_requested),
+                );
+            } catch (error) {
+                console.warn("Failed to cancel generation:", error);
+                cancelButton.disabled = false;
+                cancelButton.textContent = "Cancel";
+            }
+        });
 
         function collectSettings(defaults = {}) {
             const settings = {};
@@ -314,6 +387,9 @@
             const token = ++activeToken;
             activeEventSource?.close();
             activeEventSource = null;
+            activeJobId = null;
+            gallery.setImages([]);
+            renderProgress("submitting");
             try {
                 const payload = {
                     tasks: [{ id: "t1", type: config.taskType, inputs }],
@@ -327,21 +403,40 @@
                 if (!job?.id) {
                     throw new Error("Job submit did not return an id.");
                 }
+                activeJobId = job.id;
+                renderProgress(job.status ?? "queued", job?.result?.progress);
                 activeEventSource = WorkflowClient.watchJob(API_BASE, job.id, {
                     isStale: () => token !== activeToken,
+                    onUpdate: (update) => {
+                        const progress = update?.result?.progress;
+                        renderProgress(
+                            update?.status ?? "running",
+                            progress,
+                            Boolean(update?.cancel_requested),
+                        );
+                        if (typeof progress?.preview_url === "string" && progress.preview_url) {
+                            gallery.setImages([progress.preview_url]);
+                        }
+                    },
                     onDone: (update) => {
                         const images = update?.status === "succeeded" ? update?.result?.outputs : [];
                         gallery.setImages(Array.isArray(images) ? images : []);
+                        renderProgress(update?.status ?? "failed", update?.result?.progress);
+                        activeJobId = null;
                     },
                     onError: () => {
                         if (token === activeToken) {
                             gallery.setImages([]);
+                            renderProgress("stream-error");
+                            activeJobId = null;
                         }
                     },
                 });
             } catch (error) {
                 console.warn(errorMessage, error);
                 gallery.setImages([]);
+                renderProgress("failed");
+                activeJobId = null;
             }
         }
 

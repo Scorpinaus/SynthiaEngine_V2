@@ -21,6 +21,38 @@
     font-size: 14px;
 }
 
+.generation-progress {
+    background: #f4efe7;
+    border: 1px solid #e3ddd4;
+    border-radius: 12px;
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+}
+
+.generation-progress[hidden] {
+    display: none;
+}
+
+.generation-progress-header {
+    align-items: center;
+    display: flex;
+    gap: 12px;
+    justify-content: space-between;
+}
+
+.generation-progress-header span {
+    color: #4d4740;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.generation-progress progress {
+    accent-color: #3a5a40;
+    height: 10px;
+    width: 100%;
+}
+
 .viewer {
     display: grid;
     gap: 14px;

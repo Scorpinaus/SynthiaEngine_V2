@@ -10,6 +10,7 @@ from PIL import Image
 
 from backend.settings import REPOSITORY_ROOT
 from backend.utilities.subprocess_transport import (
+    SubprocessCanceled,
     SubprocessTransport,
     deserialize_params_from_subprocess,
     run_subprocess,
@@ -109,6 +110,43 @@ def test_parent_reports_malformed_invalid_and_crashed_results(
             {"prompt": "test"},
             process_runner=fake_run,
         )
+
+
+def test_parent_relays_progress_and_maps_cooperative_cancellation():
+    updates = []
+
+    def fake_run(command, cwd):
+        request = json.loads(Path(command[-2]).read_text(encoding="utf-8"))
+        runtime = request["params"]["__syntha_subprocess_runtime__"]
+        Path(runtime["progress_path"]).write_text(
+            json.dumps({"phase": "denoising", "step": 3, "total_steps": 10}),
+            encoding="utf-8",
+        )
+        assert Path(runtime["cancel_path"]).exists()
+        Path(command[-1]).write_text(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error_type": "SubprocessCanceled",
+                    "error": "Cancel requested",
+                    "traceback": "",
+                }
+            ),
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(command, 1)
+
+    with pytest.raises(SubprocessCanceled, match="Cancel requested"):
+        run_subprocess(
+            _transport(),
+            "text2img",
+            {"prompt": "test"},
+            process_runner=fake_run,
+            on_progress=updates.append,
+            should_cancel=lambda: True,
+        )
+
+    assert updates == [{"phase": "denoising", "step": 3, "total_steps": 10}]
 
 
 def test_child_writes_typed_error_and_always_cleans_up(tmp_path):

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import logging
+from functools import partial
 from typing import Any
 
 from backend.config import OUTPUT_DIR
@@ -270,7 +271,7 @@ def _flux_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, An
 
 
 # Qwen-Image task handlers and dependencies
-def _qwen_image_runtime_deps() -> dict[str, Any]:
+def _qwen_image_runtime_deps(ctx: WorkflowContext | None = None) -> dict[str, Any]:
     qwen_image_pipeline_module = importlib.import_module("backend.qwen_image.pipeline")
     deps: dict[str, Any] = {
         "open_image_ref": _open_image_ref,
@@ -280,20 +281,26 @@ def _qwen_image_runtime_deps() -> dict[str, Any]:
     for name in ("generate_text2img", "generate_img2img", "generate_inpaint"):
         func = getattr(qwen_image_pipeline_module, name, None)
         if func is not None:
+            if ctx is not None and (ctx.update_progress or ctx.should_cancel):
+                func = partial(
+                    func,
+                    update_progress=ctx.update_progress,
+                    should_cancel=ctx.should_cancel,
+                )
             deps[name] = func
     return deps
 
 
 def _qwen_image_text2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
-    return _run_qwen_image_text2img(inputs, _qwen_image_runtime_deps())
+    return _run_qwen_image_text2img(inputs, _qwen_image_runtime_deps(_ctx))
 
 
 def _qwen_image_img2img(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
-    return _run_qwen_image_img2img(inputs, _qwen_image_runtime_deps())
+    return _run_qwen_image_img2img(inputs, _qwen_image_runtime_deps(_ctx))
 
 
 def _qwen_image_inpaint(inputs: dict[str, Any], _ctx: WorkflowContext) -> dict[str, Any]:
-    return _run_qwen_image_inpaint(inputs, _qwen_image_runtime_deps())
+    return _run_qwen_image_inpaint(inputs, _qwen_image_runtime_deps(_ctx))
 
 
 # Z-Image task handlers and dependencies

@@ -1,16 +1,19 @@
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from importlib.metadata import PackageNotFoundError, version as package_version
 import logging
 import threading
-from typing import TypeVar
+from pathlib import Path
+from typing import Any, TypeVar
 
 import torch
 from diffusers import QwenImageImg2ImgPipeline, QwenImageInpaintPipeline, QwenImagePipeline
+from PIL import Image
 
 from backend.config import OUTPUT_DIR
 from backend.utilities.logging import configure_logging
 from backend.registries.model import ModelRegistryEntry, list_model_entries
 from backend.utilities.pipeline import (
+    build_batch_output_relpath,
     cleanup_memory,
     get_batch_output_dir,
     make_batch_id,
@@ -21,8 +24,11 @@ from backend.utilities.pipeline import (
 )
 from backend.utilities.schedulers import create_scheduler
 from backend.utilities.subprocess_transport import (
+    SubprocessCanceled,
+    SubprocessRuntime,
     SubprocessTransport,
     normalize_image_result,
+    pop_subprocess_runtime,
     run_subprocess,
 )
 
@@ -47,6 +53,7 @@ _DEFAULT_IMAGE_SIZE = 1328
 _DEFAULT_INPAINT_IMAGE_SIZE = 1024
 _DEFAULT_STRENGTH = 0.6
 _DEFAULT_SCHEDULER = "flowmatch_euler"
+_PREVIEW_MAX_EDGE = 768
 _NO_REVISION_VALUES = {"", "hub", "local"}
 _SDNQ_REQUIRED_MESSAGE = (
     "Qwen-Image SDNQ requires the 'sdnq' package. Install the project requirements."
@@ -309,7 +316,13 @@ def _validate_feature_compatibility(params: Mapping[str, object]) -> str:
     return scheduler
 
 
-def _run_qwen_image_subprocess(operation: str, params: dict[str, object]) -> dict[str, list[str]]:
+def _run_qwen_image_subprocess(
+    operation: str,
+    params: dict[str, object],
+    *,
+    update_progress: Callable[[dict[str, Any]], None] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
+) -> dict[str, list[str]]:
     _validate_feature_compatibility(params)
     result = run_subprocess(
         SubprocessTransport(
@@ -320,20 +333,52 @@ def _run_qwen_image_subprocess(operation: str, params: dict[str, object]) -> dic
         ),
         operation,
         params,
+        on_progress=update_progress,
+        should_cancel=should_cancel,
     )
     return normalize_image_result(result, family="Qwen-Image")
 
 
-def generate_text2img(params: dict[str, object]) -> dict[str, list[str]]:
-    return _run_qwen_image_subprocess("text2img", params)
+def generate_text2img(
+    params: dict[str, object],
+    *,
+    update_progress: Callable[[dict[str, Any]], None] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
+) -> dict[str, list[str]]:
+    return _run_qwen_image_subprocess(
+        "text2img",
+        params,
+        update_progress=update_progress,
+        should_cancel=should_cancel,
+    )
 
 
-def generate_img2img(params: dict[str, object]) -> dict[str, list[str]]:
-    return _run_qwen_image_subprocess("img2img", params)
+def generate_img2img(
+    params: dict[str, object],
+    *,
+    update_progress: Callable[[dict[str, Any]], None] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
+) -> dict[str, list[str]]:
+    return _run_qwen_image_subprocess(
+        "img2img",
+        params,
+        update_progress=update_progress,
+        should_cancel=should_cancel,
+    )
 
 
-def generate_inpaint(params: dict[str, object]) -> dict[str, list[str]]:
-    return _run_qwen_image_subprocess("inpaint", params)
+def generate_inpaint(
+    params: dict[str, object],
+    *,
+    update_progress: Callable[[dict[str, Any]], None] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
+) -> dict[str, list[str]]:
+    return _run_qwen_image_subprocess(
+        "inpaint",
+        params,
+        update_progress=update_progress,
+        should_cancel=should_cancel,
+    )
 
 
 def _negative_prompt(params: dict[str, object]) -> str:
@@ -341,8 +386,184 @@ def _negative_prompt(params: dict[str, object]) -> str:
     return _DEFAULT_NEGATIVE_PROMPT if value is None else str(value)
 
 
+def _raise_if_cancelled(runtime: SubprocessRuntime) -> None:
+    if runtime.should_cancel():
+        raise SubprocessCanceled("Cancel requested")
+
+
+def _preview_output(
+    batch_id: str,
+    batch_output_dir: Path,
+) -> tuple[Path, str]:
+    filename = f"{batch_id}_preview.png"
+    return (
+        batch_output_dir / filename,
+        f"/outputs/{build_batch_output_relpath(batch_id, filename)}",
+    )
+
+
+def _remove_preview(preview_path: Path) -> None:
+    for path in (preview_path, preview_path.with_suffix(".tmp")):
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            logger.warning("Could not remove Qwen-Image preview file: %s", path)
+
+
+def _save_preview_image(image: Image.Image, preview_path: Path) -> None:
+    preview = image.copy()
+    preview.thumbnail(
+        (_PREVIEW_MAX_EDGE, _PREVIEW_MAX_EDGE),
+        Image.Resampling.LANCZOS,
+    )
+    temp_path = preview_path.with_suffix(".tmp")
+    preview.save(temp_path, format="PNG", optimize=True)
+    temp_path.replace(preview_path)
+
+
+def _decode_preview_image(
+    pipe: Any,
+    packed_latents: Any,
+    *,
+    width: int,
+    height: int,
+) -> Image.Image:
+    latents = pipe._unpack_latents(
+        packed_latents.detach(),
+        height,
+        width,
+        pipe.vae_scale_factor,
+    )
+    latents = latents.to(pipe.vae.dtype)
+    latents_mean = (
+        torch.tensor(pipe.vae.config.latents_mean)
+        .view(1, pipe.vae.config.z_dim, 1, 1, 1)
+        .to(latents.device, latents.dtype)
+    )
+    latents_std = 1.0 / torch.tensor(pipe.vae.config.latents_std).view(
+        1,
+        pipe.vae.config.z_dim,
+        1,
+        1,
+        1,
+    ).to(latents.device, latents.dtype)
+    latents = latents / latents_std + latents_mean
+    decoded = pipe.vae.decode(latents, return_dict=False)[0][:, :, 0]
+    return pipe.image_processor.postprocess(decoded, output_type="pil")[0]
+
+
+def _build_step_callback(
+    runtime: SubprocessRuntime,
+    *,
+    requested_steps: int,
+    image_index: int,
+    total_images: int,
+    width: int,
+    height: int,
+    preview_path: Path,
+    preview_url: str,
+    preview_transform: Callable[[Any, Image.Image], Image.Image] | None = None,
+    live_preview: bool = True,
+):
+    def _on_step_end(pipe, step, _timestep, callback_kwargs):
+        _raise_if_cancelled(runtime)
+        total_steps = max(1, int(getattr(pipe, "num_timesteps", requested_steps)))
+        current_step = min(int(step) + 1, total_steps)
+        overall_total = total_steps * total_images
+        overall_step = image_index * total_steps + current_step
+        progress = {
+            "phase": "denoising",
+            "image_number": image_index + 1,
+            "total_images": total_images,
+            "step": current_step,
+            "total_steps": total_steps,
+            "percent": round(overall_step * 100 / overall_total, 1),
+        }
+        runtime.update_progress(progress)
+
+        should_preview = (
+            live_preview
+            and runtime.progress_path is not None
+            and current_step < total_steps
+            and callback_kwargs.get("latents") is not None
+        )
+        if should_preview:
+            try:
+                preview = _decode_preview_image(
+                    pipe,
+                    callback_kwargs["latents"],
+                    width=width,
+                    height=height,
+                )
+                if preview_transform is not None:
+                    preview = preview_transform(pipe, preview)
+                _save_preview_image(preview, preview_path)
+                runtime.update_progress({**progress, "preview_url": preview_url})
+            except Exception:
+                logger.exception(
+                    "Qwen-Image preview decode failed at image=%s step=%s.",
+                    image_index + 1,
+                    current_step,
+                )
+        return callback_kwargs
+
+    return _on_step_end
+
+
+def _install_step_callback(
+    call_kwargs: dict[str, object],
+    runtime: SubprocessRuntime,
+    **callback_options: Any,
+) -> None:
+    if runtime.progress_path is None and runtime.cancel_path is None:
+        return
+    preview_enabled = (
+        bool(callback_options.get("live_preview", True))
+        and runtime.progress_path is not None
+    )
+    callback_options["live_preview"] = preview_enabled
+    call_kwargs["callback_on_step_end"] = _build_step_callback(
+        runtime,
+        **callback_options,
+    )
+    call_kwargs["callback_on_step_end_tensor_inputs"] = (
+        ["latents"] if preview_enabled else []
+    )
+
+
+def _publish_image_complete(
+    runtime: SubprocessRuntime,
+    *,
+    image_index: int,
+    total_images: int,
+    output_url: str,
+) -> None:
+    runtime.update_progress(
+        {
+            "phase": "image_completed",
+            "image_number": image_index + 1,
+            "total_images": total_images,
+            "percent": round((image_index + 1) * 100 / total_images, 1),
+            "preview_url": output_url,
+        }
+    )
+
+
+def _publish_loading_model(runtime: SubprocessRuntime, total_images: int) -> None:
+    runtime.update_progress(
+        {
+            "phase": "loading_model",
+            "image_number": 1,
+            "total_images": total_images,
+            "percent": 0.0,
+        }
+    )
+
+
 @torch.inference_mode()
 def generate_text2img_in_process(params: dict[str, object]) -> dict[str, list[str]]:
+    params = dict(params)
+    runtime = pop_subprocess_runtime(params)
     prompt = str(params.get("prompt") or "")
     negative_prompt = _negative_prompt(params)
     steps = int(params.get("steps", _DEFAULT_INFERENCE_STEPS))
@@ -359,6 +580,7 @@ def generate_text2img_in_process(params: dict[str, object]) -> dict[str, list[st
 
     batch_id = make_batch_id()
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
+    preview_path, preview_url = _preview_output(batch_id, batch_output_dir)
 
     logger.info(
         "Qwen-Image Generate: model=%s seed=%s steps=%s true_cfg_scale=%s "
@@ -375,10 +597,13 @@ def generate_text2img_in_process(params: dict[str, object]) -> dict[str, list[st
     filenames: list[str] = []
     pipe = None
     try:
+        _raise_if_cancelled(runtime)
+        _publish_loading_model(runtime, num_images)
         pipe = load_text2img_pipeline(model)
         pipe.scheduler = create_scheduler(scheduler, pipe)
 
         for i in range(num_images):
+            _raise_if_cancelled(runtime)
             current_seed = base_seed + i
             generator = torch.Generator(device="cpu").manual_seed(current_seed)
 
@@ -392,18 +617,38 @@ def generate_text2img_in_process(params: dict[str, object]) -> dict[str, list[st
                     "height": height,
                     "generator": generator,
                 }
+                _install_step_callback(
+                    call_kwargs,
+                    runtime,
+                    requested_steps=steps,
+                    image_index=i,
+                    total_images=num_images,
+                    width=width,
+                    height=height,
+                    preview_path=preview_path,
+                    preview_url=preview_url,
+                    live_preview=bool(params.get("live_preview", True)),
+                )
                 image = pipe(**call_kwargs).images[0]
 
+            _raise_if_cancelled(runtime)
             relpath = save_generated_image(
                 image, batch_output_dir, batch_id, current_seed, params,
                 mode="txt2img", pipeline="qwen-image",
             )
             logger.info("Image %s saved to %s", i, relpath)
             filenames.append(relpath)
+            _publish_image_complete(
+                runtime,
+                image_index=i,
+                total_images=num_images,
+                output_url=f"/outputs/{relpath}",
+            )
 
             del image
             cleanup_memory()
     finally:
+        _remove_preview(preview_path)
         release_pipeline(pipe, logger=logger)
         pipe = None
 
@@ -412,6 +657,8 @@ def generate_text2img_in_process(params: dict[str, object]) -> dict[str, list[st
 
 @torch.inference_mode()
 def generate_img2img_in_process(params: dict[str, object]) -> dict[str, list[str]]:
+    params = dict(params)
+    runtime = pop_subprocess_runtime(params)
     initial_image = params.get("initial_image")
     if initial_image is None:
         raise ValueError("initial_image is required")
@@ -432,6 +679,7 @@ def generate_img2img_in_process(params: dict[str, object]) -> dict[str, list[str
 
     batch_id = make_batch_id()
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
+    preview_path, preview_url = _preview_output(batch_id, batch_output_dir)
 
     logger.info(
         "Qwen-Image Img2Img: model=%s seed=%s steps=%s true_cfg_scale=%s "
@@ -449,10 +697,13 @@ def generate_img2img_in_process(params: dict[str, object]) -> dict[str, list[str
     filenames: list[str] = []
     pipe = None
     try:
+        _raise_if_cancelled(runtime)
+        _publish_loading_model(runtime, num_images)
         pipe = load_img2img_pipeline(model)
         pipe.scheduler = create_scheduler(scheduler, pipe)
 
         for i in range(num_images):
+            _raise_if_cancelled(runtime)
             current_seed = base_seed + i
             generator = torch.Generator(device="cpu").manual_seed(current_seed)
 
@@ -468,8 +719,21 @@ def generate_img2img_in_process(params: dict[str, object]) -> dict[str, list[str
                     "height": height,
                     "generator": generator,
                 }
+                _install_step_callback(
+                    call_kwargs,
+                    runtime,
+                    requested_steps=steps,
+                    image_index=i,
+                    total_images=num_images,
+                    width=width,
+                    height=height,
+                    preview_path=preview_path,
+                    preview_url=preview_url,
+                    live_preview=bool(params.get("live_preview", True)),
+                )
                 image = pipe(**call_kwargs).images[0]
 
+            _raise_if_cancelled(runtime)
             image_width, image_height = initial_image.size
             relpath = save_generated_image(
                 image, batch_output_dir, batch_id, current_seed, params,
@@ -479,10 +743,17 @@ def generate_img2img_in_process(params: dict[str, object]) -> dict[str, list[str
             )
             logger.info("Image %s saved to %s", i, relpath)
             filenames.append(relpath)
+            _publish_image_complete(
+                runtime,
+                image_index=i,
+                total_images=num_images,
+                output_url=f"/outputs/{relpath}",
+            )
 
             del image
             cleanup_memory()
     finally:
+        _remove_preview(preview_path)
         release_pipeline(pipe, logger=logger)
         pipe = None
 
@@ -491,6 +762,8 @@ def generate_img2img_in_process(params: dict[str, object]) -> dict[str, list[str
 
 @torch.inference_mode()
 def generate_inpaint_in_process(params: dict[str, object]) -> dict[str, list[str]]:
+    params = dict(params)
+    runtime = pop_subprocess_runtime(params)
     initial_image = params.get("initial_image")
     if initial_image is None:
         raise ValueError("initial_image is required")
@@ -518,6 +791,7 @@ def generate_inpaint_in_process(params: dict[str, object]) -> dict[str, list[str
 
     batch_id = make_batch_id()
     batch_output_dir = get_batch_output_dir(OUTPUT_DIR, batch_id)
+    preview_path, preview_url = _preview_output(batch_id, batch_output_dir)
 
     logger.info(
         "Qwen-Image Inpaint: model=%s seed=%s steps=%s true_cfg_scale=%s "
@@ -536,10 +810,13 @@ def generate_inpaint_in_process(params: dict[str, object]) -> dict[str, list[str
     filenames: list[str] = []
     pipe = None
     try:
+        _raise_if_cancelled(runtime)
+        _publish_loading_model(runtime, num_images)
         pipe = load_inpaint_pipeline(model)
         pipe.scheduler = create_scheduler(scheduler, pipe)
 
         for i in range(num_images):
+            _raise_if_cancelled(runtime)
             current_seed = base_seed + i
             generator = torch.Generator(device="cpu").manual_seed(current_seed)
 
@@ -558,8 +835,39 @@ def generate_inpaint_in_process(params: dict[str, object]) -> dict[str, list[str
                 }
                 if padding_mask_crop is not None:
                     call_kwargs["padding_mask_crop"] = padding_mask_crop
+                preview_transform = None
+                if padding_mask_crop is not None:
+                    def _overlay_preview(current_pipe, preview):
+                        crop = current_pipe.mask_processor.get_crop_region(
+                            mask_image,
+                            width,
+                            height,
+                            pad=padding_mask_crop,
+                        )
+                        return current_pipe.image_processor.apply_overlay(
+                            mask_image,
+                            initial_image,
+                            preview,
+                            crop,
+                        )
+
+                    preview_transform = _overlay_preview
+                _install_step_callback(
+                    call_kwargs,
+                    runtime,
+                    requested_steps=steps,
+                    image_index=i,
+                    total_images=num_images,
+                    width=width,
+                    height=height,
+                    preview_path=preview_path,
+                    preview_url=preview_url,
+                    preview_transform=preview_transform,
+                    live_preview=bool(params.get("live_preview", True)),
+                )
                 image = pipe(**call_kwargs).images[0]
 
+            _raise_if_cancelled(runtime)
             relpath = save_generated_image(
                 image, batch_output_dir, batch_id, current_seed, params,
                 mode="inpaint", pipeline="qwen-image",
@@ -568,10 +876,17 @@ def generate_inpaint_in_process(params: dict[str, object]) -> dict[str, list[str
             )
             logger.info("Image %s saved to %s", i, relpath)
             filenames.append(relpath)
+            _publish_image_complete(
+                runtime,
+                image_index=i,
+                total_images=num_images,
+                output_url=f"/outputs/{relpath}",
+            )
 
             del image
             cleanup_memory()
     finally:
+        _remove_preview(preview_path)
         release_pipeline(pipe, logger=logger)
         pipe = None
 

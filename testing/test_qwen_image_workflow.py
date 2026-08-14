@@ -14,6 +14,7 @@ from backend.workflow.assembly import (
     _qwen_image_img2img,
     _qwen_image_text2img,
 )
+from backend.workflow.types import WorkflowContext
 
 
 class QwenImageWorkflowTests(unittest.TestCase):
@@ -44,6 +45,28 @@ class QwenImageWorkflowTests(unittest.TestCase):
         self.assertEqual(result["images"], ["/outputs/batch/out.png"])
         self.assertIn("lora_adapters", captured)
         self.assertEqual(captured["lora_adapters"], [{"lora_id": 101, "strength": 0.8}])
+
+    def test_qwen_image_text2img_binds_workflow_runtime_callbacks(self):
+        captured = {}
+        update_progress = lambda _patch: None
+        should_cancel = lambda: False
+
+        def _fake_generate_text2img(payload, **runtime):
+            captured.update(runtime)
+            return {"images": ["/outputs/batch/out.png"]}
+
+        fake_module = SimpleNamespace(generate_text2img=_fake_generate_text2img)
+        with patch.dict("sys.modules", {"backend.qwen_image.pipeline": fake_module}):
+            _qwen_image_text2img(
+                {"prompt": "test prompt"},
+                WorkflowContext(
+                    update_progress=update_progress,
+                    should_cancel=should_cancel,
+                ),
+            )
+
+        self.assertIs(captured["update_progress"], update_progress)
+        self.assertIs(captured["should_cancel"], should_cancel)
 
     def test_qwen_image_text2img_accepts_legacy_lora_contract_enabled(self):
         captured = {}
@@ -108,6 +131,7 @@ class QwenImageWorkflowTests(unittest.TestCase):
                         "initial_image": "@artifact:abc123",
                         "prompt": "test prompt",
                         "lora_adapters": [{"lora_id": 101, "strength": 0.8}],
+                        "live_preview": False,
                     },
                     _ctx=None,
                 )
@@ -115,6 +139,7 @@ class QwenImageWorkflowTests(unittest.TestCase):
         self.assertEqual(result["images"], ["/outputs/batch/out.png"])
         self.assertIn("lora_adapters", captured)
         self.assertEqual(captured["lora_adapters"], [{"lora_id": 101, "strength": 0.8}])
+        self.assertIs(captured["live_preview"], False)
 
     def test_qwen_image_inpaint_rejects_lora_adapters(self):
         with self.assertRaisesRegex(ValueError, "does not support LoRA adapters"):
@@ -153,6 +178,7 @@ class QwenImageWorkflowTests(unittest.TestCase):
                     "width": 768,
                     "height": 1024,
                     "padding_mask_crop": 0,
+                    "live_preview": False,
                 },
                 _ctx=None,
             )
@@ -161,6 +187,7 @@ class QwenImageWorkflowTests(unittest.TestCase):
         self.assertEqual(captured["width"], 768)
         self.assertEqual(captured["height"], 1024)
         self.assertEqual(captured["padding_mask_crop"], 0)
+        self.assertIs(captured["live_preview"], False)
         self.assertEqual(captured["initial_image"].size, (64, 48))
         self.assertEqual(captured["mask_image"].size, (64, 48))
 

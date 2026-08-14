@@ -35,6 +35,7 @@ def run_img2img(
     *,
     lora_adapters: Any = None,
     remap_strength: bool = False,
+    passthrough_fields: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     image = deps["open_image_ref"](inputs["initial_image"]).convert("RGB")
     width = int(inputs.get("width") or 1024)
@@ -51,6 +52,7 @@ def run_img2img(
         height=height,
         lora_adapters=inputs.get("lora_adapters") if lora_adapters is None else lora_adapters,
     )
+    payload.update({name: inputs.get(name) for name in passthrough_fields})
     return _require_result(task_type, deps["generate_img2img"](payload))
 
 
