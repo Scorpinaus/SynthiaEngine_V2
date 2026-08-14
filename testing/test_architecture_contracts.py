@@ -280,6 +280,22 @@ def test_backend_main_is_the_only_fastapi_composition_root():
     assert app_constructors == ["backend/main.py"]
 
 
+def test_fastapi_routers_stay_in_the_api_layer():
+    router_owners: list[str] = []
+    for path in sorted(BACKEND_ROOT.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        if any(
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "APIRouter"
+            for node in ast.walk(tree)
+        ):
+            router_owners.append(path.relative_to(ROOT).as_posix())
+
+    assert router_owners
+    assert all(owner.startswith("backend/api/") for owner in router_owners)
+
+
 def test_http_domains_are_owned_by_focused_api_modules():
     expected_owners = {
         "/api/artifacts": "backend.api.artifacts",

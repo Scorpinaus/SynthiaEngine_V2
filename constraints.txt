@@ -14,6 +14,7 @@ psycopg2-binary==2.9.12
 pydantic==2.13.4
 pytest==9.1.1
 safetensors==0.8.0
+sdnq==0.2.2
 sentencepiece==0.2.2
 SQLAlchemy==2.0.51
 transformers==5.14.1

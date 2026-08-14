@@ -6,9 +6,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_migrated_pages_load_shared_controller_before_page_script() -> None:
     for family in ("flux", "qwen_image", "z_image"):
+        page_version = 5 if family == "qwen_image" else 3
         for name in ("text2img", "img2img"):
             html = (ROOT / "frontend" / family / f"{name}.html").read_text(encoding="utf-8")
-            assert html.index("../generation_page.js") < html.index(f'{name}.js?v=3')
+            assert html.index("../generation_page.js") < html.index(
+                f'{name}.js?v={page_version}'
+            )
 
     for family in ("anima", "ernie_image"):
         html = (ROOT / "frontend" / family / "text2img.html").read_text(encoding="utf-8")

@@ -5,11 +5,10 @@ and cleaned up in SynthaEngine.
 
 It is intended for maintainers who edit runtime generation code in:
 
-- `backend/sd15/` runtime modules (with `pipeline.py` as the compatibility facade)
-- `backend/sdxl/` runtime modules (with `pipeline.py` as the compatibility facade)
-- `backend/flux/pipeline.py`
-- `backend/qwen_image/pipeline.py`
-- `backend/z_image/pipeline.py`
+- `backend/sd15/` and `backend/sdxl/` operation modules and facades
+- `backend/flux/`, `backend/qwen_image/`, and `backend/z_image/`
+- `backend/ernie_image/`, `backend/anima/`, and `backend/wan/`
+- `backend/utilities/subprocess_transport.py` and `pipeline_cache.py`
 
 ## Goals
 
@@ -20,7 +19,7 @@ It is intended for maintainers who edit runtime generation code in:
 
 ## Current Policy
 
-Pipelines are **job-scoped by default**.
+Pipelines are **task-scoped by default**.
 
 That means a generation function should:
 
@@ -30,8 +29,8 @@ That means a generation function should:
 4. Save outputs and metadata.
 5. Release adapters, hooks, pipeline references, and memory in a `finally` block.
 
-Do not keep hidden module-level pipeline instances unless a future change adds an
-explicit cache with ownership, eviction, and cleanup rules.
+Do not keep hidden module-level pipeline instances. The only allowed persistent
+instance is in an explicit cache with ownership, eviction, and cleanup rules.
 
 ### Shared subprocess transport
 
@@ -49,7 +48,7 @@ runner, operation, launch gate, and public result shape. Family
 `subprocess_runner.py` modules retain only their operation dispatch table,
 generation functions, and final `cleanup_memory()` callback.
 
-SD1.5 image renders run in a one-shot subprocess by default. The API worker
+SD1.5 image renders run in a one-shot subprocess by default. The renderer
 serializes the task parameters, launches `backend.sd15.subprocess_runner`, and
 the child process loads Diffusers, runs inference, writes outputs, and exits.
 This keeps the public workflow contract unchanged while letting process exit be
@@ -81,46 +80,35 @@ VACE, and image-to-video. The parent process serializes workflow parameters,
 including PIL image inputs and local conditioning video paths, and the child
 process owns Diffusers pipeline load, inference, video export, cleanup, and
 process exit.
+Anima text-to-image renders also use the shared one-shot subprocess transport.
+The child owns its pipeline and runs final cleanup before it exits.
 
 ## Required Cleanup Order
 
-Every generation function that creates a Diffusers pipeline should use this
+Every generation function that creates a Diffusers pipeline must use this
 cleanup order in `finally`:
 
 1. Clean feature-specific runtime state.
    - Unload LoRA adapters.
    - Clean IP-Adapter state.
    - Clear temporary adapter names or references.
-2. Release Diffusers hooks.
-   - Call `maybe_free_model_hooks()` when present.
-   - Call `remove_all_hooks()` when present.
-3. Drop strong references.
-   - Set `pipe = None`.
+2. Call `release_pipeline(pipe, logger=logger)`.
+   - The helper calls `maybe_free_model_hooks()` when present.
+   - The helper calls `remove_all_hooks()` when present.
+   - The helper then runs `cleanup_memory()`.
+3. Do not keep strong references after cleanup.
+   - Clear cache or module references that own the pipeline.
    - Delete large local tensors or images when they are no longer needed.
-4. Run memory cleanup.
-   - Call `cleanup_memory()` from `backend.utilities.pipeline`.
 
 Cleanup must be best-effort. A cleanup failure should be logged, but it should
 not hide the original generation error.
 
 ## Shared Cleanup Helper
 
-The preferred long-term shape is a single helper in `backend.utilities.pipeline`
-or a nearby runtime utility, for example:
-
-```python
-def release_pipeline(pipe: object | None) -> None:
-    if pipe is None:
-        return
-    if hasattr(pipe, "maybe_free_model_hooks"):
-        pipe.maybe_free_model_hooks()
-    if hasattr(pipe, "remove_all_hooks"):
-        pipe.remove_all_hooks()
-    cleanup_memory()
-```
-
-Family modules may wrap that helper when they need family-specific cleanup, but
-the core hook release and cache cleanup should not be duplicated indefinitely.
+`backend.utilities.pipeline.release_pipeline` is the shared cleanup owner. It
+does best-effort hook release, logs hook errors, and runs memory cleanup. Family
+modules can do feature cleanup before they call it. They must not copy the core
+hook and memory cleanup sequence.
 
 ## Memory Saver Policy
 
@@ -216,3 +204,5 @@ When editing a pipeline generation function:
 - Does the change preserve workflow output shapes documented in
   `docs/WORKFLOW_API.md`?
 - Are focused tests updated when behavior changes?
+- Does a subprocess runner contain only operation dispatch and final cleanup?
+- Does persistent reuse go through `PipelineCache` with a release callback?

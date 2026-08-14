@@ -30,7 +30,7 @@
 
                 <label class="field">
                     <span>Negative Prompt</span>
-                    <textarea id="negative_prompt" class="textarea-small" placeholder="Optional negative prompt..."></textarea>
+                    <textarea id="negative_prompt" class="textarea-small" placeholder="Qwen-Image-2512 recommended negative prompt...">低分辨率，低画质，肢体畸形，手指畸形，画面过饱和，蜡像感，人脸无细节，过度光滑，画面具有AI感。构图混乱。文字模糊，扭曲。</textarea>
                 </label>
 
                 <label class="field">
@@ -73,7 +73,7 @@
                     </label>
                     <label class="field">
                         <span>Steps</span>
-                        <input id="steps" type="number" value="30" step="1" />
+                        <input id="steps" type="number" value="50" step="1" />
                     </label>
                 </div>
 
@@ -82,20 +82,17 @@
                     <input id="true_cfg" type="number" step="0.5" value="4.0" />
                 </label>
 
-                <label class="field">
-                    <span>Guidance Scale</span>
-                    <input id="guidance_scale" type="number" step="0.5" value="7.5" />
-                </label>
-
-                <div id="lora-panel-root"></div>
-
                 <div id="preset-panel-root"></div>
 
-                <div id="scheduler-panel-root"></div>
+                <div
+                    id="scheduler-panel-root"
+                    data-default-scheduler="flowmatch_euler"
+                    data-allowed-schedulers="flowmatch_euler"
+                ></div>
 
                 <label class="field">
                     <span>Strength</span>
-                    <input id="strength" type="number" value="0.5" min="0" max="1" step="0.1" />
+                    <input id="strength" type="number" value="0.6" min="0" max="1" step="0.1" />
                 </label>
 
                 <label class="field">
@@ -169,15 +166,14 @@
     <script src="../components/header.js?v=1"></script>
     <script src="../components/nav_bar.js?v=3"></script>
     <script src="../components/gallery.js?v=1"></script>
-    <script src="../components/lora_panel.js?v=1"></script>
-    <script src="../components/scheduler_panel.js?v=1"></script>
+    <script src="../components/scheduler_panel.js?v=3"></script>
     <script src="../components/jobs_queue.js?v=2"></script>
     <script src="../workflow_client.js?v=1"></script>
     <script src="../workflow_catalog.js?v=1"></script>
     <script src="../components/preset_panel.js?v=1"></script>
     <script src="../generation_page.js?v=1"></script>
     <script src="../components/inpaint_editor.js?v=1"></script>
-    <script src="inpaint.js?v=3"></script>
+    <script src="inpaint.js?v=5"></script>
 </body>
 
 </html>

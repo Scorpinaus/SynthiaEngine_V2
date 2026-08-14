@@ -8,7 +8,12 @@ from backend.workflow.schema_input import QwenImageImg2ImgInputs, QwenImageInpai
 from backend.workflow.schema_output import ImagesOutput
 
 
-DEFAULTS = ImageTaskDefaults(steps=30, guidance_scale=7.5, true_cfg_scale=4.0)
+DEFAULTS = ImageTaskDefaults(
+    steps=50,
+    guidance_scale=0.0,
+    true_cfg_scale=4.0,
+    scheduler="flowmatch_euler",
+)
 
 
 def task_definitions(handlers: dict[str, TaskHandler]) -> dict[str, TaskDefinition]:

@@ -6,6 +6,10 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 _DEFAULT_SD15_CONTROLNET_MODEL = "lllyasviel/control_v11p_sd15_canny"
 _DEFAULT_SDXL_CONTROLNET_MODEL = "diffusers/controlnet-canny-sdxl-1.0"
+_QWEN_IMAGE_2512_NEGATIVE_PROMPT = (
+    "低分辨率，低画质，肢体畸形，手指畸形，画面过饱和，蜡像感，人脸无细节，"
+    "过度光滑，画面具有AI感。构图混乱。文字模糊，扭曲。"
+)
 
 
 class ArtifactRef(BaseModel):
@@ -547,36 +551,82 @@ class FluxInpaintInputs(_FluxInputs):
 
 
 class _QwenImageInputs(BaseModel):
-    negative_prompt: str = ""
-    steps: int = 30
-    true_cfg_scale: float = 4.0
-    guidance_scale: float = 7.5
+    negative_prompt: str = _QWEN_IMAGE_2512_NEGATIVE_PROMPT
+    steps: int = Field(default=50, ge=1, le=200)
+    true_cfg_scale: float = Field(default=4.0, ge=0.0, le=30.0)
+    guidance_scale: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=30.0,
+        deprecated=True,
+        description=(
+            "Accepted for compatibility. Qwen-Image-2512 ignores distilled guidance; "
+            "use true_cfg_scale."
+        ),
+    )
     seed: int | None = None
     model: str | None = None
-    num_images: int = 1
-    scheduler: str = "euler"
-    lora_adapters: Any | None = None
+    num_images: int = Field(default=1, ge=1, le=8)
+    scheduler: Literal["flowmatch_euler"] = Field(
+        default="flowmatch_euler",
+        description="Fixed scheduler for the current Qwen-Image SDNQ profile.",
+        json_schema_extra={
+            "x-feature-supported": False,
+            "x-options": ["flowmatch_euler"],
+        },
+    )
+    lora_adapters: Any | None = Field(
+        default=None,
+        description=(
+            "Reserved for preset compatibility. The current Qwen-Image SDNQ "
+            "profile accepts only null or an empty adapter collection."
+        ),
+        json_schema_extra={"x-feature-supported": False},
+    )
+
+    @field_validator("scheduler", mode="before")
+    @classmethod
+    def validate_qwen_image_scheduler(cls, value: Any) -> str:
+        scheduler = str(value or "flowmatch_euler").strip().lower()
+        if scheduler != "flowmatch_euler":
+            raise ValueError(
+                "Qwen-Image SDNQ supports only scheduler 'flowmatch_euler' in "
+                "the current compatibility profile."
+            )
+        return scheduler
+
+    @field_validator("lora_adapters")
+    @classmethod
+    def validate_qwen_image_lora_adapters(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, (str, bytes, list, tuple, set, dict)) and not value:
+            return value
+        raise ValueError(
+            "SynthiaEngine Qwen-Image SDNQ does not support LoRA adapters in "
+            "the current compatibility profile."
+        )
 
 
 class QwenImageText2ImgInputs(_QwenImageInputs):
     prompt: str = ""
-    width: int = 1024
-    height: int = 1024
+    width: int = Field(default=1328, ge=64, le=2048)
+    height: int = Field(default=1328, ge=64, le=2048)
 
 
 class QwenImageImg2ImgInputs(_QwenImageInputs):
     initial_image: ImageRef
     prompt: str
-    strength: float = 0.75
-    width: int = 1024
-    height: int = 1024
+    strength: float = Field(default=0.6, ge=0.0, le=1.0)
+    width: int = Field(default=1328, ge=64, le=2048)
+    height: int = Field(default=1328, ge=64, le=2048)
 
 
 class QwenImageInpaintInputs(_QwenImageInputs):
     initial_image: ImageRef
     mask_image: ImageRef
     prompt: str
-    strength: float = 0.5
+    strength: float = Field(default=0.6, ge=0.0, le=1.0)
 
 
 class _ZImageInputs(BaseModel):

@@ -124,5 +124,14 @@
     "model_id": 14,
     "version": "main",
     "link": "CalamitousFelicitousness/Anima-Preview-3-sdnext-diffusers"
+  },
+  {
+    "name": "Qwen-Image-2512-SDNQ-4bit-dynamic",
+    "family": "qwen-image",
+    "model_type": "diffusers",
+    "location_type": "local",
+    "model_id": 15,
+    "version": "51bbb04c6c9664cc226f4403a9175aa2d0b29b9d",
+    "link": "D:\\diffusion\\diffusers\\Qwen-Image-2512-SDNQ-4bit-dynamic"
   }
 ]

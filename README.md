@@ -69,7 +69,7 @@ The machine-readable source for this matrix is `GET /api/workflow/catalog`.
 | `sdxl` | yes | no | yes | yes | yes | no | yes | yes | no |
 | `wan` | no | yes | no | no | no | no | no | no | no |
 | `flux` | yes | no | yes | yes | no | no | yes | no | no |
-| `qwen-image` | yes | no | yes | yes | no | no | yes | no | yes |
+| `qwen-image` | yes | no | yes | yes | no | no | no | no | yes |
 | `z-image` | yes | no | yes | yes | no | no | yes | no | no |
 | `ernie-image` | yes | no | no | no | no | no | yes | no | no |
 | `anima` | yes | no | no | no | no | no | no | no | no |
@@ -79,7 +79,8 @@ The machine-readable source for this matrix is `GET /api/workflow/catalog`.
 ### Prereqs
 
 - Python **3.10+**
-- A working PyTorch install for your platform (CPU or CUDA), plus the Python deps in `requirements.txt`
+- A PyTorch build for your CPU or CUDA platform
+- The Python packages in `requirements.txt`
 
 ### Run
 
@@ -88,19 +89,36 @@ The machine-readable source for this matrix is `GET /api/workflow/catalog`.
    the tested direct-dependency pins in `constraints.txt`; install the
    platform-appropriate PyTorch/CUDA build separately.
 
+```bat
+py -m venv .venv
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
 2) Start the app:
 ```bat
 run_app.bat
 ```
 
-This launches:
+This command launches three processes:
+
 - Backend API: `http://127.0.0.1:8000`
 - Renderer worker: a separate command window for generation/job logs
 - Frontend: `http://127.0.0.1:4173` (opens `sd15/text2img.html` by default)
 
 The API and renderer are split so request/access logs stay separate from
-generation warnings and errors. For manual startup, run the API with the
-embedded worker disabled:
+generation warnings and errors. The batch file disables the API's embedded
+renderer before it starts the separate renderer.
+
+You can start one process at a time for diagnosis:
+
+```bat
+run_app.bat api
+run_app.bat render
+run_app.bat frontend
+```
+
+To start the same processes without the batch-file modes, run the API with the
+embedded renderer disabled:
 
 ```bat
 set SYNTHA_LOG_ROLE=api
@@ -114,6 +132,14 @@ Then start the renderer in another terminal:
 set SYNTHA_LOG_ROLE=render
 .venv\Scripts\python.exe -m backend.jobs.render_worker
 ```
+
+Start the frontend in a third terminal:
+
+```bat
+.venv\Scripts\python.exe -m http.server 4173 --directory frontend
+```
+
+Use only one renderer process. Stop all three processes when you close the app.
 
 Process configuration is parsed centrally by `backend/settings.py`. Defaults
 are repository-relative and can be overridden before startup:
@@ -131,8 +157,6 @@ are repository-relative and can be overridden before startup:
 | `SYNTHA_WORKER_VRAM_MB` | `0` | Worker capacity filter (`0` disables filtering) |
 | `SYNTHA_PIPELINE_CACHE_MAX_ENTRIES` | `0` | Shared pipeline-cache entry budget |
 | `SYNTHA_PIPELINE_CACHE_MAX_MB` | `0` | Shared pipeline-cache memory budget |
-
-Note: `requirements.txt` currently references a local editable dependency `-e ./controlnet_aux`. If you don't have that folder in this repo checkout, `pip install -r requirements.txt` will fail; either add it (if you use it) or remove/replace that line.
 
 ## API docs
 

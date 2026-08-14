@@ -19,24 +19,24 @@ architectural change affects it.
 
 - [x] The current automated test suite has a green, documented non-GPU baseline
       before structural changes begin.
-- [ ] `backend/main.py` is an application composition root; HTTP domains are
+- [x] `backend/main.py` is an application composition root; HTTP domains are
       owned by focused modules under `backend/api/`.
 - [x] Workflow contracts, registration, runtime dependency binding, and
       execution have explicit owners without package-level module proxy magic.
 - [x] All subprocess-backed model families use one tested transport/protocol
       implementation while retaining family-specific runners.
-- [ ] Job persistence/leases and workflow execution are separated behind clear,
+- [x] Job persistence/leases and workflow execution are separated behind clear,
       typed interfaces.
-- [ ] SD1.5 and SDXL generation code is divided by responsibility without
+- [x] SD1.5 and SDXL generation code is divided by responsibility without
       hiding their model-specific behavior behind deep inheritance.
-- [ ] Shared frontend orchestration is not reimplemented by individual pages;
+- [x] Shared frontend orchestration is not reimplemented by individual pages;
       SD1.5/SDXL special behavior remains visible in named feature modules.
-- [ ] Global styles and configuration are divided into discoverable,
+- [x] Global styles and configuration are divided into discoverable,
       single-purpose modules with stable compatibility entrypoints.
-- [ ] Public route paths, task identifiers, payload fields, output models,
+- [x] Public route paths, task identifiers, payload fields, output models,
       catalog capabilities, reference syntax, and error contracts are unchanged
       unless separately approved.
-- [ ] Focused checks, the complete automated suite, Python compilation,
+- [x] Focused checks, the complete automated suite, Python compilation,
       JavaScript syntax checks, code metrics, and `git diff --check` pass at the
       completion audit.
 
@@ -67,8 +67,7 @@ architectural change affects it.
 - A generic model-family inheritance hierarchy or generic CRUD framework.
 - Model downloads, GPU-backed quality evaluation, scheduler changes, default
   changes, or output-image comparisons requiring unavailable weights.
-- Broad dependency upgrades. The existing uncommitted `constraints.txt` update
-  is user work and must remain untouched by this initiative.
+- Broad dependency upgrades. Dependency pins are outside this initiative.
 - Deleting custom pipelines without a separate reachability and compatibility
   audit.
 - Resolving the `SynthaEngine`/`SynthiaEngine` spelling inconsistency without a
@@ -292,16 +291,16 @@ style ownership is documented.
 **Outcome:** The simplified structure is documented, measurable, and protected
 against drifting back into the previous shape.
 
-- [ ] Update `docs/ARCHITECTURE.md`, `docs/PIPELINE_LIFECYCLE.md`, README startup
+- [x] Update `docs/ARCHITECTURE.md`, `docs/PIPELINE_LIFECYCLE.md`, README startup
       details, and directory `AGENTS.md` files for the final ownership model.
-- [ ] Add or update module-level documentation only where it helps navigation,
+- [x] Add or update module-level documentation only where it helps navigation,
       lifecycle, or contract understanding.
-- [ ] Run focused suites, the full automated suite, backend compilation,
+- [x] Run focused suites, the full automated suite, backend compilation,
       JavaScript syntax checks, architecture checks, metrics, and
       `git diff --check`.
-- [ ] Compare final metrics with the 2026-08-01 baseline and explain increases
+- [x] Compare final metrics with the 2026-08-01 baseline and explain increases
       or decreases; do not reduce tests to improve the count.
-- [ ] Review the final diff for public-contract drift, secrets, generated
+- [x] Review the final diff for public-contract drift, secrets, generated
       outputs, local databases, and accidental edits to user-owned changes.
 
 **Done when:** Every acceptance criterion has recorded evidence, documentation
@@ -316,7 +315,7 @@ deferred ideas are explicit.
 | 2026-08-01 | Optimize for clarity and duplication reduction, not minimum LOC. | Previous work already removed simple duplication; remaining hotspots contain real family-specific behavior. | Shared abstractions require characterization evidence. |
 | 2026-08-01 | Preserve static HTML/JS and public workflow contracts. | These are explicit repository constraints and stable user-facing surfaces. | No framework migration or API redesign is included. |
 | 2026-08-01 | Refactor in vertical, independently verified slices. | API, job, workflow, runtime, and frontend contracts are coupled end to end. | Each task must finish green before dependent work begins. |
-| 2026-08-01 | Guard forbidden dependency directions instead of snapshotting every current edge. | Some current support-layer edges are temporary and should be removable without weakening the architecture policy. | New upward/cross-family coupling fails tests; three narrow exceptions remain explicit in `docs/ARCHITECTURE.md`. |
+| 2026-08-01 | Guard forbidden dependency directions instead of snapshotting every current edge. | Some current support-layer edges are temporary and should be removable without weakening the architecture policy. | New upward/cross-family coupling fails tests; two narrow exceptions remain explicit in `docs/ARCHITECTURE.md`. |
 | 2026-08-01 | Carry typed settings on each FastAPI application instance and keep `backend.main:app` as a factory-created compatibility object. | Upload/security behavior and lifecycle policy must be testable without reloading modules or reparsing environment values inside handlers. | `backend/main.py` is a small composition root; focused routers read application-owned settings through a typed dependency. |
 | 2026-08-02 | Make `backend.workflow.assembly` the runtime composition boundary and keep `engine.py` orchestration-only. | Runtime imports, dependency binding, registry construction, and DAG execution previously shared one module and were exposed through package mutation. | Package exports are explicit, family registrations merge with duplicate detection, internal imports target owners, and engine responsibility is enforced by architecture tests. |
 
@@ -338,22 +337,30 @@ deferred ideas are explicit.
 | ARC-03 focused workflow/architecture suite | Passed | 245 workflow, catalog/schema, DAG, family adapter, job integration, and architecture-boundary tests passed; 395 unrelated tests were deselected. |
 | ARC-03 full automated suite | Passed | 640 passed, 0 failed, 36 third-party warnings in 84.91s. |
 | ARC-03 workflow ownership metric | Recorded | `backend/workflow/engine.py` reduced from 587 to 123 physical lines; runtime binding moved to the 415-line assembly module. Maintained code is 219 files / 38,958 likely code lines; tests are 73 files / 15,484 likely code lines. |
+| ARC-04 ownership audit | Passed | Static tests keep persistence in `store.py`, workflow execution in `execution.py`, polling in `worker.py`, and compatibility/composition in `queue.py`; lease and failure-precedence tests pass in the full suite. |
 | ARC-05 focused subprocess suite | Passed | 64 shared-transport and family subprocess tests passed across SD1.5, SDXL, Flux, Qwen-Image, Z-Image, WAN, ERNIE-Image, and Anima; malformed, missing, crashed, typed-error, cleanup, serializer, cwd, and Flux-cache boundaries covered. |
 | ARC-05 full automated suite | Passed | 651 passed, 0 failed, 36 third-party warnings in 83.97s. |
+| ARC-06 ownership audit | Passed | Facade size, public signatures, operation owners, workflow facades, and release-guarded pipeline loads are executable checks in `testing/test_arc06_decomposition.py`. |
+| ARC-07 ownership audit | Passed | Entrypoint size, task-name visibility, script order, feature-controller methods, payload shapes, and combination guardrails are executable checks in `testing/test_frontend_arc07.py`. |
 | ARC-08 style integrity | Passed | The browser loaded and parsed the stable entrypoint plus 7 ordered layers. The split preserved all 385 original CSS rule blocks; no selector was removed. |
 | ARC-08 frontend suite | Passed | 141 frontend contract and style ownership tests passed. |
 | ARC-08 visual checks | Passed | Text-to-image, inpaint, workflow builder, registry, history, and profiler were checked at 1440x1000 and 390x844. No page had horizontal overflow or a stylesheet error. API-backed panels showed expected offline states because the API was not part of this check. |
-| Test compilation | Passed | `.venv\Scripts\python.exe -m compileall -q backend testing`. |
-| Runtime/GPU generation | Not run | ARC-02, ARC-03, and ARC-05 change application/workflow/process structure, not model inference behavior; no model downloads were performed. |
+| ARC-09 focused architecture suite | Passed | 32 architecture, runtime ownership, subprocess, frontend composition, and style tests passed; 4 documentation/metrics tests also passed. |
+| ARC-09 full automated suite | Passed | 665 passed, 0 failed, 36 third-party warnings in 89.70s. |
+| Python compilation | Passed | `.venv\Scripts\python.exe -m compileall -q backend testing`. |
+| JavaScript syntax | Passed | `node --check` passed for all 57 frontend JavaScript files. |
+| Final metrics | Recorded | Maintained code is 264 files / 36,064 code lines: backend 155 / 20,147, frontend 105 / 15,074, tools 4 / 843. Tests are 78 / 16,315. Vendored pipelines are unchanged at 22 / 9,143. |
+| Baseline comparison | Passed | Maintained code has 54 more focused files but 2,529 fewer code lines. Backend gained 725 lines for explicit owners and typed boundaries. Frontend lost 3,254 lines through shared page composition. Tools are unchanged. Tests gained 6 files and 1,141 lines; no test was removed to improve the count. |
+| Final contract and file audit | Passed | Exact route/task/schema tests pass. The tracked diff contains only README, architecture/lifecycle docs, the plan, and one architecture test. No secret, generated output, media artifact, or local database is present. The worktree was clean before ARC-09. |
+| Runtime/GPU generation | Not run | ARC-09 changes documentation and a static boundary test. No model download or inference behavior change was required. User functional tests remain the hardware acceptance step. |
 | `git diff --check` | Passed | No whitespace errors; Git reported line-ending conversion advisories for edited files only. |
 
 ## Risks and blockers
 
 - **Resolved baseline risk:** ARC-00 repaired the 26 original failures and one
   previously masked order-dependent PixelDiT failure. The full suite is green.
-- **Dependency drift:** `constraints.txt` has user-owned uncommitted version
-  changes. Preserve it and verify whether those pins explain any ARC-00 failures
-  without reverting or modifying the file.
+- **Dependency pins:** ARC-09 did not change `constraints.txt` or install new
+  packages.
 - **Contract coupling:** Workflow changes affect registry, schema/catalog, job
   persistence, frontend payloads, tests, and docs. Exact contract comparisons
   are required; intentional additions must update the ARC-01 route/task sets.
@@ -376,6 +383,8 @@ deferred ideas are explicit.
 - Frontend framework/build-tool adoption.
 - Canonical product/package spelling migration.
 - Further custom-pipeline deletion or upstream replacement audits.
+- Removal of the two documented support-layer exceptions: preset registry to
+  workflow input models, and pipeline utilities to the model registry.
 
 ## Progress log
 
@@ -396,19 +405,35 @@ deferred ideas are explicit.
   cleanup coverage, documented the allowed dependency direction and current
   exceptions, made the architecture source-of-truth document trackable, and
   finished with 622 passing tests.
+- 2026-08-02: Completed ARC-02. Added typed settings and a testable app factory,
+  moved HTTP domains to focused routers, and reduced `backend/main.py` to a
+  small composition root.
 - 2026-08-02: Completed ARC-03. Replaced package proxy mutation with explicit
   compatibility exports, separated runtime assembly from DAG execution, made
   family registration explicit and duplicate-safe, moved WAN normalization to
   its family module, updated internal import/mock owners, and added executable
   workflow-boundary guards. The full suite passes with 640 tests.
+- 2026-08-02: Completed ARC-04. Split job persistence, execution, polling, and
+  composition behind typed boundaries. Preserved leases, single rendering,
+  state transitions, and deterministic failure precedence.
 - 2026-08-02: Completed ARC-05. Added one typed, failure-safe subprocess
   transport and serializer; migrated all eight families; reduced runners to
   dispatch and cleanup; removed six family protocol copies; preserved one-shot
   isolation and Flux cache behavior; and added crash, malformed-result, typed
   error, serializer, cwd, and temporary-cleanup tests. The full suite passes
   with 651 tests.
+- 2026-08-02: Completed ARC-06. Split SD1.5 and SDXL pipeline and workflow
+  hotspots into named operation, loader, preparation, adapter, transport, and
+  result modules. Kept public facades and cleanup contracts stable.
+- 2026-08-12: Completed ARC-07. Moved shared generation-page work and named
+  feature behavior into controllers. Reduced family entrypoints while keeping
+  task names, payload fields, defaults, and unsupported combinations visible.
 - 2026-08-12: Completed ARC-08. Split the stable stylesheet into ordered token,
   base, layout, component, generation, registry/tools, and responsive layers.
   Preserved all original rule blocks, documented ownership, added layer
   contract tests, passed 141 frontend tests, and checked six page types at
   desktop and narrow viewports.
+- 2026-08-12: Completed ARC-09. Updated the architecture, lifecycle, startup,
+  and directory guidance; added the API-router owner guard; recorded the final
+  metrics and audit; and passed 665 automated tests, compilation, and all
+  JavaScript syntax checks.

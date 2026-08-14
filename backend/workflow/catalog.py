@@ -63,6 +63,18 @@ def _infer_model_family(task_type: str) -> str | None:
     return None
 
 
+def _field_extra(field_info: Any) -> dict[str, Any]:
+    extra = getattr(field_info, "json_schema_extra", None)
+    return extra if isinstance(extra, dict) else {}
+
+
+def _model_field_supports_feature(model_cls: type[BaseModel], field_name: str) -> bool:
+    field_info = model_cls.model_fields.get(field_name)
+    if field_info is None:
+        return False
+    return _field_extra(field_info).get("x-feature-supported", True) is not False
+
+
 def _build_task_ui_hints(task_type: str, model_cls: type[BaseModel]) -> dict[str, Any]:
     # Minimal, stable contract for UIs/workflow builders. Everything here is optional
     # and should be treated as best-effort.
@@ -158,7 +170,13 @@ def _build_task_ui_hints(task_type: str, model_cls: type[BaseModel]) -> dict[str
             )
 
         if field_name == "scheduler":
-            hint.update(widget="select", options=_SCHEDULER_OPTIONS)
+            scheduler_options = _field_extra(field_info).get("x-options")
+            hint.update(
+                widget="select",
+                options=scheduler_options or _SCHEDULER_OPTIONS,
+            )
+            if not _model_field_supports_feature(model_cls, field_name):
+                hint["read_only"] = True
 
         if field_name == "weighting_policy":
             hint.update(widget="select", options=_WEIGHTING_POLICY_OPTIONS)
@@ -191,11 +209,18 @@ def _build_task_ui_hints(task_type: str, model_cls: type[BaseModel]) -> dict[str
             hint.update(widget="json")
 
         if field_name == "lora_adapters":
-            hint.update(
-                widget="json",
-                advanced=True,
-                help="List of LoRA adapter objects; UI may provide a dedicated editor.",
-            )
+            if _model_field_supports_feature(model_cls, field_name):
+                hint.update(
+                    widget="json",
+                    advanced=True,
+                    help="List of LoRA adapter objects; UI may provide a dedicated editor.",
+                )
+            else:
+                hint.update(
+                    widget="hidden",
+                    supported=False,
+                    help="LoRA adapters are not supported by this runtime profile.",
+                )
         if field_name == "lora":
             hint.update(
                 widget="json",
@@ -278,11 +303,13 @@ def _build_model_capabilities(task_input_models: dict[str, type[BaseModel]]) -> 
             features["hires_fix"] = True
 
         field_names = model_cls.model_fields.keys()
-        if "scheduler" in field_names:
+        if _model_field_supports_feature(model_cls, "scheduler"):
             features["scheduler"] = True
         if "true_cfg_scale" in field_names:
             features["true_cfg_scale"] = True
-        if "lora_adapters" in field_names or "lora" in field_names:
+        if _model_field_supports_feature(
+            model_cls, "lora_adapters"
+        ) or _model_field_supports_feature(model_cls, "lora"):
             features["lora_adapters"] = True
         if "ip_adapter" in field_names:
             features["ip_adapter"] = True

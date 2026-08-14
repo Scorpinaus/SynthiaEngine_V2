@@ -18,6 +18,7 @@ sentencepiece>=0.2.0
 protobuf >=6.33.2
 accelerate>=1.2.1
 safetensors>=0.4.5
+sdnq>=0.2.2
 peft>=0.19.1
 controlnet-aux>=0.0.10
 

@@ -55,7 +55,8 @@ def test_workflow_capability_features_for_core_families():
     assert qwen["text2video"] is False
     assert qwen["true_cfg_scale"] is True
     assert qwen["inpaint"] is True
-    assert qwen["lora_adapters"] is True
+    assert qwen["lora_adapters"] is False
+    assert qwen["scheduler"] is False
 
     zimage = capabilities["z-image"]["features"]
     assert zimage["text2img"] is True

@@ -25,6 +25,7 @@ def _ensure_lightweight_runtime_modules():
 
         torch.inference_mode = inference_mode
         torch.bfloat16 = object()
+        torch.Tensor = object
         torch.cuda = types.SimpleNamespace(is_available=lambda: False, empty_cache=lambda: None)
         sys.modules["torch"] = torch
 
@@ -33,6 +34,23 @@ def _ensure_lightweight_runtime_modules():
         diffusers.QwenImagePipeline = type("QwenImagePipeline", (), {})
         diffusers.QwenImageImg2ImgPipeline = type("QwenImageImg2ImgPipeline", (), {})
         diffusers.QwenImageInpaintPipeline = type("QwenImageInpaintPipeline", (), {})
+        for scheduler_name in (
+            "DDIMScheduler",
+            "DEISMultistepScheduler",
+            "DPMSolverMultistepScheduler",
+            "DPMSolverSinglestepScheduler",
+            "EulerAncestralDiscreteScheduler",
+            "EulerDiscreteScheduler",
+            "FlowMatchEulerDiscreteScheduler",
+            "FlowMatchHeunDiscreteScheduler",
+            "HeunDiscreteScheduler",
+            "KDPM2AncestralDiscreteScheduler",
+            "KDPM2DiscreteScheduler",
+            "LCMScheduler",
+            "LMSDiscreteScheduler",
+            "UniPCMultistepScheduler",
+        ):
+            setattr(diffusers, scheduler_name, type(scheduler_name, (), {}))
         sys.modules["diffusers"] = diffusers
 
 
@@ -42,6 +60,81 @@ def _import_qwen_image_pipeline():
 
 
 class QwenImageSubprocessTests(unittest.TestCase):
+    def test_qwen_image_default_model_uses_local_sdnq_checkpoint(self):
+        qwen_image_pipeline = _import_qwen_image_pipeline()
+
+        with patch.object(qwen_image_pipeline, "list_model_entries", return_value=[]):
+            entry = qwen_image_pipeline._get_qwen_image_model_entry(None)
+
+        self.assertEqual(entry.name, "Qwen-Image-2512-SDNQ-4bit-dynamic")
+        self.assertEqual(entry.family, "qwen-image")
+        self.assertEqual(entry.model_type, "diffusers")
+        self.assertEqual(entry.location_type, "local")
+        self.assertEqual(
+            entry.link,
+            r"D:\diffusion\diffusers\Qwen-Image-2512-SDNQ-4bit-dynamic",
+        )
+
+    def test_qwen_image_default_model_matches_registry_seed(self):
+        qwen_image_pipeline = _import_qwen_image_pipeline()
+        registry_path = (
+            Path(__file__).resolve().parents[1]
+            / "backend"
+            / "registries"
+            / "model_registry.json"
+        )
+        registry = json.loads(registry_path.read_text(encoding="utf-8"))
+        entry = next(
+            item
+            for item in registry
+            if item["name"] == qwen_image_pipeline._DEFAULT_MODEL_NAME
+        )
+
+        self.assertEqual(entry, qwen_image_pipeline._default_model_entry().model_dump())
+
+    def test_qwen_image_model_resolution_selects_registered_qwen_entry(self):
+        qwen_image_pipeline = _import_qwen_image_pipeline()
+        qwen_entry = qwen_image_pipeline.ModelRegistryEntry(
+            name="Custom Qwen",
+            family="qwen-image",
+            model_type="diffusers",
+            location_type="local",
+            model_id=20,
+            version="local",
+            link=r"D:\models\custom-qwen",
+        )
+
+        with patch.object(
+            qwen_image_pipeline,
+            "list_model_entries",
+            return_value=[qwen_entry],
+        ):
+            self.assertEqual(qwen_image_pipeline._get_qwen_image_model_entry(None), qwen_entry)
+            self.assertEqual(
+                qwen_image_pipeline._get_qwen_image_model_entry("Custom Qwen"),
+                qwen_entry,
+            )
+
+    def test_qwen_image_model_resolution_rejects_wrong_family(self):
+        qwen_image_pipeline = _import_qwen_image_pipeline()
+        wrong_entry = qwen_image_pipeline.ModelRegistryEntry(
+            name="Wrong Model",
+            family="sdxl",
+            model_type="diffusers",
+            location_type="local",
+            model_id=21,
+            version="local",
+            link=r"D:\models\wrong",
+        )
+
+        with patch.object(
+            qwen_image_pipeline,
+            "list_model_entries",
+            return_value=[wrong_entry],
+        ):
+            with self.assertRaisesRegex(ValueError, "is not a Qwen-Image model"):
+                qwen_image_pipeline._get_qwen_image_model_entry("Wrong Model")
+
     def test_qwen_image_bridge_uses_single_generation_gate(self):
         qwen_image_pipeline = _import_qwen_image_pipeline()
         events = []

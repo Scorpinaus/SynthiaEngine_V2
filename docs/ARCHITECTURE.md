@@ -12,20 +12,28 @@ SynthaEngine is a local image-generation system with:
 
 Runtime startup is defined in `run_app.bat`:
 
-- Starts Uvicorn for `backend.main:app`
+- Starts the API process with its embedded renderer disabled
+- Starts a separate renderer process with `python -m backend.jobs.render_worker`
 - Starts `python -m http.server` for `frontend/`
-- Opens `sd15/text2img.html`
+- Opens `sd15/text2img.html` after the services start
 
 ## 2. High-Level Component Diagram
 
 ```text
 Browser (frontend/*.html + *.js)
   -> FastAPI (backend/main.py)
-     -> Job Queue + Worker (backend/jobs/)
-        -> Workflow Engine (backend/workflow/)
-           -> Family Task Runtimes (backend/workflow/sd15.py, backend/workflow/sdxl.py, backend/workflow/flux.py, backend/workflow/qwen_image.py, backend/workflow/z_image.py, backend/workflow/ernie_image.py, backend/workflow/anima.py, plus WAN handlers)
-              -> Diffusers Pipelines (backend/sd15/pipeline.py, backend/sdxl/pipeline.py, backend/flux/pipeline.py, backend/qwen_image/pipeline.py, backend/z_image/pipeline.py, backend/ernie_image/pipeline.py, backend/anima/pipeline.py, backend/wan/pipeline.py)
-                 -> Shared Adapters (backend/adapters/)
+     -> API Routers (backend/api/)
+        -> Job Store (backend/jobs/store.py)
+
+Renderer (backend/jobs/render_worker.py)
+  -> Job Subsystem Composition (backend/jobs/queue.py)
+     -> Job Store (backend/jobs/store.py)
+     -> Worker Polling (backend/jobs/worker.py)
+     -> Injected Job Execution (backend/jobs/execution.py)
+        -> Workflow Assembly + Engine (backend/workflow/)
+           -> Family Task Adapters (backend/workflow/<family>.py)
+              -> Family Runtimes (backend/<family>/)
+                 -> Shared Adapters, Registries, and Utilities
 
 Data/Artifacts:
 - SQLite DBs in database/
@@ -40,9 +48,16 @@ Backend dependencies should point from orchestration toward implementation:
 backend/main.py
   -> backend/settings.py
   -> backend/api/
-     -> backend/jobs/ and backend/workflow/
-        -> family runtimes
-           -> adapters, LoRA/registries, and utilities
+     -> backend/jobs/ and workflow contract views
+
+backend/jobs/render_worker.py
+  -> backend/jobs/queue.py
+     -> backend/jobs/store.py
+     -> backend/jobs/worker.py
+     -> backend/jobs/execution.py
+        -> backend/workflow/
+           -> family runtimes
+              -> adapters, LoRA/registries, and utilities
 ```
 
 The detailed rules are intentionally conservative:
@@ -59,24 +74,30 @@ The detailed rules are intentionally conservative:
 - Supporting adapters, registries, LoRA, and utilities must not depend on API,
   jobs, or concrete model-family runtimes.
 
-Two current narrow support-layer edges remain visible until their owning
-refactor tasks: the preset registry uses workflow input schemas, and utilities
-use model registry lookup.
-They are allowed explicitly rather than being hidden as general exemptions.
+Two narrow support-layer exceptions are still explicit:
+
+- `backend/registries/preset.py` reads the assembled workflow input models.
+- `backend/utilities/pipeline.py` uses the model registry contract.
+
+These edges are deferred. The static rules do not give a general exemption to
+the full layer.
 
 `testing/test_architecture_contracts.py` enforces the static import boundaries,
-the single composition root, the exact public route/method set, the public task
-identifier set, the workflow envelope, and catalog derivation. Related runtime
-contracts remain owned by focused tests:
+the single composition root, API-router ownership, the exact public
+route/method set, the public task identifier set, the workflow envelope, and
+catalog derivation. Related contracts remain in focused tests:
 
 - Job/task transitions and lease recovery: `testing/test_job_task_persistence.py`
   and `testing/test_job_worker_leases.py`.
 - Workflow execution and artifact cleanup on success/failure:
   `testing/test_job_api.py`.
 - Subprocess result/error propagation and child cleanup:
-  `testing/test_flux_subprocess.py` plus the family subprocess suites.
+  `testing/test_subprocess_transport.py` plus the family subprocess suites.
 - Pipeline hook and memory release: `testing/test_pipeline_lifecycle.py` plus
   family pipeline tests.
+- SD1.5 and SDXL runtime ownership: `testing/test_arc06_decomposition.py`.
+- Shared page composition: `testing/test_frontend_arc07.py`.
+- Stable style entrypoint and layer ownership: `testing/test_frontend_styles.py`.
 
 ## 3. Backend Architecture
 
@@ -229,7 +250,7 @@ tasks. The same information is available to clients at
 | `sdxl` | yes | no | yes | yes | yes | no | yes | yes | no |
 | `wan` | no | yes | no | no | no | no | no | no | no |
 | `flux` | yes | no | yes | yes | no | no | yes | no | no |
-| `qwen-image` | yes | no | yes | yes | no | no | yes | no | yes |
+| `qwen-image` | yes | no | yes | yes | no | no | no | no | yes |
 | `z-image` | yes | no | yes | yes | no | no | yes | no | no |
 | `ernie-image` | yes | no | no | no | no | no | yes | no | no |
 | `anima` | yes | no | no | no | no | no | no | no | no |
@@ -238,8 +259,8 @@ Important family-specific boundaries:
 
 - SD1.5 has the widest surface: AnimateDiff text-to-video, ControlNet and multi-ControlNet, Hi-Res Fix, LoRA, IP-Adapter, and LCM mode.
 - SDXL supports ControlNet, multi-ControlNet, LoRA, and IP-Adapter across the image tasks, but IP-Adapter and ControlNet combinations are intentionally rejected for img2img/inpaint.
-- Flux, Qwen-Image, and Z-Image expose the core text2img/img2img/inpaint surface with LoRA and scheduler selection.
-- Qwen-Image additionally exposes `true_cfg_scale`.
+- Flux and Z-Image expose the core text2img/img2img/inpaint surface with LoRA and scheduler selection.
+- Qwen-Image exposes the core text2img/img2img/inpaint surface and `true_cfg_scale`. The current SDNQ profile fixes the scheduler to Flow Match Euler and rejects LoRA input before model loading.
 - ERNIE-Image and Anima start with text-to-image only; Anima loads SynthaEngine's local community Diffusers pipeline while keeping `trust_remote_code=True` for custom model components.
 
 ### 3.4 Pipeline Runtime Layer
@@ -397,22 +418,40 @@ Frontend is plain HTML + JS (no build step) served by static HTTP server.
 - `frontend/workflow_catalog.js`
   - Fetch/caches `/api/workflow/catalog`
   - Applies backend defaults into form controls
+- `frontend/generation_page.js`
+  - Owns shared form, model, preset, job, SSE, and image-result mechanics
+- `frontend/sd15/generation_controller.js`,
+  `frontend/sdxl/generation_controller.js`
+  - Compose family inputs, task names, and supported feature combinations
 - `frontend/components/header.js`, `frontend/components/nav_bar.js`
   - Shared navigation/header shell
 
 ### 4.2 Page Pattern
 
-Generation pages (for example `frontend/sd15/text2img.html` + `frontend/sd15/text2img.js`) follow a common pattern:
+Generation pages use small entrypoint scripts. Each entrypoint declares its
+task name, input fields, defaults, and feature controllers. The shared page and
+family controllers do the repeated work:
 
 1. Load model options (`GET /models?family=<family>`)
-2. Optionally load defaults from workflow catalog
-3. Read form inputs and build `payload.tasks`
+2. Load defaults from the workflow catalog
+3. Read form inputs and build `payload.tasks` in a family controller
 4. Upload any required source images through `POST /api/artifacts`
 5. Submit `POST /api/jobs` with `kind: "workflow"`
 6. Watch `GET /api/jobs/{id}/events` via `EventSource`
 7. Render output image URLs from `job.result.outputs`
 
-### 4.3 Reusable UI Panels
+### 4.3 Reusable Feature Controllers and UI Panels
+
+- `frontend/components/adapter_controller.js`
+  - Coordinates the combined adapter status and summary
+- `frontend/components/controlnet_controller.js`
+  - Adds SD1.5 or SDXL ControlNet inputs to a task
+- `frontend/components/ip_adapter_controller.js`
+  - Adds direct or encoded IP-Adapter inputs
+- `frontend/components/inpaint_editor.js`
+  - Owns the base image and saved mask contract
+- `frontend/components/animatediff_controller.js`
+  - Builds the AnimateDiff video task and renders video results
 
 - `frontend/components/controlnet_panel.js`, `frontend/components/controlnet_preprocessor.js`
   - ControlNet item management + preprocessor integration
@@ -434,6 +473,14 @@ Generation pages (for example `frontend/sd15/text2img.html` + `frontend/sd15/tex
 - Tools: `others/tools_analysis.html`
 
 These pages call model/LoRA registry endpoints and tool endpoints directly.
+
+### 4.5 Style Layers
+
+All pages load `frontend/style.css`. This stable entrypoint imports the files in
+`frontend/styles/` in this order: tokens, base, layout, components, generation,
+registry/tools, and responsive rules. The responsive layer stays last. HTML
+pages must not load a layer directly. See `frontend/styles/README.md` for the
+rule ownership map.
 
 ## 5. End-to-End Request Flow (Current)
 
@@ -463,7 +510,9 @@ If artifact inputs are used:
 - Schema-driven task contracts exposed to frontend/tooling
 - Queue-backed execution with idempotency and cancellation support
 - Local-file output model with metadata-rich PNG artifacts
-- Static frontend with shared JS clients and per-workflow page scripts
+- Static frontend with shared page mechanics, feature controllers, and small
+  family entrypoints
+- Stable CSS entrypoint with explicit style layers and no build step
 - Localhost-only default startup, origin-restricted CORS, bounded artifact uploads, and loopback-only native path selection
 
 ## 7. Pipeline Lifecycle and Memory Policy

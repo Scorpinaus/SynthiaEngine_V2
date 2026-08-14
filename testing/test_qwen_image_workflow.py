@@ -17,12 +17,12 @@ from backend.workflow.assembly import (
 
 
 class QwenImageWorkflowTests(unittest.TestCase):
-    def test_qwen_image_text2img_accepts_lora_adapters(self):
-        inputs = QwenImageText2ImgInputs(
-            prompt="test",
-            lora_adapters=[{"lora_id": 101, "strength": 0.8}],
-        )
-        self.assertEqual(inputs.lora_adapters, [{"lora_id": 101, "strength": 0.8}])
+    def test_qwen_image_text2img_rejects_lora_adapters(self):
+        with self.assertRaisesRegex(ValueError, "does not support LoRA adapters"):
+            QwenImageText2ImgInputs(
+                prompt="test",
+                lora_adapters=[{"lora_id": 101, "strength": 0.8}],
+            )
 
     def test_qwen_image_text2img_forwards_lora_adapters(self):
         captured = {}
@@ -85,13 +85,13 @@ class QwenImageWorkflowTests(unittest.TestCase):
         self.assertEqual(result["images"], ["/outputs/batch/out.png"])
         self.assertEqual(captured.get("lora_adapters"), [])
 
-    def test_qwen_image_img2img_accepts_lora_adapters(self):
-        inputs = QwenImageImg2ImgInputs(
-            initial_image="@artifact:abc123",
-            prompt="test",
-            lora_adapters=[{"lora_id": 101, "strength": 0.8}],
-        )
-        self.assertEqual(inputs.lora_adapters, [{"lora_id": 101, "strength": 0.8}])
+    def test_qwen_image_img2img_rejects_lora_adapters(self):
+        with self.assertRaisesRegex(ValueError, "does not support LoRA adapters"):
+            QwenImageImg2ImgInputs(
+                initial_image="@artifact:abc123",
+                prompt="test",
+                lora_adapters=[{"lora_id": 101, "strength": 0.8}],
+            )
 
     def test_qwen_image_img2img_forwards_lora_adapters(self):
         captured = {}
@@ -116,14 +116,14 @@ class QwenImageWorkflowTests(unittest.TestCase):
         self.assertIn("lora_adapters", captured)
         self.assertEqual(captured["lora_adapters"], [{"lora_id": 101, "strength": 0.8}])
 
-    def test_qwen_image_inpaint_accepts_lora_adapters(self):
-        inputs = QwenImageInpaintInputs(
-            initial_image="@artifact:abc123",
-            mask_image="@artifact:def456",
-            prompt="test",
-            lora_adapters=[{"lora_id": 101, "strength": 0.8}],
-        )
-        self.assertEqual(inputs.lora_adapters, [{"lora_id": 101, "strength": 0.8}])
+    def test_qwen_image_inpaint_rejects_lora_adapters(self):
+        with self.assertRaisesRegex(ValueError, "does not support LoRA adapters"):
+            QwenImageInpaintInputs(
+                initial_image="@artifact:abc123",
+                mask_image="@artifact:def456",
+                prompt="test",
+                lora_adapters=[{"lora_id": 101, "strength": 0.8}],
+            )
 
     def test_qwen_image_inpaint_forwards_lora_adapters(self):
         captured = {}

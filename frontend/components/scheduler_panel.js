@@ -13,6 +13,26 @@
                 throw new Error(`Failed to load scheduler UI: ${res.status}`);
             }
             container.innerHTML = await res.text();
+            const defaultScheduler = container.dataset.defaultScheduler;
+            const allowedSchedulers = (container.dataset.allowedSchedulers || "")
+                .split(",")
+                .map((value) => value.trim())
+                .filter(Boolean);
+            const schedulerSelect = container.querySelector("#scheduler");
+            if (schedulerSelect && allowedSchedulers.length) {
+                Array.from(schedulerSelect.options).forEach((option) => {
+                    if (!allowedSchedulers.includes(option.value)) {
+                        option.remove();
+                    }
+                });
+            }
+            if (defaultScheduler && schedulerSelect) {
+                schedulerSelect.value = defaultScheduler;
+            }
+            if (schedulerSelect?.options.length === 1) {
+                schedulerSelect.disabled = true;
+                schedulerSelect.title = "This runtime profile uses a fixed scheduler.";
+            }
         } catch (error) {
             console.warn("Failed to load scheduler UI:", error);
         }

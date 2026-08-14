@@ -632,7 +632,7 @@ This same matrix is available in machine-readable form at `GET /api/workflow/cat
 | `sdxl` | yes | no | yes | yes | yes | no | yes | yes | no |
 | `wan` (`wan2.1`, `wan2.2`) | no | yes | no | no | no | no | no | no | no |
 | `flux` | yes | no | yes | yes | no | no | yes | no | no |
-| `qwen-image` | yes | no | yes | yes | no | no | yes | no | yes |
+| `qwen-image` | yes | no | yes | yes | no | no | no | no | yes |
 | `z-image` (`zimage`) | yes | no | yes | yes | no | no | yes | no | no |
 | `ernie-image` (`ernie`) | yes | no | no | no | no | no | yes | no | no |
 | `anima` (`anima-preview`) | yes | no | no | no | no | no | no | no | no |
@@ -1065,35 +1065,22 @@ Example two-step SDXL IP-Adapter workflow:
 - Invalid adapter references (for example missing `lora_id`, unknown id, or incompatible family) fail the task with a validation/runtime error.
 - Runtime selects a Fill-compatible Flux inpaint backend automatically when the selected Flux model metadata indicates a Fill variant.
 
-`qwen-image.text2img` LoRA input notes:
-- `lora_adapters` is optional. When omitted or empty, text2img runs without LoRA adapters.
-- Legacy fallback `Lora` object is accepted as `{ "enabled": boolean, "adapters": [...] }` (also supports legacy `loraStatus`).
-  - When `Lora.enabled`/`Lora.loraStatus` is `false`, backend treats LoRA as disabled.
-  - If present and enabled, `Lora.adapters` is used when top-level `lora_adapters` is absent.
-- `lora_adapters` entries are resolved through the LoRA registry (`/lora-models`) by `lora_id`.
-- Each adapter may provide `strength` (default `1.0`).
-- Family validation is enforced: only LoRAs registered with `lora_model_family: "qwen-image"` are accepted for `qwen-image.text2img`.
-- Invalid adapter references (for example missing `lora_id`, unknown id, or incompatible family) fail the task with a validation/runtime error.
+Qwen-Image-2512 settings:
 
-`qwen-image.img2img` LoRA input notes:
-- `lora_adapters` is optional. When omitted or empty, img2img runs without LoRA adapters.
-- Legacy fallback `Lora` object is accepted as `{ "enabled": boolean, "adapters": [...] }` (also supports legacy `loraStatus`).
-  - When `Lora.enabled`/`Lora.loraStatus` is `false`, backend treats LoRA as disabled.
-  - If present and enabled, `Lora.adapters` is used when top-level `lora_adapters` is absent.
-- `lora_adapters` entries are resolved through the LoRA registry (`/lora-models`) by `lora_id`.
-- Each adapter may provide `strength` (default `1.0`).
-- Family validation is enforced: only LoRAs registered with `lora_model_family: "qwen-image"` are accepted for `qwen-image.img2img`.
-- Invalid adapter references (for example missing `lora_id`, unknown id, or incompatible family) fail the task with a validation/runtime error.
+- The three Qwen-Image tasks default to `steps: 50`, `true_cfg_scale: 4.0`, `scheduler: "flowmatch_euler"`, and `num_images: 1`.
+- The default negative prompt is `低分辨率，低画质，肢体畸形，手指畸形，画面过饱和，蜡像感，人脸无细节，过度光滑，画面具有AI感。构图混乱。文字模糊，扭曲。`.
+- Text-to-image and image-to-image default to `width: 1328` and `height: 1328`.
+- Image-to-image and inpaint default to `strength: 0.6`.
+- `guidance_scale` is accepted for compatibility and defaults to `null`. Qwen-Image-2512 is not a guidance-distilled model, so the runtime does not send this value to Diffusers. Use `true_cfg_scale` for classifier-free guidance.
+- The runtime always sends `negative_prompt`. An explicitly empty string stays empty.
 
-`qwen-image.inpaint` LoRA input notes:
-- `lora_adapters` is optional. When omitted or empty, inpaint runs without LoRA adapters.
-- Legacy fallback `Lora` object is accepted as `{ "enabled": boolean, "adapters": [...] }` (also supports legacy `loraStatus`).
-  - When `Lora.enabled`/`Lora.loraStatus` is `false`, backend treats LoRA as disabled.
-  - If present and enabled, `Lora.adapters` is used when top-level `lora_adapters` is absent.
-- `lora_adapters` entries are resolved through the LoRA registry (`/lora-models`) by `lora_id`.
-- Each adapter may provide `strength` (default `1.0`).
-- Family validation is enforced: only LoRAs registered with `lora_model_family: "qwen-image"` are accepted for `qwen-image.inpaint`.
-- Invalid adapter references (for example missing `lora_id`, unknown id, or incompatible family) fail the task with a validation/runtime error.
+Qwen-Image SDNQ compatibility gates:
+
+- Text-to-image, image-to-image, and inpaint are enabled.
+- `scheduler` stays in the input contract for preset compatibility. It accepts only `"flowmatch_euler"`. Any other value fails before the model loads.
+- `lora_adapters` stays in the input contract for preset compatibility. It accepts only `null` or an empty collection. A non-empty adapter list fails before the subprocess starts or the model loads.
+- The workflow catalog marks scheduler selection and LoRA as unavailable for this profile. The Qwen pages hide the LoRA panel and show only the fixed scheduler.
+- This LoRA gate applies to the current SynthiaEngine Qwen path. Diffusers and SDNQ can use LoRA, but the current SynthiaEngine adapter helper is for UNet pipelines and does not validate Qwen transformer adapters.
 
 `z-image.text2img` LoRA input notes:
 - `lora_adapters` is optional. When omitted or empty, text2img runs without LoRA adapters.
