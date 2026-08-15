@@ -358,7 +358,20 @@ def apply_lora_adapters_with_validation(
     expected_family: str,
     validate: bool = True,
     preloaded_adapters: list[tuple[str, float | dict[str, Any]]] | None = None,
+    allowed_lora_types: tuple[str, ...] | None = None,
+    allowed_targets: tuple[str, ...] | None = None,
+    coverage_components: tuple[str, ...] = ("unet", "text_encoder"),
 ) -> tuple[list[str], dict[str, dict[str, object]]]:
+    allowed_type_values = (
+        None
+        if allowed_lora_types is None
+        else {str(value).strip().lower() for value in allowed_lora_types}
+    )
+    allowed_target_values = (
+        None
+        if allowed_targets is None
+        else {_normalize_lora_target(value) for value in allowed_targets}
+    )
     preloaded_adapter_items = list(preloaded_adapters or [])
     adapter_names: list[str] = [name for name, _weight in preloaded_adapter_items]
     adapter_weights: list[float | dict[str, Any]] = [
@@ -384,6 +397,12 @@ def apply_lora_adapters_with_validation(
         ) = _extract_lora_params(adapter)
         if lora_id is None:
             raise ValueError("LoRA adapter missing lora_id.")
+        if allowed_target_values is not None and target not in allowed_target_values:
+            allowed = ", ".join(sorted(allowed_target_values)) or "none"
+            raise ValueError(
+                f"LoRA adapter target '{target}' is not supported for "
+                f"{expected_family}; allowed targets: {allowed}."
+            )
         logger.debug(
             "Parsed LoRA adapter[%s]: lora_id=%s strength=%s target=%s",
             adapter_index,
@@ -398,6 +417,13 @@ def apply_lora_adapters_with_validation(
         entry = get_lora_entry(int(lora_id))
         if entry.lora_model_family.lower() != expected_family.lower():
             raise ValueError(f"LoRA {entry.name} is not compatible with {expected_family}.")
+        entry_lora_type = str(getattr(entry, "lora_type", "")).strip().lower()
+        if allowed_type_values is not None and entry_lora_type not in allowed_type_values:
+            allowed = ", ".join(sorted(allowed_type_values)) or "none"
+            raise ValueError(
+                f"LoRA {entry.name} has unsupported type '{entry_lora_type}' for "
+                f"{expected_family}; allowed types: {allowed}."
+            )
 
         adapter_name = _build_adapter_name(entry.lora_id, entry.name, used_adapter_names)
         if target == "both":
@@ -453,8 +479,12 @@ def apply_lora_adapters_with_validation(
 
         if validate:
             coverage[adapter_name] = {
-                "unet": _summarize_lora_coverage(pipe.unet, adapter_name, "unet"),
-                "text_encoder": _summarize_lora_coverage(pipe.text_encoder, adapter_name, "text_encoder"),
+                component_name: _summarize_lora_coverage(
+                    getattr(pipe, component_name, None),
+                    adapter_name,
+                    component_name,
+                )
+                for component_name in coverage_components
             }
 
     if both_names and hasattr(pipe, "set_adapters"):

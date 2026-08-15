@@ -55,7 +55,7 @@ def test_workflow_capability_features_for_core_families():
     assert qwen["text2video"] is False
     assert qwen["true_cfg_scale"] is True
     assert qwen["inpaint"] is True
-    assert qwen["lora_adapters"] is False
+    assert qwen["lora_adapters"] is True
     assert qwen["scheduler"] is False
 
     zimage = capabilities["z-image"]["features"]
@@ -78,6 +78,42 @@ def test_workflow_capability_features_for_core_families():
     assert anima["img2img"] is False
     assert anima["inpaint"] is False
     assert anima["lora_adapters"] is False
+
+
+def test_qwen_image_catalog_exposes_lora_adapter_contract():
+    catalog = build_workflow_catalog()
+    expected_help = (
+        "Qwen-Image transformer LoRA adapters. Each object uses lora_id, an optional "
+        "strength, and the optional legacy target 'both'. Registry entries must use "
+        "family 'qwen-image' and type 'lora'."
+    )
+
+    assert catalog["capabilities"]["qwen-image"]["features"]["lora_adapters"] is True
+    for task_type in (
+        "qwen-image.text2img",
+        "qwen-image.img2img",
+        "qwen-image.inpaint",
+    ):
+        task = catalog["tasks"][task_type]
+        input_schema = task["input_schema"]
+        lora_field = input_schema["properties"]["lora_adapters"]
+        adapter_schema = input_schema["$defs"]["QwenImageLoraAdapter"]
+        lora_hint = task["ui_hints"]["inputs"]["lora_adapters"]
+
+        assert lora_field["x-feature-supported"] is True
+        assert lora_field["anyOf"][0]["items"]["$ref"] == "#/$defs/QwenImageLoraAdapter"
+        assert adapter_schema["additionalProperties"] is False
+        assert adapter_schema["required"] == ["lora_id"]
+        assert adapter_schema["properties"]["strength"] == {
+            "default": 0.8,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Strength",
+            "type": "number",
+        }
+        assert adapter_schema["properties"]["target"]["const"] == "both"
+        assert lora_hint["widget"] == "json"
+        assert lora_hint["help"] == expected_help
 
 
 def test_sd15_inpaint_catalog_exposes_ip_adapter_input():

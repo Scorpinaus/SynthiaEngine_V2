@@ -261,6 +261,13 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn("text_encoder_strength", lora_js)
         self.assertIn("getSummary", lora_js)
 
+    def test_lora_panel_script_uses_qwen_transformer_strength_contract(self):
+        lora_js = (ROOT / "frontend" / "components" / "lora_panel.js").read_text(encoding="utf-8")
+        self.assertIn('loraState.family === "qwen-image"', lora_js)
+        self.assertIn('isQwenImageFamily() ? "Qwen transformer" : "Strength"', lora_js)
+        self.assertGreaterEqual(lora_js.count("if (!isQwenImageFamily())"), 2)
+        self.assertIn('item.target = lora.target ?? "both"', lora_js)
+
     def test_lora_panel_script_exposes_prompt_preset_words(self):
         lora_js = (ROOT / "frontend" / "components" / "lora_panel.js").read_text(encoding="utf-8")
         self.assertIn("prompt_presets", lora_js)
@@ -1041,27 +1048,30 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         flux_inpaint_js = (ROOT / "frontend" / "flux" / "inpaint.js").read_text(encoding="utf-8")
         self.assertIn('taskType: "flux.inpaint"', flux_inpaint_js)
 
-    def test_qwen_image_page_omits_lora_script(self):
+    def test_qwen_image_page_includes_lora_panel(self):
         qwen_image_html = (ROOT / "frontend" / "qwen_image" / "text2img.html").read_text(
             encoding="utf-8"
         )
-        lora_tag = '<script src="../components/lora_panel.js?v=1"></script>'
+        lora_tag = '<script src="../components/lora_panel.js?v=3"></script>'
         preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
-        controller_tag = '<script src="../generation_page.js?v=1"></script>'
-        qwen_image_tag = '<script src="text2img.js?v=5"></script>'
+        controller_tag = '<script src="../generation_page.js?v=2"></script>'
+        qwen_image_tag = '<script src="text2img.js?v=7"></script>'
 
-        self.assertNotIn(lora_tag, qwen_image_html)
+        self.assertIn('id="lora-panel-root"', qwen_image_html)
+        self.assertIn(lora_tag, qwen_image_html)
         self.assertIn(preset_tag, qwen_image_html)
         self.assertIn(controller_tag, qwen_image_html)
         self.assertIn(qwen_image_tag, qwen_image_html)
+        self.assertLess(qwen_image_html.index(lora_tag), qwen_image_html.index(controller_tag))
         self.assertLess(qwen_image_html.index(preset_tag), qwen_image_html.index(qwen_image_tag))
 
-    def test_qwen_image_script_omits_lora_payload(self):
+    def test_qwen_image_script_wires_lora_payload(self):
         qwen_image_js = (ROOT / "frontend" / "qwen_image" / "text2img.js").read_text(
             encoding="utf-8"
         )
         self.assertIn('family: "qwen-image"', qwen_image_js)
-        self.assertNotIn("page.withLora", qwen_image_js)
+        self.assertIn("loraEnvelope: false", qwen_image_js)
+        self.assertIn("page.withLora", qwen_image_js)
 
     def test_qwen_image_script_wires_preset_panel(self):
         qwen_image_js = (ROOT / "frontend" / "qwen_image" / "text2img.js").read_text(
@@ -1070,30 +1080,36 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn('taskType: "qwen-image.text2img"', qwen_image_js)
         self.assertIn('key: "true_cfg_scale"', qwen_image_js)
 
-    def test_qwen_image_img2img_page_omits_lora_script(self):
+    def test_qwen_image_img2img_page_includes_lora_panel(self):
         qwen_image_img2img_html = (ROOT / "frontend" / "qwen_image" / "img2img.html").read_text(
             encoding="utf-8"
         )
-        lora_tag = '<script src="../components/lora_panel.js?v=1"></script>'
+        lora_tag = '<script src="../components/lora_panel.js?v=3"></script>'
         preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
-        controller_tag = '<script src="../generation_page.js?v=1"></script>'
-        qwen_image_img2img_tag = '<script src="img2img.js?v=5"></script>'
+        controller_tag = '<script src="../generation_page.js?v=2"></script>'
+        qwen_image_img2img_tag = '<script src="img2img.js?v=7"></script>'
 
-        self.assertNotIn(lora_tag, qwen_image_img2img_html)
+        self.assertIn('id="lora-panel-root"', qwen_image_img2img_html)
+        self.assertIn(lora_tag, qwen_image_img2img_html)
         self.assertIn(preset_tag, qwen_image_img2img_html)
         self.assertIn(controller_tag, qwen_image_img2img_html)
         self.assertIn(qwen_image_img2img_tag, qwen_image_img2img_html)
+        self.assertLess(
+            qwen_image_img2img_html.index(lora_tag),
+            qwen_image_img2img_html.index(controller_tag),
+        )
         self.assertLess(
             qwen_image_img2img_html.index(preset_tag),
             qwen_image_img2img_html.index(qwen_image_img2img_tag),
         )
 
-    def test_qwen_image_img2img_script_omits_lora_payload(self):
+    def test_qwen_image_img2img_script_wires_lora_payload(self):
         qwen_image_img2img_js = (ROOT / "frontend" / "qwen_image" / "img2img.js").read_text(
             encoding="utf-8"
         )
         self.assertIn('family: "qwen-image"', qwen_image_img2img_js)
-        self.assertNotIn("page.withLora", qwen_image_img2img_js)
+        self.assertIn("loraEnvelope: false", qwen_image_img2img_js)
+        self.assertIn("page.withLora", qwen_image_img2img_js)
         self.assertIn("inputs.initial_image", qwen_image_img2img_js)
 
     def test_qwen_image_img2img_script_wires_preset_panel(self):
@@ -1103,30 +1119,39 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn('taskType: "qwen-image.img2img"', qwen_image_img2img_js)
         self.assertIn('key: "true_cfg_scale"', qwen_image_img2img_js)
 
-    def test_qwen_image_inpaint_page_omits_lora_script(self):
+    def test_qwen_image_inpaint_page_includes_lora_panel(self):
         qwen_image_inpaint_html = (ROOT / "frontend" / "qwen_image" / "inpaint.html").read_text(
             encoding="utf-8"
         )
-        lora_tag = '<script src="../components/lora_panel.js?v=1"></script>'
+        lora_tag = '<script src="../components/lora_panel.js?v=3"></script>'
         preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
         editor_tag = '<script src="../components/inpaint_editor.js?v=1"></script>'
-        qwen_image_inpaint_tag = '<script src="inpaint.js?v=5"></script>'
+        controller_tag = '<script src="../generation_page.js?v=2"></script>'
+        qwen_image_inpaint_tag = '<script src="inpaint.js?v=8"></script>'
 
-        self.assertNotIn(lora_tag, qwen_image_inpaint_html)
+        self.assertIn('id="lora-panel-root"', qwen_image_inpaint_html)
+        self.assertIn(lora_tag, qwen_image_inpaint_html)
         self.assertIn(preset_tag, qwen_image_inpaint_html)
+        self.assertIn(controller_tag, qwen_image_inpaint_html)
         self.assertIn(editor_tag, qwen_image_inpaint_html)
         self.assertIn(qwen_image_inpaint_tag, qwen_image_inpaint_html)
+        self.assertLess(
+            qwen_image_inpaint_html.index(lora_tag),
+            qwen_image_inpaint_html.index(controller_tag),
+        )
         self.assertLess(
             qwen_image_inpaint_html.index(preset_tag),
             qwen_image_inpaint_html.index(qwen_image_inpaint_tag),
         )
 
-    def test_qwen_image_inpaint_script_omits_lora_payload(self):
+    def test_qwen_image_inpaint_script_wires_lora_payload(self):
         qwen_image_inpaint_js = (ROOT / "frontend" / "qwen_image" / "inpaint.js").read_text(
             encoding="utf-8"
         )
         self.assertIn('family: "qwen-image"', qwen_image_inpaint_js)
-        self.assertNotIn("page.withLora", qwen_image_inpaint_js)
+        self.assertIn("loraEnvelope: false", qwen_image_inpaint_js)
+        self.assertIn("page.withLora", qwen_image_inpaint_js)
+        self.assertIn("inputs.initial_image", qwen_image_inpaint_js)
         self.assertIn("inputs.mask_image", qwen_image_inpaint_js)
 
     def test_qwen_image_inpaint_script_wires_preset_panel(self):

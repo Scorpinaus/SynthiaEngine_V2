@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal, TypeAlias
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 _DEFAULT_SD15_CONTROLNET_MODEL = "lllyasviel/control_v11p_sd15_canny"
 _DEFAULT_SDXL_CONTROLNET_MODEL = "diffusers/controlnet-canny-sdxl-1.0"
@@ -550,6 +550,20 @@ class FluxInpaintInputs(_FluxInputs):
     strength: float = 0.5
 
 
+class QwenImageLoraAdapter(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    lora_id: int
+    strength: float = Field(default=0.8, ge=0.0, le=1.0)
+    target: Literal["both"] = Field(
+        default="both",
+        description=(
+            "Legacy whole-pipeline target. Qwen-Image LoRA weights apply to "
+            "the transformer."
+        ),
+    )
+
+
 class _QwenImageInputs(BaseModel):
     negative_prompt: str = _QWEN_IMAGE_2512_NEGATIVE_PROMPT
     steps: int = Field(default=50, ge=1, le=200)
@@ -579,13 +593,13 @@ class _QwenImageInputs(BaseModel):
             "x-options": ["flowmatch_euler"],
         },
     )
-    lora_adapters: Any | None = Field(
+    lora_adapters: list[QwenImageLoraAdapter] | None = Field(
         default=None,
         description=(
-            "Reserved for preset compatibility. The current Qwen-Image SDNQ "
-            "profile accepts only null or an empty adapter collection."
+            "Optional Qwen-Image LoRA adapters. Each adapter applies to the "
+            "transformer."
         ),
-        json_schema_extra={"x-feature-supported": False},
+        json_schema_extra={"x-feature-supported": True},
     )
 
     @field_validator("scheduler", mode="before")
@@ -598,18 +612,6 @@ class _QwenImageInputs(BaseModel):
                 "the current compatibility profile."
             )
         return scheduler
-
-    @field_validator("lora_adapters")
-    @classmethod
-    def validate_qwen_image_lora_adapters(cls, value: Any) -> Any:
-        if value is None:
-            return None
-        if isinstance(value, (str, bytes, list, tuple, set, dict)) and not value:
-            return value
-        raise ValueError(
-            "SynthiaEngine Qwen-Image SDNQ does not support LoRA adapters in "
-            "the current compatibility profile."
-        )
 
 
 class QwenImageText2ImgInputs(_QwenImageInputs):

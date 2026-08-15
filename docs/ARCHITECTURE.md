@@ -250,7 +250,7 @@ tasks. The same information is available to clients at
 | `sdxl` | yes | no | yes | yes | yes | no | yes | yes | no |
 | `wan` | no | yes | no | no | no | no | no | no | no |
 | `flux` | yes | no | yes | yes | no | no | yes | no | no |
-| `qwen-image` | yes | no | yes | yes | no | no | no | no | yes |
+| `qwen-image` | yes | no | yes | yes | no | no | yes | no | yes |
 | `z-image` | yes | no | yes | yes | no | no | yes | no | no |
 | `ernie-image` | yes | no | no | no | no | no | yes | no | no |
 | `anima` | yes | no | no | no | no | no | no | no | no |
@@ -260,7 +260,9 @@ Important family-specific boundaries:
 - SD1.5 has the widest surface: AnimateDiff text-to-video, ControlNet and multi-ControlNet, Hi-Res Fix, LoRA, IP-Adapter, and LCM mode.
 - SDXL supports ControlNet, multi-ControlNet, LoRA, and IP-Adapter across the image tasks, but IP-Adapter and ControlNet combinations are intentionally rejected for img2img/inpaint.
 - Flux and Z-Image expose the core text2img/img2img/inpaint surface with LoRA and scheduler selection.
-- Qwen-Image exposes the core text2img/img2img/inpaint surface and `true_cfg_scale`. The current SDNQ profile fixes the scheduler to Flow Match Euler and rejects LoRA input before model loading.
+- Qwen-Image exposes text2img, img2img, inpaint, `true_cfg_scale`, and
+  transformer-only LoRA. The current SDNQ profile fixes the scheduler to Flow
+  Match Euler.
 - ERNIE-Image and Anima start with text-to-image only; Anima loads SynthaEngine's local community Diffusers pipeline while keeping `trust_remote_code=True` for custom model components.
 
 ### 3.4 Pipeline Runtime Layer
@@ -378,6 +380,12 @@ Responsibilities:
 - Persist and validate LoRA registry entries for `/lora-models`
 - Bootstrap from the JSON sidecar when the SQLite registry is empty
 - Apply selected LoRA adapters and write coverage reports during generation
+- For Qwen-Image, require registry family `qwen-image`, type `lora`, and the
+  whole transformer target. The runtime loads and activates all selected
+  adapters once for a request and writes transformer coverage.
+- The Qwen-Image runtime unloads requested adapters in `finally`. It then calls
+  `release_pipeline`, including after load failure, generation failure,
+  cancellation, or unload failure.
 
 ### 3.9 Shared Utilities
 
@@ -456,7 +464,8 @@ family controllers do the repeated work:
 - `frontend/components/controlnet_panel.js`, `frontend/components/controlnet_preprocessor.js`
   - ControlNet item management + preprocessor integration
 - `frontend/components/lora_panel.js`
-  - LoRA picker/weights mapped to workflow `lora_adapters`
+  - LoRA picker/weights mapped to workflow `lora_adapters`; Qwen-Image uses one
+    transformer strength control and no UNet/text-encoder target control
 - `frontend/components/preset_panel.js`
   - Save/apply presets through `/api/presets`
 - `frontend/components/jobs_queue.js`

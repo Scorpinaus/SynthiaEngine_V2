@@ -53,6 +53,10 @@
         return loraState.family === "sd15";
     }
 
+    function isQwenImageFamily() {
+        return loraState.family === "qwen-image";
+    }
+
     function normalizeWeightMode(mode) {
         return String(mode || "").trim().toLowerCase() === "advanced" ? "advanced" : "basic";
     }
@@ -269,7 +273,8 @@
             } else {
                 const strengthWrap = document.createElement("label");
                 strengthWrap.className = "lora-strength";
-                strengthWrap.innerHTML = `<span>Strength: <strong>${strength.toFixed(2)}</strong></span>`;
+                const strengthLabel = isQwenImageFamily() ? "Qwen transformer" : "Strength";
+                strengthWrap.innerHTML = `<span>${strengthLabel}: <strong>${strength.toFixed(2)}</strong></span>`;
 
                 const slider = document.createElement("input");
                 slider.type = "range";
@@ -283,7 +288,10 @@
                 });
 
                 strengthWrap.appendChild(slider);
-                item.append(header, strengthWrap, targetWrap);
+                item.append(header, strengthWrap);
+                if (!isQwenImageFamily()) {
+                    item.appendChild(targetWrap);
+                }
             }
             if (promptPresetWrap) {
                 item.appendChild(promptPresetWrap);
@@ -555,8 +563,10 @@
             const item = {
                 lora_id: lora.lora_id,
                 strength: clampStrength(lora.strength),
-                target: lora.target ?? "both",
             };
+            if (!isQwenImageFamily()) {
+                item.target = lora.target ?? "both";
+            }
             if (includeAdvancedStrengths) {
                 item.unet_strength = clampStrength(lora.unet_strength ?? lora.strength);
                 item.text_encoder_strength = clampStrength(

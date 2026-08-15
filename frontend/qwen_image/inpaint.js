@@ -3,6 +3,7 @@ const QWEN_IMAGE_NEGATIVE_PROMPT = "低分辨率，低画质，肢体畸形，�
 const page = GenerationPage.create({
     family: "qwen-image",
     taskType: "qwen-image.inpaint",
+    loraEnvelope: false,
     fallbackModel: { value: "qwen-image", label: "qwen-image (diffusers)" },
     fields: [
         { element: "prompt", key: "prompt", fallback: "" },
@@ -44,7 +45,7 @@ async function generateQwenImageInpaint() {
             WorkflowClient.uploadArtifact(API_BASE, initialImage, initialImage.name || "initial.png"),
             WorkflowClient.uploadArtifact(API_BASE, maskImage, "mask.png"),
         ]);
-        const inputs = page.collectSettings(await page.defaults());
+        const inputs = page.withLora(page.collectSettings(await page.defaults()));
         inputs.initial_image = `@artifact:${baseArtifact.artifact_id}`;
         inputs.mask_image = `@artifact:${maskArtifact.artifact_id}`;
         await page.run(inputs, "Failed to run Qwen-Image inpaint job:");

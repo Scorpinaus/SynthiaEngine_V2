@@ -633,7 +633,7 @@ This same matrix is available in machine-readable form at `GET /api/workflow/cat
 | `sdxl` | yes | no | yes | yes | yes | no | yes | yes | no |
 | `wan` (`wan2.1`, `wan2.2`) | no | yes | no | no | no | no | no | no | no |
 | `flux` | yes | no | yes | yes | no | no | yes | no | no |
-| `qwen-image` | yes | no | yes | yes | no | no | no | no | yes |
+| `qwen-image` | yes | no | yes | yes | no | no | yes | no | yes |
 | `z-image` (`zimage`) | yes | no | yes | yes | no | no | yes | no | no |
 | `ernie-image` (`ernie`) | yes | no | no | no | no | no | yes | no | no |
 | `anima` (`anima-preview`) | yes | no | no | no | no | no | no | no | no |
@@ -645,11 +645,14 @@ Video-generating tasks return:
 - `videos`: list of `"/outputs/..."` URLs
 
 LoRA adapter targeting:
-- For tasks that accept `lora_adapters`, each adapter can optionally include `target` with one of:
+- For UNet and text-encoder adapter schemas, each adapter can optionally include
+  `target` with one of:
   - `"both"` (default): load for both UNet and text encoder (existing behavior)
   - `"unet"`: load and apply only on UNet
   - `"text_encoder"`: load and apply only on text encoder
 - Existing payloads without `target` remain valid and behave as before.
+- Qwen-Image has a transformer-only target contract. See the Qwen-Image notes
+  below.
 
 `sd15.text2img` contract-extension input notes:
 - Existing flat input fields remain valid and are still recommended for backward compatibility.
@@ -1079,13 +1082,54 @@ Qwen-Image-2512 settings:
 - `live_preview` defaults to `true`. Set it to `false` to stop intermediate image decoding while keeping step progress and cancellation active.
 - An internal Diffusers step-end callback reports progress, checks cancellation, and, when `live_preview` is enabled, decodes each intermediate step. Preview images have a maximum edge of 768 pixels. They are removed after the subprocess ends. The additional VAE decodes can make generation slower.
 
-Qwen-Image SDNQ compatibility gates:
+Qwen-Image LoRA input notes:
+
+```json
+{
+  "lora_adapters": [
+    { "lora_id": 101, "strength": 0.8 },
+    { "lora_id": 102, "strength": 0.35, "target": "both" }
+  ]
+}
+```
+
+- `lora_adapters` is optional for `qwen-image.text2img`,
+  `qwen-image.img2img`, and `qwen-image.inpaint`. `null` or an empty list keeps
+  the baseline behavior.
+- `lora_id` is required. It identifies one entry in `/lora-models`.
+- `strength` defaults to `0.8` and must be from `0.0` through `1.0`.
+- `target` is optional legacy input. Its only accepted value is `"both"`. For
+  Qwen-Image, `"both"` means the whole transformer. It does not select a UNet or
+  text encoder.
+- The schema rejects `unet`, `text_encoder`, component strengths, per-layer
+  scales, and unknown adapter fields.
+- Registry validation requires `lora_model_family: "qwen-image"` and
+  `lora_type: "lora"`. A missing ID, a different family, or another LoRA type
+  fails before adapter activation and generation.
+- The runtime keeps adapters separate from the quantized SDNQ base weights. It
+  does not fuse them.
+
+Qwen-Image LoRA runtime lifecycle:
+
+1. Load the Qwen pipeline and configure Flow Match Euler.
+2. Call `load_lora_weights(...)` with a unique name for each selected adapter.
+3. Call `set_adapters(...)` once with the selected names and strengths.
+4. Write a LoRA coverage report for the transformer.
+5. Use the same active adapters for all images in the request.
+6. Call `unload_lora_weights()` in `finally`.
+7. Call `release_pipeline` after adapter cleanup.
+
+The cleanup path runs after success, adapter-load failure, generation failure,
+or cancellation. If adapter unload fails, the runtime logs the error and still
+releases the pipeline.
+
+Qwen-Image SDNQ compatibility notes:
 
 - Text-to-image, image-to-image, and inpaint are enabled.
 - `scheduler` stays in the input contract for preset compatibility. It accepts only `"flowmatch_euler"`. Any other value fails before the model loads.
-- `lora_adapters` stays in the input contract for preset compatibility. It accepts only `null` or an empty collection. A non-empty adapter list fails before the subprocess starts or the model loads.
-- The workflow catalog marks scheduler selection and LoRA as unavailable for this profile. The Qwen pages hide the LoRA panel and show only the fixed scheduler.
-- This LoRA gate applies to the current SynthiaEngine Qwen path. Diffusers and SDNQ can use LoRA, but the current SynthiaEngine adapter helper is for UNet pipelines and does not validate Qwen transformer adapters.
+- The workflow catalog marks LoRA as available and scheduler selection as
+  unavailable. The Qwen pages show the transformer LoRA control and the fixed
+  scheduler.
 
 `z-image.text2img` LoRA input notes:
 - `lora_adapters` is optional. When omitted or empty, text2img runs without LoRA adapters.

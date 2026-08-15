@@ -43,25 +43,19 @@ def test_qwen_image_schema_locks_scheduler_to_flowmatch_euler(
         input_model(**required_inputs, scheduler="euler")
 
 
-def test_qwen_image_schema_keeps_empty_lora_field_but_rejects_adapters():
+def test_qwen_image_schema_accepts_lora_adapters():
     assert QwenImageText2ImgInputs(lora_adapters=[]).lora_adapters == []
+    inputs = QwenImageText2ImgInputs(
+        lora_adapters=[{"lora_id": 101, "strength": 0.8}],
+    )
 
-    with pytest.raises(ValidationError, match="does not support LoRA adapters"):
-        QwenImageText2ImgInputs(
-            lora_adapters=[{"lora_id": 101, "strength": 0.8}],
-        )
+    assert inputs.lora_adapters[0].model_dump() == {
+        "lora_id": 101,
+        "strength": 0.8,
+        "target": "both",
+    }
 
 
-@pytest.mark.parametrize(
-    ("params", "message"),
-    (
-        ({"prompt": "test", "scheduler": "euler"}, "supports only scheduler"),
-        (
-            {"prompt": "test", "lora_adapters": [{"lora_id": 101}]},
-            "does not support LoRA adapters",
-        ),
-    ),
-)
 @pytest.mark.parametrize(
     "generation_function",
     (
@@ -70,16 +64,39 @@ def test_qwen_image_schema_keeps_empty_lora_field_but_rejects_adapters():
         qwen_image_pipeline.generate_inpaint,
     ),
 )
-def test_qwen_image_public_runtime_rejects_features_before_subprocess(
+def test_qwen_image_public_runtime_rejects_scheduler_before_subprocess(
     generation_function,
-    params,
-    message,
 ):
     with patch.object(qwen_image_pipeline, "run_subprocess") as run_subprocess:
-        with pytest.raises(ValueError, match=message):
-            generation_function(params)
+        with pytest.raises(ValueError, match="supports only scheduler"):
+            generation_function({"prompt": "test", "scheduler": "euler"})
 
     run_subprocess.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("generation_function", "operation"),
+    (
+        (qwen_image_pipeline.generate_text2img, "text2img"),
+        (qwen_image_pipeline.generate_img2img, "img2img"),
+        (qwen_image_pipeline.generate_inpaint, "inpaint"),
+    ),
+)
+def test_qwen_image_public_runtime_forwards_lora_to_subprocess(
+    generation_function,
+    operation,
+):
+    params = {"prompt": "test", "lora_adapters": [{"lora_id": 101}]}
+    with patch.object(
+        qwen_image_pipeline,
+        "run_subprocess",
+        return_value={"images": ["/outputs/fake.png"]},
+    ) as run_subprocess:
+        result = generation_function(params)
+
+    assert result == {"images": ["/outputs/fake.png"]}
+    assert run_subprocess.call_args.args[1] == operation
+    assert run_subprocess.call_args.args[2] is params
 
 
 @pytest.mark.parametrize(
@@ -106,20 +123,20 @@ def test_qwen_image_public_runtime_rejects_features_before_subprocess(
         ),
     ),
 )
-def test_qwen_image_in_process_gate_runs_before_model_load(
+def test_qwen_image_in_process_rejects_invalid_lora_container_before_model_load(
     generation_function,
     loader_name,
     params,
 ):
-    runtime_params = {**params, "lora_adapters": [{"lora_id": 101}]}
+    runtime_params = {**params, "lora_adapters": {"lora_id": 101}}
     with patch.object(qwen_image_pipeline, loader_name) as load_pipeline:
-        with pytest.raises(ValueError, match="does not support LoRA adapters"):
+        with pytest.raises(ValueError, match="lora_adapters must be a list"):
             generation_function(runtime_params)
 
     load_pipeline.assert_not_called()
 
 
-def test_qwen_image_catalog_marks_fixed_and_disabled_features():
+def test_qwen_image_catalog_marks_fixed_scheduler_and_enabled_lora():
     catalog = build_workflow_catalog()
     features = catalog["capabilities"]["qwen-image"]["features"]
 
@@ -128,7 +145,7 @@ def test_qwen_image_catalog_marks_fixed_and_disabled_features():
     assert features["inpaint"] is True
     assert features["true_cfg_scale"] is True
     assert features["scheduler"] is False
-    assert features["lora_adapters"] is False
+    assert features["lora_adapters"] is True
     for task_type in (
         "qwen-image.text2img",
         "qwen-image.img2img",
@@ -141,5 +158,7 @@ def test_qwen_image_catalog_marks_fixed_and_disabled_features():
             "options": ["flowmatch_euler"],
             "read_only": True,
         }
-        assert task["ui_hints"]["inputs"]["lora_adapters"]["supported"] is False
+        lora_hint = task["ui_hints"]["inputs"]["lora_adapters"]
+        assert lora_hint["widget"] == "json"
+        assert lora_hint.get("supported", True) is True
         assert task["input_schema"]["properties"]["scheduler"]["const"] == "flowmatch_euler"

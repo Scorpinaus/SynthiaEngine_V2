@@ -10,6 +10,10 @@ from diffusers import QwenImageImg2ImgPipeline, QwenImageInpaintPipeline, QwenIm
 from PIL import Image
 
 from backend.config import OUTPUT_DIR
+from backend.lora.utils import (
+    apply_lora_adapters_with_validation,
+    write_lora_coverage_report,
+)
 from backend.utilities.logging import configure_logging
 from backend.registries.model import ModelRegistryEntry, list_model_entries
 from backend.utilities.pipeline import (
@@ -57,10 +61,6 @@ _PREVIEW_MAX_EDGE = 768
 _NO_REVISION_VALUES = {"", "hub", "local"}
 _SDNQ_REQUIRED_MESSAGE = (
     "Qwen-Image SDNQ requires the 'sdnq' package. Install the project requirements."
-)
-_SDNQ_LORA_UNSUPPORTED_MESSAGE = (
-    "SynthiaEngine Qwen-Image SDNQ does not support LoRA adapters in the current "
-    "compatibility profile."
 )
 _SDNQ_SCHEDULER_UNSUPPORTED_MESSAGE = (
     "Qwen-Image SDNQ supports only scheduler 'flowmatch_euler' in the current "
@@ -299,21 +299,62 @@ def load_inpaint_pipeline(model_name: str | None) -> QwenImageInpaintPipeline:
 """ Methods involving generation using Qwen_Image related pipelines """
 
 
-def _has_requested_lora_adapters(value: object | None) -> bool:
-    if value is None:
-        return False
-    if isinstance(value, (str, bytes, list, tuple, set, dict)):
-        return bool(value)
-    return True
-
-
 def _validate_feature_compatibility(params: Mapping[str, object]) -> str:
     scheduler = str(params.get("scheduler") or _DEFAULT_SCHEDULER).strip().lower()
     if scheduler != _DEFAULT_SCHEDULER:
         raise ValueError(_SDNQ_SCHEDULER_UNSUPPORTED_MESSAGE)
-    if _has_requested_lora_adapters(params.get("lora_adapters")):
-        raise ValueError(_SDNQ_LORA_UNSUPPORTED_MESSAGE)
     return scheduler
+
+
+def _qwen_lora_adapters(params: Mapping[str, object]) -> list[object] | None:
+    value = params.get("lora_adapters")
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        raise ValueError("Qwen-Image lora_adapters must be a list.")
+    return value
+
+
+def _apply_qwen_lora_adapters(
+    pipe: Any,
+    lora_adapters: list[object] | None,
+    *,
+    batch_output_dir: Path,
+    batch_id: str,
+) -> list[str]:
+    if not lora_adapters:
+        return []
+
+    adapter_names, coverage = apply_lora_adapters_with_validation(
+        pipe,
+        lora_adapters,
+        expected_family="qwen-image",
+        validate=True,
+        allowed_lora_types=("lora",),
+        allowed_targets=("both",),
+        coverage_components=("transformer",),
+    )
+    report_path = write_lora_coverage_report(
+        batch_output_dir,
+        batch_id,
+        coverage,
+    )
+    if report_path is not None:
+        logger.info("Qwen-Image LoRA coverage report saved to %s", report_path)
+    return adapter_names
+
+
+def _cleanup_qwen_lora_adapters(pipe: Any | None, *, requested: bool) -> None:
+    if pipe is None or not requested:
+        return
+    unload_lora_weights = getattr(pipe, "unload_lora_weights", None)
+    if not callable(unload_lora_weights):
+        logger.warning("Qwen-Image pipeline cannot unload requested LoRA adapters.")
+        return
+    try:
+        unload_lora_weights()
+    except Exception:
+        logger.exception("Failed to unload Qwen-Image LoRA weights cleanly.")
 
 
 def _run_qwen_image_subprocess(
@@ -574,6 +615,8 @@ def generate_text2img_in_process(params: dict[str, object]) -> dict[str, list[st
     model = params.get("model")
     num_images = int(params.get("num_images", 1))
     scheduler = _validate_feature_compatibility(params)
+    lora_adapters = _qwen_lora_adapters(params)
+    lora_requested = bool(lora_adapters)
 
     logger.info("seed=%s", seed)
     base_seed = resolve_base_seed(seed)
@@ -601,6 +644,12 @@ def generate_text2img_in_process(params: dict[str, object]) -> dict[str, list[st
         _publish_loading_model(runtime, num_images)
         pipe = load_text2img_pipeline(model)
         pipe.scheduler = create_scheduler(scheduler, pipe)
+        _apply_qwen_lora_adapters(
+            pipe,
+            lora_adapters,
+            batch_output_dir=batch_output_dir,
+            batch_id=batch_id,
+        )
 
         for i in range(num_images):
             _raise_if_cancelled(runtime)
@@ -649,6 +698,7 @@ def generate_text2img_in_process(params: dict[str, object]) -> dict[str, list[st
             cleanup_memory()
     finally:
         _remove_preview(preview_path)
+        _cleanup_qwen_lora_adapters(pipe, requested=lora_requested)
         release_pipeline(pipe, logger=logger)
         pipe = None
 
@@ -673,6 +723,8 @@ def generate_img2img_in_process(params: dict[str, object]) -> dict[str, list[str
     model = params.get("model")
     num_images = int(params.get("num_images", 1))
     scheduler = _validate_feature_compatibility(params)
+    lora_adapters = _qwen_lora_adapters(params)
+    lora_requested = bool(lora_adapters)
 
     logger.info("seed=%s", seed)
     base_seed = resolve_base_seed(seed)
@@ -701,6 +753,12 @@ def generate_img2img_in_process(params: dict[str, object]) -> dict[str, list[str
         _publish_loading_model(runtime, num_images)
         pipe = load_img2img_pipeline(model)
         pipe.scheduler = create_scheduler(scheduler, pipe)
+        _apply_qwen_lora_adapters(
+            pipe,
+            lora_adapters,
+            batch_output_dir=batch_output_dir,
+            batch_id=batch_id,
+        )
 
         for i in range(num_images):
             _raise_if_cancelled(runtime)
@@ -754,6 +812,7 @@ def generate_img2img_in_process(params: dict[str, object]) -> dict[str, list[str
             cleanup_memory()
     finally:
         _remove_preview(preview_path)
+        _cleanup_qwen_lora_adapters(pipe, requested=lora_requested)
         release_pipeline(pipe, logger=logger)
         pipe = None
 
@@ -785,6 +844,8 @@ def generate_inpaint_in_process(params: dict[str, object]) -> dict[str, list[str
     model = params.get("model")
     num_images = int(params.get("num_images", 1))
     scheduler = _validate_feature_compatibility(params)
+    lora_adapters = _qwen_lora_adapters(params)
+    lora_requested = bool(lora_adapters)
 
     logger.info("seed=%s", seed)
     base_seed = resolve_base_seed(seed)
@@ -814,6 +875,12 @@ def generate_inpaint_in_process(params: dict[str, object]) -> dict[str, list[str
         _publish_loading_model(runtime, num_images)
         pipe = load_inpaint_pipeline(model)
         pipe.scheduler = create_scheduler(scheduler, pipe)
+        _apply_qwen_lora_adapters(
+            pipe,
+            lora_adapters,
+            batch_output_dir=batch_output_dir,
+            batch_id=batch_id,
+        )
 
         for i in range(num_images):
             _raise_if_cancelled(runtime)
@@ -887,6 +954,7 @@ def generate_inpaint_in_process(params: dict[str, object]) -> dict[str, list[str
             cleanup_memory()
     finally:
         _remove_preview(preview_path)
+        _cleanup_qwen_lora_adapters(pipe, requested=lora_requested)
         release_pipeline(pipe, logger=logger)
         pipe = None
 

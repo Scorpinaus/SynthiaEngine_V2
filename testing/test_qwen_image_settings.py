@@ -310,14 +310,15 @@ def test_qwen_image_pages_match_backend_defaults():
         assert 'id="live_preview" type="checkbox" checked' in html
         assert 'data-default-scheduler="flowmatch_euler"' in html
         assert 'data-allowed-schedulers="flowmatch_euler"' in html
-        assert 'id="lora-panel-root"' not in html
-        assert "lora_panel.js" not in html
+        assert 'id="lora-panel-root"' in html
+        assert '<script src="../components/lora_panel.js?v=3"></script>' in html
         assert "Guidance Scale" not in html
         assert 'key: "guidance_scale"' not in javascript
         assert 'key: "scheduler", fallback: "flowmatch_euler"' in javascript
         assert 'key: "steps", type: "number", integer: true, fallback: 50' in javascript
         assert 'key: "live_preview", type: "checkbox", fallback: true' in javascript
-        assert "page.withLora" not in javascript
+        assert "loraEnvelope: false" in javascript
+        assert "page.withLora" in javascript
 
     for page_name in ("text2img", "img2img"):
         html = (ROOT / "frontend" / "qwen_image" / f"{page_name}.html").read_text(

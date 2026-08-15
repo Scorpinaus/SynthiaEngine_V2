@@ -63,11 +63,179 @@ class _DummyPipe:
         self.adapter_calls.append((adapter_names, adapter_weights))
 
 
+class _DummyTransformerPipe:
+    class _DummyTransformer:
+        def __init__(self):
+            self.peft_config: dict[str, object] = {}
+
+        def named_modules(self):
+            return []
+
+    def __init__(self):
+        self.loaded: list[tuple[str, str]] = []
+        self.adapter_calls: list[tuple[list[str], list[float | dict[str, object]]]] = []
+        self.transformer = self._DummyTransformer()
+
+    def load_lora_weights(self, file_path: str, adapter_name: str):
+        self.loaded.append((file_path, adapter_name))
+        self.transformer.peft_config[adapter_name] = SimpleNamespace(
+            target_modules=("to_q", "to_k")
+        )
+
+    def set_adapters(self, adapter_names: list[str], adapter_weights: list[float | dict[str, object]]):
+        self.adapter_calls.append((adapter_names, adapter_weights))
+
+
 def _record_text_encoder_activation(monkeypatch):
     def _mock_set_text_encoder_adapters(text_encoder, adapter_names, adapter_weights):
         text_encoder.adapter_calls.append((adapter_names, adapter_weights))
 
     monkeypatch.setattr(lora_utils, "_set_text_encoder_adapters", _mock_set_text_encoder_adapters)
+
+
+def test_apply_lora_adapters_supports_transformer_coverage(monkeypatch):
+    monkeypatch.setattr(
+        lora_utils,
+        "get_lora_entry",
+        lambda _lora_id: SimpleNamespace(
+            lora_id=801,
+            lora_model_family="qwen-image",
+            lora_type="LoRA",
+            name="Qwen Style",
+            file_path="C:/loras/qwen_style.safetensors",
+        ),
+    )
+    pipe = _DummyTransformerPipe()
+
+    adapter_names, coverage = lora_utils.apply_lora_adapters_with_validation(
+        pipe,
+        lora_adapters=[{"lora_id": 801, "strength": 0.65}],
+        expected_family="qwen-image",
+        allowed_lora_types=("lora",),
+        allowed_targets=("both",),
+        coverage_components=("transformer",),
+    )
+
+    assert adapter_names == ["lora_Qwen_Style"]
+    assert pipe.loaded == [
+        ("C:/loras/qwen_style.safetensors", "lora_Qwen_Style")
+    ]
+    assert pipe.adapter_calls == [(["lora_Qwen_Style"], [0.65])]
+    assert set(coverage["lora_Qwen_Style"]) == {"transformer"}
+    transformer_coverage = coverage["lora_Qwen_Style"]["transformer"]
+    assert transformer_coverage["adapter_present"] is True
+    assert transformer_coverage["target_modules"] == ["to_q", "to_k"]
+
+
+def test_apply_lora_adapters_keeps_default_coverage_components(monkeypatch):
+    monkeypatch.setattr(
+        lora_utils,
+        "get_lora_entry",
+        lambda _lora_id: SimpleNamespace(
+            lora_id=802,
+            lora_model_family="sdxl",
+            name="SDXL Style",
+            file_path="C:/loras/sdxl_style.safetensors",
+        ),
+    )
+    pipe = _DummyPipe()
+
+    _, coverage = lora_utils.apply_lora_adapters_with_validation(
+        pipe,
+        lora_adapters=[{"lora_id": 802}],
+        expected_family="sdxl",
+    )
+
+    assert set(coverage["lora_SDXL_Style"]) == {"unet", "text_encoder"}
+
+
+def test_apply_lora_adapters_rejects_unsupported_qwen_lora_type(monkeypatch):
+    monkeypatch.setattr(
+        lora_utils,
+        "get_lora_entry",
+        lambda _lora_id: SimpleNamespace(
+            lora_id=803,
+            lora_model_family="qwen-image",
+            lora_type="lycoris",
+            name="Qwen LyCORIS",
+            file_path="C:/loras/qwen_lycoris.safetensors",
+        ),
+    )
+    pipe = _DummyTransformerPipe()
+
+    try:
+        lora_utils.apply_lora_adapters_with_validation(
+            pipe,
+            lora_adapters=[{"lora_id": 803}],
+            expected_family="qwen-image",
+            allowed_lora_types=("lora",),
+            allowed_targets=("both",),
+            coverage_components=("transformer",),
+        )
+        assert False, "Expected ValueError for unsupported Qwen LoRA type."
+    except ValueError as exc:
+        assert str(exc) == (
+            "LoRA Qwen LyCORIS has unsupported type 'lycoris' for qwen-image; "
+            "allowed types: lora."
+        )
+    assert pipe.loaded == []
+
+
+def test_apply_lora_adapters_rejects_unsupported_qwen_target(monkeypatch):
+    monkeypatch.setattr(
+        lora_utils,
+        "get_lora_entry",
+        lambda _lora_id: (_ for _ in ()).throw(
+            AssertionError("Registry lookup must not run for an unsupported target.")
+        ),
+    )
+    pipe = _DummyTransformerPipe()
+
+    try:
+        lora_utils.apply_lora_adapters_with_validation(
+            pipe,
+            lora_adapters=[{"lora_id": 804, "target": "unet"}],
+            expected_family="qwen-image",
+            allowed_lora_types=("lora",),
+            allowed_targets=("both",),
+            coverage_components=("transformer",),
+        )
+        assert False, "Expected ValueError for unsupported Qwen target."
+    except ValueError as exc:
+        assert str(exc) == (
+            "LoRA adapter target 'unet' is not supported for qwen-image; "
+            "allowed targets: both."
+        )
+    assert pipe.loaded == []
+
+
+def test_apply_lora_adapters_rejects_incompatible_qwen_family(monkeypatch):
+    monkeypatch.setattr(
+        lora_utils,
+        "get_lora_entry",
+        lambda _lora_id: SimpleNamespace(
+            lora_id=805,
+            lora_model_family="sdxl",
+            lora_type="lora",
+            name="SDXL Only",
+            file_path="C:/loras/sdxl_only.safetensors",
+        ),
+    )
+    pipe = _DummyTransformerPipe()
+
+    try:
+        lora_utils.apply_lora_adapters_with_validation(
+            pipe,
+            lora_adapters=[{"lora_id": 805}],
+            expected_family="qwen-image",
+            allowed_lora_types=("lora",),
+            allowed_targets=("both",),
+            coverage_components=("transformer",),
+        )
+        assert False, "Expected ValueError for incompatible Qwen LoRA family."
+    except ValueError as exc:
+        assert str(exc) == "LoRA SDXL Only is not compatible with qwen-image."
+    assert pipe.loaded == []
 
 
 def test_apply_lora_adapters_sanitizes_dot_names(monkeypatch):

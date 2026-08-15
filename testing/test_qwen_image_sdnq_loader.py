@@ -191,6 +191,51 @@ class QwenImageSdnqLoaderTests(unittest.TestCase):
 
         self.assertEqual(checkpoint_version, "0.1.4")
 
+    def test_peft_adapter_removal_preserves_sdnq_base_layer(self):
+        from peft import LoraConfig, inject_adapter_in_model
+        from sdnq import SDNQConfig, sdnq_quantize_layer
+
+        torch.manual_seed(7)
+        model = torch.nn.Sequential()
+        base_layer, _ = sdnq_quantize_layer(
+            torch.nn.Linear(2, 2, bias=False),
+            SDNQConfig(
+                weights_dtype="int8",
+                group_size=-1,
+                minimum_allowed_numel=0,
+            ),
+            torch_dtype=torch.float32,
+            param_name="projection",
+        )
+        model.add_module("projection", base_layer)
+        sample = torch.ones(1, 2)
+        base_output = model(sample).detach()
+
+        inject_adapter_in_model(
+            LoraConfig(
+                r=1,
+                lora_alpha=1,
+                target_modules=["projection"],
+            ),
+            model,
+            adapter_name="qwen_test",
+        )
+        lora_layer = model.projection
+        torch.nn.init.constant_(lora_layer.lora_A["qwen_test"].weight, 0.25)
+        torch.nn.init.constant_(lora_layer.lora_B["qwen_test"].weight, 0.25)
+
+        self.assertIs(lora_layer.get_base_layer(), base_layer)
+        self.assertEqual(type(base_layer).__name__, "SDNQLinear")
+        self.assertFalse(torch.allclose(model(sample), base_output))
+
+        lora_layer.delete_adapter("qwen_test")
+
+        self.assertIs(lora_layer.get_base_layer(), base_layer)
+        self.assertEqual(type(lora_layer.get_base_layer()).__name__, "SDNQLinear")
+        self.assertEqual(lora_layer.active_adapters, [])
+        self.assertEqual(list(lora_layer.lora_A), [])
+        self.assertTrue(torch.allclose(model(sample), base_output))
+
     def test_register_sdnq_returns_clear_error_when_package_is_missing(self):
         with patch.dict(sys.modules, {"sdnq": None}):
             with self.assertRaises(RuntimeError) as error:

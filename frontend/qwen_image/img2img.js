@@ -3,6 +3,7 @@ const QWEN_IMAGE_NEGATIVE_PROMPT = "低分辨率，低画质，肢体畸形，�
 const page = GenerationPage.create({
     family: "qwen-image",
     taskType: "qwen-image.img2img",
+    loraEnvelope: false,
     fallbackModel: { value: "qwen-image", label: "qwen-image (diffusers)" },
     fields: [
         { element: "prompt", key: "prompt", fallback: "" },
@@ -29,7 +30,7 @@ async function generateQwenImageImg2Img() {
     try {
         const file = imageInput.files[0];
         const artifact = await WorkflowClient.uploadArtifact(API_BASE, file, file.name || "initial.png");
-        const inputs = page.collectSettings(await page.defaults());
+        const inputs = page.withLora(page.collectSettings(await page.defaults()));
         inputs.initial_image = `@artifact:${artifact.artifact_id}`;
         await page.run(inputs, "Failed to run Qwen-Image img2img job:");
     } catch (error) {

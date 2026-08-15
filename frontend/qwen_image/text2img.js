@@ -3,6 +3,7 @@ const QWEN_IMAGE_NEGATIVE_PROMPT = "低分辨率，低画质，肢体畸形，�
 const page = GenerationPage.create({
     family: "qwen-image",
     taskType: "qwen-image.text2img",
+    loraEnvelope: false,
     fallbackModel: { value: "qwen-image", label: "qwen-image (diffusers)" },
     fields: [
         { element: "prompt", key: "prompt", fallback: "" },
@@ -20,6 +21,6 @@ const page = GenerationPage.create({
 });
 
 async function generate() {
-    const inputs = page.collectSettings(await page.defaults());
+    const inputs = page.withLora(page.collectSettings(await page.defaults()));
     await page.run(inputs, "Failed to generate Qwen-Image images:");
 }

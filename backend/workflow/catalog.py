@@ -36,6 +36,12 @@ _WEIGHTING_POLICY_OPTIONS: list[str] = [
     "comfyui-like",
 ]
 
+_QWEN_IMAGE_LORA_HELP = (
+    "Qwen-Image transformer LoRA adapters. Each object uses lora_id, an optional "
+    "strength, and the optional legacy target 'both'. Registry entries must use "
+    "family 'qwen-image' and type 'lora'."
+)
+
 _MODEL_FAMILY_METADATA: dict[str, dict[str, Any]] = {
     "sd15": {"label": "SD 1.5", "aliases": ["sd1.5"]},
     "sdxl": {"label": "SDXL", "aliases": []},
@@ -213,7 +219,11 @@ def _build_task_ui_hints(task_type: str, model_cls: type[BaseModel]) -> dict[str
                 hint.update(
                     widget="json",
                     advanced=True,
-                    help="List of LoRA adapter objects; UI may provide a dedicated editor.",
+                    help=(
+                        _QWEN_IMAGE_LORA_HELP
+                        if family == "qwen-image"
+                        else "List of LoRA adapter objects; UI may provide a dedicated editor."
+                    ),
                 )
             else:
                 hint.update(
