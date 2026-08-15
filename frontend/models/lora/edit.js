@@ -11,6 +11,13 @@ const webFilePanel = document.getElementById("web-file-panel");
 const webFileInput = document.getElementById("web-file-input");
 const selectLocalFileButton = document.getElementById("select-local-file");
 const managePromptPresetsLink = document.getElementById("manage-prompt-presets");
+const adapterUseField = document.getElementById("adapter-use");
+const lightningProfilePanel = document.getElementById("lightning-profile-panel");
+const lightningStepsField = document.getElementById("lightning-steps");
+const hubCoordinatesPanel = document.getElementById("hub-coordinates-panel");
+const weightNameField = document.getElementById("weight-name-field");
+const subfolderField = document.getElementById("subfolder-field");
+const revisionField = document.getElementById("revision-field");
 
 let currentLoraId = null;
 let loading = false;
@@ -47,11 +54,46 @@ function syncFilePathMode({ resetLocal = false } = {}) {
     if (webFilePanel) {
         webFilePanel.hidden = !isHub;
     }
+    if (hubCoordinatesPanel) {
+        hubCoordinatesPanel.hidden = !isHub;
+    }
     if (filePathField && isHub) {
         filePathField.value = webFileInput.value.trim();
     } else if (filePathField && resetLocal) {
         filePathField.value = "";
     }
+}
+
+function isLightningSelected() {
+    return adapterUseField?.value === "qwen_image_lightning";
+}
+
+function syncAdapterUse() {
+    const isLightning = isLightningSelected();
+    if (lightningProfilePanel) {
+        lightningProfilePanel.hidden = !isLightning;
+    }
+    if (isLightning) {
+        familyField.value = "qwen-image";
+        typeField.value = "lora";
+    }
+    familyField.disabled = isLightning;
+    typeField.disabled = isLightning;
+}
+
+function buildRuntimeProfile() {
+    if (!isLightningSelected()) {
+        return null;
+    }
+    return {
+        kind: "qwen_image_lightning",
+        base_variant: "qwen-image-2512",
+        steps: Number(lightningStepsField?.value || 4),
+        true_cfg_scale: 1.0,
+        scheduler_profile: "qwen_image_lightning_shift3",
+        adapter_strength: 1.0,
+        supported_tasks: ["text2img", "img2img", "inpaint"],
+    };
 }
 
 async function selectLocalFile() {
@@ -92,10 +134,18 @@ function fillForm(entry) {
     locationField.value = entry.lora_location || "local";
     filePathField.value = entry.file_path || "";
     webFileInput.value = locationField.value === "hub" ? entry.file_path || "" : "";
+    adapterUseField.value = entry.runtime_profile?.kind === "qwen_image_lightning"
+        ? "qwen_image_lightning"
+        : "standard";
+    lightningStepsField.value = String(entry.runtime_profile?.steps || 4);
+    weightNameField.value = entry.weight_name || "";
+    subfolderField.value = entry.subfolder || "";
+    revisionField.value = entry.revision || "";
     if (managePromptPresetsLink) {
         managePromptPresetsLink.href = `prompt_presets.html?lora_id=${encodeURIComponent(String(entry.lora_id))}`;
     }
     syncFilePathMode();
+    syncAdapterUse();
 }
 
 async function loadLora() {
@@ -127,12 +177,17 @@ async function loadLora() {
 
 function buildPayload() {
     const nameValue = nameField.value.trim();
+    const isHub = locationField.value === "hub";
     return {
         lora_model_family: familyField.value.trim(),
         lora_type: typeField.value.trim(),
         lora_location: locationField.value.trim(),
         file_path: filePathField.value.trim(),
         name: nameValue || null,
+        runtime_profile: buildRuntimeProfile(),
+        weight_name: isHub ? weightNameField.value.trim() || null : null,
+        subfolder: isHub ? subfolderField.value.trim() || null : null,
+        revision: isHub ? revisionField.value.trim() || null : null,
     };
 }
 
@@ -154,6 +209,10 @@ form.addEventListener("submit", async (event) => {
         !payload.file_path
     ) {
         setState("Please complete all required fields before saving.", "error");
+        return;
+    }
+    if (payload.runtime_profile && payload.lora_location === "hub" && !payload.weight_name) {
+        setState("Hub Qwen Image Lightning entries require a weight name.", "error");
         return;
     }
 
@@ -185,6 +244,7 @@ form.addEventListener("submit", async (event) => {
 });
 
 locationField?.addEventListener("change", () => syncFilePathMode({ resetLocal: true }));
+adapterUseField?.addEventListener("change", syncAdapterUse);
 webFileInput?.addEventListener("input", () => {
     if (locationField?.value === "hub") {
         filePathField.value = webFileInput.value.trim();
@@ -193,4 +253,5 @@ webFileInput?.addEventListener("input", () => {
 selectLocalFileButton?.addEventListener("click", selectLocalFile);
 
 syncFilePathMode();
+syncAdapterUse();
 loadLora();

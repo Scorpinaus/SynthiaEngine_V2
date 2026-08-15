@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_migrated_pages_load_shared_controller_before_page_script() -> None:
     for family in ("flux", "qwen_image", "z_image"):
-        page_version = 7 if family == "qwen_image" else 3
+        page_version = 8 if family == "qwen_image" else 3
         for name in ("text2img", "img2img"):
             html = (ROOT / "frontend" / family / f"{name}.html").read_text(encoding="utf-8")
             assert html.index("../generation_page.js") < html.index(
@@ -54,7 +54,29 @@ def test_qwen_pages_show_step_progress_previews_and_cancel_control() -> None:
         assert 'id="generation-progress"' in html
         assert 'id="generation-progress-bar"' in html
         assert 'id="generation-cancel"' in html
-        assert '../generation_page.js?v=2' in html
+        assert '../generation_page.js?v=3' in html
+
+
+def test_qwen_pages_load_shared_lightning_settings_before_page_scripts() -> None:
+    for page_name, task_type, page_version in (
+        ("text2img", "qwen-image.text2img", 8),
+        ("img2img", "qwen-image.img2img", 8),
+        ("inpaint", "qwen-image.inpaint", 9),
+    ):
+        html = (ROOT / "frontend" / "qwen_image" / f"{page_name}.html").read_text(
+            encoding="utf-8"
+        )
+        script = (ROOT / "frontend" / "qwen_image" / f"{page_name}.js").read_text(
+            encoding="utf-8"
+        )
+        assert 'src="lightning_settings.js?v=2"' in html
+        assert html.index("lightning_settings.js") < html.index("../generation_page.js")
+        assert html.index("../generation_page.js") < html.index(
+            f'{page_name}.js?v={page_version}'
+        )
+        assert f'taskType: "{task_type}"' in script
+        assert "QwenImageLightningSettings.create" in script
+        assert "settingsHooks: qwenLightningSettings" in script
 
 
 def test_simple_inpaint_pages_share_editor_but_keep_task_fields_visible() -> None:

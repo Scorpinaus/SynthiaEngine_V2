@@ -3,6 +3,7 @@
     const resolveAssetUrl = (path) => (scriptUrl ? new URL(path, scriptUrl).toString() : path);
     const LOG_LORA_PANEL = true;
     const DEFAULT_STRENGTH = 0.8;
+    const QWEN_LIGHTNING_PROFILE_EVENT = "qwen-lightning-profile-changed";
     let promptPresetEditorScriptPromise = null;
 
     function logDebug(message, data) {
@@ -20,8 +21,10 @@
         available: [],
         selected: [],
         family: "",
+        taskType: "",
         weightMode: "basic",
         apiBase: "",
+        selectedLightningKey: "",
     };
 
     function emitAdapterSummaryChanged() {
@@ -55,6 +58,59 @@
 
     function isQwenImageFamily() {
         return loraState.family === "qwen-image";
+    }
+
+    function getLightningProfile(value) {
+        const profile = value?.runtime_profile;
+        if (!isQwenImageFamily() || profile?.kind !== "qwen_image_lightning") {
+            return null;
+        }
+        const steps = Number(profile.steps);
+        const adapterStrength = Number(profile.adapter_strength);
+        if ((steps !== 4 && steps !== 8) || adapterStrength !== 1) {
+            return null;
+        }
+        return profile;
+    }
+
+    function lightningIsAllowedForTask() {
+        return isQwenImageFamily();
+    }
+
+    function canSelectEntry(entry) {
+        return !getLightningProfile(entry) || lightningIsAllowedForTask();
+    }
+
+    function normalizeSelectedLora(lora) {
+        const profile = getLightningProfile(lora);
+        if (!profile) {
+            return lora;
+        }
+        const strength = Number(profile.adapter_strength);
+        return {
+            ...lora,
+            runtime_profile: profile,
+            strength,
+            unet_strength: strength,
+            text_encoder_strength: strength,
+            target: "both",
+        };
+    }
+
+    function emitLightningProfileChanged() {
+        const selected = loraState.selected.find((lora) => getLightningProfile(lora));
+        const profile = selected ? getLightningProfile(selected) : null;
+        const nextKey = profile ? `${selected.lora_id}:${profile.steps}` : "";
+        if (nextKey === loraState.selectedLightningKey) {
+            return;
+        }
+        loraState.selectedLightningKey = nextKey;
+        window.dispatchEvent(new CustomEvent(QWEN_LIGHTNING_PROFILE_EVENT, {
+            detail: {
+                lora_id: selected?.lora_id ?? null,
+                profile,
+            },
+        }));
     }
 
     function normalizeWeightMode(mode) {
@@ -153,11 +209,16 @@
         list.innerHTML = "";
         if (loraState.selected.length === 0) {
             emptyState.classList.remove("is-hidden");
+            emitLightningProfileChanged();
             emitAdapterSummaryChanged();
             return;
         }
         emptyState.classList.add("is-hidden");
         loraState.selected.forEach((lora) => {
+            const lightningProfile = getLightningProfile(lora);
+            if (lightningProfile) {
+                Object.assign(lora, normalizeSelectedLora(lora));
+            }
             const item = document.createElement("div");
             item.className = "lora-item";
 
@@ -166,6 +227,13 @@
 
             const name = document.createElement("span");
             name.textContent = lora.lora_name;
+
+            if (lightningProfile) {
+                const profileLabel = document.createElement("span");
+                profileLabel.className = "lora-profile-label";
+                profileLabel.textContent = `Lightning · ${lightningProfile.steps} steps`;
+                header.appendChild(profileLabel);
+            }
 
             const remove = document.createElement("button");
             remove.type = "button";
@@ -282,6 +350,7 @@
                 slider.max = "1";
                 slider.step = "0.05";
                 slider.value = String(strength);
+                slider.disabled = Boolean(lightningProfile);
                 slider.addEventListener("input", (event) => {
                     const value = Number(event.target.value);
                     updateLoraStrength(lora.lora_id, value);
@@ -304,6 +373,7 @@
             item.appendChild(managePresetButton);
             list.appendChild(item);
         });
+        emitLightningProfileChanged();
         emitAdapterSummaryChanged();
     }
 
@@ -406,8 +476,9 @@
                 prompt_presets: normalizedPresets,
                 prompt_preset_name: matchedPreset?.name || "",
                 prompt_preset_words: matchedPreset?.words || [],
+                runtime_profile: updatedEntry.runtime_profile ?? selected.runtime_profile ?? null,
             };
-        });
+        }).filter(canSelectEntry).map(normalizeSelectedLora);
         renderLoraList();
         emitAdapterSummaryChanged();
     }
@@ -503,10 +574,10 @@
             return;
         }
         const entry = loraState.available.find((lora) => lora.lora_id === selectedId);
-        if (!entry) {
+        if (!entry || !canSelectEntry(entry)) {
             return;
         }
-        loraState.selected.push({
+        loraState.selected.push(normalizeSelectedLora({
             lora_id: entry.lora_id,
             lora_name: entry.name ?? entry.file_path ?? `LoRA ${entry.lora_id}`,
             prompt_presets: normalizePromptPresets(entry.prompt_presets),
@@ -516,7 +587,8 @@
             unet_strength: DEFAULT_STRENGTH,
             text_encoder_strength: DEFAULT_STRENGTH,
             target: "both",
-        });
+            runtime_profile: entry.runtime_profile ?? null,
+        }));
         logDebug("Added adapter.", { lora_id: entry.lora_id, selected_count: loraState.selected.length });
         renderLoraList();
     }
@@ -535,13 +607,16 @@
             }
             loraState.available = loras;
             logDebug("Loaded available LoRAs.", { family, count: loras.length });
-            loras.forEach((lora, index) => {
+            let selectedOption = false;
+            loras.forEach((lora) => {
                 const option = document.createElement("option");
                 option.value = String(lora.lora_id);
                 const name = lora.name ?? lora.file_path ?? `LoRA ${lora.lora_id}`;
+                const lightningProfile = getLightningProfile(lora);
                 option.textContent = name;
-                if (index === 0) {
+                if (!selectedOption) {
                     option.selected = true;
+                    selectedOption = true;
                 }
                 select.appendChild(option);
             });
@@ -625,7 +700,7 @@
                 : clampStrength((unetStrength + textEncoderStrength) / 2);
             const targetRaw = String(adapter?.target ?? "both").trim().toLowerCase().replace("-", "_");
             const target = targetRaw === "unet" || targetRaw === "text_encoder" ? targetRaw : "both";
-            mapped.push({
+            const selected = {
                 lora_id: loraId,
                 lora_name:
                     matched?.name ??
@@ -639,7 +714,11 @@
                 unet_strength: unetStrength,
                 text_encoder_strength: textEncoderStrength,
                 target,
-            });
+                runtime_profile: matched?.runtime_profile ?? adapter?.runtime_profile ?? null,
+            };
+            if (canSelectEntry(selected)) {
+                mapped.push(normalizeSelectedLora(selected));
+            }
         });
         loraState.selected = mapped;
         loraState.weightMode = hasAdvancedStrength && supportsAdvancedWeights() ? "advanced" : "basic";
@@ -647,7 +726,7 @@
         renderLoraList();
     }
 
-    async function initLoraUI({ apiBase, family }) {
+    async function initLoraUI({ apiBase, family, taskType = "" }) {
         const container = document.getElementById("lora-panel-root");
         if (!container) {
             return;
@@ -666,6 +745,7 @@
         const toggleButton = document.getElementById("lora-toggle");
         const addButton = document.getElementById("add-lora");
         loraState.family = normalizeFamily(family);
+        loraState.taskType = String(taskType || "").trim().toLowerCase();
         loraState.weightMode = "basic";
         loraState.apiBase = apiBase;
         toggleButton?.addEventListener("click", toggleLoraPanel);

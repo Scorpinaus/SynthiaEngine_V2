@@ -54,6 +54,7 @@ class FakeElement {
         this.textContent = "";
         this.value = "";
         this.checked = false;
+        this.disabled = false;
     }
 
     set innerHTML(value) {
@@ -102,7 +103,11 @@ global.CustomEvent = class CustomEvent {
         this.detail = options?.detail;
     }
 };
-window.dispatchEvent = () => true;
+const events = [];
+window.dispatchEvent = (event) => {
+    events.push(event);
+    return true;
+};
 global.document = {
     currentScript: { src: "https://example.test/components/lora_panel.js" },
     getElementById: (id) => elements.get(id) ?? null,
@@ -119,6 +124,24 @@ global.fetch = async (url) => {
             json: async () => [
                 { lora_id: 101, name: "Qwen Detail" },
                 { lora_id: 102, name: "Qwen Style" },
+                {
+                    lora_id: 103,
+                    name: "Lightning 4",
+                    runtime_profile: {
+                        kind: "qwen_image_lightning",
+                        steps: 4,
+                        adapter_strength: 1.0,
+                    },
+                },
+                {
+                    lora_id: 104,
+                    name: "Lightning 8",
+                    runtime_profile: {
+                        kind: "qwen_image_lightning",
+                        steps: 8,
+                        adapter_strength: 1.0,
+                    },
+                },
             ],
         };
     }
@@ -132,6 +155,10 @@ function descendants(node) {
 
 function hasClass(element, className) {
     return String(element.className).split(/\s+/).includes(className);
+}
+
+function lastLightningEvent() {
+    return events.filter((event) => event.type === "qwen-lightning-profile-changed").at(-1);
 }
 
 const source = fs.readFileSync("frontend/components/lora_panel.js", "utf8");
@@ -149,7 +176,7 @@ vm.runInThisContext(source, { filename: "lora_panel.js" });
         { lora_id: 102, strength: 0.35 },
     ]);
     assert.deepEqual(window.LoraPanel.getSummary(), {
-        available: 2,
+        available: 4,
         selected: 2,
         family: "qwen-image",
         weightMode: "basic",
@@ -173,6 +200,41 @@ vm.runInThisContext(source, { filename: "lora_panel.js" });
     window.LoraPanel.setSelectedAdapters([]);
     assert.deepEqual(window.LoraPanel.getSelectedAdapters(), []);
     assert.equal(elements.get("lora-empty").classList.contains("is-hidden"), false);
+
+    window.LoraPanel.setSelectedAdapters([{ lora_id: 103, strength: 0.25 }]);
+    assert.deepEqual(window.LoraPanel.getSelectedAdapters(), [
+        { lora_id: 103, strength: 1 },
+    ]);
+    const lightning4 = descendants(elements.get("lora-list").children[0]);
+    assert.equal(
+        lightning4.find((element) => hasClass(element, "lora-profile-label")).textContent,
+        "Lightning · 4 steps",
+    );
+    assert.equal(
+        lightning4.find((element) => element.tagName === "INPUT" && element.type === "range").disabled,
+        true,
+    );
+    assert.equal(lastLightningEvent().detail.profile.steps, 4);
+
+    window.LoraPanel.setSelectedAdapters([{ lora_id: 104, strength: 0.4 }]);
+    const lightning8 = descendants(elements.get("lora-list").children[0]);
+    assert.equal(
+        lightning8.find((element) => hasClass(element, "lora-profile-label")).textContent,
+        "Lightning · 8 steps",
+    );
+    assert.equal(lastLightningEvent().detail.profile.steps, 8);
+    window.LoraPanel.setSelectedAdapters([{ lora_id: 101, strength: 0.5 }]);
+    assert.equal(lastLightningEvent().detail.profile, null);
+
+    await window.LoraPanel.init({
+        apiBase: "/api",
+        family: "qwen-image",
+        taskType: "qwen-image.img2img",
+    });
+    const options = elements.get("lora-select").children;
+    assert.equal(options.find((option) => option.value === "103").disabled, false);
+    window.LoraPanel.setSelectedAdapters([{ lora_id: 103, strength: 1 }]);
+    assert.deepEqual(window.LoraPanel.getSelectedAdapters(), [{ lora_id: 103, strength: 1 }]);
 
     await window.LoraPanel.init({ apiBase: "/api", family: "sdxl" });
     window.LoraPanel.setSelectedAdapters([

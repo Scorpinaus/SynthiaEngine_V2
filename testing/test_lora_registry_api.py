@@ -64,7 +64,16 @@ def test_create_and_list_and_filter_loras(tmp_path):
 
     filtered = client.get("/lora-models?family=sd15")
     assert filtered.status_code == 200
-    assert filtered.json() == [{**payload_a, "prompt_presets": []}]
+    assert filtered.json() == [
+        {
+            **payload_a,
+            "prompt_presets": [],
+            "runtime_profile": None,
+            "weight_name": None,
+            "subfolder": None,
+            "revision": None,
+        }
+    ]
 
 
 def test_lora_prompt_presets_round_trip_and_update(tmp_path):

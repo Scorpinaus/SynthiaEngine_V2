@@ -1,6 +1,6 @@
 from contextlib import contextmanager, nullcontext
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, Mock, patch
 
 from PIL import Image
 import pytest
@@ -30,6 +30,22 @@ class _FakePipeline:
             raise self.unload_error
 
 
+def _normal_resolution(lora_adapters, _model_entry, _task, steps, true_cfg_scale):
+    adapters = tuple(
+        SimpleNamespace(
+            lora_id=adapter["lora_id"],
+            entry=SimpleNamespace(lora_id=adapter["lora_id"]),
+        )
+        for adapter in (lora_adapters or [])
+    )
+    return SimpleNamespace(
+        adapters=adapters,
+        steps=steps,
+        true_cfg_scale=true_cfg_scale,
+        lightning_profile=None,
+    )
+
+
 def _run_generation_with_lora(
     generation_function,
     loader_name: str,
@@ -53,6 +69,12 @@ def _run_generation_with_lora(
     with (
         patch.object(qwen_image_pipeline, loader_name, return_value=pipe),
         patch.object(qwen_image_pipeline, "create_scheduler", return_value=scheduler),
+        patch.object(qwen_image_pipeline, "select_qwen_image_scheduler", return_value=scheduler),
+        patch.object(
+            qwen_image_pipeline,
+            "resolve_qwen_image_lightning_profile",
+            side_effect=_normal_resolution,
+        ),
         patch.object(
             qwen_image_pipeline,
             "_apply_qwen_lora_adapters",
@@ -111,6 +133,12 @@ def _patched_failure_runtime(loader_name: str, tmp_path, failure: str):
     with (
         patch.object(qwen_image_pipeline, loader_name, return_value=pipe),
         patch.object(qwen_image_pipeline, "create_scheduler", return_value=scheduler),
+        patch.object(qwen_image_pipeline, "select_qwen_image_scheduler", return_value=scheduler),
+        patch.object(
+            qwen_image_pipeline,
+            "resolve_qwen_image_lightning_profile",
+            side_effect=_normal_resolution,
+        ),
         patch.object(
             qwen_image_pipeline,
             "_apply_qwen_lora_adapters",
@@ -224,6 +252,7 @@ def test_apply_qwen_lora_adapters_uses_transformer_rules(tmp_path):
         allowed_lora_types=("lora",),
         allowed_targets=("both",),
         coverage_components=("transformer",),
+        resolved_entries=None,
     )
     write_report.assert_called_once_with(tmp_path, "batch", coverage)
 
@@ -306,6 +335,7 @@ def test_text2img_applies_lora_once_and_unloads_after_all_images(tmp_path):
         adapters,
         batch_output_dir=tmp_path,
         batch_id="lora",
+        resolved_entries={101: ANY, 102: ANY},
     )
     assert len(pipe.call_arguments) == 2
     assert events == ["apply", "inference", "inference", "unload", "release"]
@@ -333,6 +363,7 @@ def test_img2img_applies_lora_and_unloads_after_inference(tmp_path):
         adapters,
         batch_output_dir=tmp_path,
         batch_id="lora",
+        resolved_entries={201: ANY},
     )
     assert pipe.call_arguments[0]["image"] is initial_image
     assert events == ["apply", "inference", "unload", "release"]
@@ -362,6 +393,7 @@ def test_inpaint_applies_lora_and_unloads_after_inference(tmp_path):
         adapters,
         batch_output_dir=tmp_path,
         batch_id="lora",
+        resolved_entries={301: ANY},
     )
     assert pipe.call_arguments[0]["image"] is initial_image
     assert pipe.call_arguments[0]["mask_image"] is mask_image

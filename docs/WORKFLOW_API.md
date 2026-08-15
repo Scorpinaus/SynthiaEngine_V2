@@ -215,6 +215,21 @@ Notes:
 - `prompt_presets` is optional on create/update and defaults to `[]`.
 - Each prompt preset has a non-empty `name` and a non-empty `words` list.
 - Preset words are prompt fragments intended for frontend prompt composition; LoRA adapter loading still uses the existing `lora_adapters` workflow payload.
+- Backward-compatible optional metadata fields are `runtime_profile`, `weight_name`, `subfolder`, and `revision`. Existing entries return `null` for these fields.
+- `weight_name`, `subfolder`, and `revision` are Hub source coordinates. Standard Hub entries may omit all three.
+- `runtime_profile` currently supports only this exact Qwen Image Lightning profile:
+```json
+{
+  "kind": "qwen_image_lightning",
+  "base_variant": "qwen-image-2512",
+  "steps": 4,
+  "true_cfg_scale": 1.0,
+  "scheduler_profile": "qwen_image_lightning_shift3",
+  "adapter_strength": 1.0,
+  "supported_tasks": ["text2img", "img2img", "inpaint"]
+}
+```
+- Lightning profiles require `lora_model_family: "qwen-image"` and `lora_type: "lora"`. `steps` is `4` or `8`; the other profile values are fixed as shown. A Hub Lightning entry requires `weight_name`; a local Lightning entry does not.
 
 `POST /lora-models`
 - Creates a LoRA entry.
@@ -245,7 +260,7 @@ Notes:
 - Error `404`: missing id in `{"detail": "LoRA with id <lora_id> not found."}`
 
 `PATCH /lora-models/{lora_id}`
-- Updates editable fields only: `lora_model_family`, `lora_type`, `lora_location`, `file_path`, `name`, `prompt_presets`.
+- Updates editable fields only: `lora_model_family`, `lora_type`, `lora_location`, `file_path`, `name`, `prompt_presets`, `runtime_profile`, `weight_name`, `subfolder`, and `revision`.
 - `lora_id` is not editable.
 - Request shape:
 ```json
@@ -277,6 +292,7 @@ Notes:
 Compatibility guarantees:
 - Existing `GET /lora-models` and `POST /lora-models` consumers are backward-compatible.
 - Existing list/create payload fields are unchanged; `prompt_presets` is an additive response/request field with an empty-list default.
+- Lightning runtime metadata and Hub source coordinates are additive nullable request/response fields.
 - Existing list/create status codes remain unchanged (`200` success, `400` domain/validation error for create).
 
 ### Preset registry endpoints
@@ -1108,10 +1124,28 @@ Qwen-Image LoRA input notes:
   fails before adapter activation and generation.
 - The runtime keeps adapters separate from the quantized SDNQ base weights. It
   does not fuse them.
+- A registry entry with `runtime_profile.kind: "qwen_image_lightning"` is a
+  Qwen Image Lightning adapter. It supports `qwen-image.text2img`,
+  `qwen-image.img2img`, and `qwen-image.inpaint`. The selected model must be
+  the `qwen-image-2512` base variant.
+- Lightning uses one adapter only. Do not combine it with a standard or style
+  LoRA. The adapter `target` and `strength` must be `"both"` and `1.0`.
+  Request `steps` must exactly match the profile value (`4` or `8`), and
+  `true_cfg_scale` must be `1.0`.
+- Lightning uses the fixed `qwen_image_lightning_shift3` scheduler profile.
+  The runtime does not change the requested step count or CFG value.
+- Image-to-image and inpaint Lightning use is experimental. The published
+  weights declare text-to-image and are not Qwen-Image-Edit Lightning weights.
+  Image `strength` stays user controlled; Diffusers can shorten the effective
+  denoising schedule while the runtime still sends the nominal profile steps.
+- Hub entries can provide `weight_name`, `subfolder`, and `revision`. The
+  runtime passes non-empty values to `load_lora_weights(...)`; local entries
+  keep the standard local load call.
 
 Qwen-Image LoRA runtime lifecycle:
 
-1. Load the Qwen pipeline and configure Flow Match Euler.
+1. Resolve and validate selected adapters before pipeline load. For Lightning,
+   configure the fixed shift-3 scheduler after pipeline load.
 2. Call `load_lora_weights(...)` with a unique name for each selected adapter.
 3. Call `set_adapters(...)` once with the selected names and strengths.
 4. Write a LoRA coverage report for the transformer.

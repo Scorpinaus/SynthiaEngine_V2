@@ -52,6 +52,43 @@
                     </select>
                 </label>
                 <label class="field">
+                    <span>Adapter Use</span>
+                    <select id="adapter-use" name="adapter_use">
+                        <option value="standard">Standard</option>
+                        <option value="qwen_image_lightning">Qwen Image Lightning</option>
+                    </select>
+                </label>
+                <div id="lightning-profile-panel" class="model-link-panel" hidden>
+                    <p>Qwen Image Lightning profile</p>
+                    <label class="field">
+                        <span>Base Variant</span>
+                        <input id="lightning-base-variant" type="text" value="qwen-image-2512" readonly />
+                    </label>
+                    <label class="field">
+                        <span>Steps</span>
+                        <select id="lightning-steps">
+                            <option value="4">4</option>
+                            <option value="8">8</option>
+                        </select>
+                    </label>
+                    <label class="field">
+                        <span>True CFG</span>
+                        <input id="lightning-true-cfg" type="text" value="1.0" readonly />
+                    </label>
+                    <label class="field">
+                        <span>Scheduler Profile</span>
+                        <input id="lightning-scheduler-profile" type="text" value="qwen_image_lightning_shift3" readonly />
+                    </label>
+                    <label class="field">
+                        <span>Adapter Strength</span>
+                        <input id="lightning-adapter-strength" type="text" value="1.0" readonly />
+                    </label>
+                    <label class="field">
+                        <span>Supported Task</span>
+                        <input id="lightning-supported-task" type="text" value="text2img" readonly />
+                    </label>
+                </div>
+                <label class="field">
                     <span>Location Type</span>
                     <select name="lora_location" required>
                         <option value="local">Local</option>
@@ -65,6 +102,20 @@
                     <span>Website/Hugging Face Link</span>
                     <input id="web-file-input" type="text" placeholder="owner/repo or https://huggingface.co/owner/repo" />
                 </label>
+                <div id="hub-coordinates-panel" class="model-link-panel" hidden>
+                    <label class="field">
+                        <span>Hub Weight Name</span>
+                        <input id="weight-name-field" type="text" placeholder="adapter.safetensors" />
+                    </label>
+                    <label class="field">
+                        <span>Hub Subfolder</span>
+                        <input id="subfolder-field" type="text" placeholder="Optional subfolder" />
+                    </label>
+                    <label class="field">
+                        <span>Hub Revision</span>
+                        <input id="revision-field" type="text" placeholder="Optional revision" />
+                    </label>
+                </div>
                 <label class="field">
                     <span>File Path</span>
                     <input name="file_path" type="text" placeholder="Select a local file or enter a web link" readonly required />

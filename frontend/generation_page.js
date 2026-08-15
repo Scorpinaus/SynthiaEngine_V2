@@ -322,12 +322,14 @@
 
         async function applySettings(settings) {
             await loraReady;
+            config.settingsHooks?.beforeApplySettings?.(settings);
             for (const field of config.fields) {
                 setFieldValue(field, settings[field.key]);
             }
             if (config.lora !== false && Array.isArray(settings.lora_adapters)) {
                 window.LoraPanel?.setSelectedAdapters?.(settings.lora_adapters);
             }
+            config.settingsHooks?.afterApplySettings?.(settings);
         }
 
         async function loadModels() {
@@ -442,7 +444,11 @@
 
         void loadModels();
         if (config.lora !== false) {
-            loraReady = window.LoraPanel?.init({ apiBase: API_BASE, family: config.family }) ?? Promise.resolve();
+            loraReady = window.LoraPanel?.init({
+                apiBase: API_BASE,
+                family: config.family,
+                taskType: config.taskType,
+            }) ?? Promise.resolve();
         }
         window.PresetPanel?.init({
             apiBase: API_BASE,

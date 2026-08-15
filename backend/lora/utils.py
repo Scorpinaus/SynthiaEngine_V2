@@ -1,10 +1,11 @@
 import json
 import logging
 import re
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, cast
 
-from backend.lora.registry import get_lora_entry
+from backend.lora.registry import LoraRegistryEntry, get_lora_entry
 
 logger = logging.getLogger(__name__)
 _ADAPTER_NAME_SANITIZE_RE = re.compile(r"[^0-9A-Za-z_-]+")
@@ -361,6 +362,7 @@ def apply_lora_adapters_with_validation(
     allowed_lora_types: tuple[str, ...] | None = None,
     allowed_targets: tuple[str, ...] | None = None,
     coverage_components: tuple[str, ...] = ("unet", "text_encoder"),
+    resolved_entries: Mapping[int, LoraRegistryEntry] | None = None,
 ) -> tuple[list[str], dict[str, dict[str, object]]]:
     allowed_type_values = (
         None
@@ -414,7 +416,13 @@ def apply_lora_adapters_with_validation(
         unet_scales = _normalize_unet_scales(unet_scales_raw, adapter_index)
         text_encoder_scales = _normalize_text_encoder_scales(text_encoder_scales_raw, adapter_index)
 
-        entry = get_lora_entry(int(lora_id))
+        resolved_lora_id = int(lora_id)
+        if resolved_entries is None:
+            entry = get_lora_entry(resolved_lora_id)
+        else:
+            entry = resolved_entries.get(resolved_lora_id)
+            if entry is None:
+                raise ValueError(f"Resolved LoRA entry {resolved_lora_id} is missing.")
         if entry.lora_model_family.lower() != expected_family.lower():
             raise ValueError(f"LoRA {entry.name} is not compatible with {expected_family}.")
         entry_lora_type = str(getattr(entry, "lora_type", "")).strip().lower()
@@ -428,7 +436,14 @@ def apply_lora_adapters_with_validation(
         adapter_name = _build_adapter_name(entry.lora_id, entry.name, used_adapter_names)
         if target == "both":
             logger.info("Loading LoRA '%s' via pipeline.load_lora_weights", adapter_name)
-            pipe.load_lora_weights(entry.file_path, adapter_name=adapter_name)
+            load_kwargs: dict[str, object] = {"adapter_name": adapter_name}
+            entry_location = str(getattr(entry, "lora_location", "")).strip().lower()
+            if entry_location == "hub":
+                for field_name in ("weight_name", "subfolder", "revision"):
+                    value = getattr(entry, field_name, None)
+                    if isinstance(value, str) and value.strip():
+                        load_kwargs[field_name] = value.strip()
+            pipe.load_lora_weights(entry.file_path, **load_kwargs)
         elif target == "unet":
             if not hasattr(pipe, "unet") or not hasattr(pipe.unet, "load_lora_adapter"):
                 raise ValueError(

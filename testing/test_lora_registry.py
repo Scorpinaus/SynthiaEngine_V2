@@ -145,3 +145,145 @@ def test_domain_errors_are_stable(tmp_path):
 
     with pytest.raises(ValueError, match=r"^LoRA with id 404 not found\.$"):
         lora_registry.get_lora_entry(404)
+
+
+def test_additive_migration_keeps_legacy_rows_without_runtime_metadata(tmp_path):
+    _reset_lora_registry_paths(tmp_path, json_payload=None)
+    lora_registry._ENGINE.dispose()
+    lora_registry.REGISTRY_DB_PATH.unlink()
+    lora_registry._ENGINE = lora_registry.create_engine(
+        lora_registry.REGISTRY_DB_URL,
+        future=True,
+        pool_pre_ping=True,
+        connect_args={"check_same_thread": False},
+    )
+    lora_registry._SessionLocal = lora_registry.sessionmaker(
+        bind=lora_registry._ENGINE,
+        autoflush=False,
+        autocommit=False,
+        future=True,
+    )
+    with lora_registry._ENGINE.begin() as connection:
+        connection.execute(
+            lora_registry.text(
+                "CREATE TABLE lora_registry ("
+                "id INTEGER PRIMARY KEY, lora_id INTEGER NOT NULL UNIQUE, "
+                "lora_model_family VARCHAR(64) NOT NULL, lora_type VARCHAR(64) NOT NULL, "
+                "lora_location VARCHAR(64) NOT NULL, file_path TEXT NOT NULL, "
+                "name VARCHAR(256), prompt_presets_json TEXT NOT NULL DEFAULT '[]'"
+                ")"
+            )
+        )
+        connection.execute(
+            lora_registry.text(
+                "INSERT INTO lora_registry "
+                "(lora_id, lora_model_family, lora_type, lora_location, file_path, name, prompt_presets_json) "
+                "VALUES (301, 'qwen-image', 'lora', 'local', 'C:/loras/legacy.safetensors', 'Legacy', '[]')"
+            )
+        )
+
+    lora_registry.init_lora_registry_db()
+    column_names = {
+        column["name"]
+        for column in lora_registry.inspect(lora_registry._ENGINE).get_columns("lora_registry")
+    }
+    assert {"runtime_profile_json", "weight_name", "subfolder", "revision"} <= column_names
+    legacy_entry = lora_registry.get_lora_entry(301)
+    assert legacy_entry.runtime_profile is None
+    assert legacy_entry.weight_name is None
+    assert legacy_entry.subfolder is None
+    assert legacy_entry.revision is None
+
+
+def test_stored_legacy_lightning_profile_normalizes_supported_tasks_on_read(tmp_path):
+    _reset_lora_registry_paths(tmp_path, json_payload=None)
+    legacy_profile = {
+        "kind": "qwen_image_lightning",
+        "base_variant": "qwen-image-2512",
+        "steps": 4,
+        "true_cfg_scale": 1.0,
+        "scheduler_profile": "qwen_image_lightning_shift3",
+        "adapter_strength": 1.0,
+        "supported_tasks": ["text2img"],
+    }
+    with lora_registry._SessionLocal.begin() as session:
+        session.add(
+            lora_registry.LoraRegistryRow(
+                lora_id=304,
+                lora_model_family="qwen-image",
+                lora_type="lora",
+                lora_location="local",
+                file_path="C:/loras/legacy-lightning.safetensors",
+                prompt_presets_json="[]",
+                runtime_profile_json=json.dumps(legacy_profile),
+            )
+        )
+
+    entry = lora_registry.get_lora_entry(304)
+
+    assert entry.lora_type == "lora"
+    assert entry.runtime_profile is not None
+    assert entry.runtime_profile.kind == "qwen_image_lightning"
+    assert entry.runtime_profile.supported_tasks == ["text2img", "img2img", "inpaint"]
+
+
+def test_lightning_runtime_profile_round_trips_and_validates_entry_constraints(tmp_path):
+    _reset_lora_registry_paths(tmp_path, json_payload=None)
+    profile = {
+        "kind": "qwen_image_lightning",
+        "base_variant": "qwen-image-2512",
+        "steps": 4,
+        "true_cfg_scale": 1.0,
+        "scheduler_profile": "qwen_image_lightning_shift3",
+        "adapter_strength": 1.0,
+        "supported_tasks": ["text2img", "img2img", "inpaint"],
+    }
+    created = lora_registry.add_lora(
+        lora_registry.LoraRegistryEntry(
+            lora_id=302,
+            lora_model_family="qwen-image",
+            lora_type="lora",
+            lora_location="hub",
+            file_path="lightx2v/Qwen-Image-2512-Lightning",
+            weight_name="Qwen-Image-2512-Lightning-4steps-V1.0-bf16.safetensors",
+            subfolder="weights",
+            revision="main",
+            runtime_profile=profile,
+        )
+    )
+    assert created.runtime_profile is not None
+    assert created.runtime_profile.model_dump() == profile
+    assert lora_registry.get_lora_entry(302).model_dump() == created.model_dump()
+
+    legacy_profile = lora_registry.LoraRuntimeProfile.model_validate(
+        {**profile, "supported_tasks": ["text2img"]}
+    )
+    assert legacy_profile.supported_tasks == ["text2img", "img2img", "inpaint"]
+
+    invalid_entry = {
+        "lora_id": 303,
+        "lora_model_family": "sdxl",
+        "lora_type": "lora",
+        "lora_location": "local",
+        "file_path": "C:/loras/invalid.safetensors",
+        "runtime_profile": profile,
+    }
+    with pytest.raises(ValueError, match="lora_model_family 'qwen-image'"):
+        lora_registry.LoraRegistryEntry.model_validate(invalid_entry)
+
+    invalid_entry["lora_model_family"] = "qwen-image"
+    invalid_entry["lora_type"] = "lycoris"
+    with pytest.raises(ValueError, match="lora_type 'lora'"):
+        lora_registry.LoraRegistryEntry.model_validate(invalid_entry)
+
+    invalid_entry["lora_type"] = "lora"
+    invalid_entry["lora_location"] = "hub"
+    with pytest.raises(ValueError, match="require weight_name"):
+        lora_registry.LoraRegistryEntry.model_validate(invalid_entry)
+
+    with pytest.raises(ValueError, match="steps"):
+        lora_registry.LoraRuntimeProfile.model_validate({**profile, "steps": 6})
+    with pytest.raises(ValueError, match="true_cfg_scale must be 1.0"):
+        lora_registry.LoraRuntimeProfile.model_validate({**profile, "true_cfg_scale": 2.0})
+    with pytest.raises(ValueError, match="supported_tasks"):
+        lora_registry.LoraRuntimeProfile.model_validate({**profile, "supported_tasks": ["img2img"]})

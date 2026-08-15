@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from backend.lora.registry import (
     LoraPromptPreset,
     LoraRegistryEntry,
+    LoraRuntimeProfile,
     add_lora,
     delete_lora_entry,
     get_lora_entry,
@@ -30,6 +31,10 @@ class LoraCreateRequest(BaseModel):
     file_path: str
     name: str | None = None
     prompt_presets: list[LoraPromptPreset] = Field(default_factory=list)
+    runtime_profile: LoraRuntimeProfile | None = None
+    weight_name: str | None = None
+    subfolder: str | None = None
+    revision: str | None = None
 
     @field_validator("name")
     @classmethod
@@ -46,6 +51,10 @@ class LoraUpdateRequest(BaseModel):
     file_path: str | None = None
     name: str | None = None
     prompt_presets: list[LoraPromptPreset] | None = None
+    runtime_profile: LoraRuntimeProfile | None = None
+    weight_name: str | None = None
+    subfolder: str | None = None
+    revision: str | None = None
 
     @field_validator("name")
     @classmethod

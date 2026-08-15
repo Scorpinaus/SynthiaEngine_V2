@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 import backend.lora.utils as lora_utils
+from backend.lora.registry import LoraRegistryEntry
 
 
 class _DummyPipe:
@@ -125,6 +126,82 @@ def test_apply_lora_adapters_supports_transformer_coverage(monkeypatch):
     transformer_coverage = coverage["lora_Qwen_Style"]["transformer"]
     assert transformer_coverage["adapter_present"] is True
     assert transformer_coverage["target_modules"] == ["to_q", "to_k"]
+
+
+def test_apply_lora_adapters_keeps_local_load_call_without_source_coordinates():
+    calls: list[tuple[str, dict[str, object]]] = []
+    adapter_calls: list[tuple[object, object]] = []
+    pipe = SimpleNamespace(
+        load_lora_weights=lambda file_path, **kwargs: calls.append((file_path, kwargs)),
+        set_adapters=lambda names, *, adapter_weights: adapter_calls.append(
+            (names, adapter_weights)
+        ),
+    )
+    entry = LoraRegistryEntry(
+        lora_id=810,
+        lora_model_family="qwen-image",
+        lora_type="lora",
+        lora_location="local",
+        file_path="C:/loras/local.safetensors",
+        name="Local",
+        weight_name="ignored-local.safetensors",
+        subfolder="ignored",
+        revision="ignored",
+    )
+
+    lora_utils.apply_lora_adapters_with_validation(
+        pipe,
+        lora_adapters=[{"lora_id": 810, "strength": 1.0}],
+        expected_family="qwen-image",
+        validate=False,
+        resolved_entries={810: entry},
+    )
+
+    assert calls == [("C:/loras/local.safetensors", {"adapter_name": "lora_Local"})]
+    assert adapter_calls == [(["lora_Local"], [1.0])]
+
+
+def test_apply_lora_adapters_forwards_hub_source_coordinates():
+    calls: list[tuple[str, dict[str, object]]] = []
+    adapter_calls: list[tuple[object, object]] = []
+    pipe = SimpleNamespace(
+        load_lora_weights=lambda file_path, **kwargs: calls.append((file_path, kwargs)),
+        set_adapters=lambda names, *, adapter_weights: adapter_calls.append(
+            (names, adapter_weights)
+        ),
+    )
+    entry = LoraRegistryEntry(
+        lora_id=811,
+        lora_model_family="qwen-image",
+        lora_type="lora",
+        lora_location="hub",
+        file_path="lightx2v/Qwen-Image-2512-Lightning",
+        name="Lightning",
+        weight_name="Qwen-Image-2512-Lightning-4steps-V1.0-bf16.safetensors",
+        subfolder="weights",
+        revision="main",
+    )
+
+    lora_utils.apply_lora_adapters_with_validation(
+        pipe,
+        lora_adapters=[{"lora_id": 811, "strength": 1.0}],
+        expected_family="qwen-image",
+        validate=False,
+        resolved_entries={811: entry},
+    )
+
+    assert calls == [
+        (
+            "lightx2v/Qwen-Image-2512-Lightning",
+            {
+                "adapter_name": "lora_Lightning",
+                "weight_name": "Qwen-Image-2512-Lightning-4steps-V1.0-bf16.safetensors",
+                "subfolder": "weights",
+                "revision": "main",
+            },
+        )
+    ]
+    assert adapter_calls == [(["lora_Lightning"], [1.0])]
 
 
 def test_apply_lora_adapters_keeps_default_coverage_components(monkeypatch):

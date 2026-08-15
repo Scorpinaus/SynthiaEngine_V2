@@ -14,6 +14,11 @@ from backend.lora.utils import (
     apply_lora_adapters_with_validation,
     write_lora_coverage_report,
 )
+from backend.lora.registry import LoraRegistryEntry
+from backend.qwen_image.lightning import (
+    resolve_qwen_image_lightning_profile,
+    select_qwen_image_scheduler,
+)
 from backend.utilities.logging import configure_logging
 from backend.registries.model import ModelRegistryEntry, list_model_entries
 from backend.utilities.pipeline import (
@@ -321,6 +326,7 @@ def _apply_qwen_lora_adapters(
     *,
     batch_output_dir: Path,
     batch_id: str,
+    resolved_entries: Mapping[int, LoraRegistryEntry] | None = None,
 ) -> list[str]:
     if not lora_adapters:
         return []
@@ -333,6 +339,7 @@ def _apply_qwen_lora_adapters(
         allowed_lora_types=("lora",),
         allowed_targets=("both",),
         coverage_components=("transformer",),
+        resolved_entries=resolved_entries,
     )
     report_path = write_lora_coverage_report(
         batch_output_dir,
@@ -614,8 +621,17 @@ def generate_text2img_in_process(params: dict[str, object]) -> dict[str, list[st
     seed = params.get("seed")
     model = params.get("model")
     num_images = int(params.get("num_images", 1))
-    scheduler = _validate_feature_compatibility(params)
+    _validate_feature_compatibility(params)
     lora_adapters = _qwen_lora_adapters(params)
+    model_entry = _get_qwen_image_model_entry(model)
+    resolution = resolve_qwen_image_lightning_profile(
+        lora_adapters,
+        model_entry,
+        "text2img",
+        steps,
+        true_cfg_scale,
+    )
+    resolved_entries = {adapter.lora_id: adapter.entry for adapter in resolution.adapters}
     lora_requested = bool(lora_adapters)
 
     logger.info("seed=%s", seed)
@@ -643,12 +659,13 @@ def generate_text2img_in_process(params: dict[str, object]) -> dict[str, list[st
         _raise_if_cancelled(runtime)
         _publish_loading_model(runtime, num_images)
         pipe = load_text2img_pipeline(model)
-        pipe.scheduler = create_scheduler(scheduler, pipe)
+        pipe.scheduler = select_qwen_image_scheduler(resolution, pipe)
         _apply_qwen_lora_adapters(
             pipe,
             lora_adapters,
             batch_output_dir=batch_output_dir,
             batch_id=batch_id,
+            resolved_entries=resolved_entries,
         )
 
         for i in range(num_images):
@@ -660,8 +677,8 @@ def generate_text2img_in_process(params: dict[str, object]) -> dict[str, list[st
                 call_kwargs: dict[str, object] = {
                     "prompt": prompt,
                     "negative_prompt": negative_prompt,
-                    "num_inference_steps": steps,
-                    "true_cfg_scale": true_cfg_scale,
+                    "num_inference_steps": resolution.steps,
+                    "true_cfg_scale": resolution.true_cfg_scale,
                     "width": width,
                     "height": height,
                     "generator": generator,
@@ -669,7 +686,7 @@ def generate_text2img_in_process(params: dict[str, object]) -> dict[str, list[st
                 _install_step_callback(
                     call_kwargs,
                     runtime,
-                    requested_steps=steps,
+                    requested_steps=resolution.steps,
                     image_index=i,
                     total_images=num_images,
                     width=width,
@@ -724,6 +741,15 @@ def generate_img2img_in_process(params: dict[str, object]) -> dict[str, list[str
     num_images = int(params.get("num_images", 1))
     scheduler = _validate_feature_compatibility(params)
     lora_adapters = _qwen_lora_adapters(params)
+    model_entry = _get_qwen_image_model_entry(model)
+    resolution = resolve_qwen_image_lightning_profile(
+        lora_adapters,
+        model_entry,
+        "img2img",
+        steps,
+        true_cfg_scale,
+    )
+    resolved_entries = {adapter.lora_id: adapter.entry for adapter in resolution.adapters}
     lora_requested = bool(lora_adapters)
 
     logger.info("seed=%s", seed)
@@ -752,12 +778,16 @@ def generate_img2img_in_process(params: dict[str, object]) -> dict[str, list[str
         _raise_if_cancelled(runtime)
         _publish_loading_model(runtime, num_images)
         pipe = load_img2img_pipeline(model)
-        pipe.scheduler = create_scheduler(scheduler, pipe)
+        if resolution.lightning_profile is not None:
+            pipe.scheduler = select_qwen_image_scheduler(resolution, pipe)
+        else:
+            pipe.scheduler = create_scheduler(scheduler, pipe)
         _apply_qwen_lora_adapters(
             pipe,
             lora_adapters,
             batch_output_dir=batch_output_dir,
             batch_id=batch_id,
+            resolved_entries=resolved_entries,
         )
 
         for i in range(num_images):
@@ -771,8 +801,8 @@ def generate_img2img_in_process(params: dict[str, object]) -> dict[str, list[str
                     "negative_prompt": negative_prompt,
                     "image": initial_image,
                     "strength": strength,
-                    "num_inference_steps": steps,
-                    "true_cfg_scale": true_cfg_scale,
+                    "num_inference_steps": resolution.steps,
+                    "true_cfg_scale": resolution.true_cfg_scale,
                     "width": width,
                     "height": height,
                     "generator": generator,
@@ -780,7 +810,7 @@ def generate_img2img_in_process(params: dict[str, object]) -> dict[str, list[str
                 _install_step_callback(
                     call_kwargs,
                     runtime,
-                    requested_steps=steps,
+                    requested_steps=resolution.steps,
                     image_index=i,
                     total_images=num_images,
                     width=width,
@@ -845,6 +875,15 @@ def generate_inpaint_in_process(params: dict[str, object]) -> dict[str, list[str
     num_images = int(params.get("num_images", 1))
     scheduler = _validate_feature_compatibility(params)
     lora_adapters = _qwen_lora_adapters(params)
+    model_entry = _get_qwen_image_model_entry(model)
+    resolution = resolve_qwen_image_lightning_profile(
+        lora_adapters,
+        model_entry,
+        "inpaint",
+        steps,
+        true_cfg_scale,
+    )
+    resolved_entries = {adapter.lora_id: adapter.entry for adapter in resolution.adapters}
     lora_requested = bool(lora_adapters)
 
     logger.info("seed=%s", seed)
@@ -874,12 +913,16 @@ def generate_inpaint_in_process(params: dict[str, object]) -> dict[str, list[str
         _raise_if_cancelled(runtime)
         _publish_loading_model(runtime, num_images)
         pipe = load_inpaint_pipeline(model)
-        pipe.scheduler = create_scheduler(scheduler, pipe)
+        if resolution.lightning_profile is not None:
+            pipe.scheduler = select_qwen_image_scheduler(resolution, pipe)
+        else:
+            pipe.scheduler = create_scheduler(scheduler, pipe)
         _apply_qwen_lora_adapters(
             pipe,
             lora_adapters,
             batch_output_dir=batch_output_dir,
             batch_id=batch_id,
+            resolved_entries=resolved_entries,
         )
 
         for i in range(num_images):
@@ -896,8 +939,8 @@ def generate_inpaint_in_process(params: dict[str, object]) -> dict[str, list[str
                     "strength": strength,
                     "width": width,
                     "height": height,
-                    "num_inference_steps": steps,
-                    "true_cfg_scale": true_cfg_scale,
+                    "num_inference_steps": resolution.steps,
+                    "true_cfg_scale": resolution.true_cfg_scale,
                     "generator": generator,
                 }
                 if padding_mask_crop is not None:
@@ -922,7 +965,7 @@ def generate_inpaint_in_process(params: dict[str, object]) -> dict[str, list[str
                 _install_step_callback(
                     call_kwargs,
                     runtime,
-                    requested_steps=steps,
+                    requested_steps=resolution.steps,
                     image_index=i,
                     total_images=num_images,
                     width=width,

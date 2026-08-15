@@ -36,6 +36,14 @@ class DocsLoraContractTests(unittest.TestCase):
         self.assertIn("coverage report for the transformer", docs)
         self.assertIn("Call `unload_lora_weights()` in `finally`", docs)
         self.assertIn("Call `release_pipeline` after adapter cleanup", docs)
+        self.assertIn("Qwen Image Lightning adapter", docs)
+        self.assertIn("`qwen-image.img2img`, and `qwen-image.inpaint`", docs)
+        self.assertIn("Image-to-image and inpaint Lightning use is experimental", docs)
+        self.assertIn("`qwen-image-2512` base variant", docs)
+        self.assertIn("Do not combine it with a standard or style", docs)
+        self.assertIn("`true_cfg_scale` must be `1.0`", docs)
+        self.assertIn("`qwen_image_lightning_shift3` scheduler profile", docs)
+        self.assertIn("Hub entries can provide `weight_name`, `subfolder`, and `revision`", docs)
         self.assertNotIn(
             "The workflow catalog marks scheduler selection and LoRA as unavailable",
             docs,
@@ -64,9 +72,19 @@ class DocsLoraContractTests(unittest.TestCase):
         self.assertIn("prompt_presets", docs)
         self.assertIn("Each prompt preset has a non-empty `name` and a non-empty `words` list.", docs)
         self.assertIn("Preset words are prompt fragments intended for frontend prompt composition", docs)
+        self.assertIn("runtime_profile", docs)
+        self.assertIn("weight_name", docs)
+        self.assertIn("subfolder", docs)
+        self.assertIn("revision", docs)
+        self.assertIn('"kind": "qwen_image_lightning"', docs)
+        self.assertIn('"base_variant": "qwen-image-2512"', docs)
+        self.assertIn('"scheduler_profile": "qwen_image_lightning_shift3"', docs)
+        self.assertIn('"supported_tasks": ["text2img", "img2img", "inpaint"]', docs)
+        self.assertIn("A Hub Lightning entry requires `weight_name`", docs)
 
         self.assertIn("Compatibility guarantees:", docs)
         self.assertIn("Existing `GET /lora-models` and `POST /lora-models` consumers are backward-compatible.", docs)
+        self.assertIn("Lightning runtime metadata and Hub source coordinates are additive nullable request/response fields.", docs)
 
 
 if __name__ == "__main__":

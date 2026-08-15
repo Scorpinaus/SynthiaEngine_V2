@@ -48,6 +48,11 @@ def _run_with_fake_pipeline(
             "create_scheduler",
             return_value=scheduler,
         ) as create_scheduler,
+        patch.object(
+            qwen_image_pipeline,
+            "select_qwen_image_scheduler",
+            return_value=scheduler,
+        ) as select_scheduler,
         patch.object(qwen_image_pipeline, "make_batch_id", return_value="settings"),
         patch.object(
             qwen_image_pipeline,
@@ -69,7 +74,12 @@ def _run_with_fake_pipeline(
     ):
         result = generation_function(params)
 
-    create_scheduler.assert_called_once_with("flowmatch_euler", fake_pipe)
+    if generation_function is qwen_image_pipeline.generate_text2img_in_process:
+        select_scheduler.assert_called_once()
+        create_scheduler.assert_not_called()
+    else:
+        create_scheduler.assert_called_once_with("flowmatch_euler", fake_pipe)
+        select_scheduler.assert_not_called()
     return result, fake_pipe, scheduler
 
 
@@ -311,7 +321,7 @@ def test_qwen_image_pages_match_backend_defaults():
         assert 'data-default-scheduler="flowmatch_euler"' in html
         assert 'data-allowed-schedulers="flowmatch_euler"' in html
         assert 'id="lora-panel-root"' in html
-        assert '<script src="../components/lora_panel.js?v=3"></script>' in html
+        assert '<script src="../components/lora_panel.js?v=5"></script>' in html
         assert "Guidance Scale" not in html
         assert 'key: "guidance_scale"' not in javascript
         assert 'key: "scheduler", fallback: "flowmatch_euler"' in javascript

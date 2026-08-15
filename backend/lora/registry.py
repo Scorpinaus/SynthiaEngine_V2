@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import Integer, String, Text, create_engine, inspect, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
@@ -36,6 +36,43 @@ class LoraPromptPreset(BaseModel):
         return normalized
 
 
+class LoraRuntimeProfile(BaseModel):
+    """Fixed runtime settings for a LoRA with specialized inference behavior."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["qwen_image_lightning"]
+    base_variant: Literal["qwen-image-2512"]
+    steps: Literal[4, 8]
+    true_cfg_scale: float
+    scheduler_profile: Literal["qwen_image_lightning_shift3"]
+    adapter_strength: float
+    supported_tasks: list[Literal["text2img", "img2img", "inpaint"]]
+
+    @field_validator("true_cfg_scale", "adapter_strength", mode="before")
+    @classmethod
+    def validate_fixed_number(cls, value: Any, info) -> float:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"Qwen Image Lightning {info.field_name} must be 1.0.")
+        if float(value) != 1.0:
+            raise ValueError(f"Qwen Image Lightning {info.field_name} must be 1.0.")
+        return float(value)
+
+    @field_validator("supported_tasks", mode="before")
+    @classmethod
+    def validate_supported_tasks(cls, value: Any) -> list[str]:
+        legacy_tasks = ["text2img"]
+        supported_tasks = ["text2img", "img2img", "inpaint"]
+        if value == legacy_tasks:
+            return supported_tasks
+        if value != supported_tasks:
+            raise ValueError(
+                "Qwen Image Lightning supported_tasks must be "
+                "['text2img', 'img2img', 'inpaint']."
+            )
+        return supported_tasks
+
+
 class LoraRegistryEntry(BaseModel):
     lora_id: int
     lora_model_family: str
@@ -44,6 +81,22 @@ class LoraRegistryEntry(BaseModel):
     file_path: str
     name: str | None = None
     prompt_presets: list[LoraPromptPreset] = Field(default_factory=list)
+    runtime_profile: LoraRuntimeProfile | None = None
+    weight_name: str | None = None
+    subfolder: str | None = None
+    revision: str | None = None
+
+    @model_validator(mode="after")
+    def validate_runtime_profile(self) -> LoraRegistryEntry:
+        if self.runtime_profile is None:
+            return self
+        if self.lora_model_family != "qwen-image":
+            raise ValueError("Qwen Image Lightning requires lora_model_family 'qwen-image'.")
+        if self.lora_type != "lora":
+            raise ValueError("Qwen Image Lightning requires lora_type 'lora'.")
+        if self.lora_location == "hub" and not (self.weight_name or "").strip():
+            raise ValueError("Hub Qwen Image Lightning entries require weight_name.")
+        return self
 
 
 class Base(DeclarativeBase):
@@ -61,6 +114,10 @@ class LoraRegistryRow(Base):
     file_path: Mapped[str] = mapped_column(Text, nullable=False)
     name: Mapped[str | None] = mapped_column(String(256), nullable=True)
     prompt_presets_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    runtime_profile_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    weight_name: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    subfolder: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    revision: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
 
 REGISTRY_JSON_PATH = Path(__file__).with_name("lora_registry.json")
@@ -106,6 +163,21 @@ def _prompt_presets_from_json(value: str | None) -> list[LoraPromptPreset]:
         return []
 
 
+def _runtime_profile_to_json(value: LoraRuntimeProfile | dict[str, Any] | None) -> str | None:
+    if value is None:
+        return None
+    return json.dumps(LoraRuntimeProfile.model_validate(value).model_dump(), ensure_ascii=True)
+
+
+def _runtime_profile_from_json(value: str | None) -> LoraRuntimeProfile | None:
+    if not value:
+        return None
+    try:
+        return LoraRuntimeProfile.model_validate(json.loads(value))
+    except Exception:
+        return None
+
+
 def _row_to_entry(row: LoraRegistryRow) -> LoraRegistryEntry:
     return LoraRegistryEntry(
         lora_id=row.lora_id,
@@ -115,17 +187,29 @@ def _row_to_entry(row: LoraRegistryRow) -> LoraRegistryEntry:
         file_path=row.file_path,
         name=row.name,
         prompt_presets=_prompt_presets_from_json(row.prompt_presets_json),
+        runtime_profile=_runtime_profile_from_json(row.runtime_profile_json),
+        weight_name=row.weight_name,
+        subfolder=row.subfolder,
+        revision=row.revision,
     )
 
 
 def init_lora_registry_db() -> None:
     Base.metadata.create_all(_ENGINE)
     existing_columns = {column["name"] for column in inspect(_ENGINE).get_columns(LoraRegistryRow.__tablename__)}
-    if "prompt_presets_json" not in existing_columns:
-        with _ENGINE.begin() as connection:
+    with _ENGINE.begin() as connection:
+        if "prompt_presets_json" not in existing_columns:
             connection.execute(
                 text("ALTER TABLE lora_registry ADD COLUMN prompt_presets_json TEXT NOT NULL DEFAULT '[]'")
             )
+        for column_name, column_sql in (
+            ("runtime_profile_json", "TEXT"),
+            ("weight_name", "VARCHAR(512)"),
+            ("subfolder", "VARCHAR(512)"),
+            ("revision", "VARCHAR(512)"),
+        ):
+            if column_name not in existing_columns:
+                connection.execute(text(f"ALTER TABLE lora_registry ADD COLUMN {column_name} {column_sql}"))
 
 
 def _db_has_rows() -> bool:
@@ -174,6 +258,10 @@ def _migrate_json_if_needed() -> None:
                             file_path=lora_entry.file_path,
                             name=lora_entry.name,
                             prompt_presets_json=_prompt_presets_to_json(lora_entry.prompt_presets),
+                            runtime_profile_json=_runtime_profile_to_json(lora_entry.runtime_profile),
+                            weight_name=lora_entry.weight_name,
+                            subfolder=lora_entry.subfolder,
+                            revision=lora_entry.revision,
                         )
                     )
             except IntegrityError as exc:
@@ -215,6 +303,10 @@ def save_lora_registry(entries: list[LoraRegistryEntry]) -> None:
                     file_path=entry.file_path,
                     name=entry.name,
                     prompt_presets_json=_prompt_presets_to_json(entry.prompt_presets),
+                    runtime_profile_json=_runtime_profile_to_json(entry.runtime_profile),
+                    weight_name=entry.weight_name,
+                    subfolder=entry.subfolder,
+                    revision=entry.revision,
                 )
             )
         try:
@@ -236,6 +328,10 @@ def add_lora(entry: LoraRegistryEntry) -> LoraRegistryEntry:
             file_path=entry.file_path,
             name=entry.name,
             prompt_presets_json=_prompt_presets_to_json(entry.prompt_presets),
+            runtime_profile_json=_runtime_profile_to_json(entry.runtime_profile),
+            weight_name=entry.weight_name,
+            subfolder=entry.subfolder,
+            revision=entry.revision,
         )
         session.add(row)
         try:
@@ -253,7 +349,18 @@ def update_lora_entry(lora_id: int, updates: dict[str, object]) -> LoraRegistryE
     if not updates:
         raise ValueError("At least one editable field must be provided.")
 
-    editable_fields = {"lora_model_family", "lora_type", "lora_location", "file_path", "name", "prompt_presets"}
+    editable_fields = {
+        "lora_model_family",
+        "lora_type",
+        "lora_location",
+        "file_path",
+        "name",
+        "prompt_presets",
+        "runtime_profile",
+        "weight_name",
+        "subfolder",
+        "revision",
+    }
     unknown_fields = sorted(field for field in updates.keys() if field not in editable_fields)
     if unknown_fields:
         raise ValueError(f"Unknown editable fields: {', '.join(unknown_fields)}.")
@@ -272,11 +379,18 @@ def update_lora_entry(lora_id: int, updates: dict[str, object]) -> LoraRegistryE
         if row is None:
             raise ValueError(f"LoRA with id {lora_id} not found.")
 
-        for key, value in updates.items():
+        candidate_data = _row_to_entry(row).model_dump()
+        candidate_data.update(updates)
+        candidate = LoraRegistryEntry.model_validate(candidate_data)
+        validated_data = candidate.model_dump()
+
+        for key in updates:
             if key == "prompt_presets":
-                row.prompt_presets_json = _prompt_presets_to_json(value)
+                row.prompt_presets_json = _prompt_presets_to_json(candidate.prompt_presets)
+            elif key == "runtime_profile":
+                row.runtime_profile_json = _runtime_profile_to_json(candidate.runtime_profile)
             else:
-                setattr(row, key, value)
+                setattr(row, key, validated_data[key])
         session.commit()
         session.refresh(row)
 

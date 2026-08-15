@@ -46,7 +46,14 @@ def test_lora_list_and_create_contract_compatible(tmp_path):
     }
     create_response = client.post("/lora-models", json=payload)
     assert create_response.status_code == 200
-    expected_response = {**payload, "prompt_presets": []}
+    expected_response = {
+        **payload,
+        "prompt_presets": [],
+        "runtime_profile": None,
+        "weight_name": None,
+        "subfolder": None,
+        "revision": None,
+    }
     assert create_response.json() == expected_response
 
     list_response = client.get("/lora-models")
@@ -184,3 +191,110 @@ def test_lora_patch_rejects_name_with_dot(tmp_path):
     assert response.status_code == 422
     errors = response.json().get("detail", [])
     assert any("LoRA name cannot contain '.'" in str(item.get("msg", "")) for item in errors)
+
+
+def test_lightning_metadata_create_get_and_patch_contract(tmp_path):
+    _reset_lora_registry_paths(tmp_path)
+    client = TestClient(app)
+    profile = {
+        "kind": "qwen_image_lightning",
+        "base_variant": "qwen-image-2512",
+        "steps": 4,
+        "true_cfg_scale": 1.0,
+        "scheduler_profile": "qwen_image_lightning_shift3",
+        "adapter_strength": 1.0,
+        "supported_tasks": ["text2img", "img2img", "inpaint"],
+    }
+    payload = {
+        "lora_id": 107,
+        "lora_model_family": "qwen-image",
+        "lora_type": "lora",
+        "lora_location": "hub",
+        "file_path": "lightx2v/Qwen-Image-2512-Lightning",
+        "runtime_profile": profile,
+        "weight_name": "Qwen-Image-2512-Lightning-4steps-V1.0-bf16.safetensors",
+        "subfolder": "weights",
+        "revision": "main",
+    }
+    created = client.post("/lora-models", json=payload)
+    assert created.status_code == 200
+    assert created.json()["runtime_profile"] == profile
+    assert created.json()["weight_name"] == payload["weight_name"]
+
+    found = client.get("/lora-models/107")
+    assert found.status_code == 200
+    assert found.json()["subfolder"] == "weights"
+
+    updated_profile = {**profile, "steps": 8}
+    updated = client.patch(
+        "/lora-models/107",
+        json={
+            "runtime_profile": updated_profile,
+            "weight_name": "Qwen-Image-2512-Lightning-8steps-V1.0-bf16.safetensors",
+            "revision": "v1.0",
+        },
+    )
+    assert updated.status_code == 200
+    assert updated.json()["runtime_profile"] == updated_profile
+    assert updated.json()["revision"] == "v1.0"
+
+
+def test_lightning_hub_entries_require_weight_name_and_fixed_profile_values(tmp_path):
+    _reset_lora_registry_paths(tmp_path)
+    client = TestClient(app)
+    profile = {
+        "kind": "qwen_image_lightning",
+        "base_variant": "qwen-image-2512",
+        "steps": 4,
+        "true_cfg_scale": 1.0,
+        "scheduler_profile": "qwen_image_lightning_shift3",
+        "adapter_strength": 1.0,
+        "supported_tasks": ["text2img", "img2img", "inpaint"],
+    }
+    payload = {
+        "lora_id": 108,
+        "lora_model_family": "qwen-image",
+        "lora_type": "lora",
+        "lora_location": "hub",
+        "file_path": "lightx2v/Qwen-Image-2512-Lightning",
+        "runtime_profile": profile,
+    }
+    missing_weight_name = client.post("/lora-models", json=payload)
+    assert missing_weight_name.status_code == 400
+    assert "Hub Qwen Image Lightning entries require weight_name." in missing_weight_name.json()["detail"]
+
+    invalid_profile = {**profile, "true_cfg_scale": 2.0}
+    invalid_value = client.post(
+        "/lora-models",
+        json={**payload, "lora_location": "local", "runtime_profile": invalid_profile},
+    )
+    assert invalid_value.status_code == 422
+
+
+def test_lightning_api_normalizes_legacy_text2img_supported_tasks(tmp_path):
+    _reset_lora_registry_paths(tmp_path)
+    client = TestClient(app)
+    response = client.post(
+        "/lora-models",
+        json={
+            "lora_id": 109,
+            "lora_model_family": "qwen-image",
+            "lora_type": "lora",
+            "lora_location": "local",
+            "file_path": "C:/loras/lightning.safetensors",
+            "runtime_profile": {
+                "kind": "qwen_image_lightning",
+                "base_variant": "qwen-image-2512",
+                "steps": 4,
+                "true_cfg_scale": 1.0,
+                "scheduler_profile": "qwen_image_lightning_shift3",
+                "adapter_strength": 1.0,
+                "supported_tasks": ["text2img"],
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["runtime_profile"]["supported_tasks"] == [
+        "text2img", "img2img", "inpaint"
+    ]

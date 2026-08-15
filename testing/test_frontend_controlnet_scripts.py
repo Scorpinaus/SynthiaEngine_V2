@@ -1052,17 +1052,20 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         qwen_image_html = (ROOT / "frontend" / "qwen_image" / "text2img.html").read_text(
             encoding="utf-8"
         )
-        lora_tag = '<script src="../components/lora_panel.js?v=3"></script>'
+        lora_tag = '<script src="../components/lora_panel.js?v=5"></script>'
         preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
-        controller_tag = '<script src="../generation_page.js?v=2"></script>'
-        qwen_image_tag = '<script src="text2img.js?v=7"></script>'
+        lightning_settings_tag = '<script src="lightning_settings.js?v=2"></script>'
+        controller_tag = '<script src="../generation_page.js?v=3"></script>'
+        qwen_image_tag = '<script src="text2img.js?v=8"></script>'
 
         self.assertIn('id="lora-panel-root"', qwen_image_html)
         self.assertIn(lora_tag, qwen_image_html)
         self.assertIn(preset_tag, qwen_image_html)
+        self.assertIn(lightning_settings_tag, qwen_image_html)
         self.assertIn(controller_tag, qwen_image_html)
         self.assertIn(qwen_image_tag, qwen_image_html)
         self.assertLess(qwen_image_html.index(lora_tag), qwen_image_html.index(controller_tag))
+        self.assertLess(qwen_image_html.index(lightning_settings_tag), qwen_image_html.index(controller_tag))
         self.assertLess(qwen_image_html.index(preset_tag), qwen_image_html.index(qwen_image_tag))
 
     def test_qwen_image_script_wires_lora_payload(self):
@@ -1084,18 +1087,24 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         qwen_image_img2img_html = (ROOT / "frontend" / "qwen_image" / "img2img.html").read_text(
             encoding="utf-8"
         )
-        lora_tag = '<script src="../components/lora_panel.js?v=3"></script>'
+        lora_tag = '<script src="../components/lora_panel.js?v=5"></script>'
         preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
-        controller_tag = '<script src="../generation_page.js?v=2"></script>'
-        qwen_image_img2img_tag = '<script src="img2img.js?v=7"></script>'
+        lightning_settings_tag = '<script src="lightning_settings.js?v=2"></script>'
+        controller_tag = '<script src="../generation_page.js?v=3"></script>'
+        qwen_image_img2img_tag = '<script src="img2img.js?v=8"></script>'
 
         self.assertIn('id="lora-panel-root"', qwen_image_img2img_html)
         self.assertIn(lora_tag, qwen_image_img2img_html)
         self.assertIn(preset_tag, qwen_image_img2img_html)
+        self.assertIn(lightning_settings_tag, qwen_image_img2img_html)
         self.assertIn(controller_tag, qwen_image_img2img_html)
         self.assertIn(qwen_image_img2img_tag, qwen_image_img2img_html)
         self.assertLess(
             qwen_image_img2img_html.index(lora_tag),
+            qwen_image_img2img_html.index(controller_tag),
+        )
+        self.assertLess(
+            qwen_image_img2img_html.index(lightning_settings_tag),
             qwen_image_img2img_html.index(controller_tag),
         )
         self.assertLess(
@@ -1123,20 +1132,26 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         qwen_image_inpaint_html = (ROOT / "frontend" / "qwen_image" / "inpaint.html").read_text(
             encoding="utf-8"
         )
-        lora_tag = '<script src="../components/lora_panel.js?v=3"></script>'
+        lora_tag = '<script src="../components/lora_panel.js?v=5"></script>'
         preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
         editor_tag = '<script src="../components/inpaint_editor.js?v=1"></script>'
-        controller_tag = '<script src="../generation_page.js?v=2"></script>'
-        qwen_image_inpaint_tag = '<script src="inpaint.js?v=8"></script>'
+        lightning_settings_tag = '<script src="lightning_settings.js?v=2"></script>'
+        controller_tag = '<script src="../generation_page.js?v=3"></script>'
+        qwen_image_inpaint_tag = '<script src="inpaint.js?v=9"></script>'
 
         self.assertIn('id="lora-panel-root"', qwen_image_inpaint_html)
         self.assertIn(lora_tag, qwen_image_inpaint_html)
         self.assertIn(preset_tag, qwen_image_inpaint_html)
+        self.assertIn(lightning_settings_tag, qwen_image_inpaint_html)
         self.assertIn(controller_tag, qwen_image_inpaint_html)
         self.assertIn(editor_tag, qwen_image_inpaint_html)
         self.assertIn(qwen_image_inpaint_tag, qwen_image_inpaint_html)
         self.assertLess(
             qwen_image_inpaint_html.index(lora_tag),
+            qwen_image_inpaint_html.index(controller_tag),
+        )
+        self.assertLess(
+            qwen_image_inpaint_html.index(lightning_settings_tag),
             qwen_image_inpaint_html.index(controller_tag),
         )
         self.assertLess(
