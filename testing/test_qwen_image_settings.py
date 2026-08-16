@@ -321,7 +321,8 @@ def test_qwen_image_pages_match_backend_defaults():
         assert 'data-default-scheduler="flowmatch_euler"' in html
         assert 'data-allowed-schedulers="flowmatch_euler"' in html
         assert 'id="lora-panel-root"' in html
-        assert '<script src="../components/lora_panel.js?v=5"></script>' in html
+        assert '<link rel="stylesheet" href="../style.css?v=6" />' in html
+        assert '<script src="../components/lora_panel.js?v=6"></script>' in html
         assert "Guidance Scale" not in html
         assert 'key: "guidance_scale"' not in javascript
         assert 'key: "scheduler", fallback: "flowmatch_euler"' in javascript

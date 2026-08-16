@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "verified_date": "2026-08-16",
+  "sources": [
+    {
+      "path": "skills.md",
+      "role": "Operating rules, validation, scope, and security guardrails",
+      "sha256": "BE8D713AA4D4A6DD30B5FA7F6F00FC2A753048B8C9A3CFD6E9B25B6A0589EC2E"
+    },
+    {
+      "path": "README.md",
+      "role": "Project overview, startup, and process configuration",
+      "sha256": "2EFA5BD7A8D995072E907935442FC26114D6630337D9101D48BE00859C090422"
+    },
+    {
+      "path": "docs/ARCHITECTURE.md",
+      "role": "Architecture owners, layers, boundaries, and routes",
+      "sha256": "3BC6E6AFC36DC6823CDA662EDBF29AE9AF2216046190DC0CF854FA32A3EE3C0D"
+    },
+    {
+      "path": "docs/PIPELINE_LIFECYCLE.md",
+      "role": "Pipeline cleanup, subprocess, and cache policy",
+      "sha256": "6E75160EC127D3452435D2549F378594A219D30497DA1AC3B3867D0281EB2BAD"
+    },
+    {
+      "path": "docs/WORKFLOW_API.md",
+      "role": "Public workflow API and task contract",
+      "sha256": "76A80069CF33E1850DC94DE5EC0B9639ABD756E44B7CA48A0679881598732CAF"
+    },
+    {
+      "path": "pytest.ini",
+      "role": "Pytest discovery configuration",
+      "sha256": "21DEBC80ECB59797F07BFD7BAFB198DB7E38079752CADCD3FDED7ACA5222012E"
+    },
+    {
+      "path": "requirements.txt",
+      "role": "Runtime dependency policy",
+      "sha256": "91A01ADB446845E607625130E132281E73FC0DF77B61173F2D032F62AA24863B"
+    },
+    {
+      "path": "requirements-dev.txt",
+      "role": "Development dependency policy",
+      "sha256": "F95224410006407E68F9E0A24C01A82F146FE6D3021EC002501A6B26F646F912"
+    },
+    {
+      "path": "constraints.txt",
+      "role": "Tested direct dependency pins",
+      "sha256": "9ED0B0DF319A278B58D1AB45EFC65B947BA29076C4FFE6307A4F94DDF7C39205"
+    },
+    {
+      "path": "frontend/styles/README.md",
+      "role": "Style entrypoint and ownership rules",
+      "sha256": "88EEFA6AE0E09D278A4F5E75A877EEDB32FFFE1F997FB2791CEBE93AC04D114F"
+    },
+    {
+      "path": "testing/test_architecture_contracts.py",
+      "role": "Static architecture and public-surface guards",
+      "sha256": "32B9E33AF24E9534E9F78B9CE84CD759E8BDBF4FCDF42BA9AE68DE7024CCFD37"
+    }
+  ]
+}

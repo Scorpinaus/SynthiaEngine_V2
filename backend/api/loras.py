@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from backend.lora.registry import (
+    LoraCompatibility,
     LoraPromptPreset,
     LoraRegistryEntry,
     LoraRuntimeProfile,
@@ -32,6 +33,7 @@ class LoraCreateRequest(BaseModel):
     name: str | None = None
     prompt_presets: list[LoraPromptPreset] = Field(default_factory=list)
     runtime_profile: LoraRuntimeProfile | None = None
+    compatibility: LoraCompatibility | None = None
     weight_name: str | None = None
     subfolder: str | None = None
     revision: str | None = None
@@ -52,6 +54,7 @@ class LoraUpdateRequest(BaseModel):
     name: str | None = None
     prompt_presets: list[LoraPromptPreset] | None = None
     runtime_profile: LoraRuntimeProfile | None = None
+    compatibility: LoraCompatibility | None = None
     weight_name: str | None = None
     subfolder: str | None = None
     revision: str | None = None

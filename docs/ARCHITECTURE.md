@@ -464,8 +464,10 @@ family controllers do the repeated work:
 - `frontend/components/controlnet_panel.js`, `frontend/components/controlnet_preprocessor.js`
   - ControlNet item management + preprocessor integration
 - `frontend/components/lora_panel.js`
-  - LoRA picker/weights mapped to workflow `lora_adapters`; Qwen-Image uses one
-    transformer strength control and no UNet/text-encoder target control
+  - LoRA picker/weights mapped to workflow `lora_adapters`; Qwen-Image uses
+    transformer-only controls and no UNet/text-encoder target control. A
+    Lightning mixed stack locks Lightning strength and leaves one compatible
+    companion strength adjustable.
 - `frontend/components/preset_panel.js`
   - Save/apply presets through `/api/presets`
 - `frontend/components/jobs_queue.js`

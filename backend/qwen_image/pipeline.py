@@ -16,6 +16,7 @@ from backend.lora.utils import (
 )
 from backend.lora.registry import LoraRegistryEntry
 from backend.qwen_image.lightning import (
+    QwenImageLightningResolution,
     resolve_qwen_image_lightning_profile,
     select_qwen_image_scheduler,
 )
@@ -327,9 +328,20 @@ def _apply_qwen_lora_adapters(
     batch_output_dir: Path,
     batch_id: str,
     resolved_entries: Mapping[int, LoraRegistryEntry] | None = None,
+    resolution: QwenImageLightningResolution | None = None,
 ) -> list[str]:
     if not lora_adapters:
         return []
+
+    mixed_lightning_stack = (
+        resolution is not None
+        and resolution.lightning_profile is not None
+        and len(resolution.adapters) == 2
+    )
+    if mixed_lightning_stack and not callable(getattr(pipe, "set_adapters", None)):
+        raise RuntimeError(
+            "Qwen Image Lightning companion stack requires callable pipeline.set_adapters support."
+        )
 
     adapter_names, coverage = apply_lora_adapters_with_validation(
         pipe,
@@ -341,6 +353,33 @@ def _apply_qwen_lora_adapters(
         coverage_components=("transformer",),
         resolved_entries=resolved_entries,
     )
+    if resolution is not None:
+        logger.info(
+            "Qwen-Image LoRA resolved: adapter_ids=%s adapter_names=%s strengths=%s "
+            "base_variant=%s task=%s lightning_steps=%s",
+            [adapter.lora_id for adapter in resolution.adapters],
+            adapter_names,
+            [adapter.strength for adapter in resolution.adapters],
+            resolution.model_variant,
+            resolution.task,
+            (
+                resolution.lightning_profile.steps
+                if resolution.lightning_profile is not None
+                else None
+            ),
+        )
+    if mixed_lightning_stack:
+        get_active_adapters = getattr(pipe, "get_active_adapters", None)
+        if callable(get_active_adapters):
+            active_adapter_names = set(get_active_adapters())
+            missing_adapter_names = [
+                name for name in adapter_names if name not in active_adapter_names
+            ]
+            if missing_adapter_names:
+                raise RuntimeError(
+                    "Qwen Image Lightning companion stack activation is missing "
+                    f"adapter names: {', '.join(missing_adapter_names)}."
+                )
     report_path = write_lora_coverage_report(
         batch_output_dir,
         batch_id,
@@ -666,6 +705,7 @@ def generate_text2img_in_process(params: dict[str, object]) -> dict[str, list[st
             batch_output_dir=batch_output_dir,
             batch_id=batch_id,
             resolved_entries=resolved_entries,
+            resolution=resolution,
         )
 
         for i in range(num_images):
@@ -788,6 +828,7 @@ def generate_img2img_in_process(params: dict[str, object]) -> dict[str, list[str
             batch_output_dir=batch_output_dir,
             batch_id=batch_id,
             resolved_entries=resolved_entries,
+            resolution=resolution,
         )
 
         for i in range(num_images):
@@ -923,6 +964,7 @@ def generate_inpaint_in_process(params: dict[str, object]) -> dict[str, list[str
             batch_output_dir=batch_output_dir,
             batch_id=batch_id,
             resolved_entries=resolved_entries,
+            resolution=resolution,
         )
 
         for i in range(num_images):

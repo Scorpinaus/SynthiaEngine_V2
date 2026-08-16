@@ -511,6 +511,16 @@ button {
     gap: 10px;
 }
 
+.lora-stack-status {
+    padding: 8px 10px;
+    border: 1px solid #d8c8a9;
+    border-radius: 8px;
+    background: #fff8e8;
+    color: #5f4b2c;
+    font-size: 12px;
+    font-weight: 600;
+}
+
 .lora-item {
     display: grid;
     gap: 8px;
@@ -528,6 +538,12 @@ button {
     font-weight: 600;
 }
 
+.lora-profile-label {
+    color: #6b645c;
+    font-size: 11px;
+    font-weight: 600;
+}
+
 .lora-strength {
     display: grid;
     gap: 6px;
@@ -537,6 +553,7 @@ button {
 
 .lora-strength input[type="range"] {
     --lora-range-thumb-size: 18px;
+    padding: 0;
     width: calc(100% + var(--lora-range-thumb-size));
     margin-inline: calc(var(--lora-range-thumb-size) / -2);
 }

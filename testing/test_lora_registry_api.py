@@ -69,6 +69,7 @@ def test_create_and_list_and_filter_loras(tmp_path):
             **payload_a,
             "prompt_presets": [],
             "runtime_profile": None,
+            "compatibility": None,
             "weight_name": None,
             "subfolder": None,
             "revision": None,

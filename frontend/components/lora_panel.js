@@ -60,6 +60,19 @@
         return loraState.family === "qwen-image";
     }
 
+    function getQwenCompatibilityTask() {
+        if (!isQwenImageFamily()) {
+            return "";
+        }
+        const taskType = String(loraState.taskType || "").trim().toLowerCase();
+        const normalizedTasks = {
+            "qwen-image.text2img": "text2img",
+            "qwen-image.img2img": "img2img",
+            "qwen-image.inpaint": "inpaint",
+        };
+        return normalizedTasks[taskType] || "";
+    }
+
     function getLightningProfile(value) {
         const profile = value?.runtime_profile;
         if (!isQwenImageFamily() || profile?.kind !== "qwen_image_lightning") {
@@ -73,12 +86,157 @@
         return profile;
     }
 
-    function lightningIsAllowedForTask() {
-        return isQwenImageFamily();
+    function hasCompatibilityValue(values, expected) {
+        return Array.isArray(values) && values.includes(expected);
     }
 
-    function canSelectEntry(entry) {
-        return !getLightningProfile(entry) || lightningIsAllowedForTask();
+    function isQwenLightningCompatible(entry) {
+        const compatibility = entry?.compatibility;
+        const task = getQwenCompatibilityTask();
+        return Boolean(
+            task &&
+            hasCompatibilityValue(compatibility?.base_variants, "qwen-image-2512") &&
+            hasCompatibilityValue(compatibility?.runtime_profile_kinds, "qwen_image_lightning") &&
+            hasCompatibilityValue(compatibility?.supported_tasks, task),
+        );
+    }
+
+    function getSelectedQwenMixedStack() {
+        if (!isQwenImageFamily()) {
+            return null;
+        }
+        const lightningAdapters = loraState.selected.filter((lora) => getLightningProfile(lora));
+        const standardAdapters = loraState.selected.filter((lora) => !getLightningProfile(lora));
+        if (
+            lightningAdapters.length !== 1 ||
+            standardAdapters.length !== 1 ||
+            !isQwenLightningCompatible(standardAdapters[0])
+        ) {
+            return null;
+        }
+        return { lightning: lightningAdapters[0], companion: standardAdapters[0] };
+    }
+
+    function syncQwenMixedStackStatus() {
+        const status = document.getElementById("lora-stack-status");
+        if (!status) {
+            return;
+        }
+        if (getSelectedQwenMixedStack()) {
+            status.textContent = "Experimental stack: Lightning + 1 LoRA";
+            status.classList.remove("is-hidden");
+            return;
+        }
+        status.classList.add("is-hidden");
+    }
+
+    function getQwenCompatibilityReason(entry) {
+        const compatibility = entry?.compatibility;
+        const task = getQwenCompatibilityTask();
+        if (!compatibility) {
+            return "No Lightning compatibility metadata";
+        }
+        if (!hasCompatibilityValue(compatibility.base_variants, "qwen-image-2512")) {
+            return "Not compatible with Qwen Image 2512";
+        }
+        if (!hasCompatibilityValue(compatibility.runtime_profile_kinds, "qwen_image_lightning")) {
+            return "Not compatible with Qwen Image Lightning";
+        }
+        if (!task || !hasCompatibilityValue(compatibility.supported_tasks, task)) {
+            return `Not compatible with Qwen task ${task || "unknown"}`;
+        }
+        return "Not compatible with selected Lightning";
+    }
+
+    function getEntrySelectionState(entry, selected = loraState.selected) {
+        if (!isQwenImageFamily()) {
+            return { disabled: false, reason: "" };
+        }
+
+        const entryId = Number(entry?.lora_id);
+        if (selected.some((lora) => Number(lora.lora_id) === entryId)) {
+            return { disabled: true, reason: "Already selected" };
+        }
+
+        const lightningSelected = selected.filter((lora) => getLightningProfile(lora));
+        const standardSelected = selected.filter((lora) => !getLightningProfile(lora));
+        const lightningProfile = getLightningProfile(entry);
+        const task = getQwenCompatibilityTask();
+
+        if (lightningProfile) {
+            if (!task) {
+                return { disabled: true, reason: "Lightning requires a supported Qwen task" };
+            }
+            if (lightningSelected.length > 0) {
+                return { disabled: true, reason: "Only one Lightning adapter is allowed" };
+            }
+            if (standardSelected.length > 1) {
+                return { disabled: true, reason: "Remove extra standard LoRAs before selecting Lightning" };
+            }
+            if (standardSelected.length === 1 && !isQwenLightningCompatible(standardSelected[0])) {
+                return {
+                    disabled: true,
+                    reason: "Selected standard LoRA is not Lightning-compatible for this task",
+                };
+            }
+            return { disabled: false, reason: "" };
+        }
+
+        if (lightningSelected.length > 0) {
+            if (!isQwenLightningCompatible(entry)) {
+                return { disabled: true, reason: getQwenCompatibilityReason(entry) };
+            }
+            if (standardSelected.length > 0) {
+                return { disabled: true, reason: "Only one Lightning-compatible companion is allowed" };
+            }
+        }
+        return { disabled: false, reason: "" };
+    }
+
+    function canSelectEntry(entry, selected = loraState.selected) {
+        return !getEntrySelectionState(entry, selected).disabled;
+    }
+
+    function getOptionLabel(entry, selectionState) {
+        const name = entry.name ?? entry.file_path ?? `LoRA ${entry.lora_id}`;
+        const lightningProfile = getLightningProfile(entry);
+        let label = name;
+        if (lightningProfile) {
+            label += ` — Lightning · ${lightningProfile.steps} steps`;
+        } else if (isQwenLightningCompatible(entry)) {
+            label += " — Lightning-compatible · Qwen Image 2512";
+        }
+        return selectionState.disabled ? `${label} — ${selectionState.reason}` : label;
+    }
+
+    function refreshLoraOptions() {
+        const select = document.getElementById("lora-select");
+        if (!select) {
+            return;
+        }
+        select.innerHTML = "";
+        if (loraState.available.length === 0) {
+            const fallback = document.createElement("option");
+            fallback.value = "";
+            fallback.textContent = "No LoRAs available";
+            fallback.selected = true;
+            select.appendChild(fallback);
+            return;
+        }
+        let selectedOption = false;
+        loraState.available.forEach((entry) => {
+            const selectionState = getEntrySelectionState(entry);
+            const option = document.createElement("option");
+            option.value = String(entry.lora_id);
+            option.disabled = selectionState.disabled;
+            option.title = selectionState.reason;
+            option.textContent = getOptionLabel(entry, selectionState);
+            if (!selectedOption && !option.disabled) {
+                option.selected = true;
+                selectedOption = true;
+            }
+            select.appendChild(option);
+        });
     }
 
     function normalizeSelectedLora(lora) {
@@ -97,11 +255,11 @@
         };
     }
 
-    function emitLightningProfileChanged() {
+    function emitLightningProfileChanged({ force = false } = {}) {
         const selected = loraState.selected.find((lora) => getLightningProfile(lora));
         const profile = selected ? getLightningProfile(selected) : null;
         const nextKey = profile ? `${selected.lora_id}:${profile.steps}` : "";
-        if (nextKey === loraState.selectedLightningKey) {
+        if (!force && nextKey === loraState.selectedLightningKey) {
             return;
         }
         loraState.selectedLightningKey = nextKey;
@@ -199,8 +357,11 @@
         chevron.textContent = isOpen ? "▴" : "▾";
     }
 
-    function renderLoraList() {
+    function renderLoraList({ forceLightningProfileEvent = false } = {}) {
         syncWeightModeUI();
+        refreshLoraOptions();
+        const mixedStack = getSelectedQwenMixedStack();
+        syncQwenMixedStackStatus();
         const list = document.getElementById("lora-list");
         const emptyState = document.getElementById("lora-empty");
         if (!list || !emptyState) {
@@ -209,7 +370,7 @@
         list.innerHTML = "";
         if (loraState.selected.length === 0) {
             emptyState.classList.remove("is-hidden");
-            emitLightningProfileChanged();
+            emitLightningProfileChanged({ force: forceLightningProfileEvent });
             emitAdapterSummaryChanged();
             return;
         }
@@ -233,6 +394,11 @@
                 profileLabel.className = "lora-profile-label";
                 profileLabel.textContent = `Lightning · ${lightningProfile.steps} steps`;
                 header.appendChild(profileLabel);
+            } else if (Number(mixedStack?.companion.lora_id) === Number(lora.lora_id)) {
+                const compatibilityLabel = document.createElement("span");
+                compatibilityLabel.className = "lora-profile-label";
+                compatibilityLabel.textContent = "Lightning-compatible · Qwen Image 2512";
+                header.appendChild(compatibilityLabel);
             }
 
             const remove = document.createElement("button");
@@ -373,7 +539,7 @@
             item.appendChild(managePresetButton);
             list.appendChild(item);
         });
-        emitLightningProfileChanged();
+        emitLightningProfileChanged({ force: forceLightningProfileEvent });
         emitAdapterSummaryChanged();
     }
 
@@ -465,7 +631,7 @@
                 ? { ...entry, ...updatedEntry, prompt_presets: normalizedPresets }
                 : entry,
         );
-        loraState.selected = loraState.selected.map((selected) => {
+        const updatedSelected = loraState.selected.map((selected) => {
             if (Number(selected.lora_id) !== Number(updatedEntry.lora_id)) {
                 return selected;
             }
@@ -477,8 +643,16 @@
                 prompt_preset_name: matchedPreset?.name || "",
                 prompt_preset_words: matchedPreset?.words || [],
                 runtime_profile: updatedEntry.runtime_profile ?? selected.runtime_profile ?? null,
+                compatibility: updatedEntry.compatibility ?? selected.compatibility ?? null,
             };
-        }).filter(canSelectEntry).map(normalizeSelectedLora);
+        });
+        const normalizedSelected = [];
+        updatedSelected.forEach((selected) => {
+            if (canSelectEntry(selected, normalizedSelected)) {
+                normalizedSelected.push(normalizeSelectedLora(selected));
+            }
+        });
+        loraState.selected = normalizedSelected;
         renderLoraList();
         emitAdapterSummaryChanged();
     }
@@ -588,6 +762,7 @@
             text_encoder_strength: DEFAULT_STRENGTH,
             target: "both",
             runtime_profile: entry.runtime_profile ?? null,
+            compatibility: entry.compatibility ?? null,
         }));
         logDebug("Added adapter.", { lora_id: entry.lora_id, selected_count: loraState.selected.length });
         renderLoraList();
@@ -598,7 +773,6 @@
         if (!select) {
             return;
         }
-        select.innerHTML = "";
         try {
             const res = await fetch(`${apiBase}/lora-models?family=${family}`);
             const loras = await res.json();
@@ -606,26 +780,36 @@
                 throw new Error("No LoRAs returned.");
             }
             loraState.available = loras;
-            logDebug("Loaded available LoRAs.", { family, count: loras.length });
-            let selectedOption = false;
-            loras.forEach((lora) => {
-                const option = document.createElement("option");
-                option.value = String(lora.lora_id);
-                const name = lora.name ?? lora.file_path ?? `LoRA ${lora.lora_id}`;
-                const lightningProfile = getLightningProfile(lora);
-                option.textContent = name;
-                if (!selectedOption) {
-                    option.selected = true;
-                    selectedOption = true;
+            const refreshedSelected = loraState.selected.map((selected) => {
+                const refreshedEntry = loras.find(
+                    (entry) => Number(entry.lora_id) === Number(selected.lora_id),
+                );
+                if (!refreshedEntry) {
+                    return selected;
                 }
-                select.appendChild(option);
+                const promptPresets = normalizePromptPresets(refreshedEntry.prompt_presets);
+                const matchedPreset = promptPresets.find(
+                    (preset) => preset.name === selected.prompt_preset_name,
+                );
+                return {
+                    ...selected,
+                    lora_name: refreshedEntry.name ?? refreshedEntry.file_path ?? selected.lora_name,
+                    prompt_presets: promptPresets,
+                    prompt_preset_name: matchedPreset?.name || "",
+                    prompt_preset_words: matchedPreset?.words || [],
+                    runtime_profile: refreshedEntry.runtime_profile ?? null,
+                    compatibility: refreshedEntry.compatibility ?? null,
+                };
             });
+            const normalizedSelected = [];
+            refreshedSelected.forEach((selected) => {
+                if (canSelectEntry(selected, normalizedSelected)) {
+                    normalizedSelected.push(normalizeSelectedLora(selected));
+                }
+            });
+            loraState.selected = normalizedSelected;
+            logDebug("Loaded available LoRAs.", { family, count: loras.length });
         } catch (error) {
-            const fallback = document.createElement("option");
-            fallback.value = "";
-            fallback.textContent = "No LoRAs available";
-            fallback.selected = true;
-            select.appendChild(fallback);
             loraState.available = [];
             console.warn("Failed to load LoRAs:", error);
         }
@@ -665,7 +849,7 @@
     function setSelectedAdapters(adapters) {
         if (!Array.isArray(adapters)) {
             loraState.selected = [];
-            renderLoraList();
+            renderLoraList({ forceLightningProfileEvent: true });
             return;
         }
 
@@ -715,15 +899,16 @@
                 text_encoder_strength: textEncoderStrength,
                 target,
                 runtime_profile: matched?.runtime_profile ?? adapter?.runtime_profile ?? null,
+                compatibility: matched?.compatibility ?? adapter?.compatibility ?? null,
             };
-            if (canSelectEntry(selected)) {
+            if (canSelectEntry(selected, mapped)) {
                 mapped.push(normalizeSelectedLora(selected));
             }
         });
         loraState.selected = mapped;
         loraState.weightMode = hasAdvancedStrength && supportsAdvancedWeights() ? "advanced" : "basic";
         logDebug("Hydrated selected adapters.", { count: mapped.length, adapters: mapped });
-        renderLoraList();
+        renderLoraList({ forceLightningProfileEvent: true });
     }
 
     async function initLoraUI({ apiBase, family, taskType = "" }) {
@@ -732,7 +917,7 @@
             return;
         }
         try {
-            const res = await fetch(resolveAssetUrl("lora_panel.html"));
+            const res = await fetch(resolveAssetUrl("lora_panel.html?v=2"));
             if (!res.ok) {
                 throw new Error(`Failed to load LoRA panel UI: ${res.status}`);
             }

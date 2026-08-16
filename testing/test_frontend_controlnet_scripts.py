@@ -267,6 +267,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         self.assertIn('isQwenImageFamily() ? "Qwen transformer" : "Strength"', lora_js)
         self.assertGreaterEqual(lora_js.count("if (!isQwenImageFamily())"), 2)
         self.assertIn('item.target = lora.target ?? "both"', lora_js)
+        self.assertIn('fetch(resolveAssetUrl("lora_panel.html?v=2"))', lora_js)
 
     def test_lora_panel_script_exposes_prompt_preset_words(self):
         lora_js = (ROOT / "frontend" / "components" / "lora_panel.js").read_text(encoding="utf-8")
@@ -1052,7 +1053,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         qwen_image_html = (ROOT / "frontend" / "qwen_image" / "text2img.html").read_text(
             encoding="utf-8"
         )
-        lora_tag = '<script src="../components/lora_panel.js?v=5"></script>'
+        lora_tag = '<script src="../components/lora_panel.js?v=6"></script>'
         preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
         lightning_settings_tag = '<script src="lightning_settings.js?v=2"></script>'
         controller_tag = '<script src="../generation_page.js?v=3"></script>'
@@ -1087,7 +1088,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         qwen_image_img2img_html = (ROOT / "frontend" / "qwen_image" / "img2img.html").read_text(
             encoding="utf-8"
         )
-        lora_tag = '<script src="../components/lora_panel.js?v=5"></script>'
+        lora_tag = '<script src="../components/lora_panel.js?v=6"></script>'
         preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
         lightning_settings_tag = '<script src="lightning_settings.js?v=2"></script>'
         controller_tag = '<script src="../generation_page.js?v=3"></script>'
@@ -1132,7 +1133,7 @@ class FrontendControlNetScriptTests(unittest.TestCase):
         qwen_image_inpaint_html = (ROOT / "frontend" / "qwen_image" / "inpaint.html").read_text(
             encoding="utf-8"
         )
-        lora_tag = '<script src="../components/lora_panel.js?v=5"></script>'
+        lora_tag = '<script src="../components/lora_panel.js?v=6"></script>'
         preset_tag = '<script src="../components/preset_panel.js?v=1"></script>'
         editor_tag = '<script src="../components/inpaint_editor.js?v=1"></script>'
         lightning_settings_tag = '<script src="lightning_settings.js?v=2"></script>'

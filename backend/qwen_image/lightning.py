@@ -200,19 +200,24 @@ def resolve_qwen_image_lightning_profile(
     lightning_adapters = [
         adapter for adapter in resolved_adapters if adapter.entry.runtime_profile is not None
     ]
+    standard_adapters = [
+        adapter for adapter in resolved_adapters if adapter.entry.runtime_profile is None
+    ]
 
     if len(lightning_adapters) > 1:
         adapter_ids = ", ".join(str(adapter.lora_id) for adapter in lightning_adapters)
-        raise ValueError(f"Qwen Image Lightning supports one adapter; received IDs: {adapter_ids}.")
+        raise ValueError(f"Qwen Image Lightning supports one Lightning adapter; received IDs: {adapter_ids}.")
 
     lightning_profile = (
         lightning_adapters[0].entry.runtime_profile if lightning_adapters else None
     )
     if lightning_profile is not None:
         lightning_adapter = lightning_adapters[0]
-        if len(resolved_adapters) > 1:
+        if len(standard_adapters) > 1:
+            adapter_ids = ", ".join(str(adapter.lora_id) for adapter in standard_adapters)
             raise ValueError(
-                f"Qwen Image Lightning adapter {lightning_adapter.lora_id} cannot be combined with standard LoRAs."
+                "Qwen Image Lightning supports at most one standard companion LoRA; "
+                f"received IDs: {adapter_ids}."
             )
         if normalized_task not in lightning_profile.supported_tasks:
             raise ValueError(
@@ -239,6 +244,29 @@ def resolve_qwen_image_lightning_profile(
                 f"Qwen Image Lightning adapter {lightning_adapter.lora_id} requires strength="
                 f"{lightning_profile.adapter_strength}; received {lightning_adapter.strength}."
             )
+        if standard_adapters:
+            companion_adapter = standard_adapters[0]
+            compatibility = companion_adapter.entry.compatibility
+            if compatibility is None:
+                raise ValueError(
+                    f"Qwen Image Lightning companion LoRA {companion_adapter.lora_id} "
+                    "has no declared compatibility metadata."
+                )
+            if model_variant not in compatibility.base_variants:
+                raise ValueError(
+                    f"Qwen Image Lightning companion LoRA {companion_adapter.lora_id} "
+                    f"compatibility is missing base variant '{model_variant}'."
+                )
+            if lightning_profile.kind not in compatibility.runtime_profile_kinds:
+                raise ValueError(
+                    f"Qwen Image Lightning companion LoRA {companion_adapter.lora_id} "
+                    f"compatibility is missing runtime profile kind '{lightning_profile.kind}'."
+                )
+            if normalized_task not in compatibility.supported_tasks:
+                raise ValueError(
+                    f"Qwen Image Lightning companion LoRA {companion_adapter.lora_id} "
+                    f"compatibility is missing task '{normalized_task}'."
+                )
 
     return QwenImageLightningResolution(
         adapters=resolved_adapters,

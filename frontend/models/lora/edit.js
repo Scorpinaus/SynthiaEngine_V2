@@ -14,6 +14,12 @@ const managePromptPresetsLink = document.getElementById("manage-prompt-presets")
 const adapterUseField = document.getElementById("adapter-use");
 const lightningProfilePanel = document.getElementById("lightning-profile-panel");
 const lightningStepsField = document.getElementById("lightning-steps");
+const lightningCompatibilityPanel = document.getElementById("lightning-compatibility-panel");
+const lightningCompatibilityEnabledField = document.getElementById("lightning-compatibility-enabled");
+const lightningCompatibilityTasksField = document.getElementById("lightning-compatibility-tasks");
+const lightningCompatibilityTaskFields = Array.from(
+    document.querySelectorAll('input[name="lightning-compatibility-task"]')
+);
 const hubCoordinatesPanel = document.getElementById("hub-coordinates-panel");
 const weightNameField = document.getElementById("weight-name-field");
 const subfolderField = document.getElementById("subfolder-field");
@@ -68,6 +74,43 @@ function isLightningSelected() {
     return adapterUseField?.value === "qwen_image_lightning";
 }
 
+function isLightningCompatibilityEligible() {
+    return !isLightningSelected()
+        && familyField?.value === "qwen-image"
+        && typeField?.value === "lora";
+}
+
+function selectedLightningCompatibilityTasks() {
+    return lightningCompatibilityTaskFields
+        .filter((field) => field.checked)
+        .map((field) => field.value);
+}
+
+function syncLightningCompatibility() {
+    const isEligible = isLightningCompatibilityEligible();
+    if (lightningCompatibilityPanel) {
+        lightningCompatibilityPanel.hidden = !isEligible;
+    }
+    if (lightningCompatibilityEnabledField) {
+        lightningCompatibilityEnabledField.disabled = !isEligible;
+        if (!isEligible) {
+            lightningCompatibilityEnabledField.checked = false;
+            lightningCompatibilityTaskFields.forEach((field) => {
+                field.checked = false;
+            });
+        }
+    }
+    if (lightningCompatibilityTasksField) {
+        lightningCompatibilityTasksField.disabled = !isEligible || !lightningCompatibilityEnabledField?.checked;
+    }
+    if (isEligible && lightningCompatibilityEnabledField?.checked && !selectedLightningCompatibilityTasks().length) {
+        const textToImageTask = lightningCompatibilityTaskFields.find((field) => field.value === "text2img");
+        if (textToImageTask) {
+            textToImageTask.checked = true;
+        }
+    }
+}
+
 function syncAdapterUse() {
     const isLightning = isLightningSelected();
     if (lightningProfilePanel) {
@@ -79,6 +122,7 @@ function syncAdapterUse() {
     }
     familyField.disabled = isLightning;
     typeField.disabled = isLightning;
+    syncLightningCompatibility();
 }
 
 function buildRuntimeProfile() {
@@ -94,6 +138,34 @@ function buildRuntimeProfile() {
         adapter_strength: 1.0,
         supported_tasks: ["text2img", "img2img", "inpaint"],
     };
+}
+
+function buildLightningCompatibility() {
+    if (!isLightningCompatibilityEligible() || !lightningCompatibilityEnabledField?.checked) {
+        return null;
+    }
+    const supportedTasks = selectedLightningCompatibilityTasks();
+    if (!supportedTasks.length) {
+        return null;
+    }
+    return {
+        base_variants: ["qwen-image-2512"],
+        runtime_profile_kinds: ["qwen_image_lightning"],
+        supported_tasks: supportedTasks,
+    };
+}
+
+function hydrateLightningCompatibility(compatibility) {
+    const supportedTasks = Array.isArray(compatibility?.supported_tasks)
+        ? compatibility.supported_tasks
+        : [];
+    if (lightningCompatibilityEnabledField) {
+        lightningCompatibilityEnabledField.checked = Boolean(compatibility);
+    }
+    lightningCompatibilityTaskFields.forEach((field) => {
+        field.checked = supportedTasks.includes(field.value);
+    });
+    syncLightningCompatibility();
 }
 
 async function selectLocalFile() {
@@ -146,6 +218,7 @@ function fillForm(entry) {
     }
     syncFilePathMode();
     syncAdapterUse();
+    hydrateLightningCompatibility(entry.compatibility);
 }
 
 async function loadLora() {
@@ -185,6 +258,7 @@ function buildPayload() {
         file_path: filePathField.value.trim(),
         name: nameValue || null,
         runtime_profile: buildRuntimeProfile(),
+        compatibility: buildLightningCompatibility(),
         weight_name: isHub ? weightNameField.value.trim() || null : null,
         subfolder: isHub ? subfolderField.value.trim() || null : null,
         revision: isHub ? revisionField.value.trim() || null : null,
@@ -245,6 +319,10 @@ form.addEventListener("submit", async (event) => {
 
 locationField?.addEventListener("change", () => syncFilePathMode({ resetLocal: true }));
 adapterUseField?.addEventListener("change", syncAdapterUse);
+familyField?.addEventListener("change", syncLightningCompatibility);
+typeField?.addEventListener("change", syncLightningCompatibility);
+lightningCompatibilityEnabledField?.addEventListener("change", syncLightningCompatibility);
+lightningCompatibilityTasksField?.addEventListener("change", syncLightningCompatibility);
 webFileInput?.addEventListener("input", () => {
     if (locationField?.value === "hub") {
         filePathField.value = webFileInput.value.trim();

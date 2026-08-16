@@ -73,6 +73,25 @@ class LoraRuntimeProfile(BaseModel):
         return supported_tasks
 
 
+class LoraCompatibility(BaseModel):
+    """Declared support for a standard LoRA in a specialized runtime profile."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    base_variants: list[Literal["qwen-image-2512"]]
+    runtime_profile_kinds: list[Literal["qwen_image_lightning"]]
+    supported_tasks: list[Literal["text2img", "img2img", "inpaint"]]
+
+    @field_validator("base_variants", "runtime_profile_kinds", "supported_tasks")
+    @classmethod
+    def validate_unique_nonempty_list(cls, value: list[str], info) -> list[str]:
+        if not value:
+            raise ValueError(f"LoRA compatibility {info.field_name} cannot be empty.")
+        if len(value) != len(set(value)):
+            raise ValueError(f"LoRA compatibility {info.field_name} cannot contain duplicates.")
+        return value
+
+
 class LoraRegistryEntry(BaseModel):
     lora_id: int
     lora_model_family: str
@@ -82,20 +101,28 @@ class LoraRegistryEntry(BaseModel):
     name: str | None = None
     prompt_presets: list[LoraPromptPreset] = Field(default_factory=list)
     runtime_profile: LoraRuntimeProfile | None = None
+    compatibility: LoraCompatibility | None = None
     weight_name: str | None = None
     subfolder: str | None = None
     revision: str | None = None
 
     @model_validator(mode="after")
-    def validate_runtime_profile(self) -> LoraRegistryEntry:
-        if self.runtime_profile is None:
-            return self
-        if self.lora_model_family != "qwen-image":
-            raise ValueError("Qwen Image Lightning requires lora_model_family 'qwen-image'.")
-        if self.lora_type != "lora":
-            raise ValueError("Qwen Image Lightning requires lora_type 'lora'.")
-        if self.lora_location == "hub" and not (self.weight_name or "").strip():
-            raise ValueError("Hub Qwen Image Lightning entries require weight_name.")
+    def validate_runtime_profile_and_compatibility(self) -> LoraRegistryEntry:
+        if self.runtime_profile is not None:
+            if self.lora_model_family != "qwen-image":
+                raise ValueError("Qwen Image Lightning requires lora_model_family 'qwen-image'.")
+            if self.lora_type != "lora":
+                raise ValueError("Qwen Image Lightning requires lora_type 'lora'.")
+            if self.lora_location == "hub" and not (self.weight_name or "").strip():
+                raise ValueError("Hub Qwen Image Lightning entries require weight_name.")
+
+        if self.compatibility is not None:
+            if self.lora_model_family != "qwen-image":
+                raise ValueError("LoRA compatibility requires lora_model_family 'qwen-image'.")
+            if self.lora_type != "lora":
+                raise ValueError("LoRA compatibility requires lora_type 'lora'.")
+            if self.runtime_profile is not None:
+                raise ValueError("LoRA compatibility is not allowed on Lightning runtime-profile entries.")
         return self
 
 
@@ -115,6 +142,7 @@ class LoraRegistryRow(Base):
     name: Mapped[str | None] = mapped_column(String(256), nullable=True)
     prompt_presets_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     runtime_profile_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    compatibility_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     weight_name: Mapped[str | None] = mapped_column(String(512), nullable=True)
     subfolder: Mapped[str | None] = mapped_column(String(512), nullable=True)
     revision: Mapped[str | None] = mapped_column(String(512), nullable=True)
@@ -178,6 +206,21 @@ def _runtime_profile_from_json(value: str | None) -> LoraRuntimeProfile | None:
         return None
 
 
+def _compatibility_to_json(value: LoraCompatibility | dict[str, Any] | None) -> str | None:
+    if value is None:
+        return None
+    return json.dumps(LoraCompatibility.model_validate(value).model_dump(), ensure_ascii=True)
+
+
+def _compatibility_from_json(value: str | None) -> LoraCompatibility | None:
+    if not value:
+        return None
+    try:
+        return LoraCompatibility.model_validate(json.loads(value))
+    except Exception:
+        return None
+
+
 def _row_to_entry(row: LoraRegistryRow) -> LoraRegistryEntry:
     return LoraRegistryEntry(
         lora_id=row.lora_id,
@@ -188,6 +231,7 @@ def _row_to_entry(row: LoraRegistryRow) -> LoraRegistryEntry:
         name=row.name,
         prompt_presets=_prompt_presets_from_json(row.prompt_presets_json),
         runtime_profile=_runtime_profile_from_json(row.runtime_profile_json),
+        compatibility=_compatibility_from_json(row.compatibility_json),
         weight_name=row.weight_name,
         subfolder=row.subfolder,
         revision=row.revision,
@@ -204,6 +248,7 @@ def init_lora_registry_db() -> None:
             )
         for column_name, column_sql in (
             ("runtime_profile_json", "TEXT"),
+            ("compatibility_json", "TEXT"),
             ("weight_name", "VARCHAR(512)"),
             ("subfolder", "VARCHAR(512)"),
             ("revision", "VARCHAR(512)"),
@@ -259,6 +304,7 @@ def _migrate_json_if_needed() -> None:
                             name=lora_entry.name,
                             prompt_presets_json=_prompt_presets_to_json(lora_entry.prompt_presets),
                             runtime_profile_json=_runtime_profile_to_json(lora_entry.runtime_profile),
+                            compatibility_json=_compatibility_to_json(lora_entry.compatibility),
                             weight_name=lora_entry.weight_name,
                             subfolder=lora_entry.subfolder,
                             revision=lora_entry.revision,
@@ -304,6 +350,7 @@ def save_lora_registry(entries: list[LoraRegistryEntry]) -> None:
                     name=entry.name,
                     prompt_presets_json=_prompt_presets_to_json(entry.prompt_presets),
                     runtime_profile_json=_runtime_profile_to_json(entry.runtime_profile),
+                    compatibility_json=_compatibility_to_json(entry.compatibility),
                     weight_name=entry.weight_name,
                     subfolder=entry.subfolder,
                     revision=entry.revision,
@@ -329,6 +376,7 @@ def add_lora(entry: LoraRegistryEntry) -> LoraRegistryEntry:
             name=entry.name,
             prompt_presets_json=_prompt_presets_to_json(entry.prompt_presets),
             runtime_profile_json=_runtime_profile_to_json(entry.runtime_profile),
+            compatibility_json=_compatibility_to_json(entry.compatibility),
             weight_name=entry.weight_name,
             subfolder=entry.subfolder,
             revision=entry.revision,
@@ -357,6 +405,7 @@ def update_lora_entry(lora_id: int, updates: dict[str, object]) -> LoraRegistryE
         "name",
         "prompt_presets",
         "runtime_profile",
+        "compatibility",
         "weight_name",
         "subfolder",
         "revision",
@@ -389,6 +438,8 @@ def update_lora_entry(lora_id: int, updates: dict[str, object]) -> LoraRegistryE
                 row.prompt_presets_json = _prompt_presets_to_json(candidate.prompt_presets)
             elif key == "runtime_profile":
                 row.runtime_profile_json = _runtime_profile_to_json(candidate.runtime_profile)
+            elif key == "compatibility":
+                row.compatibility_json = _compatibility_to_json(candidate.compatibility)
             else:
                 setattr(row, key, validated_data[key])
         session.commit()

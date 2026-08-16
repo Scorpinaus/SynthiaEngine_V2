@@ -215,7 +215,7 @@ Notes:
 - `prompt_presets` is optional on create/update and defaults to `[]`.
 - Each prompt preset has a non-empty `name` and a non-empty `words` list.
 - Preset words are prompt fragments intended for frontend prompt composition; LoRA adapter loading still uses the existing `lora_adapters` workflow payload.
-- Backward-compatible optional metadata fields are `runtime_profile`, `weight_name`, `subfolder`, and `revision`. Existing entries return `null` for these fields.
+- Backward-compatible optional metadata fields are `runtime_profile`, `compatibility`, `weight_name`, `subfolder`, and `revision`. Existing entries return `null` for these fields.
 - `weight_name`, `subfolder`, and `revision` are Hub source coordinates. Standard Hub entries may omit all three.
 - `runtime_profile` currently supports only this exact Qwen Image Lightning profile:
 ```json
@@ -230,6 +230,18 @@ Notes:
 }
 ```
 - Lightning profiles require `lora_model_family: "qwen-image"` and `lora_type: "lora"`. `steps` is `4` or `8`; the other profile values are fixed as shown. A Hub Lightning entry requires `weight_name`; a local Lightning entry does not.
+- `compatibility` is optional operator-declared metadata for a standard Qwen Image LoRA. It has this exact shape:
+```json
+{
+  "base_variants": ["qwen-image-2512"],
+  "runtime_profile_kinds": ["qwen_image_lightning"],
+  "supported_tasks": ["text2img", "img2img", "inpaint"]
+}
+```
+- All three `compatibility` fields are required when `compatibility` is not `null`. Each field is a non-empty list with no duplicate values. Unknown fields are rejected. The only allowed values are `qwen-image-2512`, `qwen_image_lightning`, and `text2img`, `img2img`, or `inpaint` respectively. `supported_tasks` can declare a non-empty subset of its allowed values.
+- `compatibility` requires `lora_model_family: "qwen-image"` and `lora_type: "lora"`. It is not allowed on a Lightning entry with `runtime_profile`.
+- Existing registry rows remain valid and return `compatibility: null`. Send `compatibility: null` in `PATCH /lora-models/{lora_id}` to clear declared compatibility.
+- `compatibility` is an operator declaration. It is not a quality guarantee for a mixed LoRA stack.
 
 `POST /lora-models`
 - Creates a LoRA entry.
@@ -260,7 +272,7 @@ Notes:
 - Error `404`: missing id in `{"detail": "LoRA with id <lora_id> not found."}`
 
 `PATCH /lora-models/{lora_id}`
-- Updates editable fields only: `lora_model_family`, `lora_type`, `lora_location`, `file_path`, `name`, `prompt_presets`, `runtime_profile`, `weight_name`, `subfolder`, and `revision`.
+- Updates editable fields only: `lora_model_family`, `lora_type`, `lora_location`, `file_path`, `name`, `prompt_presets`, `runtime_profile`, `compatibility`, `weight_name`, `subfolder`, and `revision`.
 - `lora_id` is not editable.
 - Request shape:
 ```json
@@ -292,7 +304,7 @@ Notes:
 Compatibility guarantees:
 - Existing `GET /lora-models` and `POST /lora-models` consumers are backward-compatible.
 - Existing list/create payload fields are unchanged; `prompt_presets` is an additive response/request field with an empty-list default.
-- Lightning runtime metadata and Hub source coordinates are additive nullable request/response fields.
+- Lightning runtime metadata, declarative compatibility metadata, and Hub source coordinates are additive nullable request/response fields.
 - Existing list/create status codes remain unchanged (`200` success, `400` domain/validation error for create).
 
 ### Preset registry endpoints
@@ -1109,9 +1121,28 @@ Qwen-Image LoRA input notes:
 }
 ```
 
+Mixed Lightning request example:
+
+```json
+{
+  "lora_adapters": [
+    { "lora_id": 101, "strength": 1.0, "target": "both" },
+    { "lora_id": 102, "strength": 0.35, "target": "both" }
+  ],
+  "steps": 4,
+  "true_cfg_scale": 1.0
+}
+```
+
+The first adapter is Lightning and the second is its compatible companion. The
+same request is valid with the two adapter entries reversed. The runtime keeps
+the requested order.
+
 - `lora_adapters` is optional for `qwen-image.text2img`,
   `qwen-image.img2img`, and `qwen-image.inpaint`. `null` or an empty list keeps
   the baseline behavior.
+- The existing `lora_adapters` list schema is unchanged. No dependency change
+  is required.
 - `lora_id` is required. It identifies one entry in `/lora-models`.
 - `strength` defaults to `0.8` and must be from `0.0` through `1.0`.
 - `target` is optional legacy input. Its only accepted value is `"both"`. For
@@ -1128,34 +1159,66 @@ Qwen-Image LoRA input notes:
   Qwen Image Lightning adapter. It supports `qwen-image.text2img`,
   `qwen-image.img2img`, and `qwen-image.inpaint`. The selected model must be
   the `qwen-image-2512` base variant.
-- Lightning uses one adapter only. Do not combine it with a standard or style
-  LoRA. The adapter `target` and `strength` must be `"both"` and `1.0`.
-  Request `steps` must exactly match the profile value (`4` or `8`), and
-  `true_cfg_scale` must be `1.0`.
+- A mixed stack can use one Lightning adapter and at most one explicitly
+  compatible standard Qwen Image companion LoRA. Both request orders work and
+  remain ordered at runtime. The companion `compatibility` must include
+  `qwen-image-2512`, `qwen_image_lightning`, and the normalized current task
+  (`text2img`, `img2img`, or `inpaint`). Missing or mismatched metadata fails
+  before pipeline load.
+- Two Lightning adapters and two or more companions with Lightning are not
+  supported. A non-Qwen entry, a non-standard LoRA type, Qwen Image Edit or
+  another base variant, and a non-transformer target are not supported in a
+  mixed stack. Standard-only multi-LoRA requests keep their existing behavior.
+- The Lightning adapter `target` and `strength` must be `"both"` and `1.0`.
+  The companion strength is user controlled. Request `steps` must exactly
+  match the profile value (`4` or `8`), and `true_cfg_scale` must be `1.0`.
 - Lightning uses the fixed `qwen_image_lightning_shift3` scheduler profile.
-  The runtime does not change the requested step count or CFG value.
+  The fixed 4- or 8-step profile, CFG `1.0`, and shift-3 scheduler remain
+  unchanged.
 - Image-to-image and inpaint Lightning use is experimental. The published
   weights declare text-to-image and are not Qwen-Image-Edit Lightning weights.
   Image `strength` stays user controlled; Diffusers can shorten the effective
   denoising schedule while the runtime still sends the nominal profile steps.
+- Mixed Lightning use is experimental. Official upstream examples do not
+  guarantee quality with arbitrary companions. GPU quality acceptance has not
+  yet run.
 - Hub entries can provide `weight_name`, `subfolder`, and `revision`. The
   runtime passes non-empty values to `load_lora_weights(...)`; local entries
   keep the standard local load call.
+
+Qwen-Image LoRA user interface:
+
+- The Add and Edit LoRA pages show compatibility only for a standard Qwen
+  Image LoRA. Add starts disabled and selects `text2img` when enabled. Edit
+  restores declared task selections. The option is not available for Lightning
+  or other model families.
+- The Qwen pages label Lightning and compatible companions. They disable
+  invalid choices with a reason and show `Experimental stack: Lightning + 1
+  LoRA` for a mixed stack.
+- Lightning strength is locked at `1.0`. Companion strength stays enabled.
+  Removing only the companion keeps Lightning settings. Removing Lightning
+  restores the earlier steps and True CFG values.
+- A mixed preset restores its adapters in order and sends one profile event.
 
 Qwen-Image LoRA runtime lifecycle:
 
 1. Resolve and validate selected adapters before pipeline load. For Lightning,
    configure the fixed shift-3 scheduler after pipeline load.
 2. Call `load_lora_weights(...)` with a unique name for each selected adapter.
-3. Call `set_adapters(...)` once with the selected names and strengths.
-4. Write a LoRA coverage report for the transformer.
+3. Call `set_adapters(...)` once with ordered names and weights. The runtime
+   never fuses adapters.
+4. Write a LoRA coverage report for both transformer adapters. A mixed stack
+   requires joint activation support and verifies both active names when the
+   pipeline supports that check.
 5. Use the same active adapters for all images in the request.
 6. Call `unload_lora_weights()` in `finally`.
 7. Call `release_pipeline` after adapter cleanup.
 
-The cleanup path runs after success, adapter-load failure, generation failure,
-or cancellation. If adapter unload fails, the runtime logs the error and still
-releases the pipeline.
+The cleanup path unloads once in `finally` before release. It runs after
+success, a partial second adapter load, active-adapter verification failure,
+inference failure, or cancellation. If adapter unload fails, the runtime logs
+the error and still releases the pipeline. The next base request has no adapter
+or Lightning scheduler state.
 
 Qwen-Image SDNQ compatibility notes:
 

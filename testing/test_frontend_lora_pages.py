@@ -120,6 +120,38 @@ class FrontendLoraPageTests(unittest.TestCase):
         self.assertIn("revisionField.value = entry.revision || \"\"", js)
         self.assertIn("runtime_profile: buildRuntimeProfile()", js)
 
+    def test_lora_add_and_edit_pages_include_experimental_lightning_compatibility_controls(self):
+        for page_name in ("add.html", "edit.html"):
+            html = (ROOT / "frontend" / "models" / "lora" / page_name).read_text(encoding="utf-8")
+            self.assertIn('id="lightning-compatibility-panel"', html)
+            self.assertIn('Experimental Lightning compatibility', html)
+            self.assertIn('id="lightning-compatibility-enabled"', html)
+            self.assertIn('id="lightning-compatibility-tasks" disabled', html)
+            self.assertIn('name="lightning-compatibility-task" type="checkbox" value="text2img"', html)
+            self.assertIn('name="lightning-compatibility-task" type="checkbox" value="img2img"', html)
+            self.assertIn('name="lightning-compatibility-task" type="checkbox" value="inpaint"', html)
+
+    def test_lora_compatibility_scripts_gate_payloads_and_preserve_task_subsets(self):
+        add_js = (ROOT / "frontend" / "models" / "lora" / "add.js").read_text(encoding="utf-8")
+        edit_js = (ROOT / "frontend" / "models" / "lora" / "edit.js").read_text(encoding="utf-8")
+        for js in (add_js, edit_js):
+            self.assertIn("function isLightningCompatibilityEligible()", js)
+            self.assertIn('familyField?.value === "qwen-image"', js)
+            self.assertIn('typeField?.value === "lora"', js)
+            self.assertIn("function syncLightningCompatibility()", js)
+            self.assertIn('lightningCompatibilityPanel.hidden = !isEligible', js)
+            self.assertIn('lightningCompatibilityEnabledField.checked = false', js)
+            self.assertIn('field.value === "text2img"', js)
+            self.assertIn("function buildLightningCompatibility()", js)
+            self.assertIn('base_variants: ["qwen-image-2512"]', js)
+            self.assertIn('runtime_profile_kinds: ["qwen_image_lightning"]', js)
+            self.assertIn("supported_tasks: supportedTasks", js)
+            self.assertIn("compatibility: buildLightningCompatibility()", js)
+            self.assertIn("return null;", js)
+        self.assertIn("function hydrateLightningCompatibility(compatibility)", edit_js)
+        self.assertIn("compatibility.supported_tasks", edit_js)
+        self.assertIn("hydrateLightningCompatibility(entry.compatibility)", edit_js)
+
     def test_nav_includes_separate_base_and_lora_links(self):
         nav_js = (ROOT / "frontend" / "components" / "nav_bar.js").read_text(encoding="utf-8")
         self.assertIn('{ href: "models/base/registry.html", label: "Base Models" }', nav_js)

@@ -93,6 +93,7 @@ const elements = new Map();
     "lora-weight-mode-advanced",
     "lora-list",
     "lora-empty",
+    "lora-stack-status",
     "lora-select",
 ].forEach((id) => elements.set(id, new FakeElement()));
 
@@ -122,10 +123,27 @@ global.fetch = async (url) => {
         return {
             ok: true,
             json: async () => [
-                { lora_id: 101, name: "Qwen Detail" },
-                { lora_id: 102, name: "Qwen Style" },
+                { lora_id: 101, name: "Qwen Plain" },
+                {
+                    lora_id: 102,
+                    name: "Qwen Compatible",
+                    compatibility: {
+                        base_variants: ["qwen-image-2512"],
+                        runtime_profile_kinds: ["qwen_image_lightning"],
+                        supported_tasks: ["text2img", "img2img", "inpaint"],
+                    },
+                },
                 {
                     lora_id: 103,
+                    name: "Qwen Text Only",
+                    compatibility: {
+                        base_variants: ["qwen-image-2512"],
+                        runtime_profile_kinds: ["qwen_image_lightning"],
+                        supported_tasks: ["text2img"],
+                    },
+                },
+                {
+                    lora_id: 104,
                     name: "Lightning 4",
                     runtime_profile: {
                         kind: "qwen_image_lightning",
@@ -134,7 +152,7 @@ global.fetch = async (url) => {
                     },
                 },
                 {
-                    lora_id: 104,
+                    lora_id: 105,
                     name: "Lightning 8",
                     runtime_profile: {
                         kind: "qwen_image_lightning",
@@ -161,11 +179,36 @@ function lastLightningEvent() {
     return events.filter((event) => event.type === "qwen-lightning-profile-changed").at(-1);
 }
 
+function lightningEventCount() {
+    return events.filter((event) => event.type === "qwen-lightning-profile-changed").length;
+}
+
+function optionFor(loraId) {
+    return elements.get("lora-select").children.find((option) => option.value === String(loraId));
+}
+
+function addSelected(loraId) {
+    const select = elements.get("lora-select");
+    select.value = String(loraId);
+    elements.get("add-lora").listeners.click();
+}
+
+async function initQwen(taskType) {
+    await window.LoraPanel.init({ apiBase: "/api", family: "qwen-image", taskType });
+    window.LoraPanel.setSelectedAdapters([]);
+}
+
 const source = fs.readFileSync("frontend/components/lora_panel.js", "utf8");
 vm.runInThisContext(source, { filename: "lora_panel.js" });
 
 (async () => {
-    await window.LoraPanel.init({ apiBase: "/api", family: "qwen-image" });
+    await initQwen("qwen-image.text2img");
+    const stackStatus = elements.get("lora-stack-status");
+    assert.equal(stackStatus.classList.contains("is-hidden"), true);
+    assert.match(optionFor(104).textContent, /Lightning · 4 steps/);
+    assert.match(optionFor(105).textContent, /Lightning · 8 steps/);
+    assert.match(optionFor(102).textContent, /Lightning-compatible · Qwen Image 2512/);
+
     window.LoraPanel.setSelectedAdapters([
         { lora_id: 101, strength: 0.65, target: "unet" },
         { lora_id: 102, strength: 0.35, target: "text_encoder" },
@@ -176,11 +219,14 @@ vm.runInThisContext(source, { filename: "lora_panel.js" });
         { lora_id: 102, strength: 0.35 },
     ]);
     assert.deepEqual(window.LoraPanel.getSummary(), {
-        available: 4,
+        available: 5,
         selected: 2,
         family: "qwen-image",
         weightMode: "basic",
     });
+    assert.equal(optionFor(104).disabled, true);
+    assert.equal(optionFor(104).title, "Remove extra standard LoRAs before selecting Lightning");
+    assert.equal(stackStatus.classList.contains("is-hidden"), true);
 
     const qwenItems = elements.get("lora-list").children;
     assert.equal(qwenItems.length, 2);
@@ -200,10 +246,11 @@ vm.runInThisContext(source, { filename: "lora_panel.js" });
     window.LoraPanel.setSelectedAdapters([]);
     assert.deepEqual(window.LoraPanel.getSelectedAdapters(), []);
     assert.equal(elements.get("lora-empty").classList.contains("is-hidden"), false);
+    assert.equal(stackStatus.classList.contains("is-hidden"), true);
 
-    window.LoraPanel.setSelectedAdapters([{ lora_id: 103, strength: 0.25 }]);
+    addSelected(104);
     assert.deepEqual(window.LoraPanel.getSelectedAdapters(), [
-        { lora_id: 103, strength: 1 },
+        { lora_id: 104, strength: 1 },
     ]);
     const lightning4 = descendants(elements.get("lora-list").children[0]);
     assert.equal(
@@ -215,36 +262,127 @@ vm.runInThisContext(source, { filename: "lora_panel.js" });
         true,
     );
     assert.equal(lastLightningEvent().detail.profile.steps, 4);
+    assert.equal(optionFor(105).disabled, true);
+    assert.equal(optionFor(105).title, "Only one Lightning adapter is allowed");
+    assert.equal(optionFor(101).disabled, true);
+    assert.equal(optionFor(101).title, "No Lightning compatibility metadata");
+    assert.equal(optionFor(102).disabled, false);
+    assert.equal(stackStatus.classList.contains("is-hidden"), true);
 
-    window.LoraPanel.setSelectedAdapters([{ lora_id: 104, strength: 0.4 }]);
-    const lightning8 = descendants(elements.get("lora-list").children[0]);
+    addSelected(102);
+    assert.deepEqual(window.LoraPanel.getSelectedAdapters(), [
+        { lora_id: 104, strength: 1 },
+        { lora_id: 102, strength: 0.8 },
+    ]);
+    assert.equal(optionFor(103).disabled, true);
+    assert.equal(optionFor(103).title, "Only one Lightning-compatible companion is allowed");
+    assert.equal(stackStatus.textContent, "Experimental stack: Lightning + 1 LoRA");
+    assert.equal(stackStatus.classList.contains("is-hidden"), false);
+    const mixedLightning = descendants(elements.get("lora-list").children[0]);
+    const mixedCompanion = descendants(elements.get("lora-list").children[1]);
     assert.equal(
-        lightning8.find((element) => hasClass(element, "lora-profile-label")).textContent,
-        "Lightning · 8 steps",
+        mixedLightning.find((element) => hasClass(element, "lora-profile-label")).textContent,
+        "Lightning · 4 steps",
     );
-    assert.equal(lastLightningEvent().detail.profile.steps, 8);
-    window.LoraPanel.setSelectedAdapters([{ lora_id: 101, strength: 0.5 }]);
+    assert.equal(
+        mixedCompanion.find((element) => hasClass(element, "lora-profile-label")).textContent,
+        "Lightning-compatible · Qwen Image 2512",
+    );
+    assert.equal(
+        mixedLightning.find((element) => element.tagName === "INPUT" && element.type === "range").disabled,
+        true,
+    );
+    const companionSlider = mixedCompanion.find(
+        (element) => element.tagName === "INPUT" && element.type === "range",
+    );
+    assert.equal(companionSlider.disabled, false);
+    companionSlider.value = "0.5";
+    companionSlider.listeners.input({ target: companionSlider });
+    assert.deepEqual(window.LoraPanel.getSelectedAdapters(), [
+        { lora_id: 104, strength: 1 },
+        { lora_id: 102, strength: 0.5 },
+    ]);
+
+    const eventsBeforeCompanionRemoval = lightningEventCount();
+    descendants(elements.get("lora-list").children[1])
+        .find((element) => hasClass(element, "lora-remove"))
+        .listeners.click();
+    assert.deepEqual(window.LoraPanel.getSelectedAdapters(), [{ lora_id: 104, strength: 1 }]);
+    assert.equal(optionFor(103).disabled, false);
+    assert.equal(stackStatus.classList.contains("is-hidden"), true);
+    assert.equal(lightningEventCount(), eventsBeforeCompanionRemoval);
+
+    addSelected(102);
+    assert.equal(stackStatus.classList.contains("is-hidden"), false);
+    const eventsBeforeLightningRemoval = lightningEventCount();
+    descendants(elements.get("lora-list").children[0])
+        .find((element) => hasClass(element, "lora-remove"))
+        .listeners.click();
+    assert.deepEqual(window.LoraPanel.getSelectedAdapters(), [{ lora_id: 102, strength: 0.8 }]);
+    assert.equal(stackStatus.classList.contains("is-hidden"), true);
+    assert.equal(
+        descendants(elements.get("lora-list").children[0])
+            .find((element) => element.tagName === "INPUT" && element.type === "range").disabled,
+        false,
+    );
+    assert.equal(lightningEventCount(), eventsBeforeLightningRemoval + 1);
     assert.equal(lastLightningEvent().detail.profile, null);
 
+    await initQwen("qwen-image.img2img");
+    window.LoraPanel.setSelectedAdapters([{ lora_id: 102, strength: 0.5 }]);
+    assert.equal(optionFor(104).disabled, false);
+    addSelected(104);
+    assert.deepEqual(window.LoraPanel.getSelectedAdapters(), [
+        { lora_id: 102, strength: 0.5 },
+        { lora_id: 104, strength: 1 },
+    ]);
+    assert.equal(lastLightningEvent().detail.profile.steps, 4);
     await window.LoraPanel.init({
         apiBase: "/api",
         family: "qwen-image",
         taskType: "qwen-image.img2img",
     });
-    const options = elements.get("lora-select").children;
-    assert.equal(options.find((option) => option.value === "103").disabled, false);
-    window.LoraPanel.setSelectedAdapters([{ lora_id: 103, strength: 1 }]);
-    assert.deepEqual(window.LoraPanel.getSelectedAdapters(), [{ lora_id: 103, strength: 1 }]);
+    assert.deepEqual(window.LoraPanel.getSelectedAdapters(), [
+        { lora_id: 102, strength: 0.5 },
+        { lora_id: 104, strength: 1 },
+    ]);
+
+    await initQwen("qwen-image.img2img");
+    window.LoraPanel.setSelectedAdapters([{ lora_id: 103, strength: 0.5 }]);
+    assert.equal(optionFor(104).disabled, true);
+    assert.equal(
+        optionFor(104).title,
+        "Selected standard LoRA is not Lightning-compatible for this task",
+    );
+
+    for (const [taskType, compatibilityTask, textOnlyEnabled] of [
+        ["qwen-image.text2img", "text2img", true],
+        ["qwen-image.img2img", "img2img", false],
+        ["qwen-image.inpaint", "inpaint", false],
+    ]) {
+        await initQwen(taskType);
+        addSelected(104);
+        assert.equal(optionFor(101).disabled, true);
+        assert.equal(optionFor(101).title, "No Lightning compatibility metadata");
+        assert.equal(optionFor(102).disabled, false);
+        assert.equal(optionFor(103).disabled, !textOnlyEnabled);
+        if (!textOnlyEnabled) {
+            assert.equal(optionFor(103).title, `Not compatible with Qwen task ${compatibilityTask}`);
+        }
+    }
 
     await window.LoraPanel.init({ apiBase: "/api", family: "sdxl" });
     window.LoraPanel.setSelectedAdapters([
         { lora_id: 101, strength: 0.5, target: "unet" },
+        { lora_id: 102, strength: 0.25, target: "text_encoder" },
     ]);
     assert.deepEqual(window.LoraPanel.getSelectedAdapters(), [
         { lora_id: 101, strength: 0.5, target: "unet" },
+        { lora_id: 102, strength: 0.25, target: "text_encoder" },
     ]);
     const sdxlRendered = descendants(elements.get("lora-list").children[0]);
     assert.equal(sdxlRendered.filter((element) => hasClass(element, "lora-target")).length, 1);
+    assert.equal(stackStatus.classList.contains("is-hidden"), true);
 })();
 """
 

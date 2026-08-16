@@ -50,6 +50,7 @@ def test_lora_list_and_create_contract_compatible(tmp_path):
         **payload,
         "prompt_presets": [],
         "runtime_profile": None,
+        "compatibility": None,
         "weight_name": None,
         "subfolder": None,
         "revision": None,
@@ -298,3 +299,87 @@ def test_lightning_api_normalizes_legacy_text2img_supported_tasks(tmp_path):
     assert response.json()["runtime_profile"]["supported_tasks"] == [
         "text2img", "img2img", "inpaint"
     ]
+
+
+def test_qwen_image_compatibility_create_get_and_patch_contract(tmp_path):
+    _reset_lora_registry_paths(tmp_path)
+    client = TestClient(app)
+    compatibility = {
+        "base_variants": ["qwen-image-2512"],
+        "runtime_profile_kinds": ["qwen_image_lightning"],
+        "supported_tasks": ["text2img", "img2img", "inpaint"],
+    }
+    payload = {
+        "lora_id": 110,
+        "lora_model_family": "qwen-image",
+        "lora_type": "lora",
+        "lora_location": "local",
+        "file_path": "C:/loras/companion.safetensors",
+        "compatibility": compatibility,
+    }
+
+    created = client.post("/lora-models", json=payload)
+    assert created.status_code == 200
+    assert created.json()["compatibility"] == compatibility
+
+    found = client.get("/lora-models/110")
+    assert found.status_code == 200
+    assert found.json()["compatibility"] == compatibility
+
+    updated = client.patch(
+        "/lora-models/110",
+        json={"compatibility": {**compatibility, "supported_tasks": ["text2img"]}},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["compatibility"]["supported_tasks"] == ["text2img"]
+
+    cleared = client.patch("/lora-models/110", json={"compatibility": None})
+    assert cleared.status_code == 200
+    assert cleared.json()["compatibility"] is None
+
+
+def test_qwen_image_compatibility_rejects_invalid_contract_values(tmp_path):
+    _reset_lora_registry_paths(tmp_path)
+    client = TestClient(app)
+    compatibility = {
+        "base_variants": ["qwen-image-2512"],
+        "runtime_profile_kinds": ["qwen_image_lightning"],
+        "supported_tasks": ["text2img"],
+    }
+    payload = {
+        "lora_id": 111,
+        "lora_model_family": "qwen-image",
+        "lora_type": "lora",
+        "lora_location": "local",
+        "file_path": "C:/loras/companion-invalid.safetensors",
+        "compatibility": compatibility,
+    }
+
+    unknown_field = client.post(
+        "/lora-models",
+        json={**payload, "compatibility": {**compatibility, "unsupported": True}},
+    )
+    assert unknown_field.status_code == 422
+
+    non_qwen = client.post(
+        "/lora-models",
+        json={**payload, "lora_model_family": "sdxl"},
+    )
+    assert non_qwen.status_code == 400
+    assert "requires lora_model_family 'qwen-image'" in non_qwen.json()["detail"]
+
+    lightning_profile = {
+        "kind": "qwen_image_lightning",
+        "base_variant": "qwen-image-2512",
+        "steps": 4,
+        "true_cfg_scale": 1.0,
+        "scheduler_profile": "qwen_image_lightning_shift3",
+        "adapter_strength": 1.0,
+        "supported_tasks": ["text2img", "img2img", "inpaint"],
+    }
+    lightning_entry = client.post(
+        "/lora-models",
+        json={**payload, "runtime_profile": lightning_profile},
+    )
+    assert lightning_entry.status_code == 400
+    assert "not allowed on Lightning runtime-profile entries" in lightning_entry.json()["detail"]

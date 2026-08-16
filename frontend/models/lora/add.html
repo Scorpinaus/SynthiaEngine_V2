@@ -89,6 +89,22 @@
                         <input id="lightning-supported-task" type="text" value="text2img" readonly />
                     </label>
                 </div>
+                <div id="lightning-compatibility-panel" class="model-link-panel" hidden>
+                    <p>Experimental Lightning compatibility</p>
+                    <p>Declare this standard Qwen Image LoRA for use with Qwen Image 2512 Lightning.</p>
+                    <label class="field">
+                        <span>
+                            <input id="lightning-compatibility-enabled" type="checkbox" />
+                            Allow with Lightning
+                        </span>
+                    </label>
+                    <fieldset id="lightning-compatibility-tasks" disabled>
+                        <legend>Supported tasks</legend>
+                        <label><input name="lightning-compatibility-task" type="checkbox" value="text2img" /> Text to image</label>
+                        <label><input name="lightning-compatibility-task" type="checkbox" value="img2img" /> Image to image</label>
+                        <label><input name="lightning-compatibility-task" type="checkbox" value="inpaint" /> Inpaint</label>
+                    </fieldset>
+                </div>
                 <label class="field">
                     <span>Location Type</span>
                     <select name="lora_location" required>

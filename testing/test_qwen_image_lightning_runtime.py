@@ -4,8 +4,10 @@ from unittest.mock import Mock, patch
 from PIL import Image
 import pytest
 
-from backend.lora.registry import LoraRegistryEntry
+from backend.lora.registry import LoraCompatibility, LoraRegistryEntry
+from backend.qwen_image.lightning import resolve_qwen_image_lightning_profile as resolve_lightning_profile
 from backend.qwen_image import pipeline as qwen_image_pipeline
+from backend.registries.model import ModelRegistryEntry
 
 
 class _FakePipeline:
@@ -48,6 +50,52 @@ def _lightning_entry(lora_id, steps):
             "supported_tasks": ["text2img"],
         },
     )
+
+
+def _model_entry():
+    return ModelRegistryEntry(
+        name="Qwen-Image-2512-SDNQ-4bit-dynamic",
+        family="qwen-image",
+        model_type="diffusers",
+        location_type="local",
+        model_id=1,
+        version="local",
+        link="C:/models/Qwen-Image-2512-SDNQ-4bit-dynamic",
+    )
+
+
+def _companion_entry(lora_id, compatibility):
+    return LoraRegistryEntry(
+        lora_id=lora_id,
+        lora_model_family="qwen-image",
+        lora_type="lora",
+        lora_location="local",
+        file_path=f"C:/loras/companion-{lora_id}.safetensors",
+        compatibility=compatibility,
+    )
+
+
+def _compatibility(*, supported_tasks=None):
+    return {
+        "base_variants": ["qwen-image-2512"],
+        "runtime_profile_kinds": ["qwen_image_lightning"],
+        "supported_tasks": supported_tasks or ["text2img", "img2img", "inpaint"],
+    }
+
+
+def _real_resolver_with_entries(entries, events):
+    def resolve(adapters, model_entry, task, steps, true_cfg_scale):
+        events.append("resolve")
+        return resolve_lightning_profile(
+            adapters,
+            model_entry,
+            task,
+            steps,
+            true_cfg_scale,
+            lookup_lora_entry=entries.__getitem__,
+        )
+
+    return resolve
 
 
 @pytest.mark.parametrize("steps", [4, 8])
@@ -109,6 +157,56 @@ def test_text2img_resolves_before_load_and_executes_validated_lightning_values(t
     assert pipe.calls[0]["true_cfg_scale"] == 1.0
     assert events == ["resolve", "load", "select", "apply", "inference", "unload", "release"]
     apply_lora.assert_called_once()
+
+
+def test_text2img_passes_compatible_lightning_companion_in_request_order(tmp_path):
+    events = []
+    lightning = _lightning_entry(910, 4)
+    companion = _companion_entry(911, _compatibility(supported_tasks=["text2img"]))
+    adapters = [
+        {"lora_id": companion.lora_id, "strength": 0.5, "target": "both"},
+        {"lora_id": lightning.lora_id, "strength": 1.0, "target": "both"},
+    ]
+    pipe = _FakePipeline(events)
+    fixed_scheduler = object()
+
+    def apply(received_pipe, received_adapters, **kwargs):
+        events.append("apply")
+        assert received_pipe is pipe
+        assert received_adapters == adapters
+        assert list(kwargs["resolved_entries"]) == [companion.lora_id, lightning.lora_id]
+        assert [entry.lora_id for entry in kwargs["resolved_entries"].values()] == [
+            companion.lora_id,
+            lightning.lora_id,
+        ]
+        return ["companion", "lightning"]
+
+    with (
+        patch.object(qwen_image_pipeline, "_get_qwen_image_model_entry", return_value=_model_entry()),
+        patch.object(
+            qwen_image_pipeline,
+            "resolve_qwen_image_lightning_profile",
+            side_effect=_real_resolver_with_entries(
+                {lightning.lora_id: lightning, companion.lora_id: companion}, events
+            ),
+        ),
+        patch.object(qwen_image_pipeline, "load_text2img_pipeline", side_effect=lambda _model: (events.append("load"), pipe)[1]),
+        patch.object(qwen_image_pipeline, "select_qwen_image_scheduler", side_effect=lambda *_args: (events.append("select"), fixed_scheduler)[1]),
+        patch.object(qwen_image_pipeline, "_apply_qwen_lora_adapters", side_effect=apply),
+        patch.object(qwen_image_pipeline, "make_batch_id", return_value="compatible"),
+        patch.object(qwen_image_pipeline, "get_batch_output_dir", return_value=tmp_path),
+        patch.object(qwen_image_pipeline, "save_generated_image", return_value="batch_compatible/output.png"),
+        patch.object(qwen_image_pipeline, "cleanup_memory"),
+        patch.object(qwen_image_pipeline, "release_pipeline", side_effect=lambda *_args, **_kwargs: events.append("release")),
+        patch.object(qwen_image_pipeline.torch, "autocast", side_effect=lambda *_args, **_kwargs: _NullContext()),
+    ):
+        result = qwen_image_pipeline.generate_text2img_in_process(
+            {"prompt": "test", "steps": 4, "true_cfg_scale": 1.0, "lora_adapters": adapters}
+        )
+
+    assert result == {"images": ["/outputs/batch_compatible/output.png"]}
+    assert pipe.scheduler is fixed_scheduler
+    assert events == ["resolve", "load", "select", "apply", "inference", "unload", "release"]
 
 
 class _NullContext:
@@ -297,7 +395,7 @@ def test_lightning_request_does_not_leak_adapter_or_scheduler_state_to_base_requ
         "requires steps=4; received 8.",
         "requires true_cfg_scale=1.0; received 2.0.",
         "requires strength=1.0; received 0.8.",
-        "cannot be combined with standard LoRAs.",
+        "at most one standard companion LoRA.",
     ],
 )
 def test_invalid_text2img_lightning_validation_fails_before_pipeline_load(message):
@@ -431,5 +529,77 @@ def test_image_task_lightning_profile_failures_happen_before_pipeline_load(
             generation({**params, "lora_adapters": [{"lora_id": 999, "strength": 1.0}]})
 
     assert resolve.call_args.args[2] == task
+    loader.assert_not_called()
+    release.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("generation", "loader_name", "params", "task", "invalid_compatibility", "message"),
+    [
+        (
+            qwen_image_pipeline.generate_text2img_in_process,
+            "load_text2img_pipeline",
+            {"prompt": "test"},
+            "text2img",
+            {"base_variants": [], "runtime_profile_kinds": ["qwen_image_lightning"], "supported_tasks": ["text2img"]},
+            "missing base variant 'qwen-image-2512'",
+        ),
+        (
+            qwen_image_pipeline.generate_img2img_in_process,
+            "load_img2img_pipeline",
+            {"initial_image": Image.new("RGB", (8, 8), "blue"), "strength": 0.35},
+            "img2img",
+            {"base_variants": ["qwen-image-2512"], "runtime_profile_kinds": ["qwen_image_lightning"], "supported_tasks": ["text2img"]},
+            "missing task 'img2img'",
+        ),
+        (
+            qwen_image_pipeline.generate_inpaint_in_process,
+            "load_inpaint_pipeline",
+            {
+                "initial_image": Image.new("RGB", (8, 8), "blue"),
+                "mask_image": Image.new("L", (8, 8), "white"),
+                "strength": 0.45,
+            },
+            "inpaint",
+            {"base_variants": ["qwen-image-2512"], "runtime_profile_kinds": [], "supported_tasks": ["inpaint"]},
+            "missing runtime profile kind 'qwen_image_lightning'",
+        ),
+    ],
+)
+def test_incompatible_lightning_companion_rejects_before_pipeline_load(
+    generation,
+    loader_name,
+    params,
+    task,
+    invalid_compatibility,
+    message,
+):
+    events = []
+    lightning = _lightning_entry(970, 4)
+    companion = _companion_entry(971, _compatibility())
+    companion.compatibility = LoraCompatibility.model_construct(**invalid_compatibility)
+    adapters = [
+        {"lora_id": lightning.lora_id, "strength": 1.0, "target": "both"},
+        {"lora_id": companion.lora_id, "strength": 0.5, "target": "both"},
+    ]
+    loader = Mock()
+    release = Mock()
+
+    with (
+        patch.object(qwen_image_pipeline, "_get_qwen_image_model_entry", return_value=_model_entry()),
+        patch.object(
+            qwen_image_pipeline,
+            "resolve_qwen_image_lightning_profile",
+            side_effect=_real_resolver_with_entries(
+                {lightning.lora_id: lightning, companion.lora_id: companion}, events
+            ),
+        ),
+        patch.object(qwen_image_pipeline, loader_name, loader),
+        patch.object(qwen_image_pipeline, "release_pipeline", release),
+    ):
+        with pytest.raises(ValueError, match=message):
+            generation({**params, "steps": 4, "true_cfg_scale": 1.0, "lora_adapters": adapters})
+
+    assert events == ["resolve"]
     loader.assert_not_called()
     release.assert_not_called()

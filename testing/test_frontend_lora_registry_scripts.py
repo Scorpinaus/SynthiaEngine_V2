@@ -63,6 +63,26 @@ class FrontendLoraRegistryScriptTests(unittest.TestCase):
         self.assertIn("/api/local-path/select", js)
         self.assertIn('selection_type: "file"', js)
 
+    def test_lightning_compatibility_controls_are_safe_for_add_and_edit(self):
+        add_html = (ROOT / "frontend" / "models" / "lora" / "add.html").read_text(encoding="utf-8")
+        add_js = (ROOT / "frontend" / "models" / "lora" / "add.js").read_text(encoding="utf-8")
+        edit_js = (ROOT / "frontend" / "models" / "lora" / "edit.js").read_text(encoding="utf-8")
+        self.assertIn('id="lightning-compatibility-panel" class="model-link-panel" hidden', add_html)
+        self.assertNotIn('value="text2img" checked', add_html)
+        for js in (add_js, edit_js):
+            self.assertIn('return !isLightningSelected()', js)
+            self.assertIn('familyField?.value === "qwen-image"', js)
+            self.assertIn('typeField?.value === "lora"', js)
+            self.assertIn('lightningCompatibilityEnabledField.checked = false', js)
+            self.assertIn('lightningCompatibilityTaskFields.forEach((field) => {', js)
+            self.assertIn('lightningCompatibilityTasksField.disabled = !isEligible', js)
+            self.assertIn('if (isEligible && lightningCompatibilityEnabledField?.checked', js)
+            self.assertIn('field.value === "text2img"', js)
+            self.assertIn('if (!isLightningCompatibilityEligible() || !lightningCompatibilityEnabledField?.checked) {', js)
+            self.assertIn('compatibility: buildLightningCompatibility()', js)
+        self.assertIn('field.checked = supportedTasks.includes(field.value)', edit_js)
+        self.assertIn('hydrateLightningCompatibility(entry.compatibility)', edit_js)
+
 
 if __name__ == "__main__":
     unittest.main()

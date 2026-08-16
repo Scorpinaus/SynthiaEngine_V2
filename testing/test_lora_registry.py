@@ -187,9 +187,16 @@ def test_additive_migration_keeps_legacy_rows_without_runtime_metadata(tmp_path)
         column["name"]
         for column in lora_registry.inspect(lora_registry._ENGINE).get_columns("lora_registry")
     }
-    assert {"runtime_profile_json", "weight_name", "subfolder", "revision"} <= column_names
+    assert {
+        "runtime_profile_json",
+        "compatibility_json",
+        "weight_name",
+        "subfolder",
+        "revision",
+    } <= column_names
     legacy_entry = lora_registry.get_lora_entry(301)
     assert legacy_entry.runtime_profile is None
+    assert legacy_entry.compatibility is None
     assert legacy_entry.weight_name is None
     assert legacy_entry.subfolder is None
     assert legacy_entry.revision is None
@@ -287,3 +294,71 @@ def test_lightning_runtime_profile_round_trips_and_validates_entry_constraints(t
         lora_registry.LoraRuntimeProfile.model_validate({**profile, "true_cfg_scale": 2.0})
     with pytest.raises(ValueError, match="supported_tasks"):
         lora_registry.LoraRuntimeProfile.model_validate({**profile, "supported_tasks": ["img2img"]})
+
+
+def test_qwen_image_compatibility_round_trips_and_validates_entry_constraints(tmp_path):
+    _reset_lora_registry_paths(tmp_path, json_payload=None)
+    compatibility = {
+        "base_variants": ["qwen-image-2512"],
+        "runtime_profile_kinds": ["qwen_image_lightning"],
+        "supported_tasks": ["text2img", "img2img", "inpaint"],
+    }
+    created = lora_registry.add_lora(
+        lora_registry.LoraRegistryEntry(
+            lora_id=305,
+            lora_model_family="qwen-image",
+            lora_type="lora",
+            lora_location="local",
+            file_path="C:/loras/companion.safetensors",
+            compatibility=compatibility,
+        )
+    )
+    assert created.compatibility is not None
+    assert created.compatibility.model_dump() == compatibility
+    assert lora_registry.get_lora_entry(305).model_dump() == created.model_dump()
+
+    cleared = lora_registry.update_lora_entry(305, {"compatibility": None})
+    assert cleared.compatibility is None
+    restored = lora_registry.update_lora_entry(305, {"compatibility": compatibility})
+    assert restored.compatibility is not None
+    assert restored.compatibility.model_dump() == compatibility
+
+    for field_name in compatibility:
+        with pytest.raises(ValueError, match=f"{field_name} cannot be empty"):
+            lora_registry.LoraCompatibility.model_validate({**compatibility, field_name: []})
+        with pytest.raises(ValueError, match=f"{field_name} cannot contain duplicates"):
+            lora_registry.LoraCompatibility.model_validate(
+                {**compatibility, field_name: [compatibility[field_name][0], compatibility[field_name][0]]}
+            )
+
+    with pytest.raises(ValueError, match="Extra inputs are not permitted"):
+        lora_registry.LoraCompatibility.model_validate({**compatibility, "unknown": True})
+
+    invalid_entry = {
+        "lora_id": 306,
+        "lora_model_family": "sdxl",
+        "lora_type": "lora",
+        "lora_location": "local",
+        "file_path": "C:/loras/invalid.safetensors",
+        "compatibility": compatibility,
+    }
+    with pytest.raises(ValueError, match="lora_model_family 'qwen-image'"):
+        lora_registry.LoraRegistryEntry.model_validate(invalid_entry)
+
+    invalid_entry["lora_model_family"] = "qwen-image"
+    invalid_entry["lora_type"] = "lycoris"
+    with pytest.raises(ValueError, match="lora_type 'lora'"):
+        lora_registry.LoraRegistryEntry.model_validate(invalid_entry)
+
+    invalid_entry["lora_type"] = "lora"
+    invalid_entry["runtime_profile"] = {
+        "kind": "qwen_image_lightning",
+        "base_variant": "qwen-image-2512",
+        "steps": 4,
+        "true_cfg_scale": 1.0,
+        "scheduler_profile": "qwen_image_lightning_shift3",
+        "adapter_strength": 1.0,
+        "supported_tasks": ["text2img", "img2img", "inpaint"],
+    }
+    with pytest.raises(ValueError, match="not allowed on Lightning runtime-profile entries"):
+        lora_registry.LoraRegistryEntry.model_validate(invalid_entry)
